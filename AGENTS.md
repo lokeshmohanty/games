@@ -6,6 +6,7 @@ This repository is dedicated to the development of client-rendered web games, fo
 
 - **Client-Rendered:** All game logic and rendering happen in the browser.
 - **Game Types:** Single-player adventures, puzzles, and local multiplayer (shared screen/keyboard).
+- **Mobile First:** All games must be mobile-friendly, featuring responsive layouts and touch-compatible controls.
 - **Tech Stack:** [TBD - will be updated as the project evolves]
 
 ## Agent Guidelines

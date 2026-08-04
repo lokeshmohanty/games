@@ -16,11 +16,13 @@
         align-items: center;
         height: 100vh;
         user-select: none;
+        touch-action: none;
       }
       canvas {
         border: 2px solid #333;
         box-shadow: 0 0 20px rgba(0, 255, 255, 0.2);
         cursor: none;
+        touch-action: none;
       }
       #ui {
         position: absolute;
@@ -90,17 +92,46 @@
       let lastSpawn = 0;
 
       function resize() {
-        canvas.width = window.innerWidth * 0.8;
-        canvas.height = window.innerHeight * 0.8;
+        if (window.innerWidth < 600) {
+          canvas.width = window.innerWidth * 0.95;
+          canvas.height = window.innerHeight * 0.8;
+        } else {
+          canvas.width = window.innerWidth * 0.8;
+          canvas.height = window.innerHeight * 0.8;
+        }
       }
       window.addEventListener("resize", resize);
       resize();
 
-      window.addEventListener("mousemove", (e) => {
+      function handleInput(clientX, clientY) {
         const rect = canvas.getBoundingClientRect();
-        player.x = e.clientX - rect.left;
-        player.y = e.clientY - rect.top;
+        player.x = clientX - rect.left;
+        player.y = clientY - rect.top;
+      }
+
+      window.addEventListener("mousemove", (e) => {
+        handleInput(e.clientX, e.clientY);
       });
+
+      window.addEventListener(
+        "touchstart",
+        (e) => {
+          if (!gameActive) return;
+          handleInput(e.touches[0].clientX, e.touches[0].clientY);
+          e.preventDefault();
+        },
+        { passive: false },
+      );
+
+      window.addEventListener(
+        "touchmove",
+        (e) => {
+          if (!gameActive) return;
+          handleInput(e.touches[0].clientX, e.touches[0].clientY);
+          e.preventDefault();
+        },
+        { passive: false },
+      );
 
       function spawnEnemy() {
         const side = Math.floor(Math.random() * 4);
