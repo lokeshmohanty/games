@@ -1,0 +1,271 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Neon Survival</title>
+    <style>
+      body {
+        margin: 0;
+        background: #0a0a0a;
+        color: #fff;
+        font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+        overflow: hidden;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        height: 100vh;
+        user-select: none;
+      }
+      canvas {
+        border: 2px solid #333;
+        box-shadow: 0 0 20px rgba(0, 255, 255, 0.2);
+        cursor: none;
+      }
+      #ui {
+        position: absolute;
+        top: 20px;
+        left: 20px;
+        pointer-events: none;
+      }
+      #score {
+        font-size: 24px;
+        font-weight: bold;
+        color: #0ff;
+        text-shadow: 0 0 10px #0ff;
+      }
+      #overlay {
+        position: absolute;
+        text-align: center;
+        background: rgba(0, 0, 0, 0.8);
+        padding: 20px;
+        border-radius: 10px;
+        border: 1px solid #0ff;
+        display: block;
+      }
+      button {
+        background: #0ff;
+        border: none;
+        padding: 10px 20px;
+        font-size: 18px;
+        font-weight: bold;
+        cursor: pointer;
+        margin-top: 10px;
+        border-radius: 5px;
+        transition: transform 0.1s;
+      }
+      button:active {
+        transform: scale(0.95);
+      }
+    </style>
+  </head>
+  <body>
+    <div id="ui">
+      <div id="score">Score: 0</div>
+    </div>
+    <div id="overlay">
+      <h1>NEON SURVIVAL</h1>
+      <p>
+        Avoid the <span style="color: #ff4d4d">Red Circles</span><br />Collect
+        the <span style="color: #4dff4d">Green Dots</span>
+      </p>
+      <button id="startBtn">START GAME</button>
+    </div>
+    <canvas id="gameCanvas"></canvas>
+
+    <script>
+      const canvas = document.getElementById("gameCanvas");
+      const ctx = canvas.getContext("2d");
+      const scoreElement = document.getElementById("score");
+      const overlay = document.getElementById("overlay");
+      const startBtn = document.getElementById("startBtn");
+
+      let score = 0;
+      let gameActive = false;
+      let player = { x: 0, y: 0, size: 15, color: "#0ff" };
+      let enemies = [];
+      let gems = [];
+      let particles = [];
+      let spawnRate = 1000;
+      let lastSpawn = 0;
+
+      function resize() {
+        canvas.width = window.innerWidth * 0.8;
+        canvas.height = window.innerHeight * 0.8;
+      }
+      window.addEventListener("resize", resize);
+      resize();
+
+      window.addEventListener("mousemove", (e) => {
+        const rect = canvas.getBoundingClientRect();
+        player.x = e.clientX - rect.left;
+        player.y = e.clientY - rect.top;
+      });
+
+      function spawnEnemy() {
+        const side = Math.floor(Math.random() * 4);
+        let x, y;
+        if (side === 0) {
+          x = Math.random() * canvas.width;
+          y = -20;
+        } else if (side === 1) {
+          x = canvas.width + 20;
+          y = Math.random() * canvas.height;
+        } else if (side === 2) {
+          x = Math.random() * canvas.width;
+          y = canvas.height + 20;
+        } else {
+          x = -20;
+          y = Math.random() * canvas.height;
+        }
+
+        const angle = Math.atan2(player.y - y, player.x - x);
+        const speed = 1.5 + score / 10;
+        enemies.push({
+          x,
+          y,
+          vx: Math.cos(angle) * speed,
+          vy: Math.sin(angle) * speed,
+          size: 8,
+        });
+      }
+
+      function spawnGem() {
+        gems.push({
+          x: Math.random() * (canvas.width - 20) + 10,
+          y: Math.random() * (canvas.height - 20) + 10,
+          size: 5,
+        });
+      }
+
+      function createParticles(x, y, color) {
+        for (let i = 0; i < 8; i++) {
+          particles.push({
+            x,
+            y,
+            vx: (Math.random() - 0.5) * 5,
+            vy: (Math.random() - 0.5) * 5,
+            life: 1,
+            color,
+          });
+        }
+      }
+
+      function update(time) {
+        if (!gameActive) return;
+
+        // Spawn enemies
+        if (time - lastSpawn > spawnRate) {
+          spawnEnemy();
+          lastSpawn = time;
+          spawnRate = Math.max(300, 1000 - score * 10);
+        }
+
+        if (gems.length < 3 && Math.random() < 0.02) spawnGem();
+
+        // Update enemies
+        enemies.forEach((enemy, index) => {
+          enemy.x += enemy.vx;
+          enemy.y += enemy.vy;
+
+          const dist = Math.hypot(player.x - enemy.x, player.y - enemy.y);
+          if (dist < player.size + enemy.size) {
+            gameOver();
+          }
+        });
+
+        // Update gems
+        gems.forEach((gem, index) => {
+          const dist = Math.hypot(player.x - gem.x, player.y - gem.y);
+          if (dist < player.size + gem.size) {
+            score++;
+            scoreElement.innerText = `Score: ${score}`;
+            createParticles(gem.x, gem.y, "#4dff4d");
+            gems.splice(index, 1);
+          }
+        });
+
+        // Update particles
+        particles.forEach((p, index) => {
+          p.x += p.vx;
+          p.y += p.vy;
+          p.life -= 0.02;
+          if (p.life <= 0) particles.splice(index, 1);
+        });
+
+        draw();
+        requestAnimationFrame(update);
+      }
+
+      function draw() {
+        ctx.fillStyle = "rgba(10, 10, 10, 0.3)";
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+        // Player
+        ctx.shadowBlur = 15;
+        ctx.shadowColor = player.color;
+        ctx.fillStyle = player.color;
+        ctx.fillRect(
+          player.x - player.size / 2,
+          player.y - player.size / 2,
+          player.size,
+          player.size,
+        );
+
+        // Enemies
+        ctx.shadowColor = "#ff4d4d";
+        ctx.fillStyle = "#ff4d4d";
+        enemies.forEach((e) => {
+          ctx.beginPath();
+          ctx.arc(e.x, e.y, e.size, 0, Math.PI * 2);
+          ctx.fill();
+        });
+
+        // Gems
+        ctx.shadowColor = "#4dff4d";
+        ctx.fillStyle = "#4dff4d";
+        gems.forEach((g) => {
+          ctx.beginPath();
+          ctx.arc(g.x, g.y, g.size, 0, Math.PI * 2);
+          ctx.fill();
+        });
+
+        // Particles
+        particles.forEach((p) => {
+          ctx.globalAlpha = p.life;
+          ctx.fillStyle = p.color;
+          ctx.fillRect(p.x, p.y, 2, 2);
+        });
+        ctx.globalAlpha = 1;
+        ctx.shadowBlur = 0;
+      }
+
+      function gameOver() {
+        gameActive = false;
+        overlay.style.display = "block";
+        overlay.textContent = "";
+
+        const h1 = document.createElement("h1");
+        h1.textContent = "GAME OVER";
+
+        const p = document.createElement("p");
+        p.textContent = `Your Score: ${score}`;
+
+        const btn = document.createElement("button");
+        btn.textContent = "TRY AGAIN";
+        btn.onclick = () => location.reload();
+
+        overlay.append(h1, p, btn);
+      }
+
+      startBtn.onclick = () => {
+        overlay.style.display = "none";
+        gameActive = true;
+        score = 0;
+        enemies = [];
+        gems = [];
+        requestAnimationFrame(update);
+      };
+    </script>
+  </body>
+</html>
