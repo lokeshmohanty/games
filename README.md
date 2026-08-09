@@ -13,10 +13,12 @@ or serve the folder over HTTP.
 
 ### Multiplayer (P2P, no server)
 
-All multiplayer games use [Trystero](https://github.com/dmotz/trystero) for
-serverless WebRTC peer-to-peer networking. Peers discover each other via
-public Nostr relays; all game data flows directly between players,
-end-to-end encrypted. Share a room code to play together.
+All multiplayer games connect browsers directly over WebRTC, with **no server
+and no third-party service** of any kind. Since two browsers cannot discover
+each other unaided, the players carry the handshake themselves: the host
+generates an invite link (also shown as a QR code), the guest opens it and
+sends one reply code back. After that all game data flows directly between
+players, end-to-end encrypted.
 
 - **[Connect 4](connect4.html)** — Drop your pieces, line up four in a row.
   2-player turn-based. Host-authoritative board with win detection.
@@ -33,10 +35,13 @@ Open `neon-survival.html` directly in a browser (`file://` works fine).
 
 ### Multiplayer
 
-1. Open the game in your browser.
-2. Enter a room code (or use the auto-generated one).
-3. Share the code with a friend — they open the same game and enter the code.
-4. The host clicks **START GAME**; everyone plays together in real time.
+1. Open the game and click **CREATE GAME**.
+2. Send the invite link to a friend — any chat app works, or let them scan the
+   QR code off your screen.
+3. They open it and get a short reply code; they send that back to you.
+4. Paste it, click **CONNECT**, then **START GAME**.
+
+Use **INVITE ANOTHER** to add more players — each one gets its own invite.
 
 `file://` works for testing on the same machine (open two tabs). For
 cross-device play, serve the folder over HTTP:
@@ -56,8 +61,9 @@ connect4.html           # 2-player P2P Connect 4
 draw-guess.html         # 2–8 player P2P drawing & guessing
 neon-survival-mp.html   # 2–8 player P2P co-op survival
 lib/
-  net.js                # P2P networking core (Trystero wrapper, host election)
-  lobby.js              # Reusable room-code lobby UI + host-gated start
+  net.js                # P2P core — invite/answer handshake, star topology, actions
+  lobby.js              # Invite-link lobby UI (link, QR, copy, paste-reply)
+  qr.js                 # Dependency-free QR encoder
   styles.css            # Shared neon theme
   README.md             # lib API documentation
 assets/                 # Portal preview GIFs
@@ -71,6 +77,7 @@ The multiplayer games share a common P2P layer loaded as traditional scripts
 
 ```html
 <link rel="stylesheet" href="lib/styles.css" />
+<script src="lib/qr.js"></script>
 <script src="lib/net.js"></script>
 <script src="lib/lobby.js"></script>
 <script>
@@ -79,20 +86,21 @@ The multiplayer games share a common P2P layer loaded as traditional scripts
 </script>
 ```
 
-- **`NeonArcade.createRoom({ appId, roomId, onPeerJoin, onPeerLeave, onHostChange })`**
-  — joins a P2P room, tracks peers, elects a host (lowest `selfId` wins).
-  Returns a room controller with `isHost()`, `peerCount()`, `makeAction()`, etc.
-- **`NeonArcade.mountLobby(container, { appId, gameName, onReady, onStart, ... })`**
-  — renders a neon-styled lobby (room code input, peer roster, Start button).
-  Calls `onReady(room)` on connect and `onStart()` on all peers when the host starts.
+- **`NeonArcade.createHost(opts)` / `createGuest(opts)`** — create the room and
+  drive the handshake (`createInvite()`, `acceptAnswer()`, `answerInvite()`).
+  Returns a controller with `isHost()`, `peerCount()`, `makeAction()`, etc.
+- **`NeonArcade.mountLobby(container, { gameName, onReady, onStart, ... })`**
+  — renders the invite/answer lobby and picks the host or guest path
+  automatically. Calls `onReady(room)` once the room exists and `onStart()` on
+  all peers when the host starts.
 
 See [`lib/README.md`](lib/README.md) for full API documentation.
 
 ## Tech stack
 
 - Vanilla HTML/CSS/JS — no framework, no bundler, no build step.
-- [Trystero](https://github.com/dmotz/trystero) — serverless WebRTC P2P
-  multiplayer (loaded from CDN via dynamic `import()`).
+- Raw WebRTC data channels — no networking library, no CDN, no signaling
+  server. STUN is the only external contact, and it never sees game data.
 - Canvas 2D for rendering.
 - Mobile-first: responsive layouts, touch + mouse + keyboard input.
 

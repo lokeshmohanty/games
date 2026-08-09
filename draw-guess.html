@@ -204,6 +204,7 @@
     </div>
     <div id="overlay" class="overlay" hidden></div>
 
+    <script src="lib/qr.js"></script>
     <script src="lib/net.js"></script>
     <script src="lib/lobby.js"></script>
     <script>
@@ -749,7 +750,6 @@
 
       // �─ Networking ───────────────────────────────────────────
       mountLobby(lobbyEl, {
-        appId: "draw-guess",
         gameName: "DRAW & GUESS",
         onReady(r) {
           room = r;

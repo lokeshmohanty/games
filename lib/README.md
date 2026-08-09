@@ -1,23 +1,44 @@
 # lib/ — shared P2P multiplayer core
 
-Serverless multiplayer for vanilla-JS browser games. No build step, no server.
-Peers discover each other via public Nostr relays (Trystero), then all game
-data flows directly peer-to-peer over WebRTC, end-to-end encrypted.
+Multiplayer for vanilla-JS browser games with **no server and no third-party
+service**. No build step, no dependencies, no accounts.
+
+Two browsers cannot find each other on their own, so instead of outsourcing
+that to a signaling server or a public relay, the *players* carry the handshake:
+the host generates an invite link, sends it however they already talk, and the
+guest sends one code back. After that all game data flows directly between the
+browsers over an encrypted WebRTC data channel.
 
 ## Files
 
-- **`net.js`** — `NeonArcade.createRoom()`: join a P2P room, track peers, elect a host.
-- **`lobby.js`** — `NeonArcade.mountLobby()`: reusable room-code UI + host-gated Start.
+- **`net.js`** — `NeonArcade.createHost()` / `createGuest()`: the connection, the peer roster, typed message channels.
+- **`lobby.js`** — `NeonArcade.mountLobby()`: the invite/answer UI (link, QR, copy, paste-reply).
+- **`qr.js`** — `NeonArcade.qrCanvas()`: a self-contained QR encoder, so invites can be scanned instead of typed.
 - **`styles.css`** — shared neon theme (link from each game's HTML).
+
+## The handshake
+
+```
+HOST                                  GUEST
+[CREATE GAME]
+  -> invite link + QR   --(chat/QR)-->  opens the link
+                                          -> reply code + QR
+  <-------(chat)-------------------------
+  paste reply -> [CONNECT]
+[START GAME]                          game begins on both
+```
+
+The host repeats the invite step per guest (`INVITE ANOTHER`), because each
+guest needs its own offer.
 
 ## Loading
 
-The lib files are **traditional scripts** (not ES modules) so they work on both
-`file://` and `http://` origins. Trystero is imported dynamically from the CDN
-inside `net.js`. Load them in order before the game script:
+Traditional scripts (not ES modules), so everything works on `file://` as well
+as `http://`. Load in this order before the game script:
 
 ```html
 <link rel="stylesheet" href="lib/styles.css" />
+<script src="lib/qr.js"></script>
 <script src="lib/net.js"></script>
 <script src="lib/lobby.js"></script>
 <script>
@@ -28,31 +49,43 @@ inside `net.js`. Load them in order before the game script:
 
 ## API
 
-### `NeonArcade.createRoom({ appId, roomId, onPeerJoin, onPeerLeave, onHostChange })`
+### `NeonArcade.mountLobby(container, { gameName, onReady, onStart, onPeerJoin, onPeerLeave })`
 
-Async — returns a `Promise` that resolves to a room controller:
+Renders the lobby and drives the whole handshake. Calls `onReady(room)` once
+the room exists (register your action channels here) and `onStart()` on **all**
+peers when the host starts. `onPeerJoin(peerId)` / `onPeerLeave(peerId)` are
+forwarded from the room for late-join state sync.
+
+The lobby decides which side it is on by looking for an `#i=…` invite fragment
+in the URL, so a game needs no room-code handling of its own.
+
+### Room controller
 
 | method | description |
 | --- | --- |
-| `selfId` | this peer's stable random id |
+| `selfId` | this peer's random id |
 | `getPeers()` | array of connected peer ids |
 | `peerCount()` | number of connected peers (excl. self) |
-| `isHost()` | `true` only on the elected host (lowest selfId) |
-| `hostId()` | current host's id |
-| `makeAction(name, opts?)` | returns `{ send(data, { target }?), onMessage }` — broadcast or targeted messages |
-| `leave()` | leave the room |
+| `isHost()` | `true` only on the peer that created the room |
+| `hostId()` | the host's id |
+| `makeAction(name)` | `{ send(data, { target }?), onMessage }` — broadcast or targeted |
+| `leave()` | close every connection |
 
-**Host election:** the peer with the lowest `selfId` is host. The host owns
-authoritative shared state. Re-elected on join/leave. Use `isHost()` to gate
-who broadcasts state vs. who sends inputs.
+`makeAction` is idempotent: calling it twice with one name returns the same
+channel, so `room.makeAction("state").send(...)` inside a helper is fine.
 
-### `NeonArcade.mountLobby(container, { appId, gameName, onReady, onStart, onPeerJoin, onPeerLeave })`
+**Host is permanent.** Whoever created the room is the host for its lifetime —
+there is no election, because the host is also the hub every guest is connected
+through. If the host leaves, the session is over and guests are told so.
 
-Renders a neon lobby (room code input, peer roster, Start button) into
-`container`. Calls `onReady(room)` once connected (set up game actions here)
-and `onStart()` on **all** peers when the host starts (begin gameplay here).
-`onPeerJoin(peerId)` and `onPeerLeave(peerId)` are forwarded from the room for
-late-join state sync.
+## Topology
+
+A star, not a mesh. The host holds one connection per guest and relays
+guest→guest traffic. A mesh would need a separate manual handshake for every
+pair of players; the star needs one per guest.
+
+This is invisible to game code: `send()` with no target broadcasts to everyone,
+and `send(data, { target })` reaches any peer whether or not it is the host.
 
 ## Patterns
 
@@ -65,36 +98,51 @@ const input = room.makeAction("input");   // peer -> host
 if (room.isHost()) {
   input.onMessage = (data, { peerId }) => {
     gameState = applyMove(gameState, data, peerId);
-    state.send(gameState);               // broadcast new state
+    state.send(gameState);
   };
 } else {
   state.onMessage = (data) => { gameState = data; render(); };
 }
-
-// Late join: host re-sends full state to the new peer
-// onPeerJoin -> if host, state.send(gameState, { target: newPeerId })
 ```
 
 ### Peer-authoritative broadcast (Neon Survival co-op)
 
 ```js
 const pos = room.makeAction("pos");
-pos.send({ x, y });              // broadcast my position every tick
+pos.send({ x, y });
 pos.onMessage = (data, { peerId }) => { peers[peerId] = data; };
 ```
 
-## Late joiners
+### Late joiners
 
-When a peer joins mid-game, the host should send them the full current state
-(targeted, not broadcast) so they sync immediately. See each game for the
-specific implementation.
+When a peer joins mid-game the host should send it the full current state
+(targeted, not broadcast). The lobby already re-sends the `start` signal to
+late joiners so they enter the running game.
+
+## Connectivity
+
+Messages larger than ~12 KB are chunked and reassembled automatically, and
+sends are paused when the channel's buffer fills, so per-frame broadcasts
+cannot grow it without bound.
+
+The only external contact is **STUN** (`stun.cloudflare.com`,
+`stun.l.google.com`), used to discover each peer's public IP:port. It never
+sees game data. Pass `iceServers` to `createHost`/`createGuest` to override.
+
+There is deliberately **no TURN server** — running one would reintroduce the
+dependency this design removes. A minority of networks (symmetric NAT, some
+mobile carriers, locked-down corporate wifi) block direct connections; those
+now surface as an explicit error rather than an indefinite wait. If you ever
+want to cover them, pass a TURN entry in `iceServers`.
 
 ## Testing
 
-Games work on both `file://` (double-click the HTML file) and `http://`.
+Games work on both `file://` (double-click the HTML) and `http://`.
 
-For P2P testing, serve the project root over HTTP and open the game in two
-browser tabs with the same room code:
+To test two peers, open the game twice — the invite link works between two
+tabs, two browsers, or two devices. Note that opening an invite for a page you
+already have open is a fragment-only navigation, so the lobby reloads itself on
+`hashchange` to pick it up.
 
 ```sh
 python3 -m http.server 8000

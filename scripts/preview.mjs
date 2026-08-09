@@ -10,9 +10,9 @@
  *   video=<path to .webm>   start=<seconds of lobby to trim>   duration=<seconds>
  *
  * The P2P games need two peers, so this opens two pages in one browser and
- * joins them to the same room over Trystero — verified working headless
- * (2026-08-09): the relays connect in a few seconds and host election happens
- * normally. Only the first page records; it is the one that appears in the gif.
+ * performs the invite/answer handshake between them (see connectPeers). Only
+ * the first page records; it is the one that appears in the gif, and it is also
+ * the host, since only the host can start the game.
  *
  * NixOS note: Playwright's bundled chromium cannot run here (exit 127 — the
  * downloaded binaries are not patched for the nix dynamic linker). We always
@@ -71,33 +71,44 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 // ------------------------------------------------------------------ helpers
 
-/** Join the shared lobby with a room code. */
-async function joinRoom(page, code) {
-	await page.locator(".lobby-input").fill(code);
-	await page.locator("button.neon-btn", { hasText: "JOIN" }).first().click();
-}
+/**
+ * Walk the manual handshake the lobby asks players to perform: the first page
+ * hosts and mints an invite link, each other page opens that link and produces
+ * an answer code, and the host pastes it back. There is no signaling server to
+ * wait on, so this is deterministic rather than a poll-until-discovered loop.
+ */
+async function connectPeers(pages, timeoutMs = 30_000) {
+	const [host, ...guests] = pages;
+	for (const [i, guest] of guests.entries()) {
+		// The first invite comes from CREATE GAME; later ones from INVITE ANOTHER.
+		const opener = host.locator("button", {
+			hasText: i === 0 ? "CREATE GAME" : "INVITE ANOTHER",
+		});
+		await opener.first().click();
 
-/** Wait until this peer sees at least one other peer in the room. */
-async function waitForPeer(page, timeoutMs = 45_000) {
-	const deadline = Date.now() + timeoutMs;
-	while (Date.now() < deadline) {
-		const s = (await page.locator(".lobby-status").textContent().catch(() => "")) ?? "";
-		if (/[1-9]\d* peer/.test(s)) return true;
-		await sleep(500);
+		const inviteBox = host.locator("textarea.share-code").first();
+		await inviteBox.waitFor({ timeout: timeoutMs });
+		const link = await inviteBox.inputValue();
+
+		// The guest is already sitting on this file, so navigating straight to the
+		// invite would be a fragment-only change and would not re-run the page.
+		await guest.goto("about:blank");
+		await guest.goto(link);
+		const answerBox = guest.locator("textarea.share-code").first();
+		await answerBox.waitFor({ timeout: timeoutMs });
+		const answer = await answerBox.inputValue();
+
+		await host.locator("textarea.share-code").last().fill(answer);
+		await host.locator("button", { hasText: "CONNECT" }).first().click();
+		await host
+			.locator(".peer", { hasText: "other player" })
+			.waitFor({ timeout: timeoutMs });
 	}
-	throw new Error("peers never connected — Trystero needs network access to its relays");
 }
 
-/** The host is whichever page shows an enabled START GAME button. */
+/** Only the host can start, and it is always the first page. */
 async function startGame(pages) {
-	for (const page of pages) {
-		const btn = page.locator("button", { hasText: "START GAME" });
-		if ((await btn.count()) && (await btn.first().isEnabled())) {
-			await btn.first().click();
-			return;
-		}
-	}
-	throw new Error("no peer offered START GAME");
+	await pages[0].locator("button", { hasText: "START GAME" }).first().click();
 }
 
 /** Click column `col` of a 7-wide board, in canvas-relative coordinates. */
@@ -317,9 +328,7 @@ const url = "file://" + join(ROOT, spec.file);
 await Promise.all(pages.map((p) => p.goto(url)));
 
 if (spec.peers > 1) {
-	const code = "PREV" + Math.floor(Math.random() * 9000 + 1000);
-	for (const p of pages) await joinRoom(p, code);
-	await waitForPeer(pages[0]);
+	await connectPeers(pages);
 	await sleep(800);
 	await startGame(pages);
 	await pages[0].locator("#game").waitFor({ state: "visible", timeout: 20_000 }).catch(() => {});

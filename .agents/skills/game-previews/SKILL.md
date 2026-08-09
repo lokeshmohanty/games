@@ -29,8 +29,8 @@ Games: `connect4`, `draw-guess`, `neon-survival-mp`, `neon-survival`.
 
 1. `scripts/preview.mjs <game>` opens the game from `file://` in the system Chrome
    under Playwright and plays a scripted scenario, recording the first page to webm.
-   For the P2P games it opens **two** pages and joins them to one Trystero room, so
-   the gif shows real multiplayer.
+   For the P2P games it opens **two** pages and performs the invite/answer handshake
+   between them (`connectPeers`), so the gif shows real multiplayer.
 2. It prints `video=`, `start=`, `duration=`; `start` is how much lobby/connection
    time to trim so the gif opens on gameplay.
 3. `make-preview.sh` converts with the `screen-rec` CLI (plain ffmpeg if absent) using
@@ -42,8 +42,8 @@ Games: `connect4`, `draw-guess`, `neon-survival-mp`, `neon-survival`.
 
 Add an entry to `GAMES` in `scripts/preview.mjs`: `file`, `peers` (2 for anything using
 `lib/lobby.js`), `seconds`, and a `play(pages, seconds)` scenario. The shared helpers
-`joinRoom` / `waitForPeer` / `startGame` handle the lobby, so a scenario only describes
-gameplay. Add the game to `GAMES` in `scripts/make-preview.sh` too, and give it a profile
+`connectPeers` / `startGame` handle the lobby, so a scenario only describes
+gameplay. Page 0 is always the host — only it can start the game. Add the game to `GAMES` in `scripts/make-preview.sh` too, and give it a profile
 if it is motion-heavy.
 
 ## Traps (learned 2026-08-09, all already handled in the scripts)
@@ -71,8 +71,12 @@ if it is motion-heavy.
 - If a run still ends on something you don't want looping, `--trim-end N` drops the last
   N seconds (it refuses to leave under 1s).
 - **Connect 4** stops early once someone wins, holding the win overlay ~1.4s.
-- The P2P games need **network access** — Trystero signals over public Nostr relays.
-  "peers never connected" means no network, not a bug in the game.
+- The P2P games no longer need any signaling service: the handshake is passed directly
+  between the two pages. STUN is still contacted for candidate discovery, but two pages
+  on one machine connect over host candidates even offline.
+- The guest must be navigated **away from the game file first** (`about:blank`) before
+  opening the invite: same-file navigation differing only in the `#i=` fragment does not
+  re-run the page. The lobby also reloads itself on `hashchange` for real users.
 
 ## Checking the result
 
@@ -85,3 +89,9 @@ magick assets/connect4.gif -coalesce /tmp/f-%03d.png
 
 Keep each gif under ~1MB. `assets/neon-survival.gif` predates this tooling and is
 1.1MB; regenerating it with `scripts/make-preview.sh neon-survival` shrinks it.
+
+## Memory
+
+- `memory/p2p-handshake.md` — how `connectPeers` drives the invite/answer lobby,
+  the fragment-navigation trap that hangs the guest, and why back-to-back peer
+  joins hid a real connection bug for months.

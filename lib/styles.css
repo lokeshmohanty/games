@@ -114,6 +114,84 @@ body {
   color: var(--muted);
   font-size: 0.85rem;
   min-height: 1.2em;
+  max-width: 34rem;
+}
+.lobby-status.is-error {
+  color: var(--danger);
+}
+.lobby-status.is-good {
+  color: var(--good);
+}
+
+/* The lobby scrolls: the invite step is taller than a phone screen. */
+.lobby {
+  overflow-y: auto;
+  justify-content: flex-start;
+  padding-block: 32px;
+}
+.lobby-stage {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 20px;
+  width: 100%;
+  max-width: 30rem;
+}
+
+/* Invite / answer share blocks */
+.share {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 16px;
+}
+.share-label {
+  color: var(--accent);
+  font-weight: bold;
+  letter-spacing: 1px;
+  font-size: 0.95rem;
+}
+.share-hint {
+  color: var(--muted);
+  font-size: 0.78rem;
+  line-height: 1.4;
+}
+.share-code {
+  width: 100%;
+  background: #0d0d0d;
+  border: 2px solid var(--border);
+  border-radius: 8px;
+  color: var(--accent);
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  font-size: 0.72rem;
+  line-height: 1.35;
+  padding: 10px;
+  resize: vertical;
+  word-break: break-all;
+}
+.share-code:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 12px var(--accent-glow);
+}
+.share-qr-wrap {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+}
+/* White quiet zone around the modules keeps the code scannable on the dark UI. */
+.share-qr {
+  width: min(220px, 60vw);
+  height: auto;
+  image-rendering: pixelated;
+  background: #fff;
+  border-radius: 6px;
 }
 .peer-list {
   min-height: 1.5em;

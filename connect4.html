@@ -58,6 +58,7 @@
     </div>
     <div id="overlay" class="overlay" hidden></div>
 
+    <script src="lib/qr.js"></script>
     <script src="lib/net.js"></script>
     <script src="lib/lobby.js"></script>
     <script>
@@ -346,7 +347,6 @@
 
       // Networking
       mountLobby(lobbyEl, {
-        appId: "connect4",
         gameName: "CONNECT 4",
         onReady(r) {
           room = r;
