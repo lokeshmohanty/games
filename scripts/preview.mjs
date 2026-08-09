@@ -118,12 +118,17 @@ async function dodgeLoop(page, seconds, canvasSel = "#gameCanvas") {
 	const box = await page.locator(canvasSel).boundingBox();
 	if (!box) return;
 	const end = Date.now() + seconds * 1000;
+	// `gameActive` is also false *before* the game starts, so only treat it as
+	// death once we have seen it true — otherwise the loop exits immediately.
+	let started = false;
 	while (Date.now() < end) {
 		const aim = await page
 			.evaluate((sel) => {
 				const c = document.querySelector(sel);
 				if (!c || typeof player === "undefined") return null;
-				if (player.alive === false) return "dead";
+				const live =
+					(typeof gameActive === "undefined" || gameActive === true) && player.alive !== false;
+				if (!live) return "idle";
 				const W = c.width;
 				const threats = (typeof enemies !== "undefined" ? enemies : []).filter(
 					(e) => e.y < player.y && player.y - e.y < c.height * 0.7,
@@ -142,9 +147,17 @@ async function dodgeLoop(page, seconds, canvasSel = "#gameCanvas") {
 			}, canvasSel)
 			.catch(() => null);
 		// Stop the moment we die: a preview card should show play, not a GAME OVER
-		// screen, and the recording ends right after this returns.
-		if (aim === "dead") return;
-		if (aim != null) await page.mouse.move(box.x + aim * box.width, box.y + box.height * 0.85);
+		// screen, and the recording ends right after this returns. Before the game
+		// has started, "idle" just means we are still waiting for it.
+		if (aim === "idle") {
+			if (started) return;
+			await sleep(60);
+			continue;
+		}
+		if (aim != null) {
+			started = true;
+			await page.mouse.move(box.x + aim * box.width, box.y + box.height * 0.85);
+		}
 		await sleep(60);
 	}
 }

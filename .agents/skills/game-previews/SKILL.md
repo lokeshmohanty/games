@@ -16,6 +16,7 @@ so it needs no human and does not take over the screen.
 scripts/make-preview.sh connect4          # one game
 scripts/make-preview.sh all               # every game
 scripts/make-preview.sh draw-guess --seconds 20 --width 700
+scripts/make-preview.sh neon-survival --trim-end 3   # drop an unwanted tail
 ```
 
 That is the whole job: it plays the game, records it, converts it, and writes
@@ -60,8 +61,15 @@ if it is motion-heavy.
   hazards and the clip ends on "You're down! Spectating…". `dodgeLoop` reads the live
   `player` / `enemies` / `gems` bindings via `page.evaluate` (they are top-level
   bindings in a classic script, so they resolve in global scope) and steers to the
-  safest column. It returns as soon as `player.alive === false`, so the gif ends on
-  gameplay rather than a GAME OVER screen — expect a short clip (~4s), which loops fine.
+  safest column. Expect a short clip (~4-6s), which loops fine.
+- **Death is detected by `gameActive`, not `player.alive`.** Only the multiplayer game
+  has `player.alive`; single-player Neon Survival's `player` is `{x,y,size,color}` and
+  it ends the round by setting `gameActive = false`. Checking `player.alive` alone made
+  the single-player clip run on and show nothing but GAME OVER (2026-08-09). `gameActive`
+  is *also* false before the game starts, so the loop latches on having seen it true
+  before treating false as death — otherwise it exits instantly.
+- If a run still ends on something you don't want looping, `--trim-end N` drops the last
+  N seconds (it refuses to leave under 1s).
 - **Connect 4** stops early once someone wins, holding the win overlay ~1.4s.
 - The P2P games need **network access** — Trystero signals over public Nostr relays.
   "peers never connected" means no network, not a bug in the game.
