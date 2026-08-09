@@ -9,6 +9,16 @@ questions about this project from this folder alone.
 
 - (nothing yet — docs-sync will populate: architecture, how-to/, reference/, decisions)
 
+## How-to (verified commands)
+
+| Task | Command |
+|---|---|
+| Regenerate a portal preview gif | `scripts/make-preview.sh <game>` (or `all`) — plays the game headless and writes `assets/<game>.gif`, which `index.html` already links |
+| Play a P2P game locally with two peers | open the game in two tabs and share the room code (`file://` works; `python3 -m http.server 8000` also fine) |
+
+Per-game scenarios, the conversion profiles, and the NixOS/Playwright traps live in
+the `game-previews` skill (`.agents/skills/game-previews/SKILL.md`).
+
 ## Honest gaps
 
-- Everything. This is a scaffold.
+- Mostly a scaffold: architecture and per-game design docs are still missing.
