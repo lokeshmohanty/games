@@ -14,6 +14,7 @@ browsers over an encrypted WebRTC data channel.
 - **`net.js`** — `NeonArcade.createHost()` / `createGuest()`: the connection, the peer roster, typed message channels.
 - **`lobby.js`** — `NeonArcade.mountLobby()`: the invite/answer UI (link, QR, copy, paste-reply).
 - **`qr.js`** — `NeonArcade.qrCanvas()`: a self-contained QR encoder, so invites can be scanned instead of typed.
+- **`qr-decode.js`** — `NeonArcade.qrDecode()` / `scanQr()`: a self-contained QR *decoder* plus a camera scanner, so the host can read a guest's reply off their screen.
 - **`styles.css`** — shared neon theme (link from each game's HTML).
 
 ## The handshake
@@ -23,10 +24,14 @@ HOST                                  GUEST
 [CREATE GAME]
   -> invite link + QR   --(chat/QR)-->  opens the link
                                           -> reply code + QR
-  <-------(chat)-------------------------
-  paste reply -> [CONNECT]
+  <---(chat, or [SCAN REPLY])------------
+  [CONNECT]
 [START GAME]                          game begins on both
 ```
+
+Same room? Nobody types anything: the guest scans the invite QR with their
+camera, and the host scans the reply QR straight back with **SCAN REPLY**.
+Apart? The link and the reply code both travel fine through any chat app.
 
 The host repeats the invite step per guest (`INVITE ANOTHER`), because each
 guest needs its own offer.
@@ -39,6 +44,7 @@ as `http://`. Load in this order before the game script:
 ```html
 <link rel="stylesheet" href="lib/styles.css" />
 <script src="lib/qr.js"></script>
+<script src="lib/qr-decode.js"></script>
 <script src="lib/net.js"></script>
 <script src="lib/lobby.js"></script>
 <script>
@@ -58,6 +64,17 @@ forwarded from the room for late-join state sync.
 
 The lobby decides which side it is on by looking for an `#i=…` invite fragment
 in the URL, so a game needs no room-code handling of its own.
+
+### Scanning
+
+`NeonArcade.scanQr({ onResult, onError })` returns `{ video, stop }` — mount
+`video`, and **always call `stop()`**, which releases the camera. It uses the
+browser's `BarcodeDetector` when there is one (Android Chrome) and the decoder
+in `qr-decode.js` otherwise, since desktop Chrome and iOS Safari have none.
+
+Camera access needs a secure context, so scanning works on the deployed
+`https://` site but not from `file://`; the lobby says so and falls back to
+pasting.
 
 ### Room controller
 

@@ -38,8 +38,11 @@ Open `neon-survival.html` directly in a browser (`file://` works fine).
 1. Open the game and click **CREATE GAME**.
 2. Send the invite link to a friend — any chat app works, or let them scan the
    QR code off your screen.
-3. They open it and get a short reply code; they send that back to you.
-4. Paste it, click **CONNECT**, then **START GAME**.
+3. They open it and get a short reply code.
+4. If they are next to you, hit **SCAN REPLY** and point your camera at their
+   screen. Otherwise they send you the code and you paste it and hit
+   **CONNECT**.
+5. Click **START GAME**.
 
 Use **INVITE ANOTHER** to add more players — each one gets its own invite.
 
@@ -64,6 +67,7 @@ lib/
   net.js                # P2P core — invite/answer handshake, star topology, actions
   lobby.js              # Invite-link lobby UI (link, QR, copy, paste-reply)
   qr.js                 # Dependency-free QR encoder
+  qr-decode.js          # Dependency-free QR decoder + camera scanner
   styles.css            # Shared neon theme
   README.md             # lib API documentation
 assets/                 # Portal preview GIFs
@@ -78,6 +82,7 @@ The multiplayer games share a common P2P layer loaded as traditional scripts
 ```html
 <link rel="stylesheet" href="lib/styles.css" />
 <script src="lib/qr.js"></script>
+<script src="lib/qr-decode.js"></script>
 <script src="lib/net.js"></script>
 <script src="lib/lobby.js"></script>
 <script>

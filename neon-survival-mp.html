@@ -19,7 +19,8 @@
       }
       #ui {
         position: absolute;
-        top: 12px;
+        /* Clears the fixed "all games" pill in the top-left corner. */
+        top: 58px;
         left: 12px;
         right: 12px;
         display: flex;
@@ -75,6 +76,7 @@
     </style>
   </head>
   <body>
+    <a class="portal-link" href="index.html">&#8592; All games</a>
     <div id="lobby"></div>
     <div id="game" hidden>
       <div id="ui">
@@ -87,6 +89,7 @@
     <div id="overlay" class="overlay" hidden></div>
 
     <script src="lib/qr.js"></script>
+    <script src="lib/qr-decode.js"></script>
     <script src="lib/net.js"></script>
     <script src="lib/lobby.js"></script>
     <script>
@@ -438,7 +441,7 @@
           showOverlay("GAME OVER", null, null, "Final Score: " + score);
           const p = document.createElement("p");
           p.textContent = "Waiting for host…";
-          overlayEl.append(p);
+          overlayEl.append(p, NeonArcade.hostNewGameButton());
         }
       }
 

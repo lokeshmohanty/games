@@ -31,6 +31,35 @@ body {
   -webkit-tap-highlight-color: transparent;
 }
 
+/* Back-to-portal link. Fixed so it survives the absolutely-positioned lobby,
+   game and overlay layers; above the overlay (z-index 10) so it stays reachable
+   on a game-over screen. Panels below reserve top space so it never collides. */
+.portal-link {
+  position: fixed;
+  top: 10px;
+  left: 12px;
+  z-index: 50;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 12px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: rgba(10, 10, 10, 0.75);
+  backdrop-filter: blur(4px);
+  color: var(--muted);
+  font-family: var(--font);
+  font-size: 0.78rem;
+  letter-spacing: 1px;
+  text-decoration: none;
+  text-transform: uppercase;
+  transition: color 0.15s, border-color 0.15s;
+}
+.portal-link:hover {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
 /* Buttons */
 .neon-btn {
   background: var(--accent);
@@ -54,6 +83,12 @@ body {
   background: #444;
   color: #888;
   cursor: not-allowed;
+}
+/* The same pill used as a link (e.g. "ALL GAMES" on the disconnect screen). */
+a.neon-btn {
+  display: inline-flex;
+  align-items: center;
+  text-decoration: none;
 }
 .neon-btn--accent {
   background: var(--accent2);
@@ -123,11 +158,12 @@ body {
   color: var(--good);
 }
 
-/* The lobby scrolls: the invite step is taller than a phone screen. */
+/* The lobby scrolls: the invite step is taller than a phone screen. The top
+   padding clears the fixed portal link. */
 .lobby {
   overflow-y: auto;
   justify-content: flex-start;
-  padding-block: 32px;
+  padding-block: 56px 32px;
 }
 .lobby-stage {
   display: flex;
@@ -179,6 +215,23 @@ body {
   border-color: var(--accent);
   box-shadow: 0 0 12px var(--accent-glow);
 }
+/* Live camera preview while scanning a reply code. */
+.scan-wrap {
+  width: 100%;
+  display: flex;
+  justify-content: center;
+}
+.scan-video {
+  width: 100%;
+  max-width: 320px;
+  aspect-ratio: 1 / 1;
+  object-fit: cover;
+  border: 2px solid var(--accent);
+  border-radius: 12px;
+  box-shadow: 0 0 16px var(--accent-glow);
+  background: #000;
+}
+
 .share-qr-wrap {
   display: flex;
   flex-direction: column;

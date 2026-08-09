@@ -14,7 +14,9 @@
         inset: 0;
         display: flex;
         flex-direction: column;
-        padding: 8px;
+        /* Top padding clears the fixed "all games" pill; the canvas is flex:1
+           so it simply takes the remaining height. */
+        padding: 52px 8px 8px;
         gap: 8px;
         box-sizing: border-box;
       }
@@ -180,6 +182,7 @@
     </style>
   </head>
   <body>
+    <a class="portal-link" href="index.html">&#8592; All games</a>
     <div id="lobby"></div>
     <div id="game" hidden>
       <div id="hud"></div>
@@ -205,6 +208,7 @@
     <div id="overlay" class="overlay" hidden></div>
 
     <script src="lib/qr.js"></script>
+    <script src="lib/qr-decode.js"></script>
     <script src="lib/net.js"></script>
     <script src="lib/lobby.js"></script>
     <script>
@@ -691,7 +695,7 @@
             showOverlay("GAME OVER", null, null, finalScoresText());
             const p = document.createElement("p");
             p.textContent = "Waiting for host…";
-            overlayEl.append(p);
+            overlayEl.append(p, NeonArcade.hostNewGameButton());
           }
           return;
         }
@@ -782,7 +786,7 @@
                 showOverlay("GAME OVER", null, null, finalScoresText());
                 const p = document.createElement("p");
                 p.textContent = "Waiting for host…";
-                overlayEl.append(p);
+                overlayEl.append(p, NeonArcade.hostNewGameButton());
               }
               updateWordDisplay();
             } else if (phase === "reveal" || phase === "gameover") {
