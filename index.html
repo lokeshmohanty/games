@@ -20,9 +20,21 @@
         font-size: 3rem;
         color: #0ff;
         text-shadow: 0 0 20px #0ff;
-        margin-bottom: 50px;
+        margin-bottom: 10px;
         text-transform: uppercase;
         letter-spacing: 5px;
+      }
+      h2.section-title {
+        font-size: 1.4rem;
+        color: #888;
+        text-transform: uppercase;
+        letter-spacing: 3px;
+        margin: 40px 0 20px;
+        align-self: flex-start;
+        width: 80%;
+        max-width: 1200px;
+        border-bottom: 1px solid #333;
+        padding-bottom: 10px;
       }
       .games-grid {
         display: grid;
@@ -53,7 +65,7 @@
         display: block;
         border-bottom: 2px solid #333;
       }
-      .game-card h2 {
+      .game-card h3 {
         margin: 20px 0;
         font-size: 1.5rem;
         color: #fff;
@@ -81,6 +93,8 @@
   </head>
   <body>
     <h1>Game Portal</h1>
+
+    <h2 class="section-title">Single Player</h2>
     <div class="games-grid">
       <div
         class="game-card"
@@ -94,9 +108,64 @@
               'https://via.placeholder.com/300x200/1a1a1a/0ff?text=Neon+Survival+Preview'
           "
         />
-        <h2>Neon Survival</h2>
+        <h3>Neon Survival</h3>
         <p>Dodge the red, collect the green. How long can you survive?</p>
         <a href="neon-survival.html" class="play-btn">PLAY NOW</a>
+      </div>
+    </div>
+
+    <h2 class="section-title">Multiplayer</h2>
+    <div class="games-grid">
+      <div class="game-card" onclick="window.location.href = 'connect4.html'">
+        <img
+          src="assets/connect4.gif"
+          alt="Connect 4 Preview"
+          onerror="
+            this.src =
+              'https://via.placeholder.com/300x200/1a1a1a/ffd24d?text=Connect+4+Preview'
+          "
+        />
+        <h3>Connect 4</h3>
+        <p>
+          Drop your pieces, line up four in a row. 2-player P2P — share a room
+          code and play!
+        </p>
+        <a href="connect4.html" class="play-btn">PLAY NOW</a>
+      </div>
+      <div class="game-card" onclick="window.location.href = 'draw-guess.html'">
+        <img
+          src="assets/draw-guess.gif"
+          alt="Draw &amp; Guess Preview"
+          onerror="
+            this.src =
+              'https://via.placeholder.com/300x200/1a1a1a/f0f?text=Draw+%26+Guess+Preview'
+          "
+        />
+        <h3>Draw &amp; Guess</h3>
+        <p>
+          One player draws, the rest guess! Real-time canvas sync and chat. Up
+          to 8 players.
+        </p>
+        <a href="draw-guess.html" class="play-btn">PLAY NOW</a>
+      </div>
+      <div
+        class="game-card"
+        onclick="window.location.href = 'neon-survival-mp.html'"
+      >
+        <img
+          src="assets/neon-survival-mp.gif"
+          alt="Neon Survival Co-op Preview"
+          onerror="
+            this.src =
+              'https://via.placeholder.com/300x200/1a1a1a/4dff4d?text=Neon+Survival+Co-op+Preview'
+          "
+        />
+        <h3>Neon Survival Co-op</h3>
+        <p>
+          Survive the swarm together! Co-op real-time survival for 2–8 players.
+          Share a room code and fight off the enemies.
+        </p>
+        <a href="neon-survival-mp.html" class="play-btn">PLAY NOW</a>
       </div>
     </div>
   </body>
