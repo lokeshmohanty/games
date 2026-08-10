@@ -226,6 +226,82 @@ try {
 		await host.evaluate(() => document.querySelectorAll("#board").length === 0),
 	);
 
+	// Tug of War is the only game with more than one player per side, so this
+	// is the one place a team is read as a group rather than as seats[0].
+	console.log("\nparty: a game with multi-player teams");
+	await host.evaluate(() => window.__party.room.setGame(null));
+	{
+		const rows2 = host.locator(".party-member");
+		await rows2.nth(2).locator("button", { hasText: "TEAM A" }).click(); // p3 joins A
+		const tug = host.locator(".party-game", { hasText: "TUG OF WAR" });
+		await tug.waitFor({ timeout: TIMEOUT });
+		check("Tug of War accepts a 2v1 roster", await tug.isEnabled());
+		await tug.click();
+
+		for (const [page, tag] of [
+			[host, "host"],
+			[p2, "p2"],
+			[p3, "p3"],
+		]) {
+			await page.locator("#tug-canvas").waitFor({ timeout: TIMEOUT });
+			check(`${tag} mounted Tug of War`, await page.locator("#tug-canvas").isVisible());
+		}
+
+		const rosterA = await p2.locator("#tug-roster-a").textContent();
+		check(
+			"a team renders every member, not just the first",
+			(rosterA ?? "").split(",").length === 2,
+			`Team A roster = "${rosterA}"`,
+		);
+		// p2 is alone on Team B and the only one pulling, so it should win — which
+		// only happens if its taps reached the host and the host's result came back.
+		const label = await p2.locator("#tug-tap").textContent();
+		check("a player is told which side they pull for", /TEAM B/.test(label ?? ""), label ?? "");
+		check(
+			"a spectator-free roster leaves nobody idle",
+			(await host.locator("#tug-tap").textContent())?.includes("TEAM A"),
+		);
+
+		await p2.evaluate(async () => {
+			const btn = document.querySelector("#tug-tap");
+			for (let i = 0; i < 140; i++) {
+				btn.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, cancelable: true }));
+				await new Promise((r) => setTimeout(r, 70));
+			}
+		});
+		const won = await p2
+			.waitForFunction(
+				() => document.querySelector("#tug-overlay")?.hidden === false,
+				null,
+				{ timeout: TIMEOUT },
+			)
+			.then(() => true)
+			.catch(() => false);
+		check("pulling reaches the host and a winner comes back", won);
+		// The same outcome, told from each player's own side: the winner is on
+		// Team B, the two on Team A both lost.
+		const verdicts = {
+			p2: await p2.locator("#tug-overlay h1").textContent(),
+			host: await host.locator("#tug-overlay h1").textContent(),
+			p3: await p3.locator("#tug-overlay h1").textContent(),
+		};
+		check(
+			"every player is told the result from their own side",
+			/WINS/.test(verdicts.p2 ?? "") &&
+				/LOSES/.test(verdicts.host ?? "") &&
+				/LOSES/.test(verdicts.p3 ?? ""),
+			JSON.stringify(verdicts),
+		);
+
+		// Back to the party, and the new game must leave nothing running either.
+		await host.evaluate(() => window.__party.room.setGame(null));
+		await host.locator(".party-member").first().waitFor({ timeout: TIMEOUT });
+		check(
+			"Tug of War tore itself down",
+			await host.evaluate(() => document.querySelectorAll("#tug-canvas").length === 0),
+		);
+	}
+
 	console.log("\nparty: losing the host");
 	await host.evaluate(() => window.__party.room.setGame(null));
 	await p2.locator(".party-member").first().waitFor({ timeout: TIMEOUT });

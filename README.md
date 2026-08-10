@@ -32,6 +32,9 @@ twice — and any member can do the inviting, not just the host.
 
 - **[Connect 4](connect4.html)** — Drop your pieces, line up four in a row.
   2-player turn-based. Host-authoritative board with win detection.
+- **[Tug of War](tug-of-war.html)** — Tap to pull; the knot goes to whoever
+  taps hardest. Two teams of any sizes, and a tap counts for more on a smaller
+  team, so 1-against-4 is still a game.
 - **[Draw & Guess](draw-guess.html)** — One player draws, the rest guess!
   Real-time canvas stroke sync and chat. 2–8 players.
 - **[Neon Survival Co-op](neon-survival-mp.html)** — Survive the swarm
@@ -80,10 +83,12 @@ index.html              # Arcade portal — links to everything
 party.html              # Persistent party — roster, teams, game switching
 neon-survival.html      # Single-player survival
 connect4.html           # Deep link into one game (thin wrapper)
+tug-of-war.html         #   "
 draw-guess.html         #   "
 neon-survival-mp.html   #   "
 games/                  # One file per game; each registers itself
   connect4.js           # 1v1 teams
+  tug-of-war.js         # teams of any size, 2–8
   draw-guess.js         # free-for-all, 2–8
   neon-survival-mp.js   # co-op, 2–8
 lib/

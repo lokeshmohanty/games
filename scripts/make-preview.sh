@@ -14,7 +14,10 @@
 set -uo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-GAMES=(connect4 draw-guess neon-survival-mp neon-survival)
+# Ask the recorder which games it can drive rather than keeping a second list
+# here: a new game should be registered in exactly one place, and a duplicate
+# list is one that eventually disagrees.
+read -r -a GAMES <<< "$(node "$ROOT/scripts/preview.mjs" --list)"
 
 # Per-game conversion profile "width fps quality". The Neon Survival games are
 # constant motion over a dark field, which defeats gif inter-frame compression —
@@ -22,6 +25,9 @@ GAMES=(connect4 draw-guess neon-survival-mp neon-survival)
 profile_for() {
   case "$1" in
     neon-survival|neon-survival-mp) echo "480 10 low" ;;
+    # Constant glow and a moving knot defeat inter-frame compression the same
+    # way the survival games do, so it gets the smaller frame too.
+    tug-of-war) echo "480 12 low" ;;
     *) echo "600 12 medium" ;;
   esac
 }

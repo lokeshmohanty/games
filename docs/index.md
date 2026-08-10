@@ -95,6 +95,12 @@ Each game keeps a standalone page (`connect4.html` and friends) as a deep link
 into that one game. Those pages mount the same module through the plain
 two-player lobby, so a game is implemented exactly once.
 
+`games/tug-of-war.js` was written specifically to test that contract, and is
+worth reading first when adding a game: it is the only one with more than one
+player per side, so it is where `seats("A")` is read as a group rather than as
+`seats("A")[0]`. Adding it needed no change to anything in `lib/` — one file,
+one script tag in `party.html`, one thin page, one recorder scenario.
+
 ## Honest gaps
 
 - Per-game design notes and a decision log are still missing.
@@ -102,6 +108,9 @@ two-player lobby, so a game is implemented exactly once.
   end-to-end run, **not** against a real phone camera.
 - The mesh is tested with three peers; nothing has exercised the 8-player cap,
   and no test forces a pair to fail so the relay path runs in anger.
+- Cross-network play over mobile data is expected to fail on carriers using
+  CGNAT/symmetric NAT — confirmed in the wild on 2026-08-10. This is the
+  no-TURN trade-off, not a bug; the error now names which case you hit.
 - There is no TURN server by choice, so players behind symmetric NAT cannot
   connect at all; this surfaces as an explicit error, not a hang.
 - `index.html` still falls back to a `via.placeholder.com` image when a preview
