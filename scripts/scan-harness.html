@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Scan harness</title>
+  </head>
+  <body>
+    <!--
+      Test fixture for scripts/test-scan.mjs. Camera access needs a secure
+      context, so this is served over http://localhost rather than opened as a
+      file. It renders a QR at a chosen pixel size (so the test can build a
+      camera frame that matches what a phone screen actually looks like across a
+      table) and exposes the scanner's result for the test to assert on.
+    -->
+    <div id="qr"></div>
+    <video id="preview" playsinline muted></video>
+
+    <script src="../lib/qr.js"></script>
+    <script src="../lib/qr-decode.js"></script>
+    <script>
+      // Draw a code at an exact on-screen width, and hand back a PNG of it.
+      window.renderQr = (text, pxWide) => {
+        const canvas = NeonArcade.qrCanvas(text, {
+          scale: 8,
+          quiet: 3,
+          dark: "#000",
+          light: "#fff",
+        });
+        const out = document.createElement("canvas");
+        out.width = pxWide;
+        out.height = pxWide;
+        const c = out.getContext("2d");
+        c.imageSmoothingEnabled = false;
+        c.drawImage(canvas, 0, 0, pxWide, pxWide);
+        return { png: out.toDataURL("image/png"), modules: canvas.width / 8 - 6 };
+      };
+
+      window.scanResult = null;
+      window.scanError = null;
+      window.startScan = () => {
+        window.scanResult = null;
+        window.scanError = null;
+        const scanner = NeonArcade.scanQr({
+          onResult: (text) => {
+            window.scanResult = text;
+            scanner.stop();
+          },
+          onError: (msg) => {
+            window.scanError = msg;
+          },
+        });
+        document.getElementById("preview").replaceWith(scanner.video);
+        scanner.video.id = "preview";
+        window.__scanner = scanner;
+        // Report what the camera actually gave us — the whole failure mode was
+        // a resolution nobody asked about. Read it the moment the stream is
+        // described, since a fast decode tears the track down before any timer.
+        scanner.video.addEventListener("loadedmetadata", () => {
+          window.captureSize = {
+            width: scanner.video.videoWidth,
+            height: scanner.video.videoHeight,
+          };
+        });
+      };
+    </script>
+  </body>
+</html>

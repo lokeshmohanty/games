@@ -239,8 +239,11 @@ a.neon-btn {
   gap: 6px;
 }
 /* White quiet zone around the modules keeps the code scannable on the dark UI. */
+/* As large as the screen sensibly allows: this code is read by someone else's
+   camera across a table, and every extra pixel per module is the difference
+   between a scan that lands and one that does not. */
 .share-qr {
-  width: min(220px, 60vw);
+  width: min(340px, 88vw);
   height: auto;
   image-rendering: pixelated;
   background: #fff;
