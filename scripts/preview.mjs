@@ -220,10 +220,22 @@ const GAMES = {
 			// The game disables the chat box for whoever is drawing, so that — not
 			// the word display, which shows prompt text to both — is what tells the
 			// two roles apart.
-			// Let the round-start reveal finish: strokes drawn during it are cleared.
-			await sleep(1200);
-			const canGuess = await a.locator("#chat-input").isEnabled().catch(() => false);
-			const guesser = canGuess ? a : b;
+			//
+			// It only tells them apart once the round is actually under way: the
+			// "choosing" phase disables the box on BOTH pages for a couple of
+			// seconds, and sampling during it picks a side by coin-flip and then
+			// tries to type into the drawer's disabled box. Wait for a page to
+			// really be able to guess rather than guessing ourselves.
+			const guesser = await Promise.race(
+				[a, b].map(async (page) => {
+					await page.waitForFunction(
+						() => document.querySelector("#chat-input")?.disabled === false,
+						null,
+						{ timeout: 30_000 },
+					);
+					return page;
+				}),
+			);
 			const drawer = guesser === a ? b : a;
 
 			const box = await drawer.locator("#board").boundingBox();

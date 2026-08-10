@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"
+    />
+    <title>Party — Neon Arcade</title>
+    <link rel="stylesheet" href="lib/styles.css" />
+  </head>
+  <body>
+    <a class="portal-link" href="index.html">&#8592; All games</a>
+    <div id="party"></div>
+    <div id="stage" hidden></div>
+
+    <script src="lib/qr.js"></script>
+    <script src="lib/qr-decode.js"></script>
+    <script src="lib/net.js"></script>
+    <script src="lib/games.js"></script>
+    <script src="lib/lobby.js"></script>
+    <script src="lib/party.js"></script>
+
+    <!--
+      Every game is one file that registers itself. Adding a game to the party
+      is this line and nothing else — the switcher lists whatever registered.
+    -->
+    <script src="games/connect4.js"></script>
+    <script src="games/draw-guess.js"></script>
+    <script src="games/neon-survival-mp.js"></script>
+
+    <script>
+      // Exposed so scripts/test-party.mjs can inspect the live room.
+      window.__party = NeonArcade.mountParty(
+        document.getElementById("party"),
+        document.getElementById("stage"),
+      );
+    </script>
+  </body>
+</html>

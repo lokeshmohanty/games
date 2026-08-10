@@ -289,3 +289,105 @@ canvas {
   touch-action: none;
   display: block;
 }
+
+/* ── Party screen ─────────────────────────────────────────
+   The roster and the game switcher. Rows collapse to a stacked layout on a
+   phone, where the team buttons need the full width to stay tappable. */
+.party-member {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel);
+  margin-bottom: 8px;
+}
+.party-name {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.95rem;
+}
+.party-tag {
+  font-size: 0.65rem;
+  letter-spacing: 1px;
+  padding: 2px 8px;
+  border-radius: 20px;
+  border: 1px solid var(--border);
+  color: var(--muted);
+}
+.party-tag.is-host {
+  color: var(--accent);
+  border-color: var(--accent);
+  box-shadow: 0 0 8px var(--accent-glow);
+}
+.party-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.party-team,
+.party-mini {
+  font-family: var(--font);
+  font-size: 0.65rem;
+  letter-spacing: 1px;
+  padding: 6px 10px;
+  min-height: 32px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--muted);
+  cursor: pointer;
+}
+.party-team.is-on {
+  color: var(--accent);
+  border-color: var(--accent);
+  box-shadow: 0 0 8px var(--accent-glow);
+}
+.party-team:disabled {
+  cursor: default;
+  opacity: 0.7;
+}
+.party-mini.is-danger {
+  color: var(--danger);
+  border-color: var(--danger);
+}
+.party-game {
+  display: block;
+  width: 100%;
+  text-align: left;
+  font-family: var(--font);
+  padding: 12px;
+  margin-bottom: 8px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel);
+  color: #fff;
+  cursor: pointer;
+}
+.party-game:hover:not(:disabled) {
+  border-color: var(--accent);
+  box-shadow: 0 0 12px var(--accent-glow);
+}
+.party-game:disabled {
+  cursor: default;
+  opacity: 0.55;
+}
+.party-game-name {
+  color: var(--accent);
+  letter-spacing: 2px;
+  font-size: 0.9rem;
+}
+.party-game-blurb {
+  color: var(--muted);
+  font-size: 0.8rem;
+  margin-top: 4px;
+}
+.party-game-warn {
+  color: var(--accent2);
+  font-size: 0.75rem;
+  margin-top: 6px;
+}
