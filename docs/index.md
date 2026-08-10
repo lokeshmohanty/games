@@ -21,7 +21,7 @@ questions about this project from this folder alone.
 | Test the party end to end | `node scripts/test-party.mjs` — three real browser peers at 390x844: guest-side recruiting, teams, game switching, host succession |
 | Regenerate a portal preview gif | `scripts/make-preview.sh <game>` (or `all`) — plays the game headless and writes `assets/<game>.gif` |
 | Play locally with several peers | open `party.html`, click ADD PLAYER, open the invite link in another tab, paste the reply back (`file://` works; `python3 -m http.server 8000` also fine) |
-| Test reply-code **scanning** | needs a camera *and* a secure context, so `file://` and plain `http://<ip>` will not do. Either use the deployed `https://` site, or drive Chrome with a fake camera: `--use-fake-ui-for-media-stream --use-fake-device-for-media-stream --use-file-for-fake-video-capture=<file>.y4m` |
+| Test reply-code **scanning** | `node scripts/test-scan.mjs` — renders a real-sized reply code into a camera frame and feeds it to Chrome as a fake capture device. Scanning needs a camera *and* a secure context, so `file://` and plain `http://<ip>` will not do; the test serves the repo over `http://127.0.0.1` for that reason |
 | Get back to the portal | every page has a fixed `.portal-link` ("← ALL GAMES") linking to `index.html` |
 
 Per-game recorder scenarios, the conversion profiles, and the NixOS/Playwright
@@ -104,8 +104,10 @@ one script tag in `party.html`, one thin page, one recorder scenario.
 ## Honest gaps
 
 - Per-game design notes and a decision log are still missing.
-- Scanning is verified against synthetic camera frames and a fake-camera
-  end-to-end run, **not** against a real phone camera.
+- Scanning is verified at realistic code density — a 73x73-module reply code
+  occupying part of a 1280x720 frame, the case that actually failed — but via
+  a fake capture device, **not** a real phone camera. A 640x480 webcam is
+  recorded as passing at close range only; below that, PASTE is the answer.
 - The mesh is tested with three peers; nothing has exercised the 8-player cap,
   and no test forces a pair to fail so the relay path runs in anger.
 - Cross-network play over mobile data is expected to fail on carriers using

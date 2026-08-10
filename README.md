@@ -160,6 +160,8 @@ See [`docs/index.md`](docs/index.md) for more details.
 node scripts/test-codec.mjs    # signalling codec round-trip, no browser needed
 node scripts/test-party.mjs    # three real browser peers: recruiting, teams,
                                # game switching, host succession
+node scripts/test-scan.mjs     # SCAN REPLY against a fake camera, with the
+                               # code sized as it lands on a real screen
 ```
 
 ## Adding a game
