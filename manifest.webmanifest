@@ -1,0 +1,28 @@
+{
+  "name": "Neon Arcade",
+  "short_name": "Neon Arcade",
+  "description": "Serverless browser games — single-player, shared-screen, and peer-to-peer multiplayer with no accounts and no servers.",
+  "id": "./",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#0a0a0a",
+  "theme_color": "#0a0a0a",
+  "categories": ["games", "entertainment"],
+  "_icons_note": "No SVG entry here on purpose. Listed with sizes:any, Chrome selects it as the install icon, then refuses it and reports no-acceptable-icon for the whole set — the app becomes uninstallable even though the PNGs beside it are fine. The SVG is still the favicon, via <link rel=icon> on each page, which is where scaling to any tab size is worth something.",
+  "icons": [
+    { "src": "assets/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "assets/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "assets/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ],
+  "shortcuts": [
+    {
+      "name": "Party",
+      "short_name": "Party",
+      "description": "Open the persistent party screen and add players",
+      "url": "./party.html",
+      "icons": [{ "src": "assets/icon-192.png", "sizes": "192x192", "type": "image/png" }]
+    }
+  ]
+}

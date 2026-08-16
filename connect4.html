@@ -7,6 +7,15 @@
       content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"
     />
     <title>Connect 4 — P2P</title>
+    <!-- Installable: manifest + icons, registered by lib/pwa.js. -->
+    <link rel="manifest" href="manifest.webmanifest" />
+    <meta name="theme-color" content="#0a0a0a" />
+    <link rel="icon" href="assets/icon.svg" type="image/svg+xml" />
+    <link rel="apple-touch-icon" href="assets/apple-touch-icon.png" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black" />
+    <meta name="apple-mobile-web-app-title" content="Neon Arcade" />
     <link rel="stylesheet" href="lib/styles.css" />
   </head>
   <body>
@@ -19,6 +28,7 @@
     <div id="lobby"></div>
     <div id="stage" hidden></div>
 
+    <script src="lib/pwa.js"></script>
     <script src="lib/qr.js"></script>
     <script src="lib/qr-decode.js"></script>
     <script src="lib/net.js"></script>

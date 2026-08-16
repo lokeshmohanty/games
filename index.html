@@ -4,6 +4,15 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Arcade Portal</title>
+    <!-- Installable: manifest + icons, registered by lib/pwa.js. -->
+    <link rel="manifest" href="manifest.webmanifest" />
+    <meta name="theme-color" content="#0a0a0a" />
+    <link rel="icon" href="assets/icon.svg" type="image/svg+xml" />
+    <link rel="apple-touch-icon" href="assets/apple-touch-icon.png" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black" />
+    <meta name="apple-mobile-web-app-title" content="Neon Arcade" />
     <style>
       body {
         margin: 0;
@@ -93,10 +102,54 @@
       .game-card:hover .play-btn {
         transform: scale(1.1);
       }
+
+      /*
+        The install offer. It sits in the flow directly under the title rather
+        than floating: lib/pwa.js only fills it when the browser says the app
+        can be installed, and a fixed element that appears from nowhere would
+        land on top of the first row of cards on a phone.
+      */
+      .install-slot {
+        min-height: 0;
+        display: flex;
+        justify-content: center;
+        margin-bottom: 10px;
+      }
+      .install-slot:not(:empty) {
+        margin-bottom: 24px;
+      }
+      .install-btn {
+        background: #0ff;
+        color: #000;
+        border: none;
+        border-radius: 999px;
+        padding: 10px 22px;
+        font-family: inherit;
+        font-size: 0.9rem;
+        font-weight: bold;
+        letter-spacing: 2px;
+        cursor: pointer;
+        box-shadow: 0 0 18px rgba(0, 255, 255, 0.45);
+      }
+      .install-btn:hover {
+        transform: scale(1.05);
+      }
+      .install-btn:disabled {
+        opacity: 0.5;
+        cursor: default;
+      }
+      .install-hint {
+        margin: 0;
+        color: #888;
+        font-size: 0.85rem;
+        text-align: center;
+      }
     </style>
   </head>
   <body>
     <h1>Game Portal</h1>
+    <!-- Filled in only when this browser can actually install the app. -->
+    <div class="install-slot" data-install-slot></div>
 
     <h2 class="section-title">Single Player</h2>
     <div class="games-grid">
@@ -108,8 +161,8 @@
           src="assets/neon-survival.gif"
           alt="Neon Survival Preview"
           onerror="
-            this.src =
-              'https://via.placeholder.com/300x200/1a1a1a/0ff?text=Neon+Survival+Preview'
+            this.onerror = null;
+            this.src = 'assets/placeholder.svg'
           "
         />
         <h3>Neon Survival</h3>
@@ -138,8 +191,8 @@
           src="assets/connect4.gif"
           alt="Connect 4 Preview"
           onerror="
-            this.src =
-              'https://via.placeholder.com/300x200/1a1a1a/ffd24d?text=Connect+4+Preview'
+            this.onerror = null;
+            this.src = 'assets/placeholder.svg'
           "
         />
         <h3>Connect 4</h3>
@@ -150,7 +203,14 @@
         <a href="connect4.html" class="play-btn">PLAY NOW</a>
       </div>
       <div class="game-card" onclick="window.location.href = 'tug-of-war.html'">
-        <img src="assets/tug-of-war.gif" alt="Tug of War Preview" />
+        <img
+          src="assets/tug-of-war.gif"
+          alt="Tug of War Preview"
+          onerror="
+            this.onerror = null;
+            this.src = 'assets/placeholder.svg'
+          "
+        />
         <h3>Tug of War</h3>
         <p>Tap to pull. Two teams, any sizes — drag the knot past your line.</p>
         <a href="tug-of-war.html" class="play-btn">PLAY NOW</a>
@@ -160,8 +220,8 @@
           src="assets/draw-guess.gif"
           alt="Draw &amp; Guess Preview"
           onerror="
-            this.src =
-              'https://via.placeholder.com/300x200/1a1a1a/f0f?text=Draw+%26+Guess+Preview'
+            this.onerror = null;
+            this.src = 'assets/placeholder.svg'
           "
         />
         <h3>Draw &amp; Guess</h3>
@@ -179,8 +239,8 @@
           src="assets/neon-survival-mp.gif"
           alt="Neon Survival Co-op Preview"
           onerror="
-            this.src =
-              'https://via.placeholder.com/300x200/1a1a1a/4dff4d?text=Neon+Survival+Co-op+Preview'
+            this.onerror = null;
+            this.src = 'assets/placeholder.svg'
           "
         />
         <h3>Neon Survival Co-op</h3>
@@ -191,5 +251,6 @@
         <a href="neon-survival-mp.html" class="play-btn">PLAY NOW</a>
       </div>
     </div>
+    <script src="lib/pwa.js"></script>
   </body>
 </html>
