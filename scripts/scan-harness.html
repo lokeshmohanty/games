@@ -35,17 +35,44 @@
         return { png: out.toDataURL("image/png"), modules: canvas.width / 8 - 6 };
       };
 
+      // The same code exactly as the lobby puts it on a phone: qrCanvas at
+      // scale 3, blown up to `.share-qr`'s 340 CSS px with `image-rendering:
+      // pixelated`, on a 3x display. Scanning has to survive the artefacts of
+      // that upscale, not just a cleanly rendered code.
+      window.renderQrAsLobbyDoes = (text, cssWide = 340, dpr = 3) => {
+        const canvas = NeonArcade.qrCanvas(text, {
+          scale: 3,
+          quiet: 3,
+          dark: "#000",
+          light: "#fff",
+        });
+        const out = document.createElement("canvas");
+        out.width = out.height = cssWide * dpr;
+        const c = out.getContext("2d");
+        c.imageSmoothingEnabled = false;
+        c.drawImage(canvas, 0, 0, out.width, out.height);
+        return { png: out.toDataURL("image/png"), modules: canvas.width / 3 - 6 };
+      };
+
       window.scanResult = null;
       window.scanError = null;
+      // Did the callback fire before scanQr had handed the handle back? A
+      // caller writing `scanner = scanQr(...)` cannot clean up a scanner it
+      // has not been given yet, so the answer has to be "no".
+      window.handleHeldAtCallback = null;
       window.startScan = () => {
         window.scanResult = null;
         window.scanError = null;
-        const scanner = NeonArcade.scanQr({
+        window.handleHeldAtCallback = null;
+        let scanner = null;
+        scanner = NeonArcade.scanQr({
           onResult: (text) => {
+            window.handleHeldAtCallback = !!scanner;
             window.scanResult = text;
             scanner.stop();
           },
           onError: (msg) => {
+            window.handleHeldAtCallback = !!scanner;
             window.scanError = msg;
           },
         });
