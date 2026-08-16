@@ -98,10 +98,13 @@ lib/
   lobby.js              # Two-player lobby UI (link, QR, copy, paste, scan)
   qr.js                 # Dependency-free QR encoder
   qr-decode.js          # Dependency-free QR decoder + camera scanner
+  pwa.js                # Service worker registration + the install button
   styles.css            # Shared neon theme
   README.md             # lib API documentation
-assets/                 # Portal preview GIFs
-scripts/                # Preview GIF generation + tests
+manifest.webmanifest    # Makes the arcade installable
+sw.js                   # Service worker — offline play, at the root for scope
+assets/                 # App icons + portal preview GIFs
+scripts/                # Preview GIFs, icon generation, tests
 ```
 
 ## Shared library (`lib/`)
@@ -142,6 +145,32 @@ See [`lib/README.md`](lib/README.md) for full API documentation.
   connections that already exist.
 - Canvas 2D for rendering.
 - Mobile-first: responsive layouts, touch + mouse + keyboard input.
+- Installable (PWA): a manifest, generated icons and a service worker, all
+  hand-written — no toolchain and nothing added to the page load.
+
+## Install it
+
+Open the portal on the deployed `https://` site and take the **INSTALL APP**
+button under the title, or the browser's own install item; on iOS it is Share →
+Add to Home Screen. It then has its own icon and its own window, and the
+single-player games work with no network at all.
+
+Being installed changes nothing about how multiplayer works: peers still find
+each other through an invite somebody carries, and a game still needs a network
+to reach the other player.
+
+What the service worker does with your files is deliberately split. Code — the
+pages, `lib/`, `games/` — is fetched **network-first**, because those files have
+to agree with each other and a half-updated app breaks in ways nobody would
+connect to a deploy from last week. Icons and preview gifs are served from the
+cache first, since they are large and a slightly old one costs nothing. See
+[`sw.js`](sw.js), which explains itself at length.
+
+To change the icon, edit [`assets/icon.svg`](assets/icon.svg) and run:
+
+```sh
+node scripts/make-icons.mjs
+```
 
 ## Preview GIFs
 
@@ -160,8 +189,11 @@ See [`docs/index.md`](docs/index.md) for more details.
 node scripts/test-codec.mjs    # signalling codec round-trip, no browser needed
 node scripts/test-party.mjs    # three real browser peers: recruiting, teams,
                                # game switching, host succession
-node scripts/test-scan.mjs     # SCAN REPLY against a fake camera, with the
-                               # code sized as it lands on a real screen
+node scripts/test-scan.mjs     # SCAN REPLY against a fake camera: the code
+                               # sized as it lands on a real screen, and the
+                               # aiming that comes before it
+node scripts/test-pwa.mjs      # installability (including Chrome's own
+                               # verdict) and the pages loading with no network
 ```
 
 ## Adding a game

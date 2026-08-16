@@ -21,6 +21,7 @@ handshake per person and nothing else.
 - **`lobby.js`** — `NeonArcade.mountLobby()`: the plain two-player invite/answer UI used by the per-game pages.
 - **`qr.js`** — `NeonArcade.qrCanvas()`: a self-contained QR encoder, so invites can be scanned instead of typed.
 - **`qr-decode.js`** — `NeonArcade.qrDecode()` / `scanQr()`: a self-contained QR *decoder* plus a camera scanner.
+- **`pwa.js`** — registers `../sw.js` and fills `[data-install-slot]` with an install button. Optional; nothing else depends on it.
 - **`styles.css`** — shared neon theme (link from each game's HTML).
 
 ## The handshake
@@ -142,7 +143,21 @@ The two-player lobby itself: `gameName`, `onReady(room)`, `onStart()`,
 `NeonArcade.scanQr({ onResult, onError })` returns `{ video, stop }` — mount
 `video`, and **always call `stop()`**, which releases the camera. It uses the
 browser's `BarcodeDetector` when there is one (Android Chrome) and the decoder
-in `qr-decode.js` otherwise, since desktop Chrome and iOS Safari have none.
+in `qr-decode.js` otherwise, since desktop Chrome and iOS Safari have none. A
+platform detector that fails is dropped permanently rather than retried: Chrome
+exposes one on platforms where the service behind it is missing, and its
+rejection must not take the fallback down with it.
+
+`onError` is always delivered asynchronously, so `scanner = scanQr({ ... })` has
+finished assigning before any callback can try to clean `scanner` up.
+
+Each frame is decoded from the **centred square at the camera's own
+resolution** — the region the 1:1 preview shows. Resolution is never lowered to
+save time: a reply code is a 70-90 module grid photographed off another screen,
+pixels per module is what decides whether it reads at all, and the frames that
+cost the most are the empty ones somebody is still aiming through. Cost is
+managed by pass count and pacing instead (`qrDecode(data, { passes })` runs the
+cheap binarisation alone; the scanner uses the full ladder every third frame).
 
 Camera access needs a secure context, so scanning works on the deployed
 `https://` site but not from `file://`; the lobby says so and falls back to
@@ -206,6 +221,9 @@ Games work on both `file://` (double-click the HTML) and `http://`.
 node scripts/test-codec.mjs    # signalling codec round-trip, no browser needed
 node scripts/test-party.mjs    # three real browser peers: recruiting, teams,
                                # game switching, host succession
+node scripts/test-scan.mjs     # SCAN REPLY against a fake camera, including the
+                               # aiming before the code arrives
+node scripts/test-pwa.mjs      # installability and offline
 ```
 
 To test two peers by hand, open a game twice — the invite link works between two

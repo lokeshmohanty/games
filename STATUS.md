@@ -11,31 +11,43 @@ session pay for it.*
 act → record → clear the item. This is the single inbox — do not create a
 separate `TODO.md`.*
 
-## Current focus (2026-08-10)
+## Current focus (2026-08-15)
 
-Parties landed: connecting several people no longer costs a handshake per pair.
-The star topology became a mesh whose signalling rides over existing links, so
-one manual scan per person is the whole cost, and any member can recruit.
+SCAN REPLY works again, and the arcade installs.
+
+The scanner had been broken by its own optimisation: it lowered its working
+resolution whenever a decode ran long, and the frames that run long are the
+*empty* ones the camera sees while somebody is still aiming. It therefore threw
+away the pixels-per-module a reply code needs before it had seen anything, and
+from then on read nothing — camera live, preview fine, no result, no error. The
+old test never caught it because its code sat in frame from the first instant.
 
 Shipped this session:
-- `lib/net.js` — mesh + relayed signalling, party record (names/teams/host),
-  probe-before-drop departure detection, host handover and succession.
-- `lib/games.js` — game registry and the `mount(ctx) -> { unmount() }` contract.
-- `lib/party.js` + `party.html` — the persistent party screen.
-- `games/*.js` — the three multiplayer games as modules; their `.html` pages are
-  now thin wrappers that mount the same modules.
-- Handshake: smaller codes (active ICE-TCP dropped), early ICE cutoff, PASTE
-  button, `#a=` reply links.
-- `scripts/test-codec.mjs`, `scripts/test-party.mjs` — first tests in the repo.
+- `lib/qr-decode.js` — no resolution backoff; decode the centred square at the
+  camera's own resolution; cheap binarisation pass on most frames and the full
+  ladder every third; loop paced by measured cost. A platform `BarcodeDetector`
+  whose `detect()` rejects is now dropped instead of silently disabling the
+  fallback. `onError` is always async, so a caller's `scanner` handle exists.
+- `scripts/test-scan.mjs` — aim-then-show feeds at 1x/4x/6x CPU (the case that
+  was broken), broken-detector fallbacks, async error delivery.
+- PWA: `manifest.webmanifest`, `sw.js`, `lib/pwa.js`, `assets/icon.svg` +
+  generated PNGs, `scripts/make-icons.mjs`, INSTALL APP button on the portal.
+  Code is network-first, assets cache-first; single-player games work offline.
+- `scripts/test-pwa.mjs` — including Chrome's own installability verdict over
+  CDP, which caught a manifest that passed every hand-written check and was
+  still uninstallable (an SVG in `icons` poisons the whole set).
+- `assets/placeholder.svg` replaces the `via.placeholder.com` fallback. The
+  project now contacts nothing but STUN.
 
 ## Next actions
 
-- [ ] Verify on real phones — scanning is still only tested against a fake
-      camera, and the party screen has only been checked at 390x844 headless.
+- [ ] Verify on real phones — scanning and installing are both still only
+      tested against headless Chrome. iOS is wholly unverified: no install
+      event, manifest icons ignored, its own service-worker eviction rules.
 - [ ] No test forces a pair to fail, so the two-hop relay path is unexercised;
       the 8-player cap is likewise untested.
-- [ ] `index.html` still falls back to `via.placeholder.com` for a missing
-      preview gif — the last third-party contact in the project.
+- [ ] `sw.js`'s `VERSION` is bumped by hand. Harmless while online (code is
+      network-first), but the offline copy goes stale if it is forgotten.
 
 ## Open obligations / blockers
 
