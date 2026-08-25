@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Arcade Portal</title>
+    <title>Arcade Games</title>
     <!-- Installable: manifest + icons, registered by lib/pwa.js. -->
     <link rel="manifest" href="manifest.webmanifest" />
     <meta name="theme-color" content="#0a0a0a" />
@@ -12,7 +12,7 @@
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black" />
-    <meta name="apple-mobile-web-app-title" content="Neon Arcade" />
+    <meta name="apple-mobile-web-app-title" content="Arcade Games" />
     <style>
       body {
         margin: 0;
@@ -37,17 +37,67 @@
         /* Compensate for the trailing letter-spacing so the glyphs sit truly centered. */
         text-indent: 5px;
       }
-      h2.section-title {
-        font-size: 1.4rem;
+      /*
+        One line under the title, doing the job three section headings used to.
+        Every game here is multiplayer and every game here can be played alone
+        against bots, so splitting the grid by player count only ever told
+        somebody a game was not for them.
+      */
+      .tagline {
+        margin: 0 0 4px;
         color: #888;
-        text-transform: uppercase;
-        letter-spacing: 3px;
-        margin: 40px 0 20px;
+        font-size: 0.95rem;
         text-align: center;
+        max-width: 34em;
+        padding: 0 20px;
+        line-height: 1.5;
+      }
+      /*
+        The party is a mode, not a game, so it gets a full-width band above the
+        grid rather than a card competing with the games inside it.
+      */
+      .party-banner {
         width: 80%;
         max-width: 1200px;
-        border-bottom: 1px solid #333;
-        padding-bottom: 10px;
+        box-sizing: border-box;
+        margin: 30px 0 30px;
+        padding: 22px 26px;
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        justify-content: space-between;
+        gap: 16px;
+        background: linear-gradient(
+          90deg,
+          rgba(255, 0, 255, 0.08),
+          rgba(0, 255, 255, 0.08)
+        );
+        border: 2px solid #333;
+        border-radius: 15px;
+        cursor: pointer;
+        transition: border-color 0.3s ease;
+      }
+      .party-banner:hover {
+        border-color: #f0f;
+      }
+      .party-banner div {
+        flex: 1 1 260px;
+      }
+      .party-banner h3 {
+        margin: 0 0 6px;
+        font-size: 1.3rem;
+        color: #fff;
+      }
+      .party-banner p {
+        margin: 0;
+        color: #aaa;
+        font-size: 0.9rem;
+        line-height: 1.5;
+      }
+      .party-banner .play-btn {
+        margin: 0;
+        background: #f0f;
+        flex: 0 0 auto;
       }
       .games-grid {
         display: grid;
@@ -85,8 +135,22 @@
       }
       .game-card p {
         color: #aaa;
-        margin: 0 20px 20px;
+        margin: 0 20px 12px;
         font-size: 0.9rem;
+      }
+      /*
+        Who a game needs. Said on the card because it is the one thing somebody
+        standing alone with a phone wants to know before tapping.
+      */
+      .game-meta {
+        margin: 0 20px 18px;
+        color: #666;
+        font-size: 0.78rem;
+        letter-spacing: 1px;
+        text-transform: uppercase;
+      }
+      .game-meta .no-bots {
+        color: #f0f;
       }
       .play-btn {
         display: inline-block;
@@ -147,18 +211,33 @@
     </style>
   </head>
   <body>
-    <h1>Game Portal</h1>
+    <h1>Arcade Games</h1>
+    <p class="tagline">
+      Every game is multiplayer. Play the bots on this device, or send an invite
+      and play the people. No accounts, no servers, nothing to sign up for.
+    </p>
     <!-- Filled in only when this browser can actually install the app. -->
     <div class="install-slot" data-install-slot></div>
 
-    <h2 class="section-title">Single Player</h2>
+    <div class="party-banner" onclick="window.location.href = 'party.html'">
+      <div>
+        <h3>Start a Party</h3>
+        <p>
+          Everyone connects once, then the host switches between games without
+          anybody reconnecting. Pick teams, add bots, watch as a spectator, hand
+          the party over before you leave.
+        </p>
+      </div>
+      <a href="party.html" class="play-btn">START A PARTY</a>
+    </div>
+
     <div class="games-grid">
       <div
         class="game-card"
-        onclick="window.location.href = 'neon-survival.html'"
+        onclick="window.location.href = 'neon-survival-mp.html'"
       >
         <img
-          src="assets/neon-survival.gif"
+          src="assets/neon-survival-mp.gif"
           alt="Neon Survival Preview"
           onerror="
             this.onerror = null;
@@ -166,26 +245,13 @@
           "
         />
         <h3>Neon Survival</h3>
-        <p>Dodge the red, collect the green. How long can you survive?</p>
-        <a href="neon-survival.html" class="play-btn">PLAY NOW</a>
-      </div>
-    </div>
-
-    <h2 class="section-title">Party</h2>
-    <div class="games-grid">
-      <div class="game-card" onclick="window.location.href = 'party.html'">
-        <h3>Start a Party</h3>
         <p>
-          Everyone connects once, then the host switches between games without
-          anybody reconnecting. Pick teams, watch as a spectator, hand the party
-          over before you leave.
+          Dodge the red, collect the green. Survive alone, or keep each other
+          alive as the swarm closes in.
         </p>
-        <a href="party.html" class="play-btn">START A PARTY</a>
+        <p class="game-meta">1–8 players · bots</p>
+        <a href="neon-survival-mp.html" class="play-btn">PLAY NOW</a>
       </div>
-    </div>
-
-    <h2 class="section-title">Multiplayer</h2>
-    <div class="games-grid">
       <div class="game-card" onclick="window.location.href = 'connect4.html'">
         <img
           src="assets/connect4.gif"
@@ -197,9 +263,10 @@
         />
         <h3>Connect 4</h3>
         <p>
-          Drop your pieces, line up four in a row. 2-player P2P — share a room
-          code and play!
+          Drop your discs, line up four in a row. The bot searches five moves
+          ahead, so it will punish a lazy one.
         </p>
+        <p class="game-meta">2 players · bots</p>
         <a href="connect4.html" class="play-btn">PLAY NOW</a>
       </div>
       <div class="game-card" onclick="window.location.href = 'tug-of-war.html'">
@@ -212,7 +279,11 @@
           "
         />
         <h3>Tug of War</h3>
-        <p>Tap to pull. Two teams, any sizes — drag the knot past your line.</p>
+        <p>
+          Tap to pull. Two teams, any sizes — drag the knot past your line
+          before they drag it past theirs.
+        </p>
+        <p class="game-meta">2–8 players · bots</p>
         <a href="tug-of-war.html" class="play-btn">PLAY NOW</a>
       </div>
       <div class="game-card" onclick="window.location.href = 'draw-guess.html'">
@@ -226,29 +297,13 @@
         />
         <h3>Draw &amp; Guess</h3>
         <p>
-          One player draws, the rest guess! Real-time canvas sync and chat. Up
-          to 8 players.
+          One player draws, the rest race to guess the word. Real-time canvas
+          and chat.
+        </p>
+        <p class="game-meta">
+          2–8 players · <span class="no-bots">people only</span>
         </p>
         <a href="draw-guess.html" class="play-btn">PLAY NOW</a>
-      </div>
-      <div
-        class="game-card"
-        onclick="window.location.href = 'neon-survival-mp.html'"
-      >
-        <img
-          src="assets/neon-survival-mp.gif"
-          alt="Neon Survival Co-op Preview"
-          onerror="
-            this.onerror = null;
-            this.src = 'assets/placeholder.svg'
-          "
-        />
-        <h3>Neon Survival Co-op</h3>
-        <p>
-          Survive the swarm together! Co-op real-time survival for 2–8 players.
-          Send an invite link and fight off the enemies.
-        </p>
-        <a href="neon-survival-mp.html" class="play-btn">PLAY NOW</a>
       </div>
     </div>
     <script src="lib/pwa.js"></script>

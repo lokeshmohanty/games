@@ -1,6 +1,6 @@
 # games — Documentation
 
-*Last synced: 2026-08-15.*
+*Last synced: 2026-08-26.*
 
 Entry point for all project documentation. Any LLM should be able to answer
 questions about this project from this folder alone.
@@ -9,6 +9,7 @@ questions about this project from this folder alone.
 
 - [Connecting players](#connecting-players) — the serverless handshake, paid once per person
 - [Parties](#parties) — the persistent group, teams, switching games, host succession
+- [Bots](#bots) — why there is no single-player section, and what a bot actually is
 - [Adding a game](#adding-a-game) — the module contract
 - [Installing it](#installing-it) — the PWA: manifest, icons, service worker, offline
 - [`../lib/README.md`](../lib/README.md) — the P2P core, registry, party, lobby and QR APIs
@@ -23,7 +24,8 @@ questions about this project from this folder alone.
 | Regenerate a portal preview gif | `scripts/make-preview.sh <game>` (or `all`) — plays the game headless and writes `assets/<game>.gif` |
 | Play locally with several peers | open `party.html`, click ADD PLAYER, open the invite link in another tab, paste the reply back (`file://` works; `python3 -m http.server 8000` also fine) |
 | Test reply-code **scanning** | `node scripts/test-scan.mjs` — renders a real-sized reply code into a camera frame and feeds it to Chrome as a fake capture device. Scanning needs a camera *and* a secure context, so `file://` and plain `http://<ip>` will not do; the test serves the repo over `http://127.0.0.1` for that reason |
-| Test installability and offline | `node scripts/test-pwa.mjs` — checks the manifest and icons, asks **Chrome itself** whether anything blocks installing, then cuts the network and loads the pages |
+| Test installability and offline | `node scripts/test-pwa.mjs` — checks the manifest and icons, asserts the portal's layout at 390x844, asks **Chrome itself** whether anything blocks installing, then cuts the network and loads the pages |
+| Test that every game is playable alone | `node scripts/test-bots.mjs` — starts each game with bots and no second browser, checks the bots actually play (Connect 4 is never left an open win), and checks no peer opens a connection to one |
 | Rebuild the app icons | `node scripts/make-icons.mjs` after editing `assets/icon.svg` — renders the PNGs the manifest needs |
 | Get back to the portal | every page has a fixed `.portal-link` ("← ALL GAMES") linking to `index.html` |
 
@@ -94,8 +96,8 @@ page navigation** — nobody reconnects and nobody re-scans.
   one whose roster does not fit, saying why.
 - **Spectators** are excluded from `players()`, so a game seats and scores only
   the people actually playing.
-- **Host controls** — assign teams, remove a member, hand over the crown, or
-  delete the party.
+- **Host controls** — assign teams, add or remove a bot, remove a member, hand
+  over the crown, or delete the party.
 
 ### When the host goes
 
@@ -112,6 +114,57 @@ thing that ends a party is the host explicitly choosing DELETE PARTY.
 A page reload is the one case that cannot be rescued: WebRTC credentials are
 per-connection, so a reloaded browser must handshake again — though any member
 can invite them straight back in.
+
+## Bots
+
+**There is no single-player section, and no single-player mode.** Every game is
+multiplayer; a game played alone is one whose other seats are bots. That
+collapsed a split the portal used to advertise — "Single Player" and
+"Multiplayer" as separate shelves — which had the effect of telling somebody
+holding one phone that three of the four games were not for them.
+
+A bot is **an ordinary member of the party record**. It has an id, a name, a
+team and a seat, it appears in every peer's roster, and `seats()`, `players()`
+and `checkRoster()` count it exactly like a person. Two consequences follow, and
+they are the whole design:
+
+1. **No game module had to learn what a bot is.** A game reads `seats("B")[0]`
+   and neither knows nor cares whether a browser is behind it. `ctx.isBot(id)`
+   and `ctx.botSeats(team)` exist for the games that want to give one a brain.
+2. **Only the host runs them.** Every game here is already host-authoritative —
+   the host owns the board, the knot, the swarm — so the side that plays a bot
+   is the side that was refereeing anyway. A bot's move is applied through the
+   same function a person's tap goes through, and the broadcast that follows is
+   indistinguishable.
+
+Bot ids are prefixed `bot_` so the **routing** code can recognise one from an id
+alone, without consulting the record. That matters in four places in `net.js`,
+and each is a bug if forgotten: `_meshUp` must not try to open a connection to
+one (a full ICE timeout, every roster change, forever); a broadcast must not
+count one as a peer somebody has to relay to; `_heir` must never nominate one
+for the crown; and `_hostLost` must drop them all, because the only browser
+simulating them has gone.
+
+Where the brains live:
+
+| Game | Brain | Where |
+|---|---|---|
+| Connect 4 | minimax + alpha-beta, 5 plies, centre-first move ordering | `games/connect4.js` |
+| Tug of War | a tap rate (~9/s) with jitter, one timer for all bots | `games/tug-of-war.js` |
+| Neon Survival | steering: inverse-square flee from enemies, drift to gems, wall push-off, speed-capped | `games/neon-survival-mp.js` |
+| Draw & Guess | none — `bots: false` in its registration | — |
+
+Draw & Guess opts out on purpose. A bot that draws is replaying a canned doodle
+and a bot that guesses is reading the word it was handed; neither is an
+opponent, and both make the round worse for the people actually playing. The
+lobby and the party screen both say so rather than offering a button that
+disappoints.
+
+Neon Survival's bots are the one case that needs the wire: every ship's position
+reaches other players as a `pos` message, so the host publishes a bot's with
+`room.emitAs(botId, "pos", …)`, which sends to real peers **and** delivers
+locally (an ordinary broadcast never comes back to its sender, so without that
+the one browser running the bot would be the one that never saw it move).
 
 ## Adding a game
 
@@ -140,8 +193,25 @@ The arcade is a PWA: `manifest.webmanifest`, icons under `assets/`, and `sw.js`
 at the repo root so its scope covers every page. `lib/pwa.js` registers the
 worker and fills any `[data-install-slot]` element with an INSTALL APP button
 when the browser says the app can be installed (the portal has one under the
-title); on iOS, which has no install event, it leaves the Add to Home Screen
-hint instead. On `file://` there is no secure context and none of this runs.
+title). On `file://` there is no secure context and none of this runs.
+
+**The install button is Chromium-only, and that is not a bug here.** It is
+driven by `beforeinstallprompt`, a non-standard event that only Chromium
+implements — so Chrome, Edge and their relatives get a button and nothing else
+ever will. `lib/pwa.js` therefore fills the slot with a sentence instead of
+leaving it empty:
+
+| Browser | What happens |
+|---|---|
+| Chrome / Edge / Chromium | INSTALL APP button, from the held `beforeinstallprompt` |
+| Firefox on Android | hint: install from the ⋮ menu — Firefox can, the page cannot ask |
+| Firefox on desktop | hint: it cannot install web apps at all (removed in Firefox 85, not restored) — but the page still works offline |
+| iOS Safari | hint: Share → Add to Home Screen |
+
+**Offline is unaffected by any of that.** Firefox supports service workers and
+the Cache API fully, so the arcade caches and plays with no network there
+exactly as it does in Chrome — it just lives in a tab. (Firefox does disable
+service workers in Private Browsing windows.)
 
 **The caching split is the design decision.** Code — the pages, `lib/`,
 `games/` — is fetched **network-first**: those files must agree with each other,
@@ -171,6 +241,11 @@ the favicon via `<link rel="icon">`.
   is the answer.
 - The mesh is tested with three peers; nothing has exercised the 8-player cap,
   and no test forces a pair to fail so the relay path runs in anger.
+- Bot *strength* is asserted only negatively: Connect 4's bot is checked never
+  to leave an immediate win on the board, which is not the same as checking it
+  plays well. Nothing measures whether any of the three is fun to lose to.
+- The Firefox install hints are reasoned from the platform, not observed —
+  every browser test here runs headless Chrome. Firefox itself is unverified.
 - Cross-network play over mobile data is expected to fail on carriers using
   CGNAT/symmetric NAT — confirmed in the wild on 2026-08-10. This is the
   no-TURN trade-off, not a bug; the error now names which case you hit.

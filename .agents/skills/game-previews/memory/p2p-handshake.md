@@ -13,7 +13,7 @@ masked the bug that prompted the rewrite (see below).
 
 `scripts/preview.mjs` drives the same steps a human does:
 
-1. Page 0 (always the **host**, always the recorded page) clicks `CREATE GAME`
+1. Page 0 (always the **host**, always the recorded page) clicks `INVITE A FRIEND`
    — or `INVITE ANOTHER` for the second and later guests.
 2. Read the invite link out of the first `textarea.share-code`.
 3. Guest opens the link, produces a reply code in *its* first

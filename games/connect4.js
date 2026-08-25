@@ -5,6 +5,11 @@
 // (Team A plays red, Team B plays yellow). On a standalone game page the seat
 // rule degrades to the old one — whoever hosts is red, the first other player
 // is yellow — because that is what `seatOf` returns there.
+//
+// Either seat can be a bot. Because the host already validates every move, a
+// bot needs no channel of its own: the host searches the position and applies
+// the result through the same `applyMove` a person's tap goes through, and the
+// broadcast that follows is indistinguishable from any other.
 
 NeonArcade.registerGame({
 	id: "connect4",
@@ -169,6 +174,169 @@ NeonArcade.registerGame({
 			return true;
 		}
 
+		// ------------------------------------------------------------- bot
+		//
+		// Plain minimax with alpha-beta over a 7x6 board — small enough that a
+		// full-width search to this depth finishes well inside a frame, so there
+		// is no need for iterative deepening or a clock.
+
+		// Plies searched. Five sees a double threat being built two moves out,
+		// which is where Connect 4 is actually won, while stopping short of the
+		// deadening perfection of a solved game.
+		const BOT_DEPTH = 5;
+		// A move that lands the instant you release your finger reads as a bug.
+		const BOT_THINK_MS = 550;
+
+		// Every 4-in-a-row line on the board, computed once. The evaluation walks
+		// these rather than rediscovering the geometry at each of the thousands of
+		// leaves a search visits.
+		const WINDOWS = (() => {
+			const out = [];
+			for (let r = 0; r < ROWS; r++) {
+				for (let c = 0; c < COLS; c++) {
+					if (c + 3 < COLS) out.push([[r, c], [r, c + 1], [r, c + 2], [r, c + 3]]);
+					if (r + 3 < ROWS) out.push([[r, c], [r + 1, c], [r + 2, c], [r + 3, c]]);
+					if (r + 3 < ROWS && c + 3 < COLS)
+						out.push([[r, c], [r + 1, c + 1], [r + 2, c + 2], [r + 3, c + 3]]);
+					if (r + 3 < ROWS && c - 3 >= 0)
+						out.push([[r, c], [r + 1, c - 1], [r + 2, c - 2], [r + 3, c - 3]]);
+				}
+			}
+			return out;
+		})();
+
+		// Centre-out. Alpha-beta prunes far more when the likely-best move is
+		// tried first, and in Connect 4 that is almost always the middle.
+		const BOT_ORDER = [3, 2, 4, 1, 5, 0, 6];
+
+		const boardCopy = (b) => b.map((row) => [...row]);
+
+		function dropRowIn(board, col) {
+			for (let r = ROWS - 1; r >= 0; r--) if (board[r][col] === 0) return r;
+			return -1;
+		}
+
+		/** Static evaluation of a quiet position, from `me`'s point of view. */
+		function evaluate(board, me) {
+			const foe = me === RED ? YELLOW : RED;
+			let score = 0;
+			// The centre column takes part in more lines than any other, so
+			// occupying it is worth something on its own.
+			for (let r = 0; r < ROWS; r++) if (board[r][3] === me) score += 6;
+			for (const w of WINDOWS) {
+				let mine = 0;
+				let theirs = 0;
+				for (const [r, c] of w) {
+					const v = board[r][c];
+					if (v === me) mine++;
+					else if (v === foe) theirs++;
+				}
+				// A line both colours sit in can never be completed by either.
+				if (mine && theirs) continue;
+				if (mine === 3) score += 50;
+				else if (mine === 2) score += 8;
+				else if (theirs === 3) score -= 60;
+				else if (theirs === 2) score -= 8;
+			}
+			return score;
+		}
+
+		/**
+		 * Minimax with alpha-beta. Scores are always from `me`'s point of view,
+		 * so the caller never has to negate anything.
+		 *
+		 * `board` is mutated and restored in place: a 42-cell copy per node would
+		 * dominate the cost of the search itself.
+		 */
+		function search(board, depth, alpha, beta, turn, me) {
+			const cols = BOT_ORDER.filter((c) => board[0][c] === 0);
+			if (!cols.length) return 0; // full board: a draw
+			const maximising = turn === me;
+			let best = maximising ? -Infinity : Infinity;
+
+			for (const c of cols) {
+				const r = dropRowIn(board, c);
+				board[r][c] = turn;
+				let value;
+				if (checkWin(board, r, c, turn)) {
+					// Depth is added so a win that arrives sooner outranks the same
+					// win three moves later — and so a loss is postponed as long as
+					// possible rather than walked into early.
+					value = maximising ? 10000 + depth : -10000 - depth;
+				} else if (depth === 0) {
+					value = evaluate(board, me);
+				} else {
+					value = search(board, depth - 1, alpha, beta, turn === RED ? YELLOW : RED, me);
+				}
+				board[r][c] = 0;
+
+				if (maximising) {
+					if (value > best) best = value;
+					if (best > alpha) alpha = best;
+				} else {
+					if (value < best) best = value;
+					if (best < beta) beta = best;
+				}
+				if (alpha >= beta) break;
+			}
+			return best;
+		}
+
+		/** The column this bot plays. Never returns a full column. */
+		function chooseColumn(me) {
+			const board = boardCopy(state.board);
+			const cols = BOT_ORDER.filter((c) => board[0][c] === 0);
+			let bestCol = cols[0];
+			let bestValue = -Infinity;
+			for (const c of cols) {
+				const r = dropRowIn(board, c);
+				board[r][c] = me;
+				const value = checkWin(board, r, c, me)
+					? Infinity
+					: search(board, BOT_DEPTH - 1, -Infinity, Infinity, me === RED ? YELLOW : RED, me);
+				board[r][c] = 0;
+				if (value > bestValue) {
+					bestValue = value;
+					bestCol = c;
+				}
+			}
+			return bestCol;
+		}
+
+		let botTimer = null;
+
+		/**
+		 * Host only. If the side to move is a bot, let it think and then move.
+		 *
+		 * Called after every state change rather than on a loop, so two bots
+		 * facing each other simply take turns and the sequence ends by itself
+		 * when somebody wins.
+		 */
+		function runBot() {
+			if (!room.isHost()) return;
+			clearTimeout(botTimer);
+			botTimer = null;
+			const toMove = () => (state.turn === RED ? state.red : state.yellow);
+			const ready = () =>
+				state.started &&
+				state.winner === null &&
+				state.red !== null &&
+				state.yellow !== null &&
+				ctx.isBot(toMove());
+			if (!ready()) return;
+
+			botTimer = setTimeout(() => {
+				botTimer = null;
+				// The roster can change while it thinks — a person can take the seat,
+				// or the game can end — so the conditions are checked again here.
+				if (!ready()) return;
+				if (applyMove(chooseColumn(state.turn), state.turn)) {
+					broadcastState();
+					afterMove();
+				}
+			}, BOT_THINK_MS);
+		}
+
 		// --------------------------------------------------------------- ui
 
 		function updateHud() {
@@ -213,7 +381,7 @@ NeonArcade.registerGame({
 		function afterMove() {
 			draw();
 			updateHud();
-			if (state.winner === null) return;
+			if (state.winner === null) return runBot();
 			const mine = myColor();
 			const msg =
 				state.winner === 0 ? "DRAW" : state.winner === mine ? "YOU WIN!" : "YOU LOSE";
@@ -240,6 +408,7 @@ NeonArcade.registerGame({
 			draw();
 			updateHud();
 			broadcastState();
+			runBot();
 		}
 
 		const stateAction = room.makeAction("c4state");
@@ -319,6 +488,12 @@ NeonArcade.registerGame({
 				// A seated player left mid-game; the one still sitting takes it.
 				if (state.winner === null) state.winner = state.red === null ? YELLOW : RED;
 			}
+			// Both seats are filled now — clear the "waiting" screen. Without
+			// this the host keeps staring at it after an opponent arrives, which
+			// is the normal case the moment ADD BOT exists.
+			if (state.red !== null && state.yellow !== null && state.winner === null) {
+				hideOverlay();
+			}
 			broadcastState();
 			if (peerId) broadcastState(peerId);
 			afterMove();
@@ -332,6 +507,7 @@ NeonArcade.registerGame({
 			if (state.red === null || state.yellow === null) {
 				showOverlay("Waiting for opponent to join…", null, null);
 			}
+			runBot();
 		}
 		resize();
 		draw();
@@ -340,9 +516,13 @@ NeonArcade.registerGame({
 		return {
 			onPeerJoin: rosterChanged,
 			onPeerLeave: rosterChanged,
+			/** A copy of the authoritative board, for scripts/test-bots.mjs. */
+			debug: () => ({ ...state, board: state.board.map((r) => [...r]) }),
 			/** Team assignments changed in the party screen mid-game. */
 			onRoster: () => rosterChanged(null),
 			unmount() {
+				clearTimeout(botTimer);
+				botTimer = null;
 				canvas.removeEventListener("click", onClick);
 				canvas.removeEventListener("mousemove", onMove);
 				canvas.removeEventListener("mouseleave", onLeave);

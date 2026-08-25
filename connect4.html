@@ -15,7 +15,7 @@
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black" />
-    <meta name="apple-mobile-web-app-title" content="Neon Arcade" />
+    <meta name="apple-mobile-web-app-title" content="Arcade Games" />
     <link rel="stylesheet" href="lib/styles.css" />
   </head>
   <body>
@@ -36,7 +36,8 @@
     <script src="lib/lobby.js"></script>
     <script src="games/connect4.js"></script>
     <script>
-      NeonArcade.mountGamePage(
+      // Exposed so scripts/test-bots.mjs can inspect the live room and game.
+      window.__game = NeonArcade.mountGamePage(
         document.getElementById("lobby"),
         document.getElementById("stage"),
         "connect4",

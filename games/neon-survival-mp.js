@@ -4,14 +4,24 @@
 // the host simulates the world and broadcasts it. Spectators watch without a
 // ship of their own.
 //
+// This is also the solo game: `seats.min` is 1, so hosting alone and pressing
+// nothing else gives you exactly the single-player run this arcade started
+// with. Bots fill the other ships when you want company — the host steers them
+// and publishes their positions with `room.emitAs`, so every other peer sees a
+// bot ship arrive through the same `pos` messages a person's ship does.
+//
 // Extracted from the standalone page; the game logic is unchanged apart from
 // reading its roster through the party (so spectators are excluded) and
 // tearing itself down in unmount().
 
 NeonArcade.registerGame({
 	id: "neon-survival-mp",
-	name: "NEON SURVIVAL CO-OP",
-	blurb: "Dodge the swarm together. Last ship flying keeps the run alive.",
+	// Not "co-op" any more: with a minimum of one seat this is the whole game,
+	// solo run included, and there is no other Neon Survival to distinguish it
+	// from. The module id keeps the `-mp` suffix because it is in URLs and in
+	// saved party state; renaming that would break links to buy nothing.
+	name: "NEON SURVIVAL",
+	blurb: "Dodge the swarm — alone, with bots, or with friends. Last ship flying keeps the run alive.",
 	shape: "coop",
 	seats: { min: 1, max: 8 },
 
@@ -110,12 +120,16 @@ NeonArcade.registerGame({
 		// page, which worked when everything was a top-level binding in a classic
 		// script. Inside a module those are closure variables, so publish live
 		// views of them instead — and take them down again on unmount.
-		const debugNames = ["player", "enemies", "gems", "gameActive"];
+		const debugNames = ["player", "enemies", "gems", "gameActive", "peers", "botShips"];
 		Object.defineProperties(window, {
 			player: { configurable: true, get: () => player },
 			enemies: { configurable: true, get: () => enemies },
 			gems: { configurable: true, get: () => gems },
 			gameActive: { configurable: true, get: () => gameActive },
+			// scripts/test-bots.mjs reads these two: `peers` is what any player
+			// sees of everyone else, and `botShips` is what the host is steering.
+			peers: { configurable: true, get: () => peers },
+			botShips: { configurable: true, get: () => botShips },
 		});
 		const releaseDebugGlobals = () => {
 			for (const n of debugNames) delete window[n];
@@ -142,6 +156,14 @@ NeonArcade.registerGame({
 		const PLAYER_SIZE = 15;
 		const ENEMY_SIZE = 8;
 		const GEM_SIZE = 5;
+
+		// Bot ships. A person moves by pointing, which is instantaneous and has no
+		// speed limit at all; a bot has one, and that cap is the whole reason it
+		// can die. At 4px a frame it outruns the early swarm and loses to the late
+		// one, which is the same arc a person's run has.
+		const BOT_SPEED = 4;
+		const BOT_DANGER = 110; // px — how far ahead a bot notices an enemy
+		const BOT_GREED = 0.55; // pull toward a gem, relative to fleeing
 
 		// ── DOM ──────────────────────────────────────────────────
 		const lobbyEl = document.getElementById("lobby");
@@ -275,7 +297,135 @@ NeonArcade.registerGame({
 			}
 		}
 
+		// ── Bots (host only) ─────────────────────────────────────
+		//
+		// The host owns a ship per bot and steers it the way it steers nothing
+		// else: everything about a person's ship arrives over the wire, while a
+		// bot's is computed here and then published as if it had.
+
+		let botShips = {}; // bot member id -> { x, y, alive, color }
+
+		/** Match the ship list to the roster; new bots enter at a random edge. */
+		function syncBotShips() {
+			const seated = new Set(ctx.botSeats());
+			for (const id of seated) {
+				if (botShips[id]) continue;
+				botShips[id] = {
+					x: Math.random() * (canvas.width - 80) + 40,
+					y: Math.random() * (canvas.height - 80) + 40,
+					alive: true,
+					color: colorFor(id),
+				};
+			}
+			for (const id of Object.keys(botShips)) {
+				if (!seated.has(id)) {
+					delete botShips[id];
+					delete peers[id];
+				}
+			}
+		}
+
+		/**
+		 * One frame of bot movement: flee what is close, drift toward a gem when
+		 * nothing is, and stay off the walls.
+		 *
+		 * Steering is a sum of vectors rather than a plan, which is what keeps it
+		 * legible — and beatable. A bot cornered by two enemies from opposite
+		 * sides will pick the average of the two escapes and die, exactly as a
+		 * flustered person does.
+		 */
+		function steerBot(ship) {
+			let dx = 0;
+			let dy = 0;
+
+			for (const e of enemies) {
+				const ex = ship.x - e.x;
+				const ey = ship.y - e.y;
+				const d = Math.hypot(ex, ey);
+				if (d > BOT_DANGER || d === 0) continue;
+				// Inverse-square: the nearest threat dominates, so a bot commits to
+				// one escape instead of dithering between several distant ones.
+				const w = (BOT_DANGER / d) ** 2;
+				dx += (ex / d) * w;
+				dy += (ey / d) * w;
+			}
+
+			const threatened = Math.hypot(dx, dy) > 0.001;
+			let nearestGem = null;
+			let nearestD = Infinity;
+			for (const g of gems) {
+				const d = Math.hypot(g.x - ship.x, g.y - ship.y);
+				if (d < nearestD) {
+					nearestD = d;
+					nearestGem = g;
+				}
+			}
+			if (nearestGem && nearestD > 0) {
+				const pull = threatened ? BOT_GREED : 1;
+				dx += ((nearestGem.x - ship.x) / nearestD) * pull;
+				dy += ((nearestGem.y - ship.y) / nearestD) * pull;
+			}
+
+			// Walls push back, so a bot fleeing outward does not pin itself in a
+			// corner where there is nowhere left to dodge.
+			const margin = 60;
+			if (ship.x < margin) dx += (margin - ship.x) / margin;
+			if (ship.x > canvas.width - margin) dx -= (ship.x - (canvas.width - margin)) / margin;
+			if (ship.y < margin) dy += (margin - ship.y) / margin;
+			if (ship.y > canvas.height - margin) dy -= (ship.y - (canvas.height - margin)) / margin;
+
+			const len = Math.hypot(dx, dy);
+			if (len > 0.001) {
+				ship.x += (dx / len) * BOT_SPEED;
+				ship.y += (dy / len) * BOT_SPEED;
+			}
+			ship.x = Math.max(PLAYER_SIZE, Math.min(canvas.width - PLAYER_SIZE, ship.x));
+			ship.y = Math.max(PLAYER_SIZE, Math.min(canvas.height - PLAYER_SIZE, ship.y));
+		}
+
+		/** Host only. Move every bot, then resolve what it ran into. */
+		function updateBots() {
+			syncBotShips();
+			for (const [id, ship] of Object.entries(botShips)) {
+				if (!ship.alive) continue;
+				steerBot(ship);
+
+				for (const e of enemies) {
+					if (Math.hypot(ship.x - e.x, ship.y - e.y) < PLAYER_SIZE / 2 + e.size) {
+						ship.alive = false;
+						createParticles(ship.x, ship.y, ship.color);
+						// Through the same channel a person's death takes, so the
+						// alive count and the game-over check need no special case.
+						room.emitAs(id, "down", {});
+						break;
+					}
+				}
+				if (!ship.alive) continue;
+
+				for (let i = gems.length - 1; i >= 0; i--) {
+					const g = gems[i];
+					if (Math.hypot(ship.x - g.x, ship.y - g.y) < PLAYER_SIZE / 2 + g.size) {
+						createParticles(g.x, g.y, "#4dff4d");
+						collectGem(i);
+					}
+				}
+			}
+		}
+
+		/** Publish every bot ship on the same cadence as our own. */
+		function broadcastBotPos() {
+			for (const [id, ship] of Object.entries(botShips)) {
+				room.emitAs(id, "pos", {
+					x: ship.x,
+					y: ship.y,
+					color: ship.color,
+					alive: ship.alive,
+				});
+			}
+		}
+
 		function updateHost(time) {
+			updateBots();
 			// Spawn enemies
 			if (time - lastSpawn > spawnRate) {
 				spawnEnemy();
@@ -436,6 +586,12 @@ NeonArcade.registerGame({
 			aliveCount = ctx.players().length;
 			spawnRate = SPAWN_INTERVAL_INIT;
 			lastSpawn = 0;
+			// A new run means new ships. Dropping them rather than reviving them
+			// keeps one rule: a bot ship exists only while the roster says so.
+			botShips = {};
+			peers = Object.fromEntries(
+				Object.entries(peers).filter(([id]) => !ctx.isBot(id)),
+			);
 			scoreEl.textContent = "Score: 0";
 			aliveEl.textContent = "Alive: " + aliveCount;
 			removeGhostMsg();
@@ -581,6 +737,7 @@ NeonArcade.registerGame({
 			// Broadcast position at ~20Hz
 			if (time - lastPosSend > POS_INTERVAL) {
 				broadcastPos();
+				if (room && room.isHost()) broadcastBotPos();
 				lastPosSend = time;
 			}
 			// Host broadcasts state at ~12Hz

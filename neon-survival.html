@@ -3,8 +3,24 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Neon Survival</title>
-    <!-- Installable: manifest + icons, registered by lib/pwa.js. -->
+    <title>Neon Survival — Arcade Games</title>
+    <!--
+      The standalone single-player page. It is now a redirect.
+
+      Neon Survival used to exist twice: once here as a solo game, and once in
+      games/neon-survival-mp.js as a co-op one. Two copies of the same game
+      drift, and the split forced a choice on the portal — "single player" or
+      "multiplayer" — that stopped being true the moment bots existed. The
+      co-op module seats one player perfectly well, so it is the only copy now.
+
+      This page stays so that a bookmark, a shared link or a home-screen
+      shortcut from before the merge still lands on the game. It redirects with
+      `location.replace` so it does not sit in the back-button history, and the
+      `<link rel="canonical">` plus the meta refresh cover the case where
+      scripts do not run at all.
+    -->
+    <link rel="canonical" href="neon-survival-mp.html" />
+    <meta http-equiv="refresh" content="0; url=neon-survival-mp.html" />
     <link rel="manifest" href="manifest.webmanifest" />
     <meta name="theme-color" content="#0a0a0a" />
     <link rel="icon" href="assets/icon.svg" type="image/svg+xml" />
@@ -12,324 +28,28 @@
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black" />
-    <meta name="apple-mobile-web-app-title" content="Neon Arcade" />
-    <style>
-      body {
-        margin: 0;
-        background: #0a0a0a;
-        color: #fff;
-        font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
-        overflow: hidden;
-        display: flex;
-        justify-content: center;
-        align-items: center;
-        height: 100vh;
-        user-select: none;
-        touch-action: none;
-      }
-      canvas {
-        border: 2px solid #333;
-        box-shadow: 0 0 20px rgba(0, 255, 255, 0.2);
-        cursor: none;
-        touch-action: none;
-      }
-      #ui {
-        position: absolute;
-        /* Clears the fixed "all games" pill in the top-left corner. */
-        top: 64px;
-        left: 20px;
-        pointer-events: none;
-      }
-      #score {
-        font-size: 24px;
-        font-weight: bold;
-        color: #0ff;
-        text-shadow: 0 0 10px #0ff;
-      }
-      #overlay {
-        position: absolute;
-        text-align: center;
-        background: rgba(0, 0, 0, 0.8);
-        padding: 20px;
-        border-radius: 10px;
-        border: 1px solid #0ff;
-        display: block;
-      }
-      button {
-        background: #0ff;
-        border: none;
-        padding: 10px 20px;
-        font-size: 18px;
-        font-weight: bold;
-        cursor: pointer;
-        margin-top: 10px;
-        border-radius: 5px;
-        transition: transform 0.1s;
-      }
-      button:active {
-        transform: scale(0.95);
-      }
-      /* Back to the arcade portal. Fixed and above the overlay so it stays
-         reachable on the game-over screen. */
-      .portal-link {
-        position: fixed;
-        top: 10px;
-        left: 12px;
-        z-index: 50;
-        padding: 7px 12px;
-        border: 1px solid #333;
-        border-radius: 999px;
-        background: rgba(10, 10, 10, 0.75);
-        color: #aaa;
-        font-size: 0.78rem;
-        letter-spacing: 1px;
-        text-decoration: none;
-        text-transform: uppercase;
-      }
-      .portal-link:hover {
-        color: #0ff;
-        border-color: #0ff;
-      }
-    </style>
+    <meta name="apple-mobile-web-app-title" content="Arcade Games" />
+    <link rel="stylesheet" href="lib/styles.css" />
   </head>
   <body>
-    <a class="portal-link" href="index.html">&#8592; All games</a>
-    <div id="ui">
-      <div id="score">Score: 0</div>
-    </div>
-    <div id="overlay">
-      <h1>NEON SURVIVAL</h1>
-      <p>
-        Avoid the <span style="color: #ff4d4d">Red Circles</span><br />Collect
-        the <span style="color: #4dff4d">Green Dots</span>
+    <div class="lobby">
+      <h1 class="lobby-title">NEON SURVIVAL</h1>
+      <p class="lobby-sub">
+        Neon Survival has moved — it is one game now, playable alone, with bots,
+        or with friends.
       </p>
-      <button id="startBtn">START GAME</button>
+      <div class="lobby-row">
+        <a class="neon-btn neon-btn--accent" href="neon-survival-mp.html"
+          >PLAY NEON SURVIVAL</a
+        >
+        <a class="neon-btn" href="index.html">ALL GAMES</a>
+      </div>
     </div>
-    <canvas id="gameCanvas"></canvas>
-
-    <script>
-      const canvas = document.getElementById("gameCanvas");
-      const ctx = canvas.getContext("2d");
-      const scoreElement = document.getElementById("score");
-      const overlay = document.getElementById("overlay");
-      const startBtn = document.getElementById("startBtn");
-
-      let score = 0;
-      let gameActive = false;
-      let player = { x: 0, y: 0, size: 15, color: "#0ff" };
-      let enemies = [];
-      let gems = [];
-      let particles = [];
-      let spawnRate = 1000;
-      let lastSpawn = 0;
-
-      function resize() {
-        if (window.innerWidth < 600) {
-          canvas.width = window.innerWidth * 0.95;
-          canvas.height = window.innerHeight * 0.8;
-        } else {
-          canvas.width = window.innerWidth * 0.8;
-          canvas.height = window.innerHeight * 0.8;
-        }
-      }
-      window.addEventListener("resize", resize);
-      resize();
-
-      function handleInput(clientX, clientY) {
-        const rect = canvas.getBoundingClientRect();
-        player.x = clientX - rect.left;
-        player.y = clientY - rect.top;
-      }
-
-      window.addEventListener("mousemove", (e) => {
-        handleInput(e.clientX, e.clientY);
-      });
-
-      window.addEventListener(
-        "touchstart",
-        (e) => {
-          if (!gameActive) return;
-          handleInput(e.touches[0].clientX, e.touches[0].clientY);
-          e.preventDefault();
-        },
-        { passive: false },
-      );
-
-      window.addEventListener(
-        "touchmove",
-        (e) => {
-          if (!gameActive) return;
-          handleInput(e.touches[0].clientX, e.touches[0].clientY);
-          e.preventDefault();
-        },
-        { passive: false },
-      );
-
-      function spawnEnemy() {
-        const side = Math.floor(Math.random() * 4);
-        let x, y;
-        if (side === 0) {
-          x = Math.random() * canvas.width;
-          y = -20;
-        } else if (side === 1) {
-          x = canvas.width + 20;
-          y = Math.random() * canvas.height;
-        } else if (side === 2) {
-          x = Math.random() * canvas.width;
-          y = canvas.height + 20;
-        } else {
-          x = -20;
-          y = Math.random() * canvas.height;
-        }
-
-        const angle = Math.atan2(player.y - y, player.x - x);
-        const speed = 1.5 + score / 10;
-        enemies.push({
-          x,
-          y,
-          vx: Math.cos(angle) * speed,
-          vy: Math.sin(angle) * speed,
-          size: 8,
-        });
-      }
-
-      function spawnGem() {
-        gems.push({
-          x: Math.random() * (canvas.width - 20) + 10,
-          y: Math.random() * (canvas.height - 20) + 10,
-          size: 5,
-        });
-      }
-
-      function createParticles(x, y, color) {
-        for (let i = 0; i < 8; i++) {
-          particles.push({
-            x,
-            y,
-            vx: (Math.random() - 0.5) * 5,
-            vy: (Math.random() - 0.5) * 5,
-            life: 1,
-            color,
-          });
-        }
-      }
-
-      function update(time) {
-        if (!gameActive) return;
-
-        // Spawn enemies
-        if (time - lastSpawn > spawnRate) {
-          spawnEnemy();
-          lastSpawn = time;
-          spawnRate = Math.max(300, 1000 - score * 10);
-        }
-
-        if (gems.length < 3 && Math.random() < 0.02) spawnGem();
-
-        // Update enemies
-        enemies.forEach((enemy, index) => {
-          enemy.x += enemy.vx;
-          enemy.y += enemy.vy;
-
-          const dist = Math.hypot(player.x - enemy.x, player.y - enemy.y);
-          if (dist < player.size + enemy.size) {
-            gameOver();
-          }
-        });
-
-        // Update gems
-        gems.forEach((gem, index) => {
-          const dist = Math.hypot(player.x - gem.x, player.y - gem.y);
-          if (dist < player.size + gem.size) {
-            score++;
-            scoreElement.innerText = `Score: ${score}`;
-            createParticles(gem.x, gem.y, "#4dff4d");
-            gems.splice(index, 1);
-          }
-        });
-
-        // Update particles
-        particles.forEach((p, index) => {
-          p.x += p.vx;
-          p.y += p.vy;
-          p.life -= 0.02;
-          if (p.life <= 0) particles.splice(index, 1);
-        });
-
-        draw();
-        requestAnimationFrame(update);
-      }
-
-      function draw() {
-        ctx.fillStyle = "rgba(10, 10, 10, 0.3)";
-        ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-        // Player
-        ctx.shadowBlur = 15;
-        ctx.shadowColor = player.color;
-        ctx.fillStyle = player.color;
-        ctx.fillRect(
-          player.x - player.size / 2,
-          player.y - player.size / 2,
-          player.size,
-          player.size,
-        );
-
-        // Enemies
-        ctx.shadowColor = "#ff4d4d";
-        ctx.fillStyle = "#ff4d4d";
-        enemies.forEach((e) => {
-          ctx.beginPath();
-          ctx.arc(e.x, e.y, e.size, 0, Math.PI * 2);
-          ctx.fill();
-        });
-
-        // Gems
-        ctx.shadowColor = "#4dff4d";
-        ctx.fillStyle = "#4dff4d";
-        gems.forEach((g) => {
-          ctx.beginPath();
-          ctx.arc(g.x, g.y, g.size, 0, Math.PI * 2);
-          ctx.fill();
-        });
-
-        // Particles
-        particles.forEach((p) => {
-          ctx.globalAlpha = p.life;
-          ctx.fillStyle = p.color;
-          ctx.fillRect(p.x, p.y, 2, 2);
-        });
-        ctx.globalAlpha = 1;
-        ctx.shadowBlur = 0;
-      }
-
-      function gameOver() {
-        gameActive = false;
-        overlay.style.display = "block";
-        overlay.textContent = "";
-
-        const h1 = document.createElement("h1");
-        h1.textContent = "GAME OVER";
-
-        const p = document.createElement("p");
-        p.textContent = `Your Score: ${score}`;
-
-        const btn = document.createElement("button");
-        btn.textContent = "TRY AGAIN";
-        btn.onclick = () => location.reload();
-
-        overlay.append(h1, p, btn);
-      }
-
-      startBtn.onclick = () => {
-        overlay.style.display = "none";
-        gameActive = true;
-        score = 0;
-        enemies = [];
-        gems = [];
-        requestAnimationFrame(update);
-      };
-    </script>
     <script src="lib/pwa.js"></script>
+    <script>
+      // Replace rather than assign: BACK from the game should leave the arcade
+      // the way it came in, not bounce through this page forever.
+      location.replace("neon-survival-mp.html");
+    </script>
   </body>
 </html>

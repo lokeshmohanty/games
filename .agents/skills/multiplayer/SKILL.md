@@ -30,6 +30,8 @@ node scripts/test-codec.mjs    # signalling codec round-trip, no browser
 node scripts/test-party.mjs    # three real browser peers: recruiting, teams,
                                # game switching, host succession
 node scripts/test-scan.mjs     # SCAN REPLY against a fake camera
+node scripts/test-bots.mjs     # every game playable by one person, and no peer
+                               # opening a connection to a bot
 ```
 
 `test-scan.mjs` and `test-pwa.mjs` need a **secure context**, so they serve the
@@ -47,8 +49,14 @@ repo over `http://127.0.0.1`; `file://` and `http://<lan-ip>` will not do.
   is told which case they hit.
 - Changing the handshake breaks `scripts/preview.mjs` too — it drives the same
   UI. See [[../../game-previews/memory/p2p-handshake]].
+- **A bot is a party member, not a mode.** Anything that walks the roster or
+  routes a message has to know a `bot_` id has no connection behind it and never
+  will. See [[bots-as-members]] for the four places in `net.js` that get this
+  wrong if you forget.
 
 ## Memory
 
 - `memory/reply-code-scanning.md` — why SCAN REPLY broke twice, the two traps
   that caused it, and the only test shape that catches them.
+- `memory/bots-as-members.md` — why bots are roster members rather than a game
+  mode, and the routing that must exclude them.

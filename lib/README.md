@@ -18,7 +18,7 @@ handshake per person and nothing else.
 - **`net.js`** — `NeonArcade.createHost()` / `createGuest()`: the mesh, the party record, typed message channels.
 - **`games.js`** — `NeonArcade.registerGame()`: the registry every game plugs into, plus `mountGamePage` for single-game pages.
 - **`party.js`** — `NeonArcade.mountParty()`: the persistent party screen — roster, teams, game switching, host handover.
-- **`lobby.js`** — `NeonArcade.mountLobby()`: the plain two-player invite/answer UI used by the per-game pages.
+- **`lobby.js`** — `NeonArcade.mountLobby()`: the invite/answer UI used by the per-game pages, plus the bot controls that let one person start a game alone.
 - **`qr.js`** — `NeonArcade.qrCanvas()`: a self-contained QR encoder, so invites can be scanned instead of typed.
 - **`qr-decode.js`** — `NeonArcade.qrDecode()` / `scanQr()`: a self-contained QR *decoder* plus a camera scanner.
 - **`pwa.js`** — registers `../sw.js` and fills `[data-install-slot]` with an install button. Optional; nothing else depends on it.
@@ -86,6 +86,7 @@ NeonArcade.registerGame({
   blurb: "Three in a row.",    // one line, shown in the switcher
   shape: "teams",              // "teams" | "coop" | "free"
   seats: { min: 2, max: 2 },   // active players, spectators excluded
+  bots: true,                  // default; set false if a bot has nothing to do
   mount(ctx) {
     ctx.root.append(/* build your markup */);
     return { unmount() { /* stop timers, drop listeners */ } };
@@ -94,7 +95,8 @@ NeonArcade.registerGame({
 ```
 
 `mount(ctx)` receives `root`, `room`, `isHost`, `seatOf(id)`, `seats(team)`,
-`players()`, `nameOf(id)` and `end()`. It **must** return an object with
+`players()`, `nameOf(id)`, `isBot(id)`, `botSeats(team)` and `end()`. It
+**must** return an object with
 `unmount()`: games are swapped without a page reload, so anything left running
 — a `requestAnimationFrame` loop, an interval, a window listener — will fight
 the next game for input. Optional `onPeerJoin` / `onPeerLeave` / `onRoster`
@@ -103,6 +105,28 @@ handlers on the same object are called when the party changes under you.
 `shape` tells the party screen how to read team assignments: `teams` is Team A
 against Team B, `coop` puts everyone on one side, `free` ignores teams. Whatever
 the shape, members marked **WATCHING** are excluded from `players()`.
+
+### Bots
+
+A bot is a party member the host simulates. It is in `getMembers()`, it takes a
+team and a seat, and every other peer sees it as a player — so **a game that
+ignores bots entirely still runs**; it will simply wait for a move that never
+comes. To give one a brain:
+
+- Do it **host-side only** (`if (!room.isHost()) return`). Every game here is
+  host-authoritative, so the host is already the one deciding.
+- Use `ctx.isBot(id)` to notice a bot in a seat, and `ctx.botSeats(team)` to
+  list them.
+- Apply the bot's move through the same path a person's move takes — the
+  broadcast that follows carries it to everyone with no special case.
+- Only when the *game's own peers* are what carry the information (Neon
+  Survival publishes every ship's position as a `pos` message) reach for
+  `room.emitAs(botId, action, data)`, which sends as that bot **and** delivers
+  locally.
+
+Set `bots: false` in the registration when a bot would be a parlour trick rather
+than an opponent; the lobby and party screen then say so instead of offering a
+button. Draw & Guess is the only one.
 
 ## Loading
 
@@ -129,14 +153,25 @@ Handles joining (`#i=` in the URL), recruiting, teams, switching and succession.
 
 ### `NeonArcade.mountGamePage(lobbyEl, stage, gameId)`
 
-One game on its own page, through the plain two-player lobby. Seats fall back to
-the old rule: the host is Team A, the first other player is Team B, anyone else
-spectates — except for `coop`/`free` games, where everybody plays.
+One game on its own page, through the plain lobby. Returns `{ game, room,
+handle }` with live getters — each page publishes it as `window.__game`, which
+is how `scripts/test-bots.mjs` drives the real page.
+
+Seats fall back to a rule rather than a choice. A one-against-one game keeps the
+old one: the host is Team A, the first other player is Team B, anyone else
+spectates. A team game with `seats.max > 2` deals players out **alternately**
+instead, which is the only way a deep link can seat several bots without most of
+them watching. `coop`/`free` games put everybody on one side.
 
 ### `NeonArcade.mountLobby(container, opts)`
 
-The two-player lobby itself: `gameName`, `onReady(room)`, `onStart()`,
-`onPeerJoin(id)`, `onPeerLeave(id)`.
+The lobby itself: `gameName`, `game` (the registered def, for seat counts and
+bots), `onReady(room)`, `onStart()`, `onPeerJoin(id)`, `onPeerLeave(id)`.
+
+It offers two host paths: **INVITE A FRIEND** (the handshake) and **PLAY A
+BOT** / **PLAY ALONE** (no handshake at all — it seats enough bots to make the
+game legal and goes straight to START). START refuses on the **seat** count, not
+the peer count, so a game with bots in it is startable with nobody connected.
 
 ### Scanning
 
@@ -170,7 +205,7 @@ pasting.
 | `selfId` | this peer's random id |
 | `getPeers()` | array of other member ids |
 | `peerCount()` | number of other members |
-| `getMembers()` | `[{ id, name, team, joined }]`, in join order |
+| `getMembers()` | `[{ id, name, team, joined, bot? }]`, in join order |
 | `getMember(id)` / `self()` | one member record |
 | `isHost()` / `hostId()` | who holds the crown |
 | `directPeers()` | peers this browser has an actual connection to |
@@ -180,7 +215,11 @@ pasting.
 | `setTeam(id, team)` | host only: `"A"`, `"B"` or `"spectator"` |
 | `setGame(id)` | host only: everyone mounts it; `null` returns to the party |
 | `transferHost(id)` | host only: hand over the crown |
-| `removeMember(id)` | host only: remove someone |
+| `removeMember(id)` | host only: remove someone (a bot included) |
+| `addBot(team?)` | host only: seat a simulated member; defaults to the emptier side. Returns its id |
+| `bots()` | every bot in the roster (readable by anyone) |
+| `emitAs(botId, action, data, opts?)` | host only: send as a bot, and deliver locally too |
+| `NeonArcade.isBotId(id)` | a bot's id is prefixed `bot_`, so routing can tell without the record |
 | `claimHost()` | take a vacant crown (only the nominated heir is offered it) |
 | `deleteParty()` | host only: end it for everyone |
 | `leave()` | close every connection |
@@ -223,7 +262,9 @@ node scripts/test-party.mjs    # three real browser peers: recruiting, teams,
                                # game switching, host succession
 node scripts/test-scan.mjs     # SCAN REPLY against a fake camera, including the
                                # aiming before the code arrives
-node scripts/test-pwa.mjs      # installability and offline
+node scripts/test-pwa.mjs      # installability, portal layout, and offline
+node scripts/test-bots.mjs     # every game playable by one person, and no peer
+                               # opening a connection to a bot
 ```
 
 To test two peers by hand, open a game twice — the invite link works between two

@@ -14,6 +14,11 @@ NeonArcade.registerGame({
 	blurb: "Take turns drawing while everyone races to guess the word.",
 	shape: "free",
 	seats: { min: 2, max: 8 },
+	// No bots. A bot that draws would be replaying a canned doodle, and a bot
+	// that guesses would be reading the word it was already told — neither is an
+	// opponent, and both make the round worse for the people actually playing.
+	// This game is the one that still needs a second person.
+	bots: false,
 
 	mount(ctx) {
 		const { root } = ctx;

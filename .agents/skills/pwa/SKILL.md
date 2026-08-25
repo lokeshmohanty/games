@@ -20,8 +20,9 @@ one SVG by a script.
 ## Verify — and let Chrome be the judge
 
 ```sh
-node scripts/test-pwa.mjs      # manifest, icons, worker, offline, and
-                               # Chrome's own installability verdict over CDP
+node scripts/test-pwa.mjs      # manifest, icons, worker, offline, the portal's
+                               # layout at 390x844, and Chrome's own
+                               # installability verdict over CDP
 node scripts/make-icons.mjs    # only after editing assets/icon.svg
 ```
 
@@ -36,6 +37,10 @@ it simply will not be there offline, and nothing warns you. Then bump `VERSION`.
 
 ## Rules
 
+- **"It will not install in Firefox" is not a bug.** The button comes from
+  `beforeinstallprompt`, which is Chromium-only and always has been. Do not
+  audit the manifest over it — read [[install-prompt-is-chromium-only]] first.
+  Offline is a *separate* capability and does work in Firefox.
 - **Code is network-first, assets are cache-first.** Do not "optimise" this into
   cache-first everywhere — see [[caching-split]] for what that would break.
 - **Nothing here may break `file://`.** `lib/pwa.js` must stay inert without a
@@ -54,3 +59,6 @@ it simply will not be there offline, and nothing warns you. Then bump `VERSION`.
   uninstallable, and why CDP is the only honest check.
 - `memory/caching-split.md` — why code is network-first, and the hand-bumped
   `VERSION` trade-off.
+- `memory/install-prompt-is-chromium-only.md` — why no button can ever appear in
+  Firefox or Safari, what each browser actually does, and why offline is fine
+  there anyway.

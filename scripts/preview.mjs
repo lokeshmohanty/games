@@ -80,9 +80,10 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 async function connectPeers(pages, timeoutMs = 30_000) {
 	const [host, ...guests] = pages;
 	for (const [i, guest] of guests.entries()) {
-		// The first invite comes from CREATE GAME; later ones from INVITE ANOTHER.
+		// The first invite comes from INVITE A FRIEND on the host-choice screen;
+		// later ones from INVITE ANOTHER once the host flow is already open.
 		const opener = host.locator("button", {
-			hasText: i === 0 ? "CREATE GAME" : "INVITE ANOTHER",
+			hasText: i === 0 ? "INVITE A FRIEND" : "INVITE ANOTHER",
 		});
 		await opener.first().click();
 
@@ -314,17 +315,6 @@ const GAMES = {
 			const bMoving = sweepMouse(b, seconds, Math.PI).catch(() => {});
 			await Promise.race([dodgeLoop(a, seconds), sleep(seconds * 1000)]);
 			void bMoving;
-		},
-	},
-
-	"neon-survival": {
-		file: "neon-survival.html",
-		peers: 1,
-		seconds: 12,
-		async play([a], seconds) {
-			const start = a.locator("button", { hasText: /START|PLAY/i });
-			if (await start.count()) await start.first().click().catch(() => {});
-			await dodgeLoop(a, seconds, "canvas");
 		},
 	},
 };

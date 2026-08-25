@@ -203,6 +203,57 @@ for (const p of [
 		JSON.stringify(has));
 }
 
+// ------------------------------------------------------------- the portal
+//
+// The portal is `start_url`, so it is the first thing an installed app shows.
+// It is also the page that carries the install slot, and the one that was most
+// recently rebuilt — the three player-count sections are gone and everything
+// is one grid — so its layout is asserted rather than eyeballed.
+
+console.log("\npwa: the portal at 390x844");
+await page.goto(`${BASE}/index.html`);
+await page.waitForSelector(".games-grid .game-card");
+
+const portal = await page.evaluate(() => {
+	const doc = document.documentElement;
+	const cards = [...document.querySelectorAll(".games-grid .game-card")];
+	const slot = document.querySelector("[data-install-slot]");
+	const banner = document.querySelector(".party-banner");
+	return {
+		scroll: doc.scrollWidth,
+		client: doc.clientWidth,
+		cards: cards.length,
+		links: cards.map((c) => c.querySelector("a.play-btn")?.getAttribute("href")),
+		sections: document.querySelectorAll("h2.section-title").length,
+		title: document.querySelector("h1")?.textContent.trim(),
+		// The slot must reserve its own room: it is filled after layout, and a
+		// bar that appears from nowhere would shove the first row of cards down.
+		slotInFlow: !!slot && getComputedStyle(slot).position === "static",
+		bannerAboveGrid:
+			!!banner &&
+			banner.getBoundingClientRect().bottom <=
+				document.querySelector(".games-grid").getBoundingClientRect().top + 1,
+	};
+});
+check(
+	"the portal does not scroll sideways at 390px",
+	portal.scroll <= portal.client,
+	`scrollWidth ${portal.scroll} > clientWidth ${portal.client}`,
+);
+check("it is called Arcade Games", /arcade games/i.test(portal.title ?? ""), portal.title);
+check(
+	"every game is in one grid, with no player-count sections",
+	portal.sections === 0 && portal.cards === 4,
+	`${portal.cards} cards, ${portal.sections} sections`,
+);
+check(
+	"no card still points at the retired single-player page",
+	!portal.links.includes("neon-survival.html"),
+	portal.links.join(" "),
+);
+check("the install slot sits in the flow, not over the cards", portal.slotInFlow);
+check("the party banner sits above the games", portal.bannerAboveGrid);
+
 // --------------------------------------------------------- the service worker
 
 console.log("\npwa: the service worker");
@@ -256,9 +307,11 @@ await ctx.setOffline(true);
 // the empty container it builds into — `.lobby` is absolutely positioned, so
 // `#lobby` has no height whether this works or not.
 for (const [p, marker, expect, what] of [
-	["index.html", "h1", /game portal/i, "the portal"],
+	["index.html", "h1", /arcade games/i, "the portal"],
 	["party.html", ".lobby", /party/i, "the party screen"],
-	["neon-survival.html", "canvas", null, "Neon Survival"],
+	// neon-survival.html is a redirect into the co-op module, so what has to
+	// survive offline is the page it lands on, not the page it starts from.
+	["neon-survival-mp.html", ".lobby", /neon survival/i, "Neon Survival"],
 	["connect4.html", ".lobby", /connect 4/i, "Connect 4"],
 ]) {
 	let ok = false;

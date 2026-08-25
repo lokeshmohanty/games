@@ -1,7 +1,7 @@
 {
-  "name": "Neon Arcade",
-  "short_name": "Neon Arcade",
-  "description": "Serverless browser games — single-player, shared-screen, and peer-to-peer multiplayer with no accounts and no servers.",
+  "name": "Arcade Games",
+  "short_name": "Arcade Games",
+  "description": "Serverless browser games. Every game is multiplayer — play against bots on one device, or peer-to-peer with friends. No accounts, no servers.",
   "id": "./",
   "start_url": "./index.html",
   "scope": "./",

@@ -12,6 +12,10 @@
 // Everyone taps as fast as they can; each tap yanks the knot toward their side.
 // A tap is worth more on a smaller team — impulse is divided by the team's size
 // — so 1-against-4 is still a game, and a party never has to split evenly.
+//
+// Bots pull too. They are the simplest brain here — a tap rate with jitter —
+// and because the host already turns every remote tap into `applyPull`, a bot
+// is just a caller of the same function that never had to send anything.
 
 NeonArcade.registerGame({
 	id: "tug-of-war",
@@ -32,6 +36,20 @@ NeonArcade.registerGame({
 		const WIN_AT = 1; // |pos| that crosses a team's line
 		const STATE_MS = 66; // host broadcast, ~15Hz
 		const TAP_MIN_MS = 60; // ignore taps faster than a human can produce
+
+		// Bot tapping, ~8.8 taps a second once the tick granularity below is
+		// counted in. The scale to read that against is the impulse tuning above:
+		// TAP_MIN_MS caps a person at 16.7 taps a second, which crosses the line
+		// in five seconds unopposed, and the bot's rate crosses in about nine. So
+		// somebody genuinely mashing beats it, somebody half-hearted does not, and
+		// a round nobody contests still ends. A slower bot was tried first and the
+		// round simply would not finish.
+		//
+		// The jitter is what stops a bot-versus-bot round settling into a
+		// dead-still stalemate on the centre line.
+		const BOT_TAP_MS = 105;
+		const BOT_JITTER_MS = 30;
+		const BOT_TICK_MS = 16; // how often bot due-times are checked, ~1 frame
 
 		// -- markup ---------------------------------------------------------
 
@@ -158,6 +176,7 @@ NeonArcade.registerGame({
 		let lastTap = 0;
 		let raf = null;
 		let stateTimer = null;
+		let botTimer = null;
 		let running = true;
 
 		const myTeam = () => ctx.seatOf(room.selfId); // "A" | "B" | null
@@ -197,6 +216,39 @@ NeonArcade.registerGame({
 			vel += (team === "A" ? -IMPULSE : IMPULSE) / size;
 			state.pulls[team]++;
 			flash[team] = 1;
+		}
+
+		// -- bots (host) ------------------------------------------------------
+
+		/**
+		 * Host only. One timer drives every bot: each holds its own due time, and
+		 * the roster is re-read on every tick so a bot added, moved between teams
+		 * or removed mid-round takes effect immediately.
+		 */
+		const botDue = new Map(); // bot member id -> performance.now() of next tap
+
+		const nextTapAt = (now) =>
+			now + BOT_TAP_MS + (Math.random() * 2 - 1) * BOT_JITTER_MS;
+
+		function botTick() {
+			if (!room.isHost() || state.winner !== null) return;
+			const now = performance.now();
+			const live = new Set();
+			for (const team of ["A", "B"]) {
+				for (const id of ctx.seats(team)) {
+					if (!ctx.isBot(id)) continue;
+					live.add(id);
+					const due = botDue.get(id);
+					// A bot that has only just been seated waits out one interval
+					// rather than firing the moment it appears.
+					if (due === undefined) botDue.set(id, nextTapAt(now));
+					else if (now >= due) {
+						applyPull(team);
+						botDue.set(id, nextTapAt(now));
+					}
+				}
+			}
+			for (const id of botDue.keys()) if (!live.has(id)) botDue.delete(id);
 		}
 
 		function step() {
@@ -394,6 +446,9 @@ NeonArcade.registerGame({
 			state = { pos: 0, winner: null, pulls: { A: 0, B: 0 } };
 			vel = 0;
 			shown = 0;
+			// Otherwise every bot's due time is long past and they all fire at once
+			// on the first tick of the new round.
+			botDue.clear();
 			hideOverlay();
 			updateTapButton();
 			broadcast();
@@ -407,10 +462,13 @@ NeonArcade.registerGame({
 		if (room.isHost()) {
 			broadcast();
 			stateTimer = setInterval(() => broadcast(), STATE_MS);
+			botTimer = setInterval(botTick, BOT_TICK_MS);
 		}
 		raf = requestAnimationFrame(step);
 
 		return {
+			/** A copy of the live round, for scripts/test-bots.mjs. */
+			debug: () => ({ ...state, pulls: { ...state.pulls } }),
 			onPeerJoin(peerId) {
 				renderRosters();
 				// Bring the newcomer straight to the current round.
@@ -431,6 +489,7 @@ NeonArcade.registerGame({
 				running = false;
 				cancelAnimationFrame(raf);
 				clearInterval(stateTimer);
+				clearInterval(botTimer);
 				tapBtn.removeEventListener("pointerdown", onTap);
 				canvas.removeEventListener("pointerdown", onTap);
 				window.removeEventListener("keydown", onKey);

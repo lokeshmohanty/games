@@ -339,6 +339,16 @@ canvas {
   border-color: var(--accent);
   box-shadow: 0 0 8px var(--accent-glow);
 }
+/*
+  A bot reads as a player everywhere else in the roster, so the tag is the only
+  thing that says otherwise. Magenta rather than the accent cyan: the host tag
+  is already cyan, and the two sit side by side on the same row.
+*/
+.party-tag.is-bot {
+  color: #f0f;
+  border-color: #f0f;
+  box-shadow: 0 0 8px rgba(255, 0, 255, 0.35);
+}
 .party-controls {
   display: flex;
   flex-wrap: wrap;
