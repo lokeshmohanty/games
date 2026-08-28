@@ -190,6 +190,42 @@ async function sweepMouse(page, seconds, phase = 0) {
 // ---------------------------------------------------------------- scenarios
 
 const GAMES = {
+	"oh-hell": {
+		file: "oh-hell.html",
+		peers: 2,
+		seconds: 16,
+		async beforeStart([host]) {
+			// Four hands makes the trick worth looking at.
+			for (let i = 0; i < 2; i++) {
+				await host.locator("button", { hasText: "ADD BOT" }).first().click().catch(() => {});
+				await sleep(150);
+			}
+		},
+		async play([a, b], seconds) {
+			// Bid, then play any legal card. The interesting picture is the trick
+			// filling up and the hand emptying, which needs no cleverness.
+			const act = (page) =>
+				page.evaluate(() => {
+					const bid = document.querySelector(".oh-bids button:not(:disabled)");
+					if (bid) return void bid.click();
+					const card = document.querySelector(".oh-hand .oh-card.playable");
+					if (card) card.click();
+				}).catch(() => {});
+
+			// The first round deals one card each and is over in seconds; wait for
+			// a later one, where a hand and a trick are both worth seeing.
+			const deadline = Date.now() + seconds * 1000;
+			while (Date.now() < deadline) {
+				await act(a);
+				await act(b);
+				await sleep(260);
+				const done = await a.evaluate(() => !!window.__game.handle.debug().over).catch(() => false);
+				if (done) break;
+			}
+			await sleep(1200);
+		},
+	},
+
 	"liars-dice": {
 		file: "liars-dice.html",
 		peers: 2,

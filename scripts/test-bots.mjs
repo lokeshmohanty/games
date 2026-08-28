@@ -109,6 +109,78 @@ try {
 	// and that the bot answers with a legal move rather than sitting on its
 	// turn — a search that times out badly would look exactly like a hang.
 
+	// ---------------------------------------------------------------- oh hell
+	//
+	// The first game here that cannot deal itself: hands come off one shared
+	// deck and must be disjoint, so somebody has to cut it up and the pieces
+	// have to travel. That is what `secrets.channel()` is for, and this is its
+	// first user. What is checked here is the game; `test-party.mjs` checks that
+	// three real peers get three different hands over the wire.
+
+	console.log("\nbots: oh hell deals a shared deck and plays it out");
+	await page.goto(url("oh-hell.html"));
+	await page.locator("button", { hasText: "PLAY A BOT" }).first().click();
+	for (let i = 0; i < 2; i++) {
+		await page.locator("button", { hasText: "ADD BOT" }).first().click();
+	}
+	await page.locator("button", { hasText: "START GAME" }).first().click();
+	await page.waitForFunction(() => window.__game?.handle, null, { timeout: TIMEOUT });
+	await page.waitForFunction(() => window.__game.handle.debug().phase === "bid", null, { timeout: TIMEOUT });
+
+	let oh = await debug(page);
+	check("four seats at the table", oh.seats.length === 4, `${oh.seats.length}`);
+	check("the deal is sealed, not addressed", oh.sealed === "sealed", oh.sealed);
+	check("round one deals one card", oh.handSize === 1 && oh.myHandSize === 1, JSON.stringify({ h: oh.handSize, m: oh.myHandSize }));
+	check("a trump was turned up", oh.trump !== null && oh.trump >= 0 && oh.trump <= 3, `${oh.trump}`);
+	check("nobody has bid yet", oh.seats.every((x) => x.bid === null || x.bid === undefined));
+
+	const cards = await page.evaluate(() => {
+		const bids = [...document.querySelectorAll(".oh-bids button")];
+		const hand = [...document.querySelectorAll(".oh-hand .oh-card")];
+		const all = [...bids, ...hand];
+		return {
+			docWidth: document.documentElement.scrollWidth,
+			winWidth: window.innerWidth,
+			bidButtons: bids.length,
+			minTap: all.length ? Math.min(...all.map((b) => Math.round(b.getBoundingClientRect().height))) : 0,
+			bottom: Math.round(Math.max(...[...document.querySelectorAll(".oh-hand, .oh-bids, .oh-scores")]
+				.map((e) => e.getBoundingClientRect().bottom))),
+		};
+	});
+	// One card in hand means bids of 0 or 1 — two buttons, not a stepper.
+	check("bidding offers every number it could be", cards.bidButtons === 2, `${cards.bidButtons}`);
+	check("oh hell does not scroll sideways", cards.docWidth <= cards.winWidth, `${cards.docWidth} > ${cards.winWidth}`);
+	check("cards and bid buttons clear 44px", cards.minTap >= 44, `${cards.minTap}px`);
+	check("nothing runs off the bottom", cards.bottom <= 844, `${cards.bottom}px`);
+
+	// Play the whole thing: bid whatever is offered first, then any legal card.
+	// A full five-round game runs about a minute of wall clock, most of it the
+	// pauses that make it watchable, so this loop is deliberately patient.
+	for (let i = 0; i < 900; i++) {
+		const d = await debug(page).catch(() => null);
+		if (!d || d.over) break;
+		await page
+			.evaluate(() => {
+				const bid = document.querySelector(".oh-bids button:not(:disabled)");
+				if (bid) return void bid.click();
+				const card = document.querySelector(".oh-hand .oh-card.playable");
+				if (card) card.click();
+			})
+			.catch(() => {});
+		await sleep(120);
+	}
+
+	oh = await debug(page);
+	check("the game reaches a winner", !!oh.over?.winner, JSON.stringify({ phase: oh.phase, over: oh.over }));
+	check("all five rounds were played", oh.seats.every((x) => x.score >= 0) && oh.phase === "over", oh.phase);
+	// Exactly-or-nothing scoring: every score is a sum of (10 + bid) terms, so
+	// no score can be a number that scoring cannot produce.
+	check("every score is a sum of made bids",
+		oh.seats.every((x) => x.score === 0 || x.score >= 10),
+		JSON.stringify(oh.seats.map((x) => x.score)));
+	check("somebody actually scored", oh.seats.some((x) => x.score > 0), JSON.stringify(oh.seats.map((x) => x.score)));
+	check("the hand is empty at the end", oh.myHandSize === 0, `${oh.myHandSize}`);
+
 	// ----------------------------------------------------------- liar's dice
 	//
 	// The other unrefereed game, and the one where the wrong build is the

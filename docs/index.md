@@ -1,6 +1,6 @@
 # games — Documentation
 
-*Last synced: 2026-08-27 (Liar's Dice; Draw & Guess moved onto rounds.js).*
+*Last synced: 2026-08-27 (Oh Hell — the sealed channel's first user).*
 
 Entry point for all project documentation. Any LLM should be able to answer
 questions about this project from this folder alone.
@@ -34,6 +34,7 @@ questions about this project from this folder alone.
 | Test the private-state and round layers | `node scripts/test-plumbing.mjs` — real `Room` routing over a fake transport: a sealed message is unreadable by the peer relaying it, a tampered one is refused, commitments verify, phases advance |
 | Test Onitama's rules and bot | `node scripts/test-onitama.mjs` — card orientation as a property, both victory conditions from both sides, and the bot measured against random play |
 | Test Battleship's rules and audit | `node scripts/test-battleship.mjs` — fleets, sinking, and the audit tested by *breaking* it four ways |
+| Test Oh Hell | `node scripts/test-oh-hell.mjs` — following suit, trick-taking, and the deal's disjointness over 300 hands |
 | Test Liar's Dice | `node scripts/test-liars-dice.mjs` — wilds, the bid ladder, the at-least rule, and the reveal race that once accused an honest player |
 | Test the Light Cycles arena | `node scripts/test-light-cycles.mjs` — head-on collisions, spawn symmetry, and the bot measured against a rider that only avoids crashing |
 | Rebuild the app icons | `node scripts/make-icons.mjs` after editing `assets/icon.svg` — renders the PNGs the manifest needs |
@@ -262,7 +263,34 @@ The generalisation: **commit-reveal is the answer whenever players can generate
 their own secret.** The sealed channel only earns its place when one party must
 know something the others must not — a **shared deck**, dealt without
 replacement, where the hands must be disjoint and no player can roll their own.
-That is still the case with no user here.
+
+### Oh Hell — the sealed channel's first user
+
+`games/oh-hell.js` is that game. Twelve cards off a fifty-two card deck cannot
+be self-generated: the same queen must not be in two hands, so somebody has to
+cut the deck up and the pieces have to travel.
+
+```js
+const hands = secrets.channel("hand");
+hands.send(playerId, cards);   // sealed end to end, one hand per player
+```
+
+That matters here specifically because of how this project routes. A pair with
+no direct link is relayed through whichever peer can reach both — and that peer
+is an opponent. An addressed hand would be read by whoever forwarded it.
+
+`test-party.mjs` is where this is actually exercised: with bots the deal never
+leaves the host, so only three real peers prove anything. It asserts three peers
+get three different cards, agree on trump, and cannot see each other's hands.
+
+**The honest limit: the dealer knows.** Sealing protects a hand from every
+player except the one who dealt it, and the host deals. A host that wanted to
+cheat could deal itself the aces, and no commitment fixes that — the host also
+chooses the shuffle it would be committing to. The real answer is **mental
+poker**: a deck encrypted commutatively by every player, which nobody can read
+and everybody can shuffle. That is not built here. What this game fixes is the
+part that was actually broken — your hand is not readable by the people you are
+playing against.
 
 One trap it exposed, and it is the worst kind: verifying a commitment is
 asynchronous, and settling a round takes a die off the loser. Reading a player's
@@ -428,12 +456,19 @@ the favicon via `<link rel="icon">`.
   board, which is not the same as checking it plays well — and **nothing
   measures whether any of them is fun to lose to**. Light Cycles' bot may in
   fact be too strong; that is a judgement no test here makes.
-- **The sealed channel still has no user, and Liar's Dice was not it.** Both
-  hidden-information games generate their secret locally and commit to it, which
-  is the correct build; sealing would have meant a host that reads every hand.
-  `secrets.channel()` is proven only by `test-plumbing.mjs`. What would use it is
-  a **shared deck** dealt without replacement, where hands must be disjoint and
-  no player can generate their own — a card game, not a dice game.
+- **Oh Hell's dealer knows every hand.** The sealed channel stops the *other
+  players* reading a hand they relay; it cannot stop the host, which deals. A
+  dishonest host could stack the deck, and a commitment would not catch it
+  because the host chooses the shuffle it commits to. Mental poker — a deck
+  encrypted commutatively by all players — is the real fix and is not built.
+- Oh Hell has no protection against a modified client that plays a card it was
+  never dealt: the host validates every play against the hand it dealt, which
+  works precisely *because* the dealer knows. Removing the dealer's knowledge
+  would mean re-solving that too.
+- `scripts/test-party.mjs`'s host-succession section is **intermittently
+  flaky** — one failure in five runs on 2026-08-27, timing out waiting for the
+  crown to be offered after the host's page closes. The other four passed and
+  nothing else in the suite failed. Not investigated.
 - `lib/rounds.js` does not survive host succession. If the crown moves
   mid-round the clock stops with it; every other game here has the same
   property, and nothing recovers a game in progress.

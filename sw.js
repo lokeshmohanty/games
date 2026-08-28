@@ -28,7 +28,7 @@
 // first, a forgotten bump costs an out-of-date *offline* copy — never a stale
 // app for an online player, which is the failure mode that would be hard to
 // notice.
-const VERSION = "arcade-games-v6";
+const VERSION = "arcade-games-v7";
 
 // The shell: everything needed to open any page and start a game with no
 // network at all. The preview gifs are deliberately absent — they are ~2 MB
@@ -43,6 +43,7 @@ const SHELL = [
 	"./light-cycles.html",
 	"./battleship.html",
 	"./liars-dice.html",
+	"./oh-hell.html",
 	"./draw-guess.html",
 	"./neon-survival.html",
 	"./neon-survival-mp.html",
@@ -64,6 +65,7 @@ const SHELL = [
 	"./games/light-cycles.js",
 	"./games/battleship.js",
 	"./games/liars-dice.js",
+	"./games/oh-hell.js",
 	"./games/draw-guess.js",
 	"./games/neon-survival-mp.js",
 	"./games/tug-of-war.js",

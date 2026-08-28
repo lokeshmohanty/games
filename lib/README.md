@@ -21,7 +21,7 @@ handshake per person and nothing else.
 - **`lobby.js`** — `NeonArcade.mountLobby()`: the invite/answer UI used by the per-game pages, plus the bot controls that let one person start a game alone.
 - **`qr.js`** — `NeonArcade.qrCanvas()`: a self-contained QR encoder, so invites can be scanned instead of typed.
 - **`qr-decode.js`** — `NeonArcade.qrDecode()` / `scanQr()`: a self-contained QR *decoder* plus a camera scanner.
-- **`secrets.js`** — `NeonArcade.makeSecrets(room)`: sealed private channels (so a *relaying player* cannot read a hand) and commit-reveal (so the host cannot either). Optional; only games with hidden information need it. `games/battleship.js` is the worked example — and note that verifying the digest is only half the check, see `docs/index.md`.
+- **`secrets.js`** — `NeonArcade.makeSecrets(room)`: sealed private channels (so a *relaying player* cannot read a dealt hand) and commit-reveal (so the host cannot either). Optional; only games with hidden information need it. `games/oh-hell.js` is the worked example for the channel — a shared deck is the only thing that genuinely needs one — and `games/battleship.js` for commit-reveal, where verifying the digest is only half the check.
 - **`rounds.js`** — `NeonArcade.makeRounds(ctx, spec)`: the host-owned round/phase clock, including `collect` phases that end when everyone has submitted and `next()` for a phase that ends on a game event. Optional. `games/draw-guess.js` is the game it was generalised from and now runs on.
 - **`ui.js`** — `NeonArcade.gameShell(root, opts)`: the stage, status line and overlay every game was rebuilding. Optional, but new games should use it.
 - **`pwa.js`** — registers `../sw.js` and fills `[data-install-slot]` with an install button. Optional; nothing else depends on it.
@@ -280,6 +280,8 @@ node scripts/test-battleship.mjs    # fleets, sinking, and the reveal audit —
 node scripts/test-liars-dice.mjs    # wilds, the bid ladder, the at-least rule,
                                     # and the reveal race that once accused an
                                     # honest player of cheating
+node scripts/test-oh-hell.mjs       # following suit, taking tricks, and 300
+                                    # deals checked for disjoint hands
 ```
 
 To test two peers by hand, open a game twice — the invite link works between two
