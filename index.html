@@ -99,12 +99,57 @@
         background: #f0f;
         flex: 0 0 auto;
       }
+      /*
+        Filter chips. One row of them on a desktop, two on a phone; the whole
+        strip scrolls sideways rather than wrapping into a wall of buttons.
+      */
+      .filters {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        justify-content: center;
+        width: 92%;
+        max-width: 1200px;
+        margin-bottom: 22px;
+      }
+      .filter {
+        background: #1a1a1a;
+        border: 2px solid #333;
+        border-radius: 999px;
+        color: #aaa;
+        font-family: inherit;
+        font-size: 0.72rem;
+        letter-spacing: 1.5px;
+        text-transform: uppercase;
+        padding: 9px 14px;
+        /* Comfortably past the tap minimum with the small type. */
+        min-height: 40px;
+        cursor: pointer;
+      }
+      .filter:hover {
+        border-color: #0ff;
+        color: #0ff;
+      }
+      .filter[aria-pressed="true"] {
+        background: #0ff;
+        border-color: #0ff;
+        color: #000;
+        font-weight: bold;
+      }
+      .filter-empty {
+        color: #888;
+        font-size: 0.9rem;
+        margin: 0 0 20px;
+      }
       .games-grid {
         display: grid;
         grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
         gap: 30px;
         width: 80%;
         max-width: 1200px;
+      }
+      .game-card[hidden] {
+        display: none;
       }
       .game-card {
         background: #1a1a1a;
@@ -123,7 +168,10 @@
       }
       .game-card img {
         width: 100%;
-        height: 200px;
+        /* A ratio rather than 200px: the card has to shrink with its column on
+           a phone, and a fixed height is what made one card fill the screen. */
+        aspect-ratio: 3 / 2;
+        height: auto;
         object-fit: cover;
         display: block;
         border-bottom: 2px solid #333;
@@ -142,14 +190,19 @@
         Who a game needs. Said on the card because it is the one thing somebody
         standing alone with a phone wants to know before tapping.
       */
-      .game-meta {
+      /*
+        Scoped to `.game-card` on purpose. A bare `.game-meta` loses to
+        `.game-card p` on specificity, so every rule here was silently ignored
+        and the meta line rendered at the blurb's size and margins.
+      */
+      .game-card .game-meta {
         margin: 0 20px 18px;
         color: #666;
         font-size: 0.78rem;
         letter-spacing: 1px;
         text-transform: uppercase;
       }
-      .game-meta .no-bots {
+      .game-card .game-meta .no-bots {
         color: #f0f;
       }
       .play-btn {
@@ -173,6 +226,105 @@
         can be installed, and a fixed element that appears from nowhere would
         land on top of the first row of cards on a phone.
       */
+      /*
+        Phones. The portal used to show one card at a time: a 300px minimum
+        column at 80% width is a single column on a 390px screen, and a 200px
+        image plus a heading plus a paragraph plus a button is taller than the
+        viewport. Nine games behind that is a scroll nobody makes.
+
+        Two columns, artwork kept (it is the reason the gifs exist), and the
+        blurb dropped — at this width it is four words a line and the meta line
+        already says the thing somebody standing there wants to know. Four cards
+        on screen at once is the bar; test-pwa.mjs asserts it.
+      */
+      @media (max-width: 560px) {
+        /*
+          The header is the other half of the problem. Title, tagline and the
+          party banner came to 630px before a single game appeared, so the grid
+          could be two columns and you would still arrive at no games at all.
+          Everything above the grid is roughly halved here.
+        */
+        h1 {
+          font-size: 1.9rem;
+          letter-spacing: 3px;
+          text-indent: 3px;
+          margin: 18px 0 6px;
+        }
+        .tagline {
+          font-size: 0.78rem;
+          max-width: 92%;
+          margin-bottom: 2px;
+        }
+        .party-banner {
+          width: 94%;
+          margin: 14px 0;
+          padding: 12px 14px;
+          gap: 10px;
+          flex-wrap: nowrap;
+        }
+        .party-banner h3 {
+          font-size: 1.05rem;
+          margin: 0;
+        }
+        /* The pitch is three lines of prose about reconnecting. On a phone the
+           heading and the button say enough. */
+        .party-banner p {
+          display: none;
+        }
+        .party-banner .play-btn {
+          margin: 0;
+          padding: 9px 14px;
+          font-size: 0.75rem;
+          white-space: nowrap;
+        }
+
+        .games-grid {
+          grid-template-columns: repeat(2, 1fr);
+          gap: 12px;
+          width: 94%;
+        }
+        .game-card {
+          border-radius: 10px;
+        }
+        .game-card img {
+          aspect-ratio: 16 / 10;
+        }
+        .game-card h3 {
+          margin: 8px 6px 3px;
+          font-size: 0.98rem;
+        }
+        .game-card p:not(.game-meta) {
+          display: none;
+        }
+        .game-card .game-meta {
+          margin: 0 6px 8px;
+          /* Small enough to keep "1–8 PLAYERS · BOTS" on one line at this
+             column width; wrapping it cost every card a second line. */
+          font-size: 0.62rem;
+          letter-spacing: 0.3px;
+        }
+        .game-card .play-btn {
+          padding: 7px 14px;
+          font-size: 0.75rem;
+          margin-bottom: 10px;
+        }
+        /* Lifting a card on hover is a mouse gesture; on a touch screen it just
+           makes the grid jitter under a scroll. */
+        .game-card:hover {
+          transform: none;
+        }
+        .filters {
+          gap: 6px;
+          margin-bottom: 14px;
+        }
+        .filter {
+          font-size: 0.66rem;
+          padding: 7px 10px;
+          min-height: 36px;
+          letter-spacing: 1px;
+        }
+      }
+
       .install-slot {
         min-height: 0;
         display: flex;
@@ -231,9 +383,26 @@
       <a href="party.html" class="play-btn">START A PARTY</a>
     </div>
 
+    <!--
+      Filters. Nine games is more than a phone shows at once, so the chips are
+      how somebody with a particular evening in mind finds the right one: on
+      their own, against one other person, or with a room full.
+    -->
+    <div class="filters" role="group" aria-label="Filter games">
+      <button class="filter" type="button" data-filter="all" aria-pressed="true">All</button>
+      <button class="filter" type="button" data-filter="alone" aria-pressed="false">On your own</button>
+      <button class="filter" type="button" data-filter="duel" aria-pressed="false">Two</button>
+      <button class="filter" type="button" data-filter="party" aria-pressed="false">A crowd</button>
+      <button class="filter" type="button" data-filter="one-phone" aria-pressed="false">One phone</button>
+      <button class="filter" type="button" data-filter="strategy" aria-pressed="false">Strategy</button>
+      <button class="filter" type="button" data-filter="quick" aria-pressed="false">Quick</button>
+    </div>
+    <p class="filter-empty" hidden>Nothing matches that yet.</p>
+
     <div class="games-grid">
       <div
         class="game-card"
+        data-tags="alone party quick"
         onclick="window.location.href = 'neon-survival-mp.html'"
       >
         <img
@@ -252,7 +421,11 @@
         <p class="game-meta">1–8 players · bots</p>
         <a href="neon-survival-mp.html" class="play-btn">PLAY NOW</a>
       </div>
-      <div class="game-card" onclick="window.location.href = 'light-cycles.html'">
+      <div
+        class="game-card"
+        data-tags="alone party quick"
+        onclick="window.location.href = 'light-cycles.html'"
+      >
         <img
           src="assets/light-cycles.gif"
           alt="Light Cycles Preview"
@@ -270,7 +443,11 @@
         <p class="game-meta">1-8 players · bots</p>
         <a href="light-cycles.html" class="play-btn">PLAY NOW</a>
       </div>
-      <div class="game-card" onclick="window.location.href = 'liars-dice.html'">
+      <div
+        class="game-card"
+        data-tags="alone party"
+        onclick="window.location.href = 'liars-dice.html'"
+      >
         <img
           src="assets/liars-dice.gif"
           alt="Liar's Dice Preview"
@@ -288,7 +465,11 @@
         <p class="game-meta">2-6 players &middot; bots</p>
         <a href="liars-dice.html" class="play-btn">PLAY NOW</a>
       </div>
-      <div class="game-card" onclick="window.location.href = 'undercover.html'">
+      <div
+        class="game-card"
+        data-tags="party one-phone"
+        onclick="window.location.href = 'undercover.html'"
+      >
         <img
           src="assets/undercover.gif"
           alt="Undercover Preview"
@@ -306,7 +487,11 @@
         <p class="game-meta">3-12 players &middot; one device</p>
         <a href="undercover.html" class="play-btn">PLAY NOW</a>
       </div>
-      <div class="game-card" onclick="window.location.href = 'battleship.html'">
+      <div
+        class="game-card"
+        data-tags="alone duel strategy"
+        onclick="window.location.href = 'battleship.html'"
+      >
         <img
           src="assets/battleship.gif"
           alt="Battleship Preview"
@@ -324,7 +509,11 @@
         <p class="game-meta">2 players · bots</p>
         <a href="battleship.html" class="play-btn">PLAY NOW</a>
       </div>
-      <div class="game-card" onclick="window.location.href = 'onitama.html'">
+      <div
+        class="game-card"
+        data-tags="alone duel strategy"
+        onclick="window.location.href = 'onitama.html'"
+      >
         <img
           src="assets/onitama.gif"
           alt="Onitama Preview"
@@ -342,7 +531,11 @@
         <p class="game-meta">2 players · bots</p>
         <a href="onitama.html" class="play-btn">PLAY NOW</a>
       </div>
-      <div class="game-card" onclick="window.location.href = 'connect4.html'">
+      <div
+        class="game-card"
+        data-tags="alone duel strategy"
+        onclick="window.location.href = 'connect4.html'"
+      >
         <img
           src="assets/connect4.gif"
           alt="Connect 4 Preview"
@@ -359,7 +552,11 @@
         <p class="game-meta">2 players · bots</p>
         <a href="connect4.html" class="play-btn">PLAY NOW</a>
       </div>
-      <div class="game-card" onclick="window.location.href = 'tug-of-war.html'">
+      <div
+        class="game-card"
+        data-tags="alone party quick"
+        onclick="window.location.href = 'tug-of-war.html'"
+      >
         <img
           src="assets/tug-of-war.gif"
           alt="Tug of War Preview"
@@ -376,7 +573,11 @@
         <p class="game-meta">2–8 players · bots</p>
         <a href="tug-of-war.html" class="play-btn">PLAY NOW</a>
       </div>
-      <div class="game-card" onclick="window.location.href = 'draw-guess.html'">
+      <div
+        class="game-card"
+        data-tags="party"
+        onclick="window.location.href = 'draw-guess.html'"
+      >
         <img
           src="assets/draw-guess.gif"
           alt="Draw &amp; Guess Preview"
@@ -396,6 +597,40 @@
         <a href="draw-guess.html" class="play-btn">PLAY NOW</a>
       </div>
     </div>
+    <script>
+      // Filtering, in the only way this repo does anything: plain DOM, no
+      // build step, and it works with the page opened off the filesystem.
+      //
+      // One filter at a time rather than a set of toggles. With nine games a
+      // multi-select is a lot of state to explain for a list you can already
+      // see all of, and "All" is one tap away.
+      (() => {
+        const chips = [...document.querySelectorAll(".filter")];
+        const cards = [...document.querySelectorAll(".game-card")];
+        const empty = document.querySelector(".filter-empty");
+
+        function apply(want) {
+          let shown = 0;
+          for (const card of cards) {
+            const tags = (card.dataset.tags || "").split(/\s+/);
+            const match = want === "all" || tags.includes(want);
+            card.hidden = !match;
+            if (match) shown++;
+          }
+          for (const chip of chips) {
+            chip.setAttribute("aria-pressed", String(chip.dataset.filter === want));
+          }
+          // A filter that matches nothing should say so rather than leaving a
+          // blank page that looks broken.
+          if (empty) empty.hidden = shown > 0;
+        }
+
+        for (const chip of chips) {
+          chip.addEventListener("click", () => apply(chip.dataset.filter));
+        }
+      })();
+    </script>
+
     <script src="lib/pwa.js"></script>
   </body>
 </html>

@@ -1,12 +1,13 @@
 # games — Documentation
 
-*Last synced: 2026-08-27 (Undercover — the first game played on one device).*
+*Last synced: 2026-08-27 (Undercover; the portal rebuilt for phones).*
 
 Entry point for all project documentation. Any LLM should be able to answer
 questions about this project from this folder alone.
 
 ## Contents
 
+- [The portal](#the-portal) — the phone layout and the filter tags
 - [Connecting players](#connecting-players) — the serverless handshake, paid once per person
 - [Parties](#parties) — the persistent group, teams, switching games, host succession
 - [Bots](#bots) — why there is no single-player section, and what a bot actually is
@@ -51,6 +52,36 @@ before changing either subsystem:
 - `.agents/skills/pwa/` — installability and offline. Its memories record why an
   SVG in `manifest.icons` makes the app uninstallable, and why code is fetched
   network-first.
+
+## The portal
+
+`index.html` is `start_url`, so it is the first thing an installed app shows.
+Two things about it are asserted rather than eyeballed, in `test-pwa.mjs`.
+
+**Nine games have to fit a phone.** They did not: a `minmax(300px, 1fr)` column
+at 80% width is a single column on a 390px screen, and a 200px image plus a
+heading plus a paragraph plus a button is taller than the viewport — you
+arrived at one card. Below 560px the grid is two columns, the artwork is a
+ratio rather than a fixed height, the blurb is dropped (at that width it is four
+words a line, and the meta line already says the thing somebody standing there
+wants to know), and the header — title, tagline, party banner — is roughly
+halved. Four whole cards now fit on screen *from the top of the page*, header
+and all, which is the number the test enforces.
+
+**One trap, and it had been there from the start.** `.game-card p` outranks a
+bare `.game-meta` on specificity, so every rule ever written for the meta line
+was silently ignored: it rendered at the blurb's size and margins, and on a
+phone that wrapped it onto a second line. The rules are scoped
+`.game-card .game-meta` now, and the test checks the computed size rather than
+trusting the stylesheet.
+
+**Filters.** Each card carries `data-tags`; a strip of chips filters on them,
+one at a time. Nine games is more than a phone shows at once, so the chips are
+how somebody with a particular evening in mind finds the right game — on their
+own, against one other person, or with a room full. The tags are
+`alone` · `duel` · `party` · `one-phone` · `strategy` · `quick`, and a new game
+should be given whichever apply. A filter matching nothing says so rather than
+leaving a blank page.
 
 ## Connecting players
 

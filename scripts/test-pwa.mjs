@@ -258,6 +258,89 @@ const registered = await (async () => {
 	await probe.close();
 	return names;
 })();
+
+// --------------------------------------------------------- the portal, small
+//
+// Nine games do not fit a phone, and until 2026-08-27 the portal did not try:
+// a 300px minimum column at 80% width is one column on a 390px screen, and a
+// 200px image plus a heading plus a paragraph plus a button is taller than the
+// viewport. You arrived at one card.
+
+const grid = await page.evaluate(() => {
+	// How many cards a screenful actually holds, from the top of the page —
+	// header, banner, filters and all. Scrolling to the grid first would flatter
+	// the answer.
+	window.scrollTo(0, 0);
+	const cards = [...document.querySelectorAll(".game-card")].filter((c) => !c.hidden);
+	const vh = window.innerHeight;
+	const whole = cards.filter((c) => {
+		const r = c.getBoundingClientRect();
+		return r.top >= 0 && r.bottom <= vh;
+	});
+	const first = cards[0]?.getBoundingClientRect();
+	return {
+		visible: whole.length,
+		columns: getComputedStyle(document.querySelector(".games-grid")).gridTemplateColumns.split(" ").length,
+		cardHeight: first ? Math.round(first.height) : 0,
+		gridTop: Math.round(document.querySelector(".games-grid").getBoundingClientRect().top),
+		tagged: cards.every((c) => (c.dataset.tags || "").trim().length > 0),
+		blurbHidden: getComputedStyle(document.querySelector(".game-card p:not(.game-meta)")).display === "none",
+		metaSize: parseFloat(getComputedStyle(document.querySelector(".game-card .game-meta")).fontSize),
+		metaLines: (() => {
+			const m = document.querySelector(".game-card .game-meta");
+			return Math.round(m.getBoundingClientRect().height / parseFloat(getComputedStyle(m).fontSize));
+		})(),
+	};
+});
+check("the games sit in two columns on a phone", grid.columns === 2, `${grid.columns}`);
+check("four cards fit on screen without scrolling", grid.visible >= 4, `${grid.visible} visible, grid starts at ${grid.gridTop}px`);
+check("the header does not eat the screen", grid.gridTop < 400, `${grid.gridTop}px above the first game`);
+check("the blurb is dropped at this width", grid.blurbHidden, "the long description is still rendering");
+// `.game-card p` outranks a bare `.game-meta`, so every rule written for the
+// meta line was silently ignored until it was scoped. The tell was the line
+// wrapping in two.
+check("the meta line is styled by its own rule, not the paragraph's",
+	grid.metaSize < 12, `${grid.metaSize}px — .game-card p is winning again`);
+check("and fits on one line", grid.metaLines <= 1, `${grid.metaLines} lines`);
+check("every card carries filter tags", grid.tagged);
+
+// The filters themselves.
+const filters = await page.evaluate(async () => {
+	const chips = [...document.querySelectorAll(".filter")];
+	const cards = [...document.querySelectorAll(".game-card")];
+	const shown = () => cards.filter((c) => !c.hidden).map((c) => c.querySelector("h3").textContent.trim());
+	const out = { chips: chips.length, minTap: Math.min(...chips.map((c) => Math.round(c.getBoundingClientRect().height))), results: {} };
+	for (const chip of chips) {
+		chip.click();
+		out.results[chip.dataset.filter] = {
+			names: shown(),
+			pressed: chips.filter((c) => c.getAttribute("aria-pressed") === "true").map((c) => c.dataset.filter),
+			emptyShown: !document.querySelector(".filter-empty").hidden,
+		};
+	}
+	document.querySelector('.filter[data-filter="all"]').click();
+	return out;
+});
+check("there is a filter strip", filters.chips >= 5, `${filters.chips}`);
+check("the chips clear the tap minimum", filters.minTap >= 36, `${filters.minTap}px`);
+check("ALL shows every game", filters.results.all.names.length === registered.length, `${filters.results.all.names.length}`);
+check("a filter narrows the list",
+	filters.results.strategy.names.length > 0 && filters.results.strategy.names.length < registered.length,
+	filters.results.strategy.names.join(", "));
+check("ONE PHONE finds the game played on one device",
+	filters.results["one-phone"].names.join() === "Undercover", filters.results["one-phone"].names.join(", "));
+check("A CROWD finds the party games",
+	filters.results.party.names.includes("Undercover") && filters.results.party.names.includes("Draw & Guess"),
+	filters.results.party.names.join(", "));
+check("TWO finds only the head-to-head games",
+	filters.results.duel.names.every((n) => ["Battleship", "Onitama", "Connect 4"].includes(n)),
+	filters.results.duel.names.join(", "));
+check("exactly one chip is pressed at a time",
+	Object.values(filters.results).every((r) => r.pressed.length === 1),
+	JSON.stringify(Object.entries(filters.results).map(([k, r]) => [k, r.pressed])));
+check("no filter leaves an empty list without saying so",
+	Object.values(filters.results).every((r) => r.names.length > 0 || r.emptyShown));
+
 check(
 	"the portal has a card for every registered game",
 	portal.cards === registered.length,

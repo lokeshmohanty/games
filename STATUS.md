@@ -109,7 +109,20 @@ bug:
 - **No word may appear in two word-pairs**, or a returning player can rule out
   the other half. The test caught "Violin" in two.
 
-All eleven suites pass (424 checks): codec, party, scan, pwa, bots, plumbing,
+**The portal was rebuilt for phones.** It showed *one card at a time*: a 300px
+minimum column at 80% width is one column at 390px, and a 200px image plus a
+heading plus a paragraph plus a button is taller than the screen. Now two
+columns, artwork on a ratio, blurb dropped below 560px, and the header halved —
+**four whole cards from the top of the page**, asserted in `test-pwa.mjs`.
+
+Along the way: `.game-card p` outranks a bare `.game-meta`, so every rule
+written for the meta line had been silently ignored since it was added. Scoped
+now, and the test checks the computed size rather than trusting the stylesheet.
+
+**Filter chips** on `data-tags`, one at a time: alone · duel · party ·
+one-phone · strategy · quick. A new game should be given whichever apply.
+
+All eleven suites pass (457 checks): codec, party, scan, pwa, bots, plumbing,
 onitama, light-cycles, battleship, liars-dice, undercover.
 
 ## Next actions
