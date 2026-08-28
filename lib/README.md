@@ -22,7 +22,7 @@ handshake per person and nothing else.
 - **`qr.js`** — `NeonArcade.qrCanvas()`: a self-contained QR encoder, so invites can be scanned instead of typed.
 - **`qr-decode.js`** — `NeonArcade.qrDecode()` / `scanQr()`: a self-contained QR *decoder* plus a camera scanner.
 - **`secrets.js`** — `NeonArcade.makeSecrets(room)`: sealed private channels (so a *relaying player* cannot read a hand) and commit-reveal (so the host cannot either). Optional; only games with hidden information need it. `games/battleship.js` is the worked example — and note that verifying the digest is only half the check, see `docs/index.md`.
-- **`rounds.js`** — `NeonArcade.makeRounds(ctx, spec)`: the host-owned round/phase clock, including `collect` phases that end when everyone has submitted. Optional.
+- **`rounds.js`** — `NeonArcade.makeRounds(ctx, spec)`: the host-owned round/phase clock, including `collect` phases that end when everyone has submitted and `next()` for a phase that ends on a game event. Optional. `games/draw-guess.js` is the game it was generalised from and now runs on.
 - **`ui.js`** — `NeonArcade.gameShell(root, opts)`: the stage, status line and overlay every game was rebuilding. Optional, but new games should use it.
 - **`pwa.js`** — registers `../sw.js` and fills `[data-install-slot]` with an install button. Optional; nothing else depends on it.
 - **`styles.css`** — shared neon theme (link from each game's HTML).
@@ -277,6 +277,9 @@ node scripts/test-onitama.mjs  # Onitama's rules and search, with no document
 node scripts/test-light-cycles.mjs  # the arena simulation and the rider bot
 node scripts/test-battleship.mjs    # fleets, sinking, and the reveal audit —
                                     # tested by breaking it four ways
+node scripts/test-liars-dice.mjs    # wilds, the bid ladder, the at-least rule,
+                                    # and the reveal race that once accused an
+                                    # honest player of cheating
 ```
 
 To test two peers by hand, open a game twice — the invite link works between two

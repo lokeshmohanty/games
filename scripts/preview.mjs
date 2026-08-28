@@ -190,6 +190,48 @@ async function sweepMouse(page, seconds, phase = 0) {
 // ---------------------------------------------------------------- scenarios
 
 const GAMES = {
+	"liars-dice": {
+		file: "liars-dice.html",
+		peers: 2,
+		seconds: 16,
+		async beforeStart([host]) {
+			// Four at the table: bluffing reads as bluffing with a crowd, and with
+			// two players every call is a coin flip between the same two people.
+			for (let i = 0; i < 2; i++) {
+				await host.locator("button", { hasText: "ADD BOT" }).first().click().catch(() => {});
+				await sleep(150);
+			}
+		},
+		async play([a, b], seconds) {
+			// Both people raise while the raise is believable and call once it is
+			// not — the game's own bot logic, driven through the buttons a person
+			// would press.
+			const act = (page) =>
+				page.evaluate(() => {
+					const btns = [...document.querySelectorAll(".ld-actions button")];
+					if (!btns.length) return;
+					const d = window.__game.handle.debug();
+					const R = window.NeonArcade.liarsDiceRules;
+					const liar = btns.find((x) => x.textContent.includes("LIAR"));
+					const bid = btns.find((x) => x.textContent.startsWith("BID"));
+					const expected = d.totalDice * (2 / 6);
+					if (liar && d.bid && d.bid.count > expected + 1) return void liar.click();
+					if (bid && !bid.disabled) return void bid.click();
+					if (liar) liar.click();
+				}).catch(() => {});
+
+			const deadline = Date.now() + seconds * 1000;
+			while (Date.now() < deadline) {
+				await act(a);
+				await act(b);
+				await sleep(420);
+				const done = await a.evaluate(() => !!window.__game.handle.debug().over).catch(() => false);
+				if (done) break;
+			}
+			await sleep(1400);
+		},
+	},
+
 	battleship: {
 		file: "battleship.html",
 		peers: 2,

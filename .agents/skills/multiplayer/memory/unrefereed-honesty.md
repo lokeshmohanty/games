@@ -56,8 +56,31 @@ runs `validateFleet` first for that reason.
   cached; the callback can then return the digest. Battleship does this in
   `newGame()`.
 
-## Where this generalises
+## Where this generalises — and where the sealed channel actually belongs
 
-Any game where a player holds information the referee must not: Liar's Dice,
-anything with a hand of cards, hidden roles. The pattern is the same — commit,
-answer for yourself, reveal, and audit both ways.
+**Commit-reveal is the answer whenever players can generate their own secret.**
+Battleship (place your own fleet) and Liar's Dice (roll your own dice, added
+2026-08-27) both do, so neither needs `secrets.channel()` at all.
+
+Liar's Dice was built expecting to be the sealed channel's first user — the
+host deals five dice to each player, privately. That build is wrong, and the
+reason is worth keeping: sealing protects a message from the peers **relaying**
+it, never from the **sender**. A host that deals has read every cup, and the
+host is a player.
+
+The sealed channel earns its place only when one party must know something the
+others must not, and no player can generate it themselves — a **shared deck**
+dealt without replacement, where the hands have to be disjoint. A card game.
+Not a dice game, and not a board anyone lays out for themselves.
+
+## The async trap that accuses an honest player
+
+Verifying a commitment is asynchronous. Settling a round changes the state the
+verification is checked against — in Liar's Dice, the loser drops a die. Read
+the player's dice count *after* the await and you compare the hand they rolled
+against the number of dice they hold **now**, and report them as a cheat.
+
+It appeared once, in one bot, in a suite that otherwise passed. **Snapshot every
+piece of state a reveal is judged against before the first `await`.** A false
+cheating accusation is the worst thing either of these games can do, and it is
+invisible until it fires.

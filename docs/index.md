@@ -1,6 +1,6 @@
 # games — Documentation
 
-*Last synced: 2026-08-27 (Battleship added).*
+*Last synced: 2026-08-27 (Liar's Dice; Draw & Guess moved onto rounds.js).*
 
 Entry point for all project documentation. Any LLM should be able to answer
 questions about this project from this folder alone.
@@ -34,6 +34,7 @@ questions about this project from this folder alone.
 | Test the private-state and round layers | `node scripts/test-plumbing.mjs` — real `Room` routing over a fake transport: a sealed message is unreadable by the peer relaying it, a tampered one is refused, commitments verify, phases advance |
 | Test Onitama's rules and bot | `node scripts/test-onitama.mjs` — card orientation as a property, both victory conditions from both sides, and the bot measured against random play |
 | Test Battleship's rules and audit | `node scripts/test-battleship.mjs` — fleets, sinking, and the audit tested by *breaking* it four ways |
+| Test Liar's Dice | `node scripts/test-liars-dice.mjs` — wilds, the bid ladder, the at-least rule, and the reveal race that once accused an honest player |
 | Test the Light Cycles arena | `node scripts/test-light-cycles.mjs` — head-on collisions, spawn symmetry, and the bot measured against a rider that only avoids crashing |
 | Rebuild the app icons | `node scripts/make-icons.mjs` after editing `assets/icon.svg` — renders the PNGs the manifest needs |
 | Get back to the portal | every page has a fixed `.portal-link` ("← ALL GAMES") linking to `index.html` |
@@ -242,9 +243,33 @@ overlapping. `scripts/test-battleship.mjs` tests the audit by breaking it four
 ways, because a commitment nobody can fail is decoration.
 
 Battleship uses `commit`/`verify` but **not** the sealed channel: a fleet never
-crosses the network during play at all, so there is nothing to seal. The sealed
-channel's first real user will be a game where the host *deals* — Liar's Dice or
-anything with a hand of cards.
+crosses the network during play at all, so there is nothing to seal.
+
+### Liar's Dice, and the correction it forced
+
+Liar's Dice was expected to be the sealed channel's first user — the host deals
+five dice to each player, privately. **That build is wrong**, and the reasoning
+is worth keeping. `secrets.channel()` seals a message against the *peers
+relaying it*; it cannot seal anything against the sender. A host that deals is a
+host that has read every cup, and the host is a player.
+
+So Liar's Dice does what Battleship does: each player rolls **their own** dice
+locally and publishes a commitment before a bid is made. Nothing about anybody's
+hand crosses the wire until somebody calls, and then everything does at once and
+every commitment is checked.
+
+The generalisation: **commit-reveal is the answer whenever players can generate
+their own secret.** The sealed channel only earns its place when one party must
+know something the others must not — a **shared deck**, dealt without
+replacement, where the hands must be disjoint and no player can roll their own.
+That is still the case with no user here.
+
+One trap it exposed, and it is the worst kind: verifying a commitment is
+asynchronous, and settling a round takes a die off the loser. Reading a player's
+dice count *after* the await compares their hand against the number of dice they
+have **now** — and accuses an honest player of opening the wrong number. It
+appeared once, in one bot, in a suite that otherwise passed. Snapshot the seat
+before awaiting.
 
 ## Rounds and phases
 
@@ -279,7 +304,22 @@ single collecting phase that ends the moment both fleets are committed, and the
 battle is many, each ending the moment both players have picked a square. One
 trap worth knowing — `botSubmit` is synchronous and `commit` is not, so a bot's
 fleet and commitment have to be built and cached *before* the placement phase
-opens.
+opens. Liar's Dice cannot do that, because the number of dice changes every
+round; it uses `rounds.submitFor(botId, digest)` from inside the phase instead.
+
+`rounds.next()` ends the current phase immediately. Liar's Dice needed it — the
+bidding is over when somebody calls a bluff, which is a game event and not a
+clock — and Draw & Guess uses it too, so that everybody guessing correctly ends
+the drawing phase instead of running out its sixty seconds.
+
+**Draw & Guess now runs on this.** It is the game the scheduler was generalised
+*from*, and moving it over is what proved the generalisation was real: a `phase`
+string, a chain of `setTimeout`s, and a re-check inside every callback that the
+phase it woke in was still the phase it was scheduled for, all became one
+declaration. The re-check is gone entirely, because a disposed scheduler fires
+nothing. `timeLeft` also stopped being broadcast — every peer counts down for
+itself from the duration the host sent, and `test-party.mjs` asserts that three
+peers agree on the clock to within a second.
 
 ## Adding a game
 
@@ -388,11 +428,12 @@ the favicon via `<link rel="icon">`.
   board, which is not the same as checking it plays well — and **nothing
   measures whether any of them is fun to lose to**. Light Cycles' bot may in
   fact be too strong; that is a judgement no test here makes.
-- **The sealed channel still has no user.** Battleship exercises commit-reveal
-  hard, and `lib/rounds.js` now runs two real schedulers, but a fleet never
-  crosses the wire — so `secrets.channel()` is still proven only by
-  `test-plumbing.mjs` and not by a game. Liar's Dice, or anything where the host
-  deals a hand, is what would test it.
+- **The sealed channel still has no user, and Liar's Dice was not it.** Both
+  hidden-information games generate their secret locally and commit to it, which
+  is the correct build; sealing would have meant a host that reads every hand.
+  `secrets.channel()` is proven only by `test-plumbing.mjs`. What would use it is
+  a **shared deck** dealt without replacement, where hands must be disjoint and
+  no player can generate their own — a card game, not a dice game.
 - `lib/rounds.js` does not survive host succession. If the crown moves
   mid-round the clock stops with it; every other game here has the same
   property, and nothing recovers a game in progress.
@@ -403,6 +444,14 @@ the favicon via `<link rel="icon">`.
 - Battleship's placement auto-commits a few seconds before the deadline so a
   player who walks away cannot stall the game. That path is not covered by any
   test — it takes 142 seconds to reach.
+- Liar's Dice trusts each player's *roll*. The commitment stops a player
+  changing dice after seeing a bid, which is the cheat that decides rounds; it
+  does nothing about a modified client that re-rolls until it likes its hand,
+  and nothing short of a shared random beacon would.
+- Draw & Guess's word still goes to the drawer **addressed, not sealed**. A
+  relaying player could read it. That is the honest level of protection for a
+  party game whose worst case is a spoiled round, but it is a choice, not an
+  oversight.
 - Onitama's card *movesets* are the published ones, but the first-player stamp
   on each card is ours — an even 8/8 split that keeps the mechanic without
   claiming to reproduce the physical deck. Marked `VERIFY` in the source.

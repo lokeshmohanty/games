@@ -263,6 +263,26 @@ console.log("\nround clock");
 	check("both rounds were collected", collected.length === 2, `${collected.length}`);
 	check("the peer saw all four phases", seen.ana.join(",") === "0:lock,0:resolve,1:lock,1:resolve", seen.ana.join(","));
 
+	{
+		// A phase that ends on a game event rather than a clock — the case Liar's
+		// Dice needs, where the bidding is over the moment somebody calls a bluff.
+		const walked = [];
+		const evented = NeonArcade.makeRounds(ctxFor(host), {
+			name: "evented",
+			rounds: 2,
+			phases: [{ name: "act", ms: 600_000 }, { name: "score", ms: 20 }],
+			onPhase: (i) => {
+				walked.push(`${i.round}:${i.phase}`);
+				if (i.phase === "act") setTimeout(() => evented.next(), 20);
+			},
+		});
+		evented.start();
+		await sleep(300);
+		check("a phase can be ended by the game rather than the clock",
+			walked.join(",") === "0:act,0:score,1:act,1:score", walked.join(","));
+		evented.dispose();
+	}
+
 	// A deadline with nobody submitting must still move the game on.
 	const timed = [];
 	const solo = NeonArcade.makeRounds(ctxFor(host), {

@@ -226,6 +226,88 @@ try {
 		await host.evaluate(() => document.querySelectorAll("#board").length === 0),
 	);
 
+	// Draw & Guess is the game `lib/rounds.js` was generalised *from*, and it
+	// has now been moved onto it. What is checked is the part the hand-rolled
+	// version and the shared one could differ on: that the phases actually walk,
+	// that every peer sees the same one, and that a correct guess ends the
+	// drawing phase early instead of waiting out its sixty seconds.
+	console.log("\nparty: draw & guess on the shared round clock");
+	await host.evaluate(() => window.__party.room.setGame(null));
+	{
+		const rows = host.locator(".party-member");
+		await rows.nth(2).locator("button", { hasText: "TEAM A" }).click();
+		const dg = host.locator(".party-game", { hasText: "DRAW" });
+		await dg.waitFor({ timeout: TIMEOUT });
+		await dg.click();
+
+		for (const page of [host, p2, p3]) {
+			await page.locator("#dg-canvas, #draw-canvas, canvas").first().waitFor({ timeout: TIMEOUT });
+		}
+
+		// The drawer's chat box is disabled; that is how the roles are told
+		// apart, and it only settles once the drawing phase is really open.
+		const guesser = await Promise.race(
+			[host, p2, p3].map(async (page) => {
+				await page.waitForFunction(
+					() => document.querySelector("#chat-input")?.disabled === false,
+					null,
+					{ timeout: TIMEOUT },
+				);
+				return page;
+			}),
+		);
+		check("the drawing phase opened", true);
+
+		const phaseOf = (page) => page.evaluate(() => document.querySelector("#hud .timer")?.textContent ?? "");
+		const clocks = await Promise.all([host, p2, p3].map(phaseOf));
+		// Every peer counts down for itself off the duration the host sent, so
+		// they should agree to within a second rather than drift.
+		const seconds = clocks.map((t) => parseInt(t, 10)).filter((n) => !Number.isNaN(n));
+		check("every peer is showing the same clock", seconds.length === 3 && Math.max(...seconds) - Math.min(...seconds) <= 2, clocks.join(" / "));
+
+		// Guess it right on every guessing peer. When they have all got it the
+		// drawing phase must end immediately — the `rounds.next()` path.
+		//
+		// The word has to be read off the *drawer's* page: everyone else is shown
+		// the masked hint, and the host is not necessarily drawing.
+		const pages = [host, p2, p3];
+		const disabled = await Promise.all(
+			pages.map((page) => page.evaluate(() => document.querySelector("#chat-input")?.disabled === true)),
+		);
+		const drawer = pages[disabled.indexOf(true)] ?? host;
+		const word = await drawer.evaluate(() => {
+			const el = document.querySelector("#word-display");
+			return el ? el.textContent.trim() : "";
+		});
+		const secret = word.replace(/[^a-z]/gi, "");
+		if (secret && !secret.includes("_")) {
+			const before = Date.now();
+			for (const page of [host, p2, p3]) {
+				const enabled = await page.evaluate(() => document.querySelector("#chat-input")?.disabled === false);
+				if (!enabled) continue;
+				await page.fill("#chat-input", secret);
+				await page.click("#chat-send");
+			}
+			// Sixty seconds is the drawing deadline; anything near it means the
+			// early exit did not fire.
+			await guesser.waitForFunction(
+				() => /GAME OVER|^\s*$/.test(document.querySelector("#word-display")?.textContent ?? "")
+					|| document.querySelector("#chat-input")?.disabled === true,
+				null,
+				{ timeout: 20_000 },
+			).catch(() => {});
+			check("everyone guessing right ends the phase early, not at the deadline",
+				Date.now() - before < 15_000, `${Math.round((Date.now() - before) / 1000)}s`);
+		} else {
+			check("the word was readable to the drawer", false, `word display was "${word}"`);
+		}
+
+		await host.evaluate(() => window.__party.room.setGame(null));
+		await host.locator(".party-game").first().waitFor({ timeout: TIMEOUT });
+		check("Draw & Guess tore itself down",
+			(await host.locator("#chat-input").count()) === 0);
+	}
+
 	// Tug of War is the only game with more than one player per side, so this
 	// is the one place a team is read as a group rather than as seats[0].
 	console.log("\nparty: a game with multi-player teams");

@@ -313,8 +313,11 @@ NeonArcade.registerGame({
 		let drawSize = SIZES[1];
 		let drawing = false;
 		let lastPt = null;
-		let hostTimer = null;
-		let chooseTimer = null;
+		// The round clock is `lib/rounds.js` now, not two hand-rolled timers.
+		// `timeLeft` survives only as what the HUD prints; it is fed by the
+		// scheduler's tick and is no longer broadcast, because every peer runs
+		// the same scheduler and counts down for itself.
+		let rounds = null;
 		let strokeThrottle = 0;
 		let pendingStrokes = [];
 
@@ -608,16 +611,15 @@ NeonArcade.registerGame({
 		// ── Host logic ───────────────────────────────────────────
 		function broadcastState() {
 			if (!room.isHost()) return;
+			// `phase`, `round` and the countdown are not in here any more: every
+			// peer gets those from the round clock, which is the whole point of
+			// having moved onto it.
 			room.makeAction("state").send({
-				phase,
 				drawerId,
 				wordHint,
-				round,
 				totalRounds,
-				timeLeft,
 				scores,
 				guessedIds: [...guessedIds],
-				gameOver: phase === "gameover",
 			});
 		}
 
@@ -627,93 +629,99 @@ NeonArcade.registerGame({
 			return players[round % players.length];
 		}
 
-		function startChoosing() {
-			phase = "choosing";
-			currentWord = WORDS[Math.floor(Math.random() * WORDS.length)];
-			drawerId = pickDrawer();
-			guessedIds = new Set();
-			wordHint = "_".repeat(currentWord.length);
-			timeLeft = 0;
-			broadcastState();
-			// send word to drawer only
-			room
-				.makeAction("word")
-				.send({ word: currentWord }, { target: drawerId });
-			// Brief choosing pause, then start drawing. Tracked like the round
-			// clock: a game can be swapped out mid-pause, and this must not fire
-			// into a torn-down round.
-			clearTimeout(chooseTimer);
-			chooseTimer = setTimeout(() => {
-				if (phase !== "choosing") return;
-				startDrawing();
-			}, 2000);
+		/**
+		 * Build the round clock.
+		 *
+		 * This game is where `lib/rounds.js` came from: it had a `phase` string, a
+		 * chain of `setTimeout`s walking choosing → drawing → reveal, and a
+		 * re-check inside every callback that the phase it woke up in was still
+		 * the phase it was scheduled for. All of that is now one declaration, and
+		 * the re-check is gone because a disposed scheduler fires nothing.
+		 *
+		 * Rebuilt rather than reset on a new game: `dispose()` is one-way, and the
+		 * number of rounds depends on how many people are playing.
+		 */
+		function buildRounds() {
+			rounds?.dispose();
+			rounds = NeonArcade.makeRounds(ctx, {
+				name: "dg",
+				rounds: totalRounds,
+				phases: [
+					{ name: "choosing", ms: 2000 },
+					{ name: "drawing", ms: DRAW_TIME * 1000 },
+					{ name: "reveal", ms: REVEAL_TIME * 1000 },
+				],
+				onPhase: (info) => {
+					phase = info.phase;
+					round = info.round;
+					timeLeft = info.secondsLeft;
+					if (info.phase === "choosing") enterChoosing();
+					else if (info.phase === "drawing") enterDrawing();
+					else if (info.phase === "reveal") enterReveal();
+					updateHud();
+					updateWordDisplay();
+					updateInputState();
+				},
+				onTick: (info) => {
+					// Every peer counts its own seconds off the duration the host
+					// sent, so the number in the corner no longer rides on a state
+					// broadcast once a second.
+					timeLeft = info.secondsLeft;
+					updateHud();
+				},
+				onFinish: () => {
+					phase = "gameover";
+					endGame();
+				},
+			});
 		}
 
-		function startDrawing() {
-			phase = "drawing";
-			timeLeft = DRAW_TIME;
-			clearCanvasOnAll();
+		/** Host picks the word and the drawer; everyone else just repaints. */
+		function enterChoosing() {
+			guessedIds = new Set();
+			if (!room.isHost()) return;
+			currentWord = WORDS[Math.floor(Math.random() * WORDS.length)];
+			drawerId = pickDrawer();
+			wordHint = "_".repeat(currentWord.length);
 			broadcastState();
-			updateWordDisplay();
-			updateInputState();
-			if (hostTimer) clearInterval(hostTimer);
-			hostTimer = setInterval(() => {
-				if (phase !== "drawing") return;
-				timeLeft--;
-				if (timeLeft % 5 === 0 || timeLeft <= 10) broadcastState();
-				if (timeLeft <= 0) {
-					clearInterval(hostTimer);
-					hostTimer = null;
-					startReveal();
-				}
-			}, 1000);
+			// The word goes to one person. Addressed, not sealed — see
+			// lib/secrets.js — which is the honest level of protection for a
+			// party game where the cost of a leak is a spoiled round.
+			wordAction.send({ word: currentWord }, { target: drawerId });
 		}
 
 		function clearCanvasOnAll() {
-			// host tells everyone to clear (including self)
+			// The host clears its own canvas as well: an ordinary broadcast never
+			// comes back to its sender.
 			clearCanvas();
 			room.makeAction("clear").send({});
 		}
 
-		function startReveal() {
-			phase = "reveal";
-			timeLeft = REVEAL_TIME;
+		function enterDrawing() {
+			if (!room.isHost()) return;
+			clearCanvasOnAll();
 			broadcastState();
-			// reveal the word to everyone (not just the drawer)
-			room.makeAction("word").send({ word: currentWord });
-			updateWordDisplay();
-			updateInputState();
-			if (hostTimer) clearInterval(hostTimer);
-			hostTimer = setInterval(() => {
-				if (phase !== "reveal") return;
-				timeLeft--;
-				if (timeLeft <= 0) {
-					clearInterval(hostTimer);
-					hostTimer = null;
-					nextRound();
-				}
-			}, 1000);
 		}
 
-		function nextRound() {
-			round++;
-			const players = ctx.players().sort();
-			if (round >= totalRounds || players.length === 0) {
-				phase = "gameover";
-				broadcastState();
-				updateHud();
-				updateWordDisplay();
-				if (room.isHost()) {
-					showOverlay("GAME OVER", "PLAY AGAIN", restart, finalScoresText());
-				} else {
-					showOverlay("GAME OVER", null, null, finalScoresText());
-					const p = document.createElement("p");
-					p.textContent = "Waiting for host…";
-					overlayEl.append(p, NeonArcade.hostNewGameButton());
-				}
-				return;
+		function enterReveal() {
+			if (!room.isHost()) return;
+			// The word becomes public at the reveal.
+			wordAction.send({ word: currentWord });
+			broadcastState();
+		}
+
+		function endGame() {
+			broadcastState();
+			updateHud();
+			updateWordDisplay();
+			if (room.isHost()) {
+				showOverlay("GAME OVER", "PLAY AGAIN", restart, finalScoresText());
+			} else {
+				showOverlay("GAME OVER", null, null, finalScoresText());
+				const p = document.createElement("p");
+				p.textContent = "Waiting for host…";
+				overlayEl.append(p, NeonArcade.hostNewGameButton());
 			}
-			startChoosing();
 		}
 
 		function finalScoresText() {
@@ -729,7 +737,8 @@ NeonArcade.registerGame({
 			guessedIds = new Set();
 			chatLog.replaceChildren();
 			hideOverlay();
-			startChoosing();
+			buildRounds();
+			rounds.start();
 		}
 
 		function handleGuess(text, peerId) {
@@ -741,7 +750,10 @@ NeonArcade.registerGame({
 			if (!guess) return;
 			if (guess === currentWord.toLowerCase()) {
 				guessedIds.add(peerId);
-				const bonus = timeLeft * SCORE_TIME_BONUS;
+				// Read off the clock rather than the HUD's copy of it: the tick
+				// only lands five times a second, and the bonus should reflect the
+				// moment the guess arrived.
+				const bonus = (rounds?.state().secondsLeft ?? 0) * SCORE_TIME_BONUS;
 				scores[peerId] = (scores[peerId] || 0) + SCORE_BASE + bonus;
 				scores[drawerId] = (scores[drawerId] || 0) + DRAWER_BONUS;
 				room
@@ -754,10 +766,10 @@ NeonArcade.registerGame({
 				const guessers = ctx.players().filter(
 					(id) => id !== drawerId,
 				);
-				if (guessedIds.size >= guessers.length) {
-					if (hostTimer) clearInterval(hostTimer);
-					startReveal();
-				}
+				// Everybody got it, so the drawing phase is over now rather than
+				// when its clock runs out. This is exactly what `rounds.next()`
+				// was added for.
+				if (guessedIds.size >= guessers.length) rounds?.next();
 			} else {
 				room
 					.makeAction("chat")
@@ -792,25 +804,11 @@ NeonArcade.registerGame({
 		const chatAction = room.makeAction("chat");
 
 		stateAction.onMessage = (data) => {
-			const wasPhase = phase;
-			phase = data.phase;
 			drawerId = data.drawerId;
 			wordHint = data.wordHint;
-			round = data.round;
 			totalRounds = data.totalRounds;
-			timeLeft = data.timeLeft;
 			scores = data.scores || {};
 			guessedIds = new Set(data.guessedIds || []);
-			if (phase === "gameover" && wasPhase !== "gameover") {
-				if (!room.isHost()) {
-					showOverlay("GAME OVER", null, null, finalScoresText());
-					const p = document.createElement("p");
-					p.textContent = "Waiting for host…";
-					overlayEl.append(p, NeonArcade.hostNewGameButton());
-				}
-				updateWordDisplay();
-			}
-			if (phase !== "gameover" && wasPhase === "gameover") hideOverlay();
 			updateHud();
 			updateWordDisplay();
 			updateInputState();
@@ -846,12 +844,13 @@ NeonArcade.registerGame({
 		// Formerly onStart.
 		gameEl.hidden = false;
 		clearCanvas();
+		buildRounds();
 		if (room.isHost()) {
 			scores = {};
 			round = 0;
 			guessedIds = new Set();
 			chatLog.replaceChildren();
-			startChoosing();
+			rounds.start();
 		}
 		updateHud();
 		updateWordDisplay();
@@ -881,10 +880,9 @@ NeonArcade.registerGame({
 					assignNames();
 					applyPartyNames();
 					addChatLine("", `${nameOf(peerId)} left`, "system");
-					if (peerId === drawerId && phase === "drawing") {
-						if (hostTimer) clearInterval(hostTimer);
-						startReveal();
-					}
+					// The drawer walked off. End the phase rather than let everyone
+					// stare at a canvas nobody is drawing on.
+					if (peerId === drawerId && phase === "drawing") rounds?.next();
 					broadcastState();
 				}
 				updateHud();
@@ -895,13 +893,10 @@ NeonArcade.registerGame({
 				updateHud();
 			},
 			unmount() {
-				// The round clock and the choosing pause are the two things that
-				// would keep running and start broadcasting into whatever game is
-				// mounted next.
-				clearInterval(hostTimer);
-				clearTimeout(chooseTimer);
-				hostTimer = null;
-				chooseTimer = null;
+				// One line where there were four: the round clock owns every timer
+				// this game had, and disposing it is what stops them broadcasting
+				// into whatever game is mounted next.
+				rounds?.dispose();
 				chatInput.removeEventListener("keydown", onChatKey);
 				for (const a of [
 					stateAction,

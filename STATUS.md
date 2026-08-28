@@ -64,20 +64,39 @@ breaking it four ways. Both players fire in the same round (`rounds.js` with
 `collect: true`) rather than taking turns, which is the shape that suits this
 transport: nobody waits on a turn order.
 
-All nine suites pass (297 checks): codec, party, scan, pwa, bots, plumbing,
-onitama, light-cycles, battleship.
+**Liar's Dice** (`games/liars-dice.js`) — and a correction. It was meant to be
+the sealed channel's first user: host deals five dice to each player, privately.
+**That build is wrong.** `secrets.channel()` seals against the *peers relaying*
+a message, never against the sender — a host that deals is a host that has read
+every cup, and the host is a player. So it does what Battleship does: each
+player rolls their own dice and commits before a bid. The generalisation:
+commit-reveal is the answer whenever players can generate their own secret; the
+sealed channel only earns its place with a **shared deck** dealt without
+replacement, which is still unbuilt.
+
+**Draw & Guess moved onto `lib/rounds.js`** — the game the scheduler was
+generalised *from*, which is what makes it the proof. A `phase` string, a chain
+of `setTimeout`s and a re-check in every callback became one declaration; the
+re-check is gone because a disposed scheduler fires nothing. `timeLeft` stopped
+being broadcast — each peer counts down from the duration the host sent, and
+`test-party.mjs` asserts three peers agree to within a second.
+
+`rounds.next()` was added for both: a phase that ends on a game event rather
+than a clock (a called bluff; everyone guessing right).
+
+All ten suites pass (351 checks): codec, party, scan, pwa, bots, plumbing,
+onitama, light-cycles, battleship, liars-dice.
 
 ## Next actions
 
-- [ ] **`secrets.channel()` still has no user.** Battleship exercises
-      commit-reveal hard and `rounds.js` now runs two real schedulers, but a
-      fleet never crosses the wire, so the *sealed channel* is still proven only
-      by `test-plumbing.mjs`. **Liar's Dice** is the game that would test it —
-      the host deals each player five dice privately, which is exactly the case
-      the encryption exists for.
-- [ ] Move Draw & Guess onto `lib/rounds.js`. Battleship proved the API on new
-      code; replacing the hand-rolled clock it was generalised *from* is what
-      proves the generalisation was real.
+- [ ] **`secrets.channel()` still has no user, and Liar's Dice was not it** (see
+      above — sealing cannot protect a hand from the dealer). What would use it
+      is a **shared deck** dealt without replacement: hands must be disjoint, so
+      no player can generate their own and somebody has to deal. A trick-taking
+      game or a Splendor-style card market is the shape.
+- [ ] Draw & Guess's word is sent to the drawer addressed, not sealed — a
+      relaying player can read it. Fine for a party game; worth a line in the
+      game if anyone ever cares.
 - [ ] Light Cycles' bot may be too strong to be fun (30/30 against a
       never-crash baseline). There is no difficulty concept anywhere in the
       arcade; if one is wanted, decide it once and apply it to all six.

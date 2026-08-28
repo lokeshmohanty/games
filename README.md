@@ -246,6 +246,7 @@ node scripts/test-onitama.mjs       # Onitama's rules and search, no document
 node scripts/test-light-cycles.mjs  # the arena simulation and the rider bot
 node scripts/test-battleship.mjs    # fleets, sinking, and the reveal audit —
                                     # tested by breaking it four ways
+node scripts/test-liars-dice.mjs    # wilds, the bid ladder, the at-least rule
 ```
 
 `just check-precache` catches the one mistake `sw.js` cannot warn about: a page

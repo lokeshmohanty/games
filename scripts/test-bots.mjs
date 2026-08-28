@@ -109,6 +109,89 @@ try {
 	// and that the bot answers with a legal move rather than sitting on its
 	// turn — a search that times out badly would look exactly like a hang.
 
+	// ----------------------------------------------------------- liar's dice
+	//
+	// The other unrefereed game, and the one where the wrong build is the
+	// tempting one: have the host roll everybody's dice and mail each player
+	// their hand. Nobody deals here — each player rolls their own and commits
+	// before a bid is made — so what is checked is that every cup was committed
+	// to *before* the bidding, and that lifting them audits clean.
+
+	console.log("\nbots: liar's dice commits every cup before a bid");
+	await startSolo(page, "liars-dice.html", "PLAY A BOT");
+	await sleep(1200);
+
+	let ld = await debug(page);
+	check("two seats, five dice each", ld.seats.length === 2 && ld.seats.every((s) => s.dice === 5), JSON.stringify(ld.seats));
+	check("both cups are committed before any bidding", ld.digests === 2, `${ld.digests}`);
+	check("we can see our own five dice", ld.myDice === 5, `${ld.myDice}`);
+	check("and nobody else's", ld.revealed === 0, `${ld.revealed}`);
+	check("the bidding is open", ld.phase === "bid", ld.phase);
+	check("ten dice on the table", ld.totalDice === 10, `${ld.totalDice}`);
+
+	const dice = await page.evaluate(() => {
+		const btns = [...document.querySelectorAll(".ld-faces button")];
+		const acts = [...document.querySelectorAll(".ld-actions button")];
+		const steps = [...document.querySelectorAll(".ld-count button")];
+		const all = [...btns, ...acts, ...steps];
+		return {
+			docWidth: document.documentElement.scrollWidth,
+			winWidth: window.innerWidth,
+			faces: btns.length,
+			minTap: all.length ? Math.min(...all.map((b) => Math.round(b.getBoundingClientRect().height))) : 0,
+			bottom: Math.round(Math.max(...[...document.querySelectorAll(".ld-actions, .ld-mine")]
+				.map((e) => e.getBoundingClientRect().bottom))),
+			ownDiceShown: document.querySelectorAll(".ld-mine span").length,
+		};
+	});
+	check("you can bid on every face but ones", dice.faces === 5, `${dice.faces}`);
+	check("liar's dice does not scroll sideways", dice.docWidth <= dice.winWidth, `${dice.docWidth} > ${dice.winWidth}`);
+	check("every control clears 44px", dice.minTap >= 44, `${dice.minTap}px`);
+	check("nothing runs off the bottom", dice.bottom <= 844, `${dice.bottom}px`);
+	check("your own five dice are on screen", dice.ownDiceShown === 5, `${dice.ownDiceShown}`);
+
+	// Bid the minimum, then let the bot answer, until a call settles a round.
+	// The chain being tested is commit → bid → call → every cup opened →
+	// verified → somebody loses a die.
+	//
+	// Two of our own bids, then call — deliberately, rather than by any
+	// judgement of the odds. Bidding "well" here deadlocks: the minimum legal
+	// raise is always plausible, so neither side ever has a reason to call and
+	// the round runs until the phase deadline. The test wants the chain, not a
+	// good game of dice.
+	let myBids = 0;
+	for (let i = 0; i < 120; i++) {
+		const d = await debug(page);
+		if (d.lastCall || d.over) break;
+		myBids += await page.evaluate((bidsSoFar) => {
+			const btns = [...document.querySelectorAll(".ld-actions button")];
+			const bid = btns.find((b) => b.textContent.startsWith("BID"));
+			const liar = btns.find((b) => b.textContent.includes("LIAR"));
+			if (liar && bidsSoFar >= 2) {
+				liar.click();
+				return 0;
+			}
+			if (bid && !bid.disabled) {
+				bid.click();
+				return 1;
+			}
+			if (liar) liar.click();
+			return 0;
+		}, myBids);
+		await sleep(300);
+	}
+
+	ld = await debug(page);
+	check("a call settled a round", !!ld.lastCall, JSON.stringify({ phase: ld.phase, bid: ld.bid }));
+	check("every cup was opened", ld.revealed === 2, `${ld.revealed}`);
+	check("and every one audited clean", Object.values(ld.verdicts).every((v) => v === null), JSON.stringify(ld.verdicts));
+	check("somebody lost a die", ld.seats.some((s) => s.dice === 4), JSON.stringify(ld.seats.map((s) => s.dice)));
+	check("the count that settled it was recorded", Number.isInteger(ld.lastCall?.actual), JSON.stringify(ld.lastCall));
+	// "At least", not "exactly" — the rule the whole game turns on.
+	check("the call was settled by the at-least rule",
+		!!ld.lastCall && ld.lastCall.bidderWasRight === (ld.lastCall.actual >= ld.lastCall.bid.count),
+		JSON.stringify(ld.lastCall));
+
 	// ------------------------------------------------------------ battleship
 	//
 	// The game the plumbing exists for. What is checked here is the whole chain
