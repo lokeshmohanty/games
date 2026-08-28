@@ -308,55 +308,6 @@ try {
 			(await host.locator("#chat-input").count()) === 0);
 	}
 
-	// Oh Hell is the first game here that cannot deal itself: hands come off one
-	// shared deck, so they have to be disjoint, so somebody has to cut the deck
-	// up and the pieces have to travel. This is the only place that actually
-	// happens over a wire — with bots the deal never leaves the host — so it is
-	// the only place the sealed channel is exercised end to end.
-	console.log("\nparty: a shared deck, dealt sealed");
-	await host.evaluate(() => window.__party.room.setGame(null));
-	{
-		const oh = host.locator(".party-game", { hasText: "OH HELL" });
-		await oh.waitFor({ timeout: TIMEOUT });
-		await oh.click();
-
-		const pages = [host, p2, p3];
-		for (const page of pages) {
-			await page.waitForFunction(
-				() => window.__party?.handle?.debug && window.__party.handle.debug().myHandSize > 0,
-				null,
-				{ timeout: TIMEOUT },
-			);
-		}
-		const states = await Promise.all(pages.map((page) => page.evaluate(() => window.__party.handle.debug())));
-
-		check("every peer was dealt a hand", states.every((s) => s.myHandSize === 1), JSON.stringify(states.map((s) => s.myHandSize)));
-		check("every peer sealed the deal rather than addressing it",
-			states.every((s) => s.sealed === "sealed"), JSON.stringify(states.map((s) => s.sealed)));
-
-		// The property a shared deck has and a self-rolled secret does not: the
-		// same card cannot be in two hands.
-		const dealt = states.flatMap((s) => s.myHand);
-		check(`three peers hold three different cards (${dealt.join(" ")})`,
-			new Set(dealt).size === dealt.length, dealt.join(" "));
-
-		// Each peer knows its own hand and nothing else. `debug()` is the whole of
-		// what a page can see about itself, so if another player's cards were
-		// reachable they would be here.
-		check("no peer can see anybody else's hand",
-			states.every((s) => s.myHand.length === s.myHandSize),
-			JSON.stringify(states.map((s) => s.myHand)));
-
-		check("everyone agrees on the trump suit",
-			new Set(states.map((s) => s.trump)).size === 1, JSON.stringify(states.map((s) => s.trump)));
-		check("everyone sees the same three seats",
-			states.every((s) => s.seats.length === 3), JSON.stringify(states.map((s) => s.seats.length)));
-
-		await host.evaluate(() => window.__party.room.setGame(null));
-		await host.locator(".party-game").first().waitFor({ timeout: TIMEOUT });
-		check("Oh Hell tore itself down", (await host.locator(".oh-hand").count()) === 0);
-	}
-
 	// Tug of War is the only game with more than one player per side, so this
 	// is the one place a team is read as a group rather than as seats[0].
 	console.log("\nparty: a game with multi-player teams");

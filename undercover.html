@@ -6,7 +6,7 @@
       name="viewport"
       content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"
     />
-    <title>Oh Hell — P2P</title>
+    <title>Undercover</title>
     <!-- Installable: manifest + icons, registered by lib/pwa.js. -->
     <link rel="manifest" href="manifest.webmanifest" />
     <meta name="theme-color" content="#0a0a0a" />
@@ -21,7 +21,7 @@
   <body>
     <!--
       A deep link straight into one game. The game itself lives in
-      games/oh-hell.js and is mounted here exactly as party.html mounts
+      games/undercover.js and is mounted here exactly as party.html mounts
       it; this page only supplies the two-player lobby around it.
     -->
     <a class="portal-link" href="index.html">&#8592; All games</a>
@@ -34,16 +34,14 @@
     <script src="lib/net.js"></script>
     <script src="lib/games.js"></script>
     <script src="lib/ui.js"></script>
-    <script src="lib/secrets.js"></script>
-    <script src="lib/rounds.js"></script>
     <script src="lib/lobby.js"></script>
-    <script src="games/oh-hell.js"></script>
+    <script src="games/undercover.js"></script>
     <script>
       // Exposed so scripts/test-bots.mjs can inspect the live room and game.
       window.__game = NeonArcade.mountGamePage(
         document.getElementById("lobby"),
         document.getElementById("stage"),
-        "oh-hell",
+        "undercover",
       );
     </script>
   </body>

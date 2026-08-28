@@ -190,37 +190,53 @@ async function sweepMouse(page, seconds, phase = 0) {
 // ---------------------------------------------------------------- scenarios
 
 const GAMES = {
-	"oh-hell": {
-		file: "oh-hell.html",
-		peers: 2,
-		seconds: 16,
-		async beforeStart([host]) {
-			// Four hands makes the trick worth looking at.
-			for (let i = 0; i < 2; i++) {
-				await host.locator("button", { hasText: "ADD BOT" }).first().click().catch(() => {});
-				await sleep(150);
-			}
-		},
-		async play([a, b], seconds) {
-			// Bid, then play any legal card. The interesting picture is the trick
-			// filling up and the hand emptying, which needs no cleverness.
-			const act = (page) =>
-				page.evaluate(() => {
-					const bid = document.querySelector(".oh-bids button:not(:disabled)");
-					if (bid) return void bid.click();
-					const card = document.querySelector(".oh-hand .oh-card.playable");
-					if (card) card.click();
-				}).catch(() => {});
+	undercover: {
+		file: "undercover.html",
+		// One device, one page — there is nothing to connect, which is the whole
+		// point of the game. The harness only runs its handshake for peers > 1,
+		// so this scenario starts the game itself.
+		peers: 1,
+		seconds: 14,
+		async play([a], seconds) {
+			await a.locator("button", { hasText: "START" }).first().click();
+			await a.waitForFunction(() => window.__game?.handle, null, { timeout: 20_000 });
 
-			// The first round deals one card each and is over in seconds; wait for
-			// a later one, where a hand and a trick are both worth seeing.
+			await a.locator("button", { hasText: "+ PLAYER" }).click();
+			const names = ["ANA", "BO", "CY", "DI"];
+			for (const [i, name] of names.entries()) {
+				await a.locator(".uc-name input").nth(i).fill(name);
+				await sleep(160);
+			}
+			await sleep(400);
+			await a.locator("button", { hasText: "DEAL" }).click();
+			await sleep(600);
+
+			// The pass-the-phone deal is the part worth showing: a name, a tap, a
+			// word, gone again.
+			for (let i = 0; i < names.length; i++) {
+				await a.locator("button", { hasText: "TAP TO SEE" }).click();
+				await sleep(1100);
+				await a.locator("button", { hasText: "HIDE &" }).click();
+				await sleep(500);
+			}
+
 			const deadline = Date.now() + seconds * 1000;
 			while (Date.now() < deadline) {
-				await act(a);
-				await act(b);
-				await sleep(260);
-				const done = await a.evaluate(() => !!window.__game.handle.debug().over).catch(() => false);
-				if (done) break;
+				const phase = await a.evaluate(() => window.__game.handle.debug().phase).catch(() => "over");
+				if (phase === "over") break;
+				if (phase === "describe") {
+					await a.locator("button", { hasText: /^(NEXT|GO TO VOTE)$/ }).first().click().catch(() => {});
+				} else if (phase === "vote") {
+					await a.locator(".uc-row.pick").first().click().catch(() => {});
+					await sleep(500);
+					await a.locator("button", { hasText: "VOTE OUT" }).click().catch(() => {});
+				} else if (phase === "reveal") {
+					await sleep(900);
+					await a.locator("button", { hasText: /NEXT ROUND|SEE THE RESULT/ }).click().catch(() => {});
+				} else if (phase === "guess") {
+					await a.locator("button", { hasText: "PASS" }).click().catch(() => {});
+				}
+				await sleep(600);
 			}
 			await sleep(1200);
 		},

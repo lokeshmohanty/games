@@ -109,77 +109,110 @@ try {
 	// and that the bot answers with a legal move rather than sitting on its
 	// turn — a search that times out badly would look exactly like a hang.
 
-	// ---------------------------------------------------------------- oh hell
+	// ------------------------------------------------------------- undercover
 	//
-	// The first game here that cannot deal itself: hands come off one shared
-	// deck and must be disjoint, so somebody has to cut it up and the pieces
-	// have to travel. That is what `secrets.channel()` is for, and this is its
-	// first user. What is checked here is the game; `test-party.mjs` checks that
-	// three real peers get three different hands over the wire.
+	// The one game here that needs no second device and no bots at all: it is
+	// played by people in the room, on one phone, passed along. So the lobby
+	// must offer a plain START — no invite, no bot controls — and the game's one
+	// real responsibility is that **a word is never on screen for the wrong
+	// person**. Both are asserted; the rest of the game happens between people.
 
-	console.log("\nbots: oh hell deals a shared deck and plays it out");
-	await page.goto(url("oh-hell.html"));
-	await page.locator("button", { hasText: "PLAY A BOT" }).first().click();
-	for (let i = 0; i < 2; i++) {
-		await page.locator("button", { hasText: "ADD BOT" }).first().click();
-	}
-	await page.locator("button", { hasText: "START GAME" }).first().click();
+	console.log("\nlocal: undercover needs no second device");
+	await page.goto(url("undercover.html"));
+	const lobbyButtons = await page.locator("#lobby button").allTextContents();
+	check("the lobby asks for nothing but START", lobbyButtons.join() === "START", JSON.stringify(lobbyButtons));
+
+	await page.locator("button", { hasText: "START" }).first().click();
 	await page.waitForFunction(() => window.__game?.handle, null, { timeout: TIMEOUT });
-	await page.waitForFunction(() => window.__game.handle.debug().phase === "bid", null, { timeout: TIMEOUT });
 
-	let oh = await debug(page);
-	check("four seats at the table", oh.seats.length === 4, `${oh.seats.length}`);
-	check("the deal is sealed, not addressed", oh.sealed === "sealed", oh.sealed);
-	check("round one deals one card", oh.handSize === 1 && oh.myHandSize === 1, JSON.stringify({ h: oh.handSize, m: oh.myHandSize }));
-	check("a trump was turned up", oh.trump !== null && oh.trump >= 0 && oh.trump <= 3, `${oh.trump}`);
-	check("nobody has bid yet", oh.seats.every((x) => x.bid === null || x.bid === undefined));
+	let uc = await debug(page);
+	check("it opens on the player list", uc.phase === "setup", uc.phase);
+	check("no word is on screen before anyone is dealt", uc.onScreen === null);
 
-	const cards = await page.evaluate(() => {
-		const bids = [...document.querySelectorAll(".oh-bids button")];
-		const hand = [...document.querySelectorAll(".oh-hand .oh-card")];
-		const all = [...bids, ...hand];
+	// Six players, so the blank is allowed.
+	for (let i = 0; i < 3; i++) await page.locator("button", { hasText: "+ PLAYER" }).click();
+	const inputs = page.locator(".uc-name input");
+	const table = ["Ana", "Bo", "Cy", "Di", "Ed", "Fi"];
+	for (const [i, name] of table.entries()) await inputs.nth(i).fill(name);
+
+	const setup = await page.evaluate(() => {
+		const fields = [...document.querySelectorAll(".uc-name input, .uc-toggle, .uc-step button, .uc-actions button")];
 		return {
 			docWidth: document.documentElement.scrollWidth,
 			winWidth: window.innerWidth,
-			bidButtons: bids.length,
-			minTap: all.length ? Math.min(...all.map((b) => Math.round(b.getBoundingClientRect().height))) : 0,
-			bottom: Math.round(Math.max(...[...document.querySelectorAll(".oh-hand, .oh-bids, .oh-scores")]
-				.map((e) => e.getBoundingClientRect().bottom))),
+			minTap: Math.min(...fields.map((f) => Math.round(f.getBoundingClientRect().height))),
+			bottom: Math.round(Math.max(...fields.map((f) => f.getBoundingClientRect().bottom))),
 		};
 	});
-	// One card in hand means bids of 0 or 1 — two buttons, not a stepper.
-	check("bidding offers every number it could be", cards.bidButtons === 2, `${cards.bidButtons}`);
-	check("oh hell does not scroll sideways", cards.docWidth <= cards.winWidth, `${cards.docWidth} > ${cards.winWidth}`);
-	check("cards and bid buttons clear 44px", cards.minTap >= 44, `${cards.minTap}px`);
-	check("nothing runs off the bottom", cards.bottom <= 844, `${cards.bottom}px`);
+	check("the setup screen does not scroll sideways", setup.docWidth <= setup.winWidth, `${setup.docWidth} > ${setup.winWidth}`);
+	check("every field and button clears 44px", setup.minTap >= 44, `${setup.minTap}px`);
+	check("the whole form fits the phone", setup.bottom <= 844, `${setup.bottom}px`);
 
-	// Play the whole thing: bid whatever is offered first, then any legal card.
-	// A full five-round game runs about a minute of wall clock, most of it the
-	// pauses that make it watchable, so this loop is deliberately patient.
-	for (let i = 0; i < 900; i++) {
-		const d = await debug(page).catch(() => null);
-		if (!d || d.over) break;
-		await page
-			.evaluate(() => {
-				const bid = document.querySelector(".oh-bids button:not(:disabled)");
-				if (bid) return void bid.click();
-				const card = document.querySelector(".oh-hand .oh-card.playable");
-				if (card) card.click();
-			})
-			.catch(() => {});
-		await sleep(120);
+	await page.locator("button", { hasText: "BLANK: OFF" }).click();
+	await page.locator("button", { hasText: "DEAL" }).click();
+	await page.waitForFunction(() => window.__game.handle.debug().phase === "pass", null, { timeout: TIMEOUT });
+
+	uc = await debug(page);
+	check("six players were dealt", uc.players.length === 6, `${uc.players.length}`);
+	check("one undercover, one blank, four civilians",
+		uc.players.filter((p) => p.role === "spy").length === 1
+		&& uc.players.filter((p) => p.role === "blank").length === 1
+		&& uc.players.filter((p) => p.role === "civilian").length === 4,
+		JSON.stringify(uc.players.map((p) => p.role)));
+	check("the two words differ", uc.civilianWord !== uc.spyWord, `${uc.civilianWord}/${uc.spyWord}`);
+	// The whole point: the phone has just changed hands, so nothing is showing.
+	check("nothing is on screen until somebody taps", uc.onScreen === null);
+	check("and no word is in the DOM either",
+		!(await page.locator(".uc-word").count()), "a word was rendered before the tap");
+
+	// Walk the deal, checking each person sees their own word and only theirs.
+	const seen = [];
+	for (let i = 0; i < 6; i++) {
+		await page.locator("button", { hasText: "TAP TO SEE" }).click();
+		const state = await debug(page);
+		const shown = await page.locator(".uc-word").textContent();
+		seen.push({ who: state.onScreen, shown });
+		check(`${state.onScreen} is shown exactly one word`,
+			(await page.locator(".uc-word").count()) === 1, "more than one word on screen");
+		await page.locator("button", { hasText: "HIDE &" }).click();
+		const after = await debug(page);
+		check(`and it is gone once ${state.onScreen} passes it on`, after.onScreen === null);
 	}
 
-	oh = await debug(page);
-	check("the game reaches a winner", !!oh.over?.winner, JSON.stringify({ phase: oh.phase, over: oh.over }));
-	check("all five rounds were played", oh.seats.every((x) => x.score >= 0) && oh.phase === "over", oh.phase);
-	// Exactly-or-nothing scoring: every score is a sum of (10 + bid) terms, so
-	// no score can be a number that scoring cannot produce.
-	check("every score is a sum of made bids",
-		oh.seats.every((x) => x.score === 0 || x.score >= 10),
-		JSON.stringify(oh.seats.map((x) => x.score)));
-	check("somebody actually scored", oh.seats.some((x) => x.score > 0), JSON.stringify(oh.seats.map((x) => x.score)));
-	check("the hand is empty at the end", oh.myHandSize === 0, `${oh.myHandSize}`);
+	uc = await debug(page);
+	check("the phone went round everybody, in order",
+		seen.map((x) => x.who).join() === table.join(), seen.map((x) => x.who).join());
+	// Each person saw *their own* word, and the civilians all saw the same one.
+	const byName = Object.fromEntries(uc.players.map((p) => [p.name, p]));
+	check("everybody saw their own word",
+		seen.every((x) => x.shown === (byName[x.who].word ?? "—")),
+		JSON.stringify(seen));
+	check("the civilians all saw the same word",
+		new Set(seen.filter((x) => byName[x.who].role === "civilian").map((x) => x.shown)).size === 1);
+	check("the undercover saw a different one",
+		seen.find((x) => byName[x.who].role === "spy").shown !== uc.civilianWord);
+	check("the blank saw no word at all",
+		seen.find((x) => byName[x.who].role === "blank").shown === "—");
+	check("dealing ends in the describing round", uc.phase === "describe", uc.phase);
+	check("the speaking order is everybody, shuffled", uc.order.length === 6 && new Set(uc.order).size === 6);
+
+	// A vote must take two taps: one to pick, one to confirm. A stray thumb on a
+	// phone going round a table would otherwise knock somebody out for good.
+	while ((await debug(page)).phase === "describe") {
+		await page.locator("button", { hasText: /^(NEXT|GO TO VOTE)$/ }).first().click();
+	}
+	uc = await debug(page);
+	check("the round ends at a vote", uc.phase === "vote", uc.phase);
+	await page.locator(".uc-row.pick").first().click();
+	check("picking somebody does not yet eliminate them",
+		(await debug(page)).phase === "vote" && (await debug(page)).alive === 6,
+		"one tap was enough to vote somebody out");
+	check("a confirmation appears instead",
+		(await page.locator("button", { hasText: "VOTE OUT" }).count()) === 1);
+	await page.locator("button", { hasText: "VOTE OUT" }).click();
+	uc = await debug(page);
+	check("confirming eliminates them", uc.alive === 5, `${uc.alive}`);
+	check("and says what they were", ["reveal", "guess"].includes(uc.phase), uc.phase);
 
 	// ----------------------------------------------------------- liar's dice
 	//
