@@ -21,6 +21,9 @@ handshake per person and nothing else.
 - **`lobby.js`** — `NeonArcade.mountLobby()`: the invite/answer UI used by the per-game pages, plus the bot controls that let one person start a game alone.
 - **`qr.js`** — `NeonArcade.qrCanvas()`: a self-contained QR encoder, so invites can be scanned instead of typed.
 - **`qr-decode.js`** — `NeonArcade.qrDecode()` / `scanQr()`: a self-contained QR *decoder* plus a camera scanner.
+- **`secrets.js`** — `NeonArcade.makeSecrets(room)`: sealed private channels (so a *relaying player* cannot read a hand) and commit-reveal (so the host cannot either). Optional; only games with hidden information need it. `games/battleship.js` is the worked example — and note that verifying the digest is only half the check, see `docs/index.md`.
+- **`rounds.js`** — `NeonArcade.makeRounds(ctx, spec)`: the host-owned round/phase clock, including `collect` phases that end when everyone has submitted. Optional.
+- **`ui.js`** — `NeonArcade.gameShell(root, opts)`: the stage, status line and overlay every game was rebuilding. Optional, but new games should use it.
 - **`pwa.js`** — registers `../sw.js` and fills `[data-install-slot]` with an install button. Optional; nothing else depends on it.
 - **`styles.css`** — shared neon theme (link from each game's HTML).
 
@@ -139,6 +142,9 @@ as `http://`. Load in this order before the game script:
 <script src="lib/qr-decode.js"></script>
 <script src="lib/net.js"></script>
 <script src="lib/games.js"></script>
+<script src="lib/ui.js"></script>      <!-- games built on gameShell -->
+<script src="lib/secrets.js"></script> <!-- games with hidden information -->
+<script src="lib/rounds.js"></script>  <!-- games with timed or simultaneous phases -->
 <script src="lib/lobby.js"></script>
 <script src="lib/party.js"></script>   <!-- party.html only -->
 <script src="games/connect4.js"></script>
@@ -265,6 +271,12 @@ node scripts/test-scan.mjs     # SCAN REPLY against a fake camera, including the
 node scripts/test-pwa.mjs      # installability, portal layout, and offline
 node scripts/test-bots.mjs     # every game playable by one person, and no peer
                                # opening a connection to a bot
+node scripts/test-plumbing.mjs # sealed channels, commitments and the round
+                               # clock, over real routing and a fake transport
+node scripts/test-onitama.mjs  # Onitama's rules and search, with no document
+node scripts/test-light-cycles.mjs  # the arena simulation and the rider bot
+node scripts/test-battleship.mjs    # fleets, sinking, and the reveal audit —
+                                    # tested by breaking it four ways
 ```
 
 To test two peers by hand, open a game twice — the invite link works between two

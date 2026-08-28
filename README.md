@@ -87,14 +87,20 @@ two-player lobby: **INVITE A FRIEND**, send the invite, take the reply, **START
 GAME**. Use **INVITE ANOTHER** to add more players, and **ADD BOT** to fill the
 rest of the seats.
 
-`file://` works for testing on the same machine (open two tabs). For
-cross-device play, serve the folder over HTTP:
+`file://` works for testing on the same machine (open two tabs). To serve it:
 
 ```sh
-python3 -m http.server 8000
+just run          # http://127.0.0.1:8000
+just serve-lan    # every interface, so a phone on the same wifi can reach it
 ```
 
-Then visit `http://<your-ip>:8000` on each device.
+`just --list` shows the rest (tests, preview gifs, icons). There is nothing to
+install first — the recipes wrap `python3 -m http.server` and `node`, which is
+all this project has ever needed.
+
+Two notes on `serve-lan`. The camera scanner and the service worker need a
+**secure context**: `127.0.0.1` counts, `http://<lan-ip>` does not. So over the
+LAN everything works except **SCAN REPLY** — use PASTE for the reply code.
 
 ## Project structure
 
@@ -218,6 +224,8 @@ See [`docs/index.md`](docs/index.md) for more details.
 
 ## Tests
 
+`just test` runs all of them, slowest last. Individually:
+
 ```sh
 node scripts/test-codec.mjs    # signalling codec round-trip, no browser needed
 node scripts/test-party.mjs    # three real browser peers: recruiting, teams,
@@ -231,7 +239,18 @@ node scripts/test-pwa.mjs      # installability (including Chrome's own
 node scripts/test-bots.mjs     # every game playable by one person: the bots
                                # actually play, and no peer tries to connect
                                # to one
+node scripts/test-plumbing.mjs # sealed private channels, commit-reveal and the
+                               # round clock, over real routing on a fake
+                               # transport
+node scripts/test-onitama.mjs       # Onitama's rules and search, no document
+node scripts/test-light-cycles.mjs  # the arena simulation and the rider bot
+node scripts/test-battleship.mjs    # fleets, sinking, and the reveal audit —
+                                    # tested by breaking it four ways
 ```
+
+`just check-precache` catches the one mistake `sw.js` cannot warn about: a page
+or module added to the repo but not to its `SHELL` list, which then simply is
+not there offline.
 
 ## Adding a game
 

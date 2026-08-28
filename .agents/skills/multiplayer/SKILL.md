@@ -1,6 +1,6 @@
 ---
 name: multiplayer
-description: Use when working on the serverless P2P layer — the invite/reply handshake, the QR encoder or decoder, the SCAN REPLY camera scanner, the mesh and relayed signalling, the party/lobby connection UI, or ICE and STUN behaviour. Covers lib/net.js, lib/qr.js, lib/qr-decode.js, lib/lobby.js and lib/party.js. Also use when a connection or a scan "isn't working".
+description: Use when working on the serverless P2P layer — the invite/reply handshake, the QR encoder or decoder, the SCAN REPLY camera scanner, the mesh and relayed signalling, the party/lobby connection UI, or ICE and STUN behaviour. Covers lib/net.js, lib/qr.js, lib/qr-decode.js, lib/lobby.js, lib/party.js and lib/secrets.js. Also use when a connection or a scan "isn't working".
 ---
 
 # Multiplayer (P2P core)
@@ -32,6 +32,9 @@ node scripts/test-party.mjs    # three real browser peers: recruiting, teams,
 node scripts/test-scan.mjs     # SCAN REPLY against a fake camera
 node scripts/test-bots.mjs     # every game playable by one person, and no peer
                                # opening a connection to a bot
+node scripts/test-plumbing.mjs # sealed private channels, commit-reveal and the
+                               # round clock, over real routing and a fake
+                               # transport (no browser)
 ```
 
 `test-scan.mjs` and `test-pwa.mjs` need a **secure context**, so they serve the
@@ -49,6 +52,13 @@ repo over `http://127.0.0.1`; `file://` and `http://<lan-ip>` will not do.
   is told which case they hit.
 - Changing the handshake breaks `scripts/preview.mjs` too — it drives the same
   UI. See [[../../game-previews/memory/p2p-handshake]].
+- **An addressed message is not a private one.** `send(data, { target })` is
+  relayed *in plaintext through another player's browser* whenever the pair has
+  no direct link — which the no-TURN trade-off makes routine, not rare. Anything
+  secret goes through `lib/secrets.js`. See [[addressed-is-not-private]].
+- **A digest alone does not make a game honest.** It proves when the secret was
+  fixed, not that the player answered truthfully about it. Replay every answer
+  against the revealed secret too. See [[unrefereed-honesty]].
 - **A bot is a party member, not a mode.** Anything that walks the roster or
   routes a message has to know a `bot_` id has no connection behind it and never
   will. See [[bots-as-members]] for the four places in `net.js` that get this
@@ -60,3 +70,9 @@ repo over `http://127.0.0.1`; `file://` and `http://<lan-ip>` will not do.
   that caused it, and the only test shape that catches them.
 - `memory/bots-as-members.md` — why bots are roster members rather than a game
   mode, and the routing that must exclude them.
+- `memory/addressed-is-not-private.md` — why targeted sends leak to relaying
+  players, the two separate problems hidden information has, and the test shape
+  that proves the seal rather than assuming it.
+- `memory/unrefereed-honesty.md` — how a game with no trustworthy referee is
+  made honest: commit, answer for your own board, reveal, and audit **both** the
+  digest and every answer. Verifying the digest alone is the half-fix.

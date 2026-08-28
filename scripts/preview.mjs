@@ -190,6 +190,149 @@ async function sweepMouse(page, seconds, phase = 0) {
 // ---------------------------------------------------------------- scenarios
 
 const GAMES = {
+	battleship: {
+		file: "battleship.html",
+		peers: 2,
+		seconds: 14,
+		async play([a, b], seconds) {
+			// Commit both fleets, then fire. Targets come from the game's own
+			// hunt-and-target so the clip shows ships being found and sunk rather
+			// than a grid slowly filling with misses.
+			for (const page of [a, b]) {
+				await page.locator("button", { hasText: "COMMIT FLEET" }).click().catch(() => {});
+				await sleep(200);
+			}
+			await a.waitForFunction(() => window.__game.handle.debug().phase === "fire", null, { timeout: 20_000 }).catch(() => {});
+
+			const deadline = Date.now() + seconds * 1000;
+			while (Date.now() < deadline) {
+				for (const page of [a, b]) {
+					await page.evaluate(() => {
+						const g = window.__game.handle.debug();
+						if (g.phase !== "fire" || g.over) return;
+						const at = window.NeonArcade.battleshipRules.botTarget(g.theirBoard);
+						if (!at) return;
+						const cell = document.querySelector(`.bs-grid .bs-cell[data-r="${at[0]}"][data-c="${at[1]}"]`);
+						if (cell && !cell.disabled) cell.click();
+					}).catch(() => {});
+				}
+				await sleep(320);
+				const over = await a.evaluate(() => !!window.__game.handle.debug().over).catch(() => false);
+				if (over) break;
+			}
+			await sleep(1600);
+		},
+	},
+
+	"light-cycles": {
+		file: "light-cycles.html",
+		peers: 2,
+		seconds: 12,
+		async beforeStart([host]) {
+			// Two riders drawing two lines does not show what the game is; four
+			// fills the arena and shows the bots cutting each other off.
+			for (let i = 0; i < 2; i++) {
+				await host.locator("button", { hasText: "ADD BOT" }).first().click().catch(() => {});
+				await sleep(150);
+			}
+		},
+		async play([a, b], seconds) {
+			// Steering is a tap on one half of the arena, which is exactly what a
+			// player does — no special hook. The bots were seated in beforeStart.
+			const turn = async (page, side) => {
+				const box = await page.locator(".lc-arena").boundingBox();
+				if (!box) return;
+				await page.mouse.click(box.x + box.width * (side === "left" ? 0.25 : 0.75), box.y + box.height * 0.5);
+			};
+			const alive = (page) =>
+				page.evaluate(() => {
+					const d = window.__game.handle.debug();
+					const mine = d.riders.find((r) => r.id === d.mine);
+					return { racing: d.racing, mine: !!mine?.alive };
+				});
+
+			// `racing` is false during the opening countdown as well as after the
+			// round, so a loop that stops on `!racing` stops instantly and records
+			// two seconds of nothing. Latch on having seen it true — the same trap
+			// `gameActive` sets in Neon Survival.
+			await a.waitForFunction(() => window.__game.handle.debug().racing, null, { timeout: 20_000 }).catch(() => {});
+
+			const deadline = Date.now() + seconds * 1000;
+			while (Date.now() < deadline) {
+				for (const page of [a, b]) {
+					const s = await alive(page).catch(() => null);
+					if (!s?.racing || !s.mine) continue;
+					// Turn often enough to draw a shape rather than a straight line,
+					// and alternate, so the rider boxes itself in slowly instead of
+					// spiralling into an immediate crash.
+					await turn(page, Math.random() < 0.5 ? "left" : "right");
+				}
+				await sleep(420);
+				const over = await a.evaluate(() => window.__game.handle.debug().racing === false).catch(() => false);
+				if (over) break;
+			}
+			await sleep(1200);
+		},
+	},
+
+	onitama: {
+		file: "onitama.html",
+		peers: 2,
+		seconds: 14,
+		async play([a, b], seconds) {
+			// The move is *chosen* in the page, because the rules already live
+			// there and re-deriving "which card, which piece, which square" in the
+			// recorder would be a second implementation to keep in step. What the
+			// recorder does is the part a person does: tap the card, tap the piece,
+			// tap the square.
+			const pickAndPoint = (page) =>
+				page.evaluate(() => {
+					const g = window.__game.handle.debug();
+					if (!g.started || g.winner !== null || g.turn !== g.mySide) return null;
+					const R = window.NeonArcade.onitamaRules;
+					const moves = R.legalMoves({ board: g.board, hands: g.hands, side: g.side, turn: g.turn }, g.mySide);
+					if (!moves.length) return null;
+					// Take a capture when there is one, so the clip has something
+					// happening in it rather than five students shuffling forward.
+					const mv = moves.find((m) => g.board[m.to[0]][m.to[1]]) ?? moves[Math.floor(Math.random() * moves.length)];
+					const canvas = document.querySelector(".oni-board");
+					const rect = canvas.getBoundingClientRect();
+					const cell = rect.width / 5;
+					const flip = g.mySide === 1;
+					const at = ([r, c]) => {
+						const sr = flip ? 4 - r : r;
+						const sc = flip ? 4 - c : c;
+						return { x: rect.left + (sc + 0.5) * cell, y: rect.top + (sr + 0.5) * cell };
+					};
+					return { card: R.CARDS[mv.card].name, from: at(mv.from), to: at(mv.to) };
+				});
+
+			// Eight exchanges is enough to show the card cycling twice over, which
+			// is the mechanic worth seeing. More than that and the gif is over the
+			// portal's ~1MB budget for no extra idea.
+			const per = Math.max(700, (seconds * 1000) / 16);
+			for (let turn = 0; turn < 8; turn++) {
+				let acted = false;
+				for (const page of [a, b]) {
+					const plan = await pickAndPoint(page);
+					if (!plan) continue;
+					acted = true;
+					// The rack nearest the player is the last one on the page.
+					await page.locator(".oni-rack").last().locator("button", { hasText: plan.card }).first().click();
+					await sleep(200);
+					await page.mouse.click(plan.from.x, plan.from.y);
+					await sleep(260);
+					await page.mouse.click(plan.to.x, plan.to.y);
+					await sleep(per / 2);
+				}
+				if (!acted) await sleep(400);
+				const over = await a.evaluate(() => window.__game.handle.debug().winner !== null);
+				if (over) break;
+			}
+			await sleep(900);
+		},
+	},
+
 	connect4: {
 		file: "connect4.html",
 		peers: 2,
@@ -371,8 +514,17 @@ await Promise.all(pages.map((p) => p.goto(url)));
 if (spec.peers > 1) {
 	await connectPeers(pages);
 	await sleep(800);
+	// A game that wants more than the two connected peers — bots, mostly — seats
+	// them here, while the lobby is still on screen.
+	if (spec.beforeStart) await spec.beforeStart(pages);
 	await startGame(pages);
-	await pages[0].locator("#game").waitFor({ state: "visible", timeout: 20_000 }).catch(() => {});
+	// Games built on lib/ui.js have no `#game`; they have a `.g-stage`. Waiting
+	// for only the old selector meant a silent 20-second stall per recording.
+	await pages[0]
+		.locator("#game, .g-stage")
+		.first()
+		.waitFor({ state: "visible", timeout: 20_000 })
+		.catch(() => {});
 }
 await sleep(600);
 

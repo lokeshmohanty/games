@@ -23,7 +23,8 @@ That is the whole job: it plays the game, records it, converts it, and writes
 `assets/<game>.gif` in place. `index.html` already points at that path, so a
 successful run needs **no HTML edit**.
 
-Games: `connect4`, `draw-guess`, `neon-survival-mp`, `neon-survival`.
+Games: `onitama`, `light-cycles`, `connect4`, `draw-guess`, `neon-survival-mp`,
+`tug-of-war`. `scripts/preview.mjs --list` is the authority.
 
 ## What it does
 
@@ -41,7 +42,8 @@ Games: `connect4`, `draw-guess`, `neon-survival-mp`, `neon-survival`.
 ## Adding a game
 
 Add an entry to `GAMES` in `scripts/preview.mjs`: `file`, `peers` (2 for anything using
-`lib/lobby.js`), `seconds`, and a `play(pages, seconds)` scenario. The shared helpers
+`lib/lobby.js`), `seconds`, an optional `beforeStart(pages)` (seat bots while the lobby is
+still up — Light Cycles does), and a `play(pages, seconds)` scenario. The shared helpers
 `connectPeers` / `startGame` handle the lobby, so a scenario only describes
 gameplay. Page 0 is always the host — only it can start the game. Add the game to `GAMES` in `scripts/make-preview.sh` too, and give it a profile
 if it is motion-heavy.
@@ -70,6 +72,20 @@ if it is motion-heavy.
   before treating false as death — otherwise it exits instantly.
 - If a run still ends on something you don't want looping, `--trim-end N` drops the last
   N seconds (it refuses to leave under 1s).
+- **The "not started yet" flag and the "already over" flag are the same flag** — and it
+  has now caught two different games. Neon Survival's `gameActive` is false before the
+  round as well as after it; Light Cycles' `racing` is false during the opening countdown
+  as well as after the crash. A `play` loop that stops on the falsy value stops
+  immediately and records two seconds of nothing (measured: an 8s clip became 2s). Latch
+  on having seen it true first — `await page.waitForFunction(() => ...racing)` — before
+  treating false as the end.
+- **Games built on `lib/ui.js` have no `#game` element**, they have `.g-stage`. The
+  harness waits for `#game, .g-stage`; waiting for the old selector alone was a silent
+  20-second stall per recording, hidden behind a `.catch(() => {})`.
+- **Onitama's scenario picks its move inside the page**, via
+  `NeonArcade.onitamaRules.legalMoves`, and then clicks card → piece → square like a
+  person. Re-deriving legality in the recorder would be a second implementation of the
+  rules to keep in step.
 - **Connect 4** stops early once someone wins, holding the win overlay ~1.4s.
 - The P2P games no longer need any signaling service: the handshake is passed directly
   between the two pages. STUN is still contacted for candidate discovery, but two pages

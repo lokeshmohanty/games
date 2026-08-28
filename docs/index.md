@@ -1,6 +1,6 @@
 # games — Documentation
 
-*Last synced: 2026-08-26.*
+*Last synced: 2026-08-27 (Battleship added).*
 
 Entry point for all project documentation. Any LLM should be able to answer
 questions about this project from this folder alone.
@@ -10,6 +10,8 @@ questions about this project from this folder alone.
 - [Connecting players](#connecting-players) — the serverless handshake, paid once per person
 - [Parties](#parties) — the persistent group, teams, switching games, host succession
 - [Bots](#bots) — why there is no single-player section, and what a bot actually is
+- [Hidden information](#hidden-information) — sealed private state, and commit-reveal
+- [Rounds and phases](#rounds-and-phases) — the shared clock for timed and simultaneous-turn games
 - [Adding a game](#adding-a-game) — the module contract
 - [Installing it](#installing-it) — the PWA: manifest, icons, service worker, offline
 - [`../lib/README.md`](../lib/README.md) — the P2P core, registry, party, lobby and QR APIs
@@ -22,10 +24,17 @@ questions about this project from this folder alone.
 | Test the signalling codec | `node scripts/test-codec.mjs` — no browser needed |
 | Test the party end to end | `node scripts/test-party.mjs` — three real browser peers at 390x844: guest-side recruiting, teams, game switching, host succession |
 | Regenerate a portal preview gif | `scripts/make-preview.sh <game>` (or `all`) — plays the game headless and writes `assets/<game>.gif` |
+| Serve it locally | `just run` — http://127.0.0.1:8000. `just serve-lan` binds every interface for phone testing, but a plain LAN http:// address is not a secure context, so SCAN REPLY will not work there (use PASTE) |
+| Run everything | `just test`, or `just --list` for the rest |
+| Check the offline precache | `just check-precache` — every page and module in `sw.js`'s `SHELL`; nothing else warns when one is missed |
 | Play locally with several peers | open `party.html`, click ADD PLAYER, open the invite link in another tab, paste the reply back (`file://` works; `python3 -m http.server 8000` also fine) |
 | Test reply-code **scanning** | `node scripts/test-scan.mjs` — renders a real-sized reply code into a camera frame and feeds it to Chrome as a fake capture device. Scanning needs a camera *and* a secure context, so `file://` and plain `http://<ip>` will not do; the test serves the repo over `http://127.0.0.1` for that reason |
 | Test installability and offline | `node scripts/test-pwa.mjs` — checks the manifest and icons, asserts the portal's layout at 390x844, asks **Chrome itself** whether anything blocks installing, then cuts the network and loads the pages |
 | Test that every game is playable alone | `node scripts/test-bots.mjs` — starts each game with bots and no second browser, checks the bots actually play (Connect 4 is never left an open win), and checks no peer opens a connection to one |
+| Test the private-state and round layers | `node scripts/test-plumbing.mjs` — real `Room` routing over a fake transport: a sealed message is unreadable by the peer relaying it, a tampered one is refused, commitments verify, phases advance |
+| Test Onitama's rules and bot | `node scripts/test-onitama.mjs` — card orientation as a property, both victory conditions from both sides, and the bot measured against random play |
+| Test Battleship's rules and audit | `node scripts/test-battleship.mjs` — fleets, sinking, and the audit tested by *breaking* it four ways |
+| Test the Light Cycles arena | `node scripts/test-light-cycles.mjs` — head-on collisions, spawn symmetry, and the bot measured against a rider that only avoids crashing |
 | Rebuild the app icons | `node scripts/make-icons.mjs` after editing `assets/icon.svg` — renders the PNGs the manifest needs |
 | Get back to the portal | every page has a fixed `.portal-link` ("← ALL GAMES") linking to `index.html` |
 
@@ -166,6 +175,112 @@ reaches other players as a `pos` message, so the host publishes a bot's with
 locally (an ordinary broadcast never comes back to its sender, so without that
 the one browser running the bot would be the one that never saw it move).
 
+## Hidden information
+
+Two problems stand between this architecture and any game with a secret, and
+they need different answers. `lib/secrets.js` has both.
+
+**A "private" message is not private.** `makeAction().send(data, { target })`
+is *addressed*, not sealed. With no TURN server, a pair that cannot connect
+directly is routine, and `net.js` then relays the envelope through whichever
+peer can reach both — another player's browser. Your hand travels through the
+hands of the people you are hiding it from.
+
+```js
+const secrets = NeonArcade.makeSecrets(room, { onError: (e) => show(e.reason) });
+await secrets.ready();
+const hand = secrets.channel("hand");
+hand.onMessage = (cards, { from, to }) => render(cards);
+await hand.send(playerId, cards);       // sealed end to end
+```
+
+Each browser publishes an ECDH public key on its own **party record** — chosen
+over a broadcast because the record already replicates to late joiners
+wholesale, so somebody arriving mid-hand learns every key published before they
+existed with no re-announcement protocol to get wrong. `room.setMeta()` is the
+door to that record; it refuses the fields the record owns (`id`, `name`,
+`team`, `bot`, `joined`, `host`).
+
+A message to a **bot** never reaches the wire at all: the host plays it, so the
+channel delivers it locally with `to` naming the bot, and a bot brain reads its
+private state through the same handler a person's does.
+
+**The host can read everything**, because it is a player refereeing state it is
+a legitimate recipient of. No addressing fixes that; commitment does.
+
+```js
+const c = await secrets.commit(myFleet);   // { digest, nonce, value }
+publish(c.digest);                          // now
+publish({ value: c.value, nonce: c.nonce });// at the reveal
+await secrets.verify(opened);               // everyone checks
+```
+
+The digest is taken over a **canonical** serialisation — object keys sorted at
+every depth — because `JSON.stringify` preserves insertion order, so a value
+that has been through the network can serialise differently from the one that
+was hashed. That is a verification failure with no bug behind it.
+
+Both halves need WebCrypto, which needs a secure context. `file://` **is** one
+in Chrome and Firefox, so the project's `file://` habit is safe here — but the
+check is made at runtime, and `secrets.privacy()` returns `"plain"` rather than
+silently sending in the clear. A game with a secret should refuse to deal on
+`"plain"` — Battleship does exactly that.
+
+### The worked example: Battleship
+
+`games/battleship.js` is what this was built for, and it shows the pattern in
+full. Nobody holds anybody else's fleet — not even the host. Each player commits
+to a fleet before a shot is fired, answers hit-or-miss for their *own* board
+during play, and opens the commitment at the end.
+
+**Verifying the digest is not enough**, and this is the part that is easy to get
+half right. A digest proves only that the fleet was decided before the shooting
+started; a player can commit honestly and then simply lie about a hit. So the
+reveal runs two checks — the digest against the revealed fleet, **and** every
+answer replayed against it. A third catches the fleet that was legal-looking but
+overlapping. `scripts/test-battleship.mjs` tests the audit by breaking it four
+ways, because a commitment nobody can fail is decoration.
+
+Battleship uses `commit`/`verify` but **not** the sealed channel: a fleet never
+crosses the network during play at all, so there is nothing to seal. The sealed
+channel's first real user will be a game where the host *deals* — Liar's Dice or
+anything with a hand of cards.
+
+## Rounds and phases
+
+`lib/rounds.js` is the clock Draw & Guess wrote by hand, generalised. The host
+owns it and peers mirror; time crosses the wire as a **duration, never a
+timestamp**, because two phones' clocks disagree by more than these phases last.
+
+```js
+const rounds = NeonArcade.makeRounds(ctx, {
+  rounds: 5,
+  phases: [{ name: "lock", ms: 20000, collect: true }, { name: "resolve", ms: 3000 }],
+  botSubmit: (botId) => chooseFor(botId),
+  onPhase: (i) => render(i),
+  onCollect: ({ entries }) => resolve(entries),   // host only
+});
+rounds.start();          // host
+rounds.submit(answer);   // anybody
+```
+
+A phase marked `collect` ends **as soon as every seated player has submitted**,
+or at its deadline, whichever is first. That one rule is what makes
+simultaneous-turn games work over this transport: nobody is racing anybody, so
+a slow link costs its owner nothing and the host never arbitrates who acted
+first. `botSubmit` exists because a collecting phase would otherwise wait out
+its deadline for a seat with no browser behind it.
+
+Peers see *who* has submitted, never *what* — the submissions themselves never
+leave the host until `onCollect` decides what is public.
+
+Battleship runs **two** schedulers, which is what `name` is for: placement is a
+single collecting phase that ends the moment both fleets are committed, and the
+battle is many, each ending the moment both players have picked a square. One
+trap worth knowing — `botSubmit` is synchronous and `commit` is not, so a bot's
+fleet and commitment have to be built and cached *before* the placement phase
+opens.
+
 ## Adding a game
 
 One file in `games/`, one script tag in `party.html`, one in its own page.
@@ -180,6 +295,30 @@ without a page reload, so anything left running fights the next game for input.
 Each game keeps a standalone page (`connect4.html` and friends) as a deep link
 into that one game. Those pages mount the same module through the plain
 two-player lobby, so a game is implemented exactly once.
+
+`lib/ui.js` supplies the furniture every game was rebuilding — an injected
+`<style>`, a centred stage, a status line and a full-bleed overlay:
+
+```js
+const shell = NeonArcade.gameShell(ctx.root, { css: `#board { ... }` });
+shell.stage.append(canvas);
+shell.setHud([{ key: "turn", text: "Your move" }]);
+```
+
+It is factory functions over plain DOM, not a reactive layer — see the
+[SolidJS decision](#adding-a-game) note below. The one idea borrowed from that
+world is that `setHud` **updates text nodes in place** instead of rebuilding the
+row. Two rules come with it: the stage reserves `52px` of top padding for the
+fixed "← ALL GAMES" link (centring without it puts the status line underneath),
+and the one child that should absorb leftover height takes `.g-fill` rather than
+setting its own full height, which would overflow the stage.
+
+**Vanilla is a decision, not an omission.** Converting to SolidJS was weighed on
+2026-08-10 and again on 2026-08-27: the reactive surface is about a fifth of the
+code, and JSX needs a compiler that emits ESM, which browsers refuse over
+`file://` — a way of running this that the project verifies. The deploy
+workflow uploads the repo with `path: '.'`, and `scripts/preview.mjs` drives the
+game HTML directly. `lib/ui.js` is what that analysis recommended instead.
 
 `games/tug-of-war.js` was written specifically to test that contract, and is
 worth reading first when adding a game: it is the only one with more than one
@@ -241,9 +380,37 @@ the favicon via `<link rel="icon">`.
   is the answer.
 - The mesh is tested with three peers; nothing has exercised the 8-player cap,
   and no test forces a pair to fail so the relay path runs in anger.
-- Bot *strength* is asserted only negatively: Connect 4's bot is checked never
-  to leave an immediate win on the board, which is not the same as checking it
-  plays well. Nothing measures whether any of the three is fun to lose to.
+- Bot *strength* is now measured for two of the six. Onitama's bot wins 20 of
+  20 against random play; Light Cycles' wins 30 of 30 against a rider that only
+  avoids crashing, and a per-tick budget assertion keeps the search inside its
+  own tick with eight bots running. The other four are still asserted only
+  negatively — Connect 4's is checked never to leave an immediate win on the
+  board, which is not the same as checking it plays well — and **nothing
+  measures whether any of them is fun to lose to**. Light Cycles' bot may in
+  fact be too strong; that is a judgement no test here makes.
+- **The sealed channel still has no user.** Battleship exercises commit-reveal
+  hard, and `lib/rounds.js` now runs two real schedulers, but a fleet never
+  crosses the wire — so `secrets.channel()` is still proven only by
+  `test-plumbing.mjs` and not by a game. Liar's Dice, or anything where the host
+  deals a hand, is what would test it.
+- `lib/rounds.js` does not survive host succession. If the crown moves
+  mid-round the clock stops with it; every other game here has the same
+  property, and nothing recovers a game in progress.
+- **Battleship's audit is never triggered in real play**, because no player here
+  can cheat: every client runs the same honest `answerShot`. The audit is tested
+  against deliberately corrupted answers, which is the right test, but a genuine
+  modified client has never been pointed at it.
+- Battleship's placement auto-commits a few seconds before the deadline so a
+  player who walks away cannot stall the game. That path is not covered by any
+  test — it takes 142 seconds to reach.
+- Onitama's card *movesets* are the published ones, but the first-player stamp
+  on each card is ours — an even 8/8 split that keeps the mechanic without
+  claiming to reproduce the physical deck. Marked `VERIFY` in the source.
+- A genuinely stuck Onitama position — no legal move, so a card is passed — was
+  never found: 375,000 random small placements against every card pair, plus an
+  exhaustive sweep of the back two rows and one 3x3 corner against all 120
+  pairs, produced none. The rule is implemented faithfully; the branch is
+  almost certainly unreachable and its test fixture is built by hand.
 - The Firefox install hints are reasoned from the platform, not observed —
   every browser test here runs headless Chrome. Firefox itself is unverified.
 - Cross-network play over mobile data is expected to fail on carriers using

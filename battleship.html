@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"
+    />
+    <title>Battleship — P2P</title>
+    <!-- Installable: manifest + icons, registered by lib/pwa.js. -->
+    <link rel="manifest" href="manifest.webmanifest" />
+    <meta name="theme-color" content="#0a0a0a" />
+    <link rel="icon" href="assets/icon.svg" type="image/svg+xml" />
+    <link rel="apple-touch-icon" href="assets/apple-touch-icon.png" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black" />
+    <meta name="apple-mobile-web-app-title" content="Arcade Games" />
+    <link rel="stylesheet" href="lib/styles.css" />
+  </head>
+  <body>
+    <!--
+      A deep link straight into one game. The game itself lives in
+      games/battleship.js and is mounted here exactly as party.html mounts
+      it; this page only supplies the two-player lobby around it.
+    -->
+    <a class="portal-link" href="index.html">&#8592; All games</a>
+    <div id="lobby"></div>
+    <div id="stage" hidden></div>
+
+    <script src="lib/pwa.js"></script>
+    <script src="lib/qr.js"></script>
+    <script src="lib/qr-decode.js"></script>
+    <script src="lib/net.js"></script>
+    <script src="lib/games.js"></script>
+    <script src="lib/ui.js"></script>
+    <script src="lib/secrets.js"></script>
+    <script src="lib/rounds.js"></script>
+    <script src="lib/lobby.js"></script>
+    <script src="games/battleship.js"></script>
+    <script>
+      // Exposed so scripts/test-bots.mjs can inspect the live room and game.
+      window.__game = NeonArcade.mountGamePage(
+        document.getElementById("lobby"),
+        document.getElementById("stage"),
+        "battleship",
+      );
+    </script>
+  </body>
+</html>

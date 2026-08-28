@@ -186,6 +186,8 @@ console.log("\npwa: every page is part of the app");
 for (const p of [
 	"party.html",
 	"connect4.html",
+	"onitama.html",
+	"light-cycles.html",
 	"draw-guess.html",
 	"neon-survival.html",
 	"neon-survival-mp.html",
@@ -241,10 +243,25 @@ check(
 	`scrollWidth ${portal.scroll} > clientWidth ${portal.client}`,
 );
 check("it is called Arcade Games", /arcade games/i.test(portal.title ?? ""), portal.title);
+check("every game is in one grid, with no player-count sections", portal.sections === 0, `${portal.sections} sections`);
+
+// Counted against the registry rather than against a number written here.
+// A game added to `games/` and to party.html but never given a portal card is
+// a game nobody outside the party screen can find, and a hard-coded 4 turns
+// that into a test that has to be edited every time rather than one that
+// catches it.
+const registered = await (async () => {
+	const probe = await ctx.newPage();
+	await probe.goto(`${BASE}/party.html`);
+	await probe.waitForFunction(() => window.NeonArcade?.listGames, null, { timeout: 20_000 });
+	const names = await probe.evaluate(() => window.NeonArcade.listGames().map((g) => g.id));
+	await probe.close();
+	return names;
+})();
 check(
-	"every game is in one grid, with no player-count sections",
-	portal.sections === 0 && portal.cards === 4,
-	`${portal.cards} cards, ${portal.sections} sections`,
+	"the portal has a card for every registered game",
+	portal.cards === registered.length,
+	`${portal.cards} cards, ${registered.length} games (${registered.join(", ")})`,
 );
 check(
 	"no card still points at the retired single-player page",

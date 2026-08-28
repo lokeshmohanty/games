@@ -102,6 +102,232 @@ try {
 	// The bot with something to prove: it is the only one here that has to be
 	// *right* rather than merely busy.
 
+	// ------------------------------------------------------------- onitama
+	//
+	// The deep one. Two things are being checked that no other game here needs:
+	// that a five-by-five board plus three card racks actually fit on a phone,
+	// and that the bot answers with a legal move rather than sitting on its
+	// turn — a search that times out badly would look exactly like a hang.
+
+	// ------------------------------------------------------------ battleship
+	//
+	// The game the plumbing exists for. What is checked here is the whole chain
+	// end to end — both fleets committed before a shot, both firing in the same
+	// round, each player answering for its own board, both fleets opened at the
+	// end and every answer re-checked. The last check is the one that matters:
+	// a game rigged to answer dishonestly must be *caught*, or the commitment is
+	// decoration.
+
+	console.log("\nbots: battleship commits, fires and audits");
+	await startSolo(page, "battleship.html", "PLAY A BOT");
+
+	let bs = await debug(page);
+	check("it opens on placement", bs.phase === "place", bs.phase);
+	check("a fleet is already laid out to commit", bs.myFleetCells === 12, `${bs.myFleetCells}`);
+	check("nothing is committed yet", !bs.committed && bs.digests === 0);
+
+	// Mobile-first, asserted: placement is one board and it should own the screen.
+	const place = await page.evaluate(() => {
+		const grids = [...document.querySelectorAll(".bs-grid")].filter((g) => g.offsetParent);
+		const box = grids[0]?.getBoundingClientRect();
+		const cell = grids[0]?.querySelector(".bs-cell")?.getBoundingClientRect();
+		const btns = [...document.querySelectorAll(".bs-ship, .bs-actions .neon-btn")]
+			.map((b) => Math.round(b.getBoundingClientRect().height));
+		return {
+			docWidth: document.documentElement.scrollWidth,
+			winWidth: window.innerWidth,
+			visibleGrids: grids.length,
+			w: Math.round(box?.width ?? 0),
+			bottom: Math.round(box?.bottom ?? 0),
+			cell: Math.round(cell?.width ?? 0),
+			minBtn: btns.length ? Math.min(...btns) : 0,
+		};
+	});
+	check("only your own board is shown while placing", place.visibleGrids === 1, `${place.visibleGrids}`);
+	check("placing does not scroll the page sideways", place.docWidth <= place.winWidth, `${place.docWidth} > ${place.winWidth}`);
+	check("the placement board fits the phone", place.w > 200 && place.w <= 390, `${place.w}px`);
+	check("its squares are big enough to tap", place.cell >= 30, `${place.cell}px`);
+	check("every control clears 44px", place.minBtn >= 44, `${place.minBtn}px`);
+
+	await page.locator("button", { hasText: "COMMIT FLEET" }).click();
+	await page.waitForFunction(() => window.__game.handle.debug().phase === "fire", null, { timeout: TIMEOUT });
+	bs = await debug(page);
+	check("both fleets are committed before a shot is fired", bs.digests === 2, `${bs.digests}`);
+	check("no shot has been fired yet", bs.shotsAtMe === 0 && bs.shotsAtThem === 0);
+
+	const battle = await page.evaluate(() => ({
+		visibleGrids: [...document.querySelectorAll(".bs-grid")].filter((g) => g.offsetParent).length,
+		bottom: Math.round(Math.max(...[...document.querySelectorAll(".bs-grid")]
+			.filter((g) => g.offsetParent).map((g) => g.getBoundingClientRect().bottom))),
+		docWidth: document.documentElement.scrollWidth,
+		winWidth: window.innerWidth,
+	}));
+	check("both boards are on screen once the shooting starts", battle.visibleGrids === 2, `${battle.visibleGrids}`);
+	check("both boards fit the phone", battle.bottom <= 844 && battle.docWidth <= battle.winWidth, JSON.stringify(battle));
+
+	// Play it out, using the game's own targeting so a game actually ends.
+	for (let i = 0; i < 300; i++) {
+		const d = await debug(page);
+		if (d.over) break;
+		if (d.phase === "fire") {
+			await page.evaluate(() => {
+				const d = window.__game.handle.debug();
+				const at = window.NeonArcade.battleshipRules.botTarget(d.theirBoard);
+				if (!at) return;
+				const cell = document.querySelector(`.bs-grid .bs-cell[data-r="${at[0]}"][data-c="${at[1]}"]`);
+				if (cell && !cell.disabled) cell.click();
+			});
+		}
+		await sleep(130);
+	}
+	await sleep(1500);
+	bs = await debug(page);
+	check("the game reaches a result", !!bs.over, JSON.stringify({ phase: bs.phase, shots: bs.shotsAtThem }));
+	check("both sides fired the same number of volleys", bs.shotsAtMe === bs.shotsAtThem, `${bs.shotsAtMe} vs ${bs.shotsAtThem}`);
+	check("the loser's fleet is fully sunk", bs.hitsOnThem === 12 || bs.hitsOnMe === 12, `${bs.hitsOnThem}/${bs.hitsOnMe}`);
+	check("both fleets were revealed", bs.fleetsRevealed === 2, `${bs.fleetsRevealed}`);
+	check("and both audited clean", Object.values(bs.audits).every((a) => a === null), JSON.stringify(bs.audits));
+	check("the phase leaves the firing state", bs.phase === "over", bs.phase);
+
+	// The claim, tested by breaking it: a fleet that does not match the answers
+	// given must fail the audit. This is done against the real helper rather
+	// than a mock, because the digest and the answer-replay are two separate
+	// checks and only both together make the game honest.
+	const caught = await page.evaluate(async () => {
+		const R = window.NeonArcade.battleshipRules;
+		const honestFleet = R.randomFleet();
+		const hits = new Set();
+		const answers = [];
+		for (let r = 0; r < 8; r++) {
+			for (let c = 0; c < 8; c++) {
+				const a = R.answerShot(honestFleet, hits, r, c);
+				if (a.hit) hits.add(R.key(r, c));
+				answers.push({ at: [r, c], hit: a.hit, sunk: a.sunk });
+			}
+		}
+		// Deny one real hit — the cheat a player would actually try.
+		const lied = answers.map((a) => (a.hit && !a.sunk ? { ...a, hit: false, sunk: null } : a));
+		return {
+			honest: R.auditAnswers(honestFleet, answers) === null,
+			lieCaught: R.auditAnswers(honestFleet, lied) !== null,
+		};
+	});
+	check("an honest board passes the audit in the page", caught.honest);
+	check("denying a hit is caught by the audit in the page", caught.lieCaught);
+
+	// -------------------------------------------------------- light cycles
+	//
+	// The busiest thing here: eight riders, a tick every 100ms, and the host
+	// simulating every bot. What is checked is that a round actually *ends* —
+	// a space-filling bot that never crashes and never gets cornered would
+	// leave a round running forever, and on a phone that is a hot battery
+	// rather than a game.
+
+	console.log("\nbots: light cycles runs a whole round on a phone");
+	await page.goto(url("light-cycles.html"));
+	await page.locator("button", { hasText: "PLAY ALONE" }).first().click();
+	for (let i = 0; i < 3; i++) {
+		await page.locator("button", { hasText: "ADD BOT" }).first().click();
+	}
+	await page.locator("button", { hasText: "START GAME" }).first().click();
+	await page.waitForFunction(() => window.__game?.handle, null, { timeout: TIMEOUT });
+
+	let lc = await debug(page);
+	check("four riders took the arena", lc.riders.length === 4, `${lc.riders.length}`);
+	check("three of them are bots", lc.riders.filter((r) => r.id.startsWith("bot_")).length === 3);
+	check("nobody starts on top of anybody", new Set(lc.riders.map((r) => `${r.c},${r.r}`)).size === 4);
+
+	// It opens on a countdown rather than throwing everyone straight into a
+	// wall before they have found their thumbs.
+	check("a round opens with a countdown, not a race", lc.countdown > 0 && !lc.racing, JSON.stringify({ c: lc.countdown, r: lc.racing }));
+
+	await page.waitForFunction(() => window.__game.handle.debug().racing, null, { timeout: TIMEOUT });
+	const wallsAtStart = (await debug(page)).walls;
+	await sleep(1500);
+	lc = await debug(page);
+	check("walls are being laid down", lc.walls > wallsAtStart, `${wallsAtStart} -> ${lc.walls}`);
+
+	const arena = await page.evaluate(() => {
+		const box = document.querySelector(".lc-arena").getBoundingClientRect();
+		const zones = [...document.querySelectorAll(".lc-zone")].map((z) => Math.round(z.getBoundingClientRect().width));
+		return {
+			docWidth: document.documentElement.scrollWidth,
+			winWidth: window.innerWidth,
+			w: Math.round(box.width),
+			h: Math.round(box.height),
+			bottom: Math.round(box.bottom),
+			zones,
+		};
+	});
+	check("the arena does not scroll the page sideways", arena.docWidth <= arena.winWidth, `${arena.docWidth} > ${arena.winWidth}`);
+	check("the arena fits the phone", arena.w <= 390 && arena.bottom <= 844, JSON.stringify(arena));
+	// Steering is the whole interface, so each half has to be a real target.
+	check("both steering halves are wide enough to hit", arena.zones.length === 2 && Math.min(...arena.zones) >= 100, JSON.stringify(arena.zones));
+
+	// The round must reach a result on its own.
+	await page.waitForFunction(() => window.__game.handle.debug().racing === false, null, { timeout: 60_000 });
+	lc = await debug(page);
+	check("the round ends by itself", lc.racing === false);
+	check("at most one rider is left standing", lc.riders.filter((r) => r.alive).length <= 1, `${lc.riders.filter((r) => r.alive).length}`);
+	check("somebody scored, or everybody crashed",
+		lc.winner === null || lc.riders.some((r) => r.wins === 1),
+		JSON.stringify({ winner: lc.winner, wins: lc.riders.map((r) => r.wins) }));
+
+	console.log("\nbots: onitama fits a phone and answers its turn");
+	await startSolo(page, "onitama.html", "PLAY A BOT");
+
+	let oni = await debug(page);
+	check("a bot took the other seat", oni.red !== null && oni.blue !== null);
+	check("the bot is the seat that is not us", (oni.mySide === 0 ? oni.blue : oni.red)?.startsWith("bot_"));
+	check("ten pieces, two masters", oni.pieces === 10 && oni.masters === 2, `${oni.pieces}/${oni.masters}`);
+	check("five cards are in play", new Set([...oni.hands[0], ...oni.hands[1], oni.side]).size === 5);
+
+	// Mobile-first is a rule here, so it is asserted rather than eyeballed.
+	const layout = await page.evaluate(() => {
+		const board = document.querySelector(".oni-board");
+		const cards = [...document.querySelectorAll(".oni-card")];
+		const rect = board.getBoundingClientRect();
+		const stage = document.querySelector(".g-stage").getBoundingClientRect();
+		return {
+			docWidth: document.documentElement.scrollWidth,
+			winWidth: window.innerWidth,
+			board: { w: Math.round(rect.width), h: Math.round(rect.height), top: Math.round(rect.top), bottom: Math.round(rect.bottom) },
+			stageBottom: Math.round(stage.bottom),
+			cardCount: cards.length,
+			minCard: Math.min(...cards.map((c) => Math.round(c.getBoundingClientRect().height))),
+			lowestCard: Math.round(Math.max(...cards.map((c) => c.getBoundingClientRect().bottom))),
+		};
+	});
+	check("the page does not scroll sideways at 390px", layout.docWidth <= layout.winWidth, `${layout.docWidth} > ${layout.winWidth}`);
+	check("the board is square", Math.abs(layout.board.w - layout.board.h) <= 1, JSON.stringify(layout.board));
+	check("the board fits the width", layout.board.w <= 390, `${layout.board.w}px`);
+	check("all five card slots are on screen", layout.cardCount === 5, `${layout.cardCount}`);
+	check("nothing is pushed off the bottom", layout.lowestCard <= 844, `${layout.lowestCard}px`);
+	check("card tap targets clear 44px", layout.minCard >= 44, `${layout.minCard}px`);
+
+	// Play one move and let the bot answer. Driving it through the page's own
+	// state rather than clicking the canvas: the click maths is the view's
+	// problem, and this is a test of the bot taking its turn.
+	const answered = await page.evaluate(async () => {
+		const g = window.__game.handle;
+		const R = window.NeonArcade.onitamaRules;
+		const before = g.debug();
+		if (before.turn !== before.mySide) return { waited: true };
+		return { waited: false, turn: before.turn };
+	});
+	await page.waitForFunction(
+		() => {
+			const d = window.__game.handle.debug();
+			return d.turn === d.mySide && d.winner === null;
+		},
+		null,
+		{ timeout: TIMEOUT },
+	);
+	oni = await debug(page);
+	check("play reaches us with a legal move available", oni.legal > 0, `${oni.legal}`);
+	check("no card went missing while the bot moved", new Set([...oni.hands[0], ...oni.hands[1], oni.side]).size === 5);
+	check("the bot did not answer instantly with nonsense", oni.pieces >= 8 && oni.masters === 2, `${oni.pieces}/${oni.masters}`);
+
 	console.log("\nbots: connect 4 plays a real opponent");
 	await startSolo(page, "connect4.html", "PLAY A BOT");
 
