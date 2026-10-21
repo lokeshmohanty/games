@@ -178,10 +178,11 @@ onitama, light-cycles, battleship, liars-dice, undercover.
       small, and the next game that genuinely needs a dealer nobody has to trust
       will need **mental poker** underneath it anyway (commutative encryption
       over BigInt, no dependency), not just a sealed pipe.
-- [ ] `scripts/test-party.mjs`'s host-succession section flaked once in five
+- [x] `scripts/test-party.mjs`'s host-succession section flaked once in five
       runs on 2026-08-27 (timed out waiting for the crown to be offered after
-      the host's page closed). Four passes either side, nothing else failed.
-      Not investigated.
+      the host's page closed). Fixed by making succession automatic: the heir
+      takes the crown the moment it vacates, with no offer/button, so the test
+      no longer waits on a UI action.
 - [ ] Draw & Guess's word is sent to the drawer addressed, not sealed — a
       relaying player can read it. Fine for a party game; worth a line in the
       game if anyone ever cares.

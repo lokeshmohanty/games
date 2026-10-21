@@ -105,7 +105,7 @@ export class RoomSignal {
 			const reply = await this.hub.host(ws, ip, msg, this.code);
 			ws.send(JSON.stringify(reply));
 			if (reply.t === "error") return ws.close(4400, reply.reason);
-			this.state.serializeAttachment(ws, { id: msg.id, ip });
+			ws.serializeAttachment({ id: msg.id, ip });
 			await this.persist();
 		} else if (msg.t === "join") {
 			// The message's code has to name this object's room; anything else
@@ -117,7 +117,7 @@ export class RoomSignal {
 			const reply = await this.hub.join(ws, ip, msg);
 			ws.send(JSON.stringify(reply));
 			if (reply.t === "error") return ws.close(4400, reply.reason);
-			this.state.serializeAttachment(ws, { id: msg.id, ip });
+			ws.serializeAttachment({ id: msg.id, ip });
 			await this.persist();
 		} else if (msg.t === "offer" || msg.t === "answer") {
 			this.hub.relay(ws, msg);

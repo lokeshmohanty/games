@@ -388,36 +388,29 @@ try {
 	await host.evaluate(() => window.__party.room.setGame(null));
 	await p2.locator(".party-member").first().waitFor({ timeout: TIMEOUT });
 	await host.close();
-	// p2 joined before p3, so p2 is the heir and should be offered the crown.
-	const takeover = p2.locator("button", { hasText: "TAKE OVER" });
-	let offered = true;
-	try {
-		await takeover.waitFor({ timeout: TIMEOUT });
-	} catch {
-		offered = false;
-	}
-	check("the longest-present member is offered the crown", offered);
-	// The crown is offered to exactly one member. Asserting p3's transient
-	// "waiting for…" screen would be a race — it legitimately never appears if
-	// p3 concludes the host is gone only after the heir has already claimed —
-	// but "p3 is never offered it" must hold at every instant.
+	// p2 joined before p3, so p2 is the heir. The crown passes automatically —
+	// no offer, no button, just the succession the moment the host is gone.
+	await p2.locator(".party-tag.is-host").first().waitFor({ timeout: TIMEOUT });
 	check(
-		"the crown is not offered to anyone but the heir",
-		(await p3.locator("button", { hasText: "TAKE OVER" }).count()) === 0,
+		"the longest-present member takes the crown automatically",
+		(await p2.locator(".party-tag.is-host").count()) === 1,
 	);
-	if (offered) {
-		await takeover.click();
-		await p2.locator(".party-tag.is-host").first().waitFor({ timeout: TIMEOUT });
-		check("the heir becomes host", (await p2.locator(".party-tag.is-host").count()) === 1);
-		const p3SeesHost = await p3
-			.locator(".party-tag.is-host")
-			.first()
-			.waitFor({ timeout: TIMEOUT })
-			.then(() => true)
-			.catch(() => false);
-		check("the rest of the party agrees on the new host", p3SeesHost);
-		check("the party survived losing its host", (await names(p2)).length === 2);
-	}
+	const p3SeesHost = await p3
+		.locator(".party-tag.is-host")
+		.first()
+		.waitFor({ timeout: TIMEOUT })
+		.then(() => true)
+		.catch(() => false);
+	check("the rest of the party agrees on the new host", p3SeesHost);
+	// Wait for the host's seat to be dropped after the reconnect grace; the
+	// crown passes immediately, but the roster shrinks only once the grace
+	// runs out — so give it room before asserting the party survived.
+	await p2.waitForFunction(
+		() => document.querySelectorAll(".party-member").length === 2,
+		undefined,
+		{ timeout: TIMEOUT },
+	);
+	check("the party survived losing its host", (await names(p2)).length === 2);
 } catch (err) {
 	console.log(`\n  FAIL unexpected: ${err.message}`);
 	failures++;

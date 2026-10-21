@@ -75,10 +75,10 @@ concluding: it broadcasts a probe, and anyone still holding a live link to that
 member vouches for them. Silence means gone, and the conclusion is broadcast so
 the whole party drops them at the same moment.
 
-If the member who went was the host, the crown is **offered** — never assigned
-behind someone's back — to the longest-present remaining member, ties broken by
-id so everyone nominates the same person. The party continues. The only thing
-that ends a party is the host explicitly deleting it.
+If the member who went was the host, the crown passes to the longest-present
+remaining member automatically; every browser computes the same heir from the
+same roster, so no UI offer is needed. The party continues. The only thing that
+ends a party is the host explicitly deleting it.
 
 ## Adding a game
 
@@ -229,7 +229,7 @@ pasting.
 | `bots()` | every bot in the roster (readable by anyone) |
 | `emitAs(botId, action, data, opts?)` | host only: send as a bot, and deliver locally too |
 | `NeonArcade.isBotId(id)` | a bot's id is prefixed `bot_`, so routing can tell without the record |
-| `claimHost()` | take a vacant crown (only the nominated heir is offered it) |
+| `claimHost()` | take a vacant crown (fallback; succession is normally automatic) |
 | `deleteParty()` | host only: end it for everyone |
 | `leave()` | close every connection |
 

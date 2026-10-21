@@ -294,7 +294,7 @@ try {
 		(await plain.locator("button", { hasText: "JOIN WITH A CODE" }).count()) === 0,
 	);
 	const plainParty = await context.newPage();
-	await plainParty.goto(PAGE("party.html"));
+	await plainParty.goto(PAGE("party.html", "?rs=http://localhost:1"));
 	await plainParty.evaluate(() => localStorage.removeItem("neon.room"));
 	await plainParty.reload();
 	await plainParty.locator(".party-member").first().waitFor({ timeout: TIMEOUT });

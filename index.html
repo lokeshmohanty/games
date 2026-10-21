@@ -99,6 +99,13 @@
         background: #f0f;
         flex: 0 0 auto;
       }
+      /* A <button> brings its own border, font, and cursor; reset them so it
+         renders exactly like the <a> beside it. */
+      .join-code-btn {
+        border: none;
+        font-family: inherit;
+        cursor: pointer;
+      }
       /*
         Filter chips. One row of them on a desktop, two on a phone; the whole
         strip scrolls sideways rather than wrapping into a wall of buttons.
@@ -260,7 +267,7 @@
           margin: 14px 0;
           padding: 12px 14px;
           gap: 10px;
-          flex-wrap: nowrap;
+          flex-wrap: wrap;
         }
         .party-banner h3 {
           font-size: 1.05rem;
@@ -381,6 +388,13 @@
         </p>
       </div>
       <a href="party.html" class="play-btn">START A PARTY</a>
+      <button
+        type="button"
+        class="play-btn join-code-btn"
+        onclick="event.stopPropagation(); joinWithCode(event)"
+      >
+        JOIN WITH A CODE
+      </button>
     </div>
 
     <!--
@@ -629,6 +643,20 @@
           chip.addEventListener("click", () => apply(chip.dataset.filter));
         }
       })();
+    </script>
+    <script>
+      // Join a party by its six-digit code. Lives on the portal because the
+      // code is the one piece of party plumbing a newcomer meets before they
+      // have a party page open. The prompt is deliberately plain: it works
+      // with the page opened off the filesystem and inside the PWA shell.
+      function joinWithCode(event) {
+        event.stopPropagation();
+        const raw = prompt("Enter the 6-digit party code");
+        const code = (raw || "").replace(/\D/g, "").slice(0, 6);
+        if (code.length === 6) {
+          window.location.href = "party.html#c=" + encodeURIComponent(code);
+        }
+      }
     </script>
 
     <script src="lib/pwa.js"></script>
