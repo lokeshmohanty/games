@@ -1,15 +1,20 @@
 ---
 name: multiplayer
-description: Use when working on the serverless P2P layer — the invite/reply handshake, the QR encoder or decoder, the SCAN REPLY camera scanner, the mesh and relayed signalling, the party/lobby connection UI, or ICE and STUN behaviour. Covers lib/net.js, lib/qr.js, lib/qr-decode.js, lib/lobby.js, lib/party.js and lib/secrets.js. Also use when a connection or a scan "isn't working".
+description: Use when working on the serverless P2P layer — the invite/reply handshake, the QR encoder or decoder, the SCAN REPLY camera scanner, the mesh and relayed signalling, the party/lobby connection UI, the room server (lib/room-join.js and worker/), ICE and STUN behaviour, or when a connection or a scan "isn't working". Covers lib/net.js, lib/qr.js, lib/qr-decode.js, lib/lobby.js, lib/party.js, lib/secrets.js and lib/room-join.js.
 ---
 
 # Multiplayer (P2P core)
 
-Two browsers cannot find each other on their own, and this project refuses a
-signalling server, a relay and a TURN server. The **players** carry the
+Two browsers cannot find each other on their own. The **players** carry the
 handshake instead: one side mints an invite, the other sends one code back, and
 every connection after the first is negotiated over the links that already
 exist. STUN is the only outside contact.
+
+**Update (2026-10):** a room server now exists as an optional layer — a
+Cloudflare Worker + Durable Object that handles the rendezvous (join by
+six-digit code, rejoin after reload). It is *not* a relay: all game data still
+flows peer-to-peer over WebRTC data channels. See
+[[room-server]] and `docs/room-server.md` for the design.
 
 ## Read these first, do not re-derive them
 
@@ -27,6 +32,8 @@ tell you. Read them before changing anything here.
 
 ```sh
 node scripts/test-codec.mjs    # signalling codec round-trip, no browser
+node scripts/test-hub.mjs      # room hub: codes, claims, TTLs — pure logic
+node scripts/test-room.mjs     # join by code, reconnect, fallback
 node scripts/test-party.mjs    # three real browser peers: recruiting, teams,
                                # game switching, host succession
 node scripts/test-scan.mjs     # SCAN REPLY against a fake camera
@@ -76,3 +83,6 @@ repo over `http://127.0.0.1`; `file://` and `http://<lan-ip>` will not do.
 - `memory/unrefereed-honesty.md` — how a game with no trustworthy referee is
   made honest: commit, answer for your own board, reveal, and audit **both** the
   digest and every answer. Verifying the digest alone is the half-fix.
+- `memory/room-server.md` — the room server's invariants (mesh is
+  authoritative, room server is advisory), the progressive-enhancement rule,
+  and the traps that caught two test failures.

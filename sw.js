@@ -28,7 +28,7 @@
 // first, a forgotten bump costs an out-of-date *offline* copy — never a stale
 // app for an online player, which is the failure mode that would be hard to
 // notice.
-const VERSION = "arcade-games-v8";
+const VERSION = "arcade-games-v9";
 
 // The shell: everything needed to open any page and start a game with no
 // network at all. The preview gifs are deliberately absent — they are ~2 MB
@@ -53,6 +53,7 @@ const SHELL = [
 	"./lib/qr.js",
 	"./lib/qr-decode.js",
 	"./lib/net.js",
+	"./lib/room-join.js",
 	"./lib/games.js",
 	"./lib/secrets.js",
 	"./lib/rounds.js",

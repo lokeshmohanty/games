@@ -349,6 +349,30 @@ canvas {
   border-color: #f0f;
   box-shadow: 0 0 8px rgba(255, 0, 255, 0.35);
 }
+/*
+  A held seat: the member's links are down, the reconnect grace is running,
+  and their return is automatic. Amber rather than the host's cyan or a bot's
+  magenta — it is a state to wait out, not a role.
+*/
+.party-tag.is-reconnecting {
+  color: #fc3;
+  border-color: #fc3;
+  box-shadow: 0 0 8px rgba(255, 204, 51, 0.35);
+}
+/*
+  The party code: the one number somebody reads across a room, so it is set
+  like the title rather than like a text box. Tabular figures, or 1s and 7s
+  misread each other at party distance.
+*/
+.party-code-digits {
+  font-size: clamp(2.2rem, 9vw, 3.4rem);
+  letter-spacing: 0.35em;
+  text-align: center;
+  color: var(--accent);
+  text-shadow: 0 0 20px var(--accent-glow);
+  font-variant-numeric: tabular-nums;
+  margin: 6px 0 2px;
+}
 .party-controls {
   display: flex;
   flex-wrap: wrap;

@@ -11,7 +11,47 @@ session pay for it.*
 act → record → clear the item. This is the single inbox — do not create a
 separate `TODO.md`.*
 
-## Current focus (2026-08-27)
+## Current focus (2026-10-18)
+
+The room server shipped. A Cloudflare Worker + Durable Object (`worker/`) now
+handles rendezvous: join by six-digit code, rejoin after reload, TURN
+credentials served alongside. All game data still flows peer-to-peer; the room
+server sees only SDP offers/answers. Progressive enhancement throughout —
+when it is unreachable, the classic scan/paste flow is offered unchanged.
+
+Shipped this session:
+
+- `worker/hub.js` — pure room-hub logic (codes, claims, TTLs, rate limits),
+  imported by `worker/index.js`'s Durable Object shell.
+- `lib/room-join.js` — client glue: `hostRoom`, `joinRoom`, rejoin tokens,
+  reachability probe, `makeMockRoomServer` for tests.
+- `lib/net.js` — `reconnectGraceMs`, `onLeave` hook, `serverPeerState`
+  advisory, `_vacateCrown` extraction, `rs`-flag support.
+- `lib/party.js` — joinCodeFlow, reconnectFlow, party-code display in the
+  roster.
+- `lib/lobby.js` — joinCodeFlow with `#c=` hash routing.
+- `scripts/test-hub.mjs` + `scripts/test-room.mjs` — hub rules tested without
+  a deploy; client tested against the in-page mock with real WebRTC.
+
+Two bugs the room tests caught and fixed:
+
+- `from` was undefined in the mock's offer/answer relay (the guest's answer
+  went nowhere). Fixed by reverse-looking-up the sender's ws.
+- `rs` was never set on members, so `_confirmGone`/`serverPeerState` never
+  held a seat for the reconnect grace. Fixed in the wire's `onPeerJoin`.
+
+One design decision recorded in the multiplayer skill memory: **the mesh is
+authoritative**; the room server's peer-state notices are advisory and are
+outranked by any live link.
+
+Remaining for deploy (see `worker/README.md`):
+
+- [ ] `npx wrangler login` and `npx wrangler deploy` — the Worker is not
+      deployed yet. No accounts, no secrets; it is a free-tier deploy.
+- [ ] Add the deployed URL to `lib/room-join.js`'s `NeonArcade.roomServerUrl`
+      (or instruct users to `?rs=<url>`) so join-by-code is live.
+
+## Previous focus (2026-08-27)
 
 Plumbing first, then a deep game, then a casual one — in that order, mobile
 first throughout.

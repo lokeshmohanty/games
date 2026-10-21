@@ -24,6 +24,8 @@ questions about this project from this folder alone.
 |---|---|
 | Test the signalling codec | `node scripts/test-codec.mjs` — no browser needed |
 | Test the party end to end | `node scripts/test-party.mjs` — three real browser peers at 390x844: guest-side recruiting, teams, game switching, host succession |
+| Test the room hub (codes, claims, TTLs) | `node scripts/test-hub.mjs` — pure hub logic against the real rules, no browser, no Cloudflare account needed |
+| Test the join-by-code path | `node scripts/test-room.mjs` — the real client (lib/room-join.js, net.js, the party and lobby screens) against the in-page mock room server; WebRTC handshake itself is real |
 | Regenerate a portal preview gif | `scripts/make-preview.sh <game>` (or `all`) — plays the game headless and writes `assets/<game>.gif` |
 | Serve it locally | `just run` — http://127.0.0.1:8000. `just serve-lan` binds every interface for phone testing, but a plain LAN http:// address is not a secure context, so SCAN REPLY will not work there (use PASTE) |
 | Run everything | `just test`, or `just --list` for the rest |
@@ -86,7 +88,35 @@ leaving a blank page.
 ## Connecting players
 
 The handshake is carried by the players — there is no signalling server and no
-third-party relay (see `MEMORY.md` → no-third-party-services).
+third-party relay (see `MEMORY.md` → no-third-party-services). **Update
+(2026-10): a room server now exists as an optional layer.** See
+[`room-server.md`](room-server.md) for the design; the summary below is what
+changed.
+
+**What the room server adds:**
+
+- **Join by code.** The host reads a six-digit code off their screen; the
+  newcomer types it. The signalling WebSocket handles the offer/answer exchange,
+  so the two-sided scan/paste handshake is no longer the only path in.
+- **Reconnect.** A reloaded browser keeps a rejoin token in `localStorage`;
+  the room server routes them back to their seat, so a page refresh no longer
+  costs a party seat. The old mesh-level reconnect grace still covers the
+  gaps the room server cannot see.
+- **Progressive enhancement.** When the room server is unreachable, the
+  classic invite/scan/paste flow is unchanged — same code paths, same
+  errors, just without the code-join button.
+
+**What the room server does not change:**
+
+- Game data still flows peer-to-peer over WebRTC data channels. The room
+  server sees only signalling (SDP offers/answers), never game bytes.
+- The party record is still replicated over the mesh; the room server's
+  peer-state notices are advisory, and a live link always outranks them.
+- The classic handshake still works for any pair that cannot reach the room
+  server.
+
+Deploy instructions live in `worker/README.md`; the client-side glue is
+`lib/room-join.js`.
 
 | Step | Same room | Apart |
 |---|---|---|

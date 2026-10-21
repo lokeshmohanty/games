@@ -40,15 +40,23 @@ serve-lan:
     python3 -m http.server {{port}}
 
 # Every suite, in the order they get slower.
-test: test-codec test-plumbing test-rules test-party test-scan test-pwa test-bots
+test: test-codec test-hub test-plumbing test-rules test-room test-party test-scan test-pwa test-bots
 
 # No browser needed — the signalling codec round-trip.
 test-codec:
     node scripts/test-codec.mjs
 
+# The room hub: codes, claims, rate limits, TTLs — no Cloudflare, no browser.
+test-hub:
+    node scripts/test-hub.mjs
+
 # Sealed channels, commit-reveal and the round clock, over real routing.
 test-plumbing:
     node scripts/test-plumbing.mjs
+
+# Join by code, reconnect, fallback — the real client against the in-page mock.
+test-room:
+    node scripts/test-room.mjs
 
 # The three games whose rules are testable without a document.
 test-rules:
