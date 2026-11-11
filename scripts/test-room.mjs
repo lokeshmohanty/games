@@ -472,6 +472,269 @@ try {
 		JSON.stringify(aborted),
 	);
 
+	// -------------------------- 6e2. a leave during a redial
+	// A leave that finds the signalling socket mid-redial has no socket to
+	// say so on. It used to be dropped — the dial landed, was hung up
+	// without a word, and the party held the seat for 5 minutes.
+	console.log("\nroom: a leave during a redial still gives the seat back");
+	const owed = await page.evaluate(async () => {
+		const mock = window.__neonRoomMock;
+		const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+		localStorage.removeItem("neon.room");
+		const host = await NeonArcade.hostRoom({ name: "Host" });
+		const seat = async (name) => {
+			localStorage.removeItem("neon.room");
+			return (await NeonArcade.joinRoom(host.code, { name })).room;
+		};
+		// Redial only scheduled (RETRY_FIRST_MS away) when the leave comes.
+		const g1 = await seat("G1");
+		mock.drop(g1.selfId);
+		await wait(50);
+		g1.leave();
+		await NeonArcade.roomSettled();
+		const scheduled = mock.rooms.get(host.code)?.has(g1.selfId) ?? false;
+		// Redial in flight: the server's reply is held back 400 ms, and the
+		// leave lands while the dial is out.
+		const g2 = await seat("G2");
+		const connect = mock.connect;
+		mock.connect = (path) => {
+			const ws = connect.call(mock, path);
+			const send = ws.send;
+			ws.send = (raw) => setTimeout(() => send.call(ws, raw), 400);
+			return ws;
+		};
+		mock.drop(g2.selfId);
+		await wait(1150);
+		g2.leave();
+		await NeonArcade.roomSettled();
+		mock.connect = connect;
+		const inFlight = mock.rooms.get(host.code)?.has(g2.selfId) ?? false;
+		const token = NeonArcade.rejoinToken();
+		host.room.leave();
+		return { scheduled, inFlight, token };
+	});
+	check("redial scheduled: the claim is given back", owed.scheduled === false, JSON.stringify(owed));
+	check("redial in flight: the claim is given back", owed.inFlight === false, JSON.stringify(owed));
+	check("and the token is gone", owed.token === null, JSON.stringify(owed));
+
+	// ------------------------------- 6e3. glare, then our offer fails
+	// The lower id sets the higher id's offer aside for its own. If its own
+	// then cannot be made, the set-aside offer is the pair's only one: it
+	// is answered, not left for both to wait on until the next notice.
+	console.log("\nroom: glare, and then our own offer fails");
+	const glare = await page.evaluate(async () => {
+		const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+		localStorage.removeItem("neon.room");
+		const a = await NeonArcade.hostRoom({ name: "A" });
+		const sock = window.__neonRoomMock.rooms.get(a.code).get(a.room.selfId).socket;
+		const sent = [];
+		const send = sock.send;
+		sock.send = (raw) => {
+			sent.push(JSON.parse(raw));
+			return send.call(sock, raw);
+		};
+		// A real offer to answer, from a room outside this one.
+		const other = NeonArcade.createHost({ name: "Other" });
+		const { code: theirs } = await other.createInvite();
+		const peer = "zzzzzzzzzzzz"; // above any minted id: A's offer stands
+		a.room.createInvite = () => new Promise((_, no) => setTimeout(() => no(new Error("gather failed")), 300));
+		const inject = (m) => sock.onmessage({ data: JSON.stringify(m) });
+		inject({ t: "peer", id: peer, connected: true, offering: a.room.selfId });
+		inject({ t: "offer", from: peer, sdp: theirs });
+		const ignoredAtFirst = !sent.some((m) => m.t === "answer");
+		let answered = false;
+		for (let i = 0; i < 50 && !answered; i++) {
+			await wait(200);
+			answered = sent.some((m) => m.t === "answer" && m.to === peer);
+		}
+		other.leave();
+		a.room.leave();
+		return { ignoredAtFirst, answered };
+	});
+	check("their offer is set aside while ours is in flight", glare.ignoredAtFirst, JSON.stringify(glare));
+	check("and answered once ours fails", glare.answered, JSON.stringify(glare));
+
+	// ----------------------------- 6e4. a redial refused "blocked"
+	// "blocked" on a redial used to end signalling for good. A valid claim
+	// is never charged, so it only means the server could not check ours
+	// just then: try again, with the backoff.
+	console.log("\nroom: a redial answered blocked tries again");
+	const unblocked = await page.evaluate(async () => {
+		const mock = window.__neonRoomMock;
+		const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+		localStorage.removeItem("neon.room");
+		const host = await NeonArcade.hostRoom({ name: "Host" });
+		localStorage.removeItem("neon.room");
+		const g = (await NeonArcade.joinRoom(host.code, { name: "G" })).room;
+		let refusals = 2;
+		const connect = mock.connect;
+		mock.connect = (path) => {
+			const ws = connect.call(mock, path);
+			const send = ws.send;
+			ws.send = (raw) => {
+				if (refusals > 0 && JSON.parse(raw).t === "join") {
+					refusals--;
+					setTimeout(() => ws.onmessage?.({ data: JSON.stringify({ t: "error", reason: "blocked" }) }), 0);
+					return;
+				}
+				return send.call(ws, raw);
+			};
+			return ws;
+		};
+		mock.drop(g.selfId);
+		let back = false;
+		for (let i = 0; i < 60 && !back; i++) {
+			await wait(250);
+			back = !!mock.rooms.get(host.code)?.get(g.selfId)?.socket;
+		}
+		mock.connect = connect;
+		const out = { refusals, back, closed: g.closed };
+		g.leave();
+		host.room.leave();
+		return out;
+	});
+	check("both refusals were met", unblocked.refusals === 0, JSON.stringify(unblocked));
+	check("and the signalling socket came back", unblocked.back && !unblocked.closed, JSON.stringify(unblocked));
+
+	// ------------------------------- 6e5. two tabs, one rejoin token
+	// Two tabs with the same token used to trade the seat every second:
+	// each bind hung up the other's socket (4409), which redialled. The
+	// one knocked off now stands down, and says so.
+	console.log("\nroom: a second tab with the same token takes the seat once");
+	const twins = await page.evaluate(async () => {
+		const mock = window.__neonRoomMock;
+		const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+		localStorage.removeItem("neon.room");
+		const host = await NeonArcade.hostRoom({ name: "Host" });
+		localStorage.removeItem("neon.room");
+		let displaced = 0;
+		const first = await NeonArcade.joinRoom(host.code, { name: "Twin", onDisplaced: () => displaced++ });
+		// The second tab: same localStorage, so the same token and seat.
+		const second = await NeonArcade.joinRoom(host.code, { name: "Twin", answerTimeoutMs: 20000 });
+		const sameSeat = first.room.selfId === second.room.selfId;
+		let dials = 0;
+		const connect = mock.connect;
+		mock.connect = (path) => (dials++, connect.call(mock, path));
+		await wait(4000);
+		mock.connect = connect;
+		const out = {
+			sameSeat,
+			displaced,
+			firstClosed: first.room.closed,
+			secondLinked: second.room.directPeers().includes(host.room.selfId),
+			dials,
+			members: host.room.getMembers().length,
+			token: NeonArcade.rejoinToken()?.id === second.room.selfId,
+		};
+		second.room.leave();
+		host.room.leave();
+		return out;
+	});
+	check("the second tab gets in, into the same seat", twins.sameSeat && twins.secondLinked, JSON.stringify(twins));
+	check("the first is told, once", twins.displaced === 1, JSON.stringify(twins));
+	check("and has let go of the party", twins.firstClosed, JSON.stringify(twins));
+	check("nobody re-dials afterwards", twins.dials === 0, JSON.stringify(twins));
+	check("the party still counts one of them", twins.members === 2, JSON.stringify(twins));
+	check("the token is left for the tab that has the seat", twins.token, JSON.stringify(twins));
+
+	// ------------------------------- 6e6. releaseRejoin never takes a live seat
+	// Found 2026-11-11 (review): a stale tab pressing START A NEW PARTY gave
+	// its claim back by joining with it and leaving — and the join hung up
+	// the live tab holding that seat. A release now asks without binding.
+	console.log("\nroom: releaseRejoin leaves another tab's live seat alone");
+	const released = await page.evaluate(async () => {
+		const mock = window.__neonRoomMock;
+		localStorage.removeItem("neon.room");
+		const host = await NeonArcade.hostRoom({ name: "Host" });
+		localStorage.removeItem("neon.room");
+		let displaced = 0;
+		const live = await NeonArcade.joinRoom(host.code, { name: "Twin", onDisplaced: () => displaced++ });
+		// The stale tab shares the token and releases it.
+		const busy = await NeonArcade.releaseRejoin();
+		await new Promise((r) => setTimeout(r, 200));
+		const out = {
+			busy,
+			displaced,
+			closed: live.room.closed,
+			bound: !!mock.rooms.get(host.code)?.get(live.room.selfId)?.socket,
+			token: NeonArcade.rejoinToken()?.id === live.room.selfId,
+		};
+		// And once that tab is gone too, the release goes through.
+		window.__reload(live, NeonArcade.rejoinToken());
+		out.later = await NeonArcade.releaseRejoin();
+		out.claimAfter = !!mock.rooms.get(host.code)?.has(live.room.selfId);
+		out.tokenAfter = NeonArcade.rejoinToken();
+		host.room.leave();
+		return out;
+	});
+	check("the release answers busy", released.busy === "busy", JSON.stringify(released));
+	check("the live tab is not knocked off", released.displaced === 0 && !released.closed && released.bound, JSON.stringify(released));
+	check("and keeps its token", released.token, JSON.stringify(released));
+	check("a detached claim is released", released.later === "released" && !released.claimAfter, JSON.stringify(released));
+	check("and its token dropped", released.tokenAfter === null, JSON.stringify(released));
+
+	// ------------------------------- 6e7. a leave after the redial gave up
+	// A redial answered no-room/full/id-taken is final; a leave after it used
+	// to be "owed" and dial join *again* — charged, slow, and into whoever
+	// re-hosted the code meanwhile.
+	console.log("\nroom: a leave after a final redial failure dials nothing");
+	const gaveUp = await page.evaluate(async () => {
+		const mock = window.__neonRoomMock;
+		const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+		localStorage.removeItem("neon.room");
+		const host = await NeonArcade.hostRoom({ name: "Host" });
+		localStorage.removeItem("neon.room");
+		const errors = [];
+		const g = (await NeonArcade.joinRoom(host.code, { name: "G", onError: (m) => errors.push(m) })).room;
+		mock.drop(g.selfId);
+		mock.rooms.delete(host.code); // and the room is gone by the redial
+		for (let i = 0; i < 40 && !errors.length; i++) await wait(100);
+		let dials = 0;
+		const connect = mock.connect;
+		mock.connect = (path) => (dials++, connect.call(mock, path));
+		const started = Date.now();
+		g.leave();
+		await NeonArcade.roomSettled();
+		const settledMs = Date.now() - started;
+		await wait(300);
+		mock.connect = connect;
+		host.room.leave();
+		return { errors: errors.length, dials, settledMs };
+	});
+	check("(the redial was refused: no-room)", gaveUp.errors === 1, JSON.stringify(gaveUp));
+	check("the leave dials nothing", gaveUp.dials === 0, JSON.stringify(gaveUp));
+	check("and settles at once", gaveUp.settledMs < 500, JSON.stringify(gaveUp));
+
+	// ------------------------------- 6e8. a set-aside offer expires with ours
+	// The OFFERING_MS backstop forgot our offer but kept the one we set
+	// aside for it under the glare rule; a later failed invite then answered
+	// that stale offer.
+	console.log("\nroom: the offer backstop forgets a glared offer too");
+	const staleGlare = await page.evaluate(async () => {
+		const mock = window.__neonRoomMock;
+		const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+		localStorage.removeItem("neon.room");
+		const host = await NeonArcade.hostRoom({ name: "Host", offerBackstopMs: 200 });
+		const r = host.room;
+		const socket = mock.rooms.get(host.code).get(r.selfId).socket;
+		const say = (msg) => socket.onmessage({ data: JSON.stringify(msg) });
+		const peer = "zzzzzzzzzzzz"; // above any drawn id: its offer is the one set aside
+		const answered = [];
+		r.createInvite = () => new Promise(() => {}); // our offer: in flight for good
+		r.answerInvite = (sdp) => (answered.push(sdp), Promise.reject(new Error("test")));
+		say({ t: "peer", id: peer, connected: true, offering: r.selfId });
+		say({ t: "offer", from: peer, sdp: "STALE" });
+		const setAside = answered.length === 0;
+		await wait(400); // the backstop fires
+		r.createInvite = () => Promise.reject(new Error("no invite"));
+		say({ t: "peer", id: peer, connected: true, offering: r.selfId });
+		await wait(100);
+		r.leave();
+		return { setAside, answered };
+	});
+	check("(the glared offer was set aside)", staleGlare.setAside, JSON.stringify(staleGlare));
+	check("a failed invite after the backstop answers no stale offer", staleGlare.answered.length === 0, JSON.stringify(staleGlare));
+
 	// ------------------------------- 6f. late news of a departed member
 	// A `rs` or `back` vouch can arrive after its subject has left; the host
 	// once seated them again as "Player".
@@ -529,6 +792,55 @@ try {
 		"a dead code still offers a way out",
 		(await bad.locator("button", { hasText: "START A NEW PARTY" }).count()) > 0,
 	);
+
+	// START A NEW PARTY while another tab of this browser holds the token's
+	// seat live: the release answers busy, and this tab says so instead of
+	// giving the seat away or hosting a party that would take the token.
+	const twinTab = await bad.evaluate(async () => {
+		localStorage.removeItem("neon.room");
+		const host = await NeonArcade.hostRoom({ name: "Host" });
+		localStorage.removeItem("neon.room");
+		window.__twinTab = await NeonArcade.joinRoom(host.code, { name: "Twin" });
+		return window.__twinTab.room.selfId;
+	});
+	await bad.locator("button", { hasText: "START A NEW PARTY" }).first().click();
+	check(
+		"START A NEW PARTY over a live seat says it is open in another tab",
+		await until(
+			bad,
+			() => /open in another tab/i.test(document.querySelector(".lobby-status")?.textContent ?? ""),
+			undefined,
+			"busy status",
+		),
+	);
+	const twinAfter = await bad.evaluate(() => ({
+		url: location.search,
+		token: NeonArcade.rejoinToken()?.id,
+		closed: window.__twinTab.room.closed,
+		useHere: [...document.querySelectorAll("button")].some((b) => b.textContent === "USE THIS TAB INSTEAD"),
+	}));
+	check("no new party was started", !/fresh/.test(twinAfter.url), JSON.stringify(twinAfter));
+	check("the other tab keeps its seat and its token", twinAfter.token === twinTab && !twinAfter.closed, JSON.stringify(twinAfter));
+	check("and USE THIS TAB INSTEAD is offered", twinAfter.useHere, JSON.stringify(twinAfter));
+
+	// `?rs=` is honoured only when it names this machine: a link that could
+	// pick the signalling server could swap the DTLS fingerprints in the
+	// SDP it relays and sit in the middle of every data channel.
+	const rsRule = await bad.evaluate(() => NeonArcade._roomServerBase);
+	check("(the base resolver is exposed for this check)", typeof rsRule === "string");
+	for (const [rs, ok] of [
+		["https://evil.example", false],
+		["http://127.0.0.1:8787", true],
+		["http://localhost:1", true],
+		["http://[::1]:8787", true],
+		["http://127.0.0.1.evil.example", false],
+	]) {
+		const probe = await context.newPage();
+		await probe.goto(PAGE("connect4.html", "?rs=" + encodeURIComponent(rs)));
+		const base = await probe.evaluate(() => NeonArcade._roomServerBase);
+		check(`?rs=${rs} is ${ok ? "honoured" : "ignored"}`, ok ? base.startsWith(rs.replace(/^http/, "ws")) : !base.includes("evil"), base);
+		await probe.close();
+	}
 
 	// ------------------------------------------- 8. the fallback path
 	console.log("\nroom: the zero-server fallback");

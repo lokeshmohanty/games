@@ -357,6 +357,127 @@ console.log("\nRate limits are per IP");
 	check("and a refused host leaves no room squatting the code", !hub.rooms.has("200008"));
 }
 
+console.log("\nGuesses charged up front");
+{
+	// A guesser opening many sockets at once must not pass many checks
+	// before the first failure is recorded: every attempt is charged before
+	// the lookup, so concurrency buys nothing.
+	const { hub, socket } = make();
+	const answers = await Promise.all(
+		Array.from({ length: 50 }, (_, i) => hub.join(socket(), "8.8.4.4", { code: String(600000 + i), id: "x", secret: "y" })),
+	);
+	const looked = answers.filter((a) => a.reason === "no-room").length;
+	check("50 concurrent guesses get 10 lookups", looked === 10, String(looked));
+	// "taken" is an answer too: hosting a live code proves it is live.
+	await hub.host(socket(), "1.1.1.1", { code: "600100", id: "h", secret: "s" });
+	let res;
+	for (let i = 0; i < 11; i++) res = await hub.host(socket(), "8.8.8.8", { code: "600100", id: `t${i}`, secret: "s" });
+	check("probing with host exhausts into blocked", res.reason === "blocked", JSON.stringify(res));
+	// Successes are refunded, so a friend who rejoins all evening is never blocked.
+	let ok = true;
+	for (let i = 0; i < 20; i++) ok &&= (await hub.join(socket(), "5.5.5.5", { code: "600100", id: "f", secret: "f" })).t === "joined";
+	check("twenty rejoins by a friend are never blocked", ok);
+}
+
+console.log("\nA valid claim is never charged");
+{
+	// Found 2026-11-11: every rejoin was charged, so a LAN party (or a
+	// carrier's CGNAT) behind one address, after a few typos, re-dialling
+	// together after a blip, was answered "blocked" — and the client took
+	// that as final. A valid claim guesses nothing; it must cost nothing.
+	const { hub, socket } = make();
+	const ip = "100.64.0.1"; // everyone behind one address
+	const ids = ["h", ...Array.from({ length: 7 }, (_, i) => `m${i}`)];
+	await hub.host(socket(), ip, { code: "600300", id: "h", secret: "sh" });
+	for (const id of ids.slice(1)) await hub.join(socket(), ip, { code: "600300", id, secret: "s" + id });
+	// Nine typos from the same address: one attempt left in the window.
+	for (let i = 0; i < 9; i++) await hub.join(socket(), ip, { code: "999999", id: "x", secret: "y" });
+	// The whole party re-dials at once, as after a wifi blip.
+	const back = await Promise.all(
+		ids.map((id) => hub.join(socket(), ip, { code: "600300", id, secret: id === "h" ? "sh" : "s" + id })),
+	);
+	check("all 8 rejoin together", back.every((r) => r.t === "joined"), back.map((r) => r.reason ?? r.t).join());
+	// Spend the last attempt: the address is now blocked for guesses...
+	await hub.join(socket(), ip, { code: "999998", id: "x", secret: "y" });
+	const guess = await hub.join(socket(), ip, { code: "600300", id: "new", secret: "n" });
+	check("the address is blocked for anything unproven", guess.reason === "blocked", JSON.stringify(guess));
+	// ...and its members still are not.
+	const again = await hub.join(socket(), ip, { code: "600300", id: "m3", secret: "sm3" });
+	check("a blocked address still rejoins its own seats", again.t === "joined", JSON.stringify(again));
+	// A wrong secret for a real id is unproven, so it is still a guess.
+	const forged = await hub.join(socket(), "100.64.9.9", { code: "600300", id: "m3", secret: "nope" });
+	check("a wrong secret is still refused", forged.reason === "id-taken", JSON.stringify(forged));
+	// And a released claim proves nothing any more.
+	const m4 = socket();
+	await hub.join(m4, ip, { code: "600300", id: "m4", secret: "sm4" });
+	await hub.release(m4, { id: "m4", secret: "sm4" });
+	const gone = await hub.join(socket(), ip, { code: "600300", id: "m4", secret: "sm4" });
+	check("a released claim is a guess like any other", gone.reason === "blocked", JSON.stringify(gone));
+}
+
+console.log("\nA claim released from a socket that holds no seat (releaseRejoin)");
+{
+	// Found 2026-11-11 (review): START A NEW PARTY in a stale tab gave its
+	// claim back by *joining* with it and then leaving — and the join bound
+	// the seat, hanging up the live tab that held it (4409). That tab said
+	// "open in another tab", the party kept a ghost seat, and its USE THIS
+	// TAB reloaded into a new party. `releaseClaim` checks without binding.
+	const { hub, socket } = make();
+	const ip = "100.64.1.1";
+	const h = socket();
+	await hub.host(h, "1.1.1.1", { code: "600400", id: "h", secret: "sh" });
+	const live = socket();
+	await hub.join(live, ip, { code: "600400", id: "x", secret: "sx" });
+	// Use up the address's guesses: a verified release must still work.
+	for (let i = 0; i < 10; i++) await hub.join(socket(), ip, { code: "999990", id: "q", secret: "q" });
+	const noticesBefore = notices(h).length;
+	const busy = await hub.releaseClaim(ip, { code: "600400", id: "x", secret: "sx" });
+	check("a claim with a live socket answers busy", busy.t === "busy", JSON.stringify(busy));
+	check("the live socket is not hung up", !live.closed);
+	check("the claim is untouched", hub.rooms.get("600400").members.get("x")?.socket === live);
+	check("and nobody hears anything", notices(h).length === noticesBefore);
+
+	hub.leave(live); // the live tab goes too: now the claim is nobody's socket
+	const done = await hub.releaseClaim(ip, { code: "600400", id: "x", secret: "sx" });
+	check("a detached claim is released — never charged, even blocked", done.t === "released", JSON.stringify(done));
+	check("the claim is gone", !hub.rooms.get("600400").members.has("x"));
+	check("the others hear the departure", notices(h).at(-1)?.id === "x" && notices(h).at(-1)?.connected === false);
+
+	// Unproven releases are guesses: charged, and refused once blocked.
+	const fresh = make();
+	const g = fresh.socket();
+	await fresh.hub.host(g, "1.1.1.1", { code: "600401", id: "g", secret: "sg" });
+	const tries = [];
+	for (let i = 0; i < 11; i++) tries.push((await fresh.hub.releaseClaim("6.6.6.6", { code: "600401", id: "g", secret: "nope" })).reason);
+	check("a wrong secret is refused, and charged", tries[0] === "no-claim" && tries.at(-1) === "blocked", tries.join());
+	const none = await fresh.hub.releaseClaim("7.7.7.7", { code: "600499", id: "g", secret: "sg" });
+	check("no room answers no-room", none.reason === "no-room", JSON.stringify(none));
+	check("the host's claim survived it all", fresh.hub.rooms.get("600401").members.has("g"));
+
+	// The last claim released takes the room with it, as a leave does.
+	const solo = make();
+	const s = solo.socket();
+	await solo.hub.host(s, "1.1.1.1", { code: "600402", id: "s", secret: "ss" });
+	solo.hub.leave(s);
+	await solo.hub.releaseClaim("1.1.1.1", { code: "600402", id: "s", secret: "ss" });
+	check("the last release closes the room", !solo.hub.rooms.has("600402"));
+}
+
+console.log("\nFull is relayed without an sdp");
+{
+	const { hub, socket } = make();
+	const a = socket();
+	await hub.host(a, "1.1.1.1", { code: "600200", id: "a", secret: "1" });
+	const b = socket();
+	await hub.join(b, "2.2.2.2", { code: "600200", id: "b", secret: "2" });
+	hub.relay(a, { t: "full", to: "b", sdp: "ignored" });
+	const got = b.received.at(-1);
+	check("the newcomer hears full from the offerer", got?.t === "full" && got?.from === "a", JSON.stringify(got));
+	check("and nothing else rides along", got && !("sdp" in got));
+	hub.relay(a, { t: "bogus", to: "b" });
+	check("anything not whitelisted is dropped", b.received.at(-1) === got);
+}
+
 console.log("\nErrors");
 {
 	const { hub, socket } = make();

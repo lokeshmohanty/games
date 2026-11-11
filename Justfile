@@ -40,7 +40,7 @@ serve-lan:
     python3 -m http.server {{port}}
 
 # Every suite, in the order they get slower.
-test: test-codec test-hub test-plumbing test-rules test-room test-party test-scan test-pwa test-bots
+test: test-codec test-hub test-worker-do test-plumbing test-rules test-room test-party test-scan test-pwa test-bots
 
 # No browser needed — the signalling codec round-trip.
 test-codec:
@@ -49,6 +49,45 @@ test-codec:
 # The room hub: codes, claims, rate limits, TTLs — no Cloudflare, no browser.
 test-hub:
     node scripts/test-hub.mjs
+
+# The Durable Object shell, evicted and woken by hand — fake state, no Cloudflare.
+test-worker-do:
+    node scripts/test-worker-do.mjs
+
+# Not part of `test`: it needs wrangler, which on NixOS means `nix shell
+# nixpkgs#wrangler` (a download the first time, then seconds to start) plus
+# two free ports, and it waits out real 30s join deadlines. It starts and
+# stops `wrangler dev` itself, and skips with a message when it cannot.
+
+# The real room server under wrangler dev, with real browsers.
+test-worker:
+    node scripts/test-worker.mjs
+
+# Not part of `test` either: it builds NAT routers out of network namespaces,
+# so it runs inside `nix shell` (iproute2, nftables, conntrack-tools — NixOS's
+# own `ip` will not do — and wrangler) under `unshare -rn`, which the wrapper
+# script does. No sudo. About 4 minutes: several scenarios wait out real ICE
+# failures and blackouts. See docs/network-testing.md.
+
+# Symmetric NAT, network switches, lossy links, a blocked room server.
+test-nat *args:
+    scripts/test-nat.sh {{args}}
+
+# Not part of `test`: it needs a *deployed* room server (wrangler deploy, or
+# `wrangler deploy --temporary`) and waits out real idle periods so Cloudflare
+# hibernates the room objects. Sections: --only=ping,oracle,flows,hib,alarm,gate
+# (alarm takes ~16 min and is opt-in; gate spends this IP's guesses for 5 min,
+# so it runs last). Hibernation is proven only when the deployment has the
+# ROOM_DEBUG var (`--var ROOM_DEBUG:1`) — never on the real one. See
+# docs/network-testing.md.
+
+# The deployed room server on real Cloudflare: `just test-live https://….workers.dev`.
+test-live url *args:
+    RS_URL={{url}} node scripts/test-live.mjs {{args}}
+
+# The NAT lab in front of the real internet (slirp4netns), against a deployment.
+test-nat-live url *args:
+    RS_URL={{url}} scripts/test-nat.sh {{args}}
 
 # Sealed channels, commit-reveal and the round clock, over real routing.
 test-plumbing:

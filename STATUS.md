@@ -24,7 +24,13 @@ Lokesh reviews). Headlines:
   with no error. `joinRoom` now resolves on first open link or rejects
   `no-answer` (~30s; also waits for a host). Verified against real `wrangler dev`, not deployed CF.
 - Claim release on deliberate leave; per-IP rate limit (was one shared
-  bucket); hub rebuilt after hibernation; `{t:"ping"}` probe.
+  bucket); hub rebuilt after hibernation; reachability probe is `GET /ping`
+  on the routing Worker (was a WS `ping` to one hot room object).
+- Review fixes (2026-11-11): `release` op so START A NEW PARTY never knocks
+  a live tab off its seat (`busy` → "open in another tab", nothing started);
+  `?rs=` honoured only for a loopback server (else storage `neon.rs`) —
+  a link-chosen server could swap DTLS fingerprints; no owed leave after a
+  final redial failure; the offer backstop drops a set-aside glare offer.
 - net.js: `party.term` reconciles two hosts; leave() broadcasts `__gone`,
   clears suspect timers, closes late links; relayed offers time out; public
   `room.heir()`; `claimHost`/`getPeers` removed; 3s `disconnected` grace
@@ -32,13 +38,46 @@ Lokesh reviews). Headlines:
   `DISCONNECT_GRACE_MS` to 0 to revert).
 - party/lobby: leave buttons really leave, RETRY on network errors, QR for
   the party code, invite/reply panel + helpers deduplicated into lobby.js.
+- **NAT lab** (`just test-nat`, docs/network-testing.md): namespace NAT routers
+  + real Chrome + real `wrangler dev`, 8 scenarios green. Found and fixed: a
+  no-path join said "nobody answered" at 30s (now `no-route` at ~15s); network
+  switch healed only after 40s+ with two hosts; a blackout just longer than
+  the link's patience never healed (isolated member now re-announces to the
+  room server; glare rule); hostNewGame dropped `?rs=` (since moot: the lab
+  sets `neon.rs` in storage, and NEW PARTY carries no query).
 
 Open:
 
-- [ ] Brute-forcing *different* codes is not rate limited — each code is its
-      own Durable Object. Needs a shared counter (Cloudflare Rate Limiting
-      binding). Decision pending.
-- [ ] Hibernation/eviction untested on real Cloudflare.
+- [x] Brute-forcing different codes: per-IP `IpGate` Durable Object, charged
+      before every host/join (2026-11-11; tested in test-worker-do and under
+      wrangler dev in test-worker).
+- [x] `full` is its own relayed message (`{t:"full", to}`), not `sdp:"full"`.
+- [x] Leaves are acknowledged before navigation (`roomSettled()`); a reload
+      with a token reconnects (RETRY) even when the server is unreachable.
+- [x] Review follow-ups (2026-11-11): valid claims never charged (LAN/CGNAT
+      parties were getting `blocked` for good); gate errors fail closed;
+      IPv6 limited by /64; same-token tabs no longer fight (4409 → the
+      displaced tab stands down, "open in another tab"); a leave mid-redial
+      is owed and paid; `?stun=` removed (storage-only `neon.stun`); glare +
+      failed offer answers the set-aside offer.
+- [x] Hibernation/eviction on real Cloudflare (2026-11-11, a
+      `wrangler deploy --temporary` preview deployment, `just test-live`):
+      eviction proven by instance id; relay, close notice, held claim, guest
+      and host reload rejoin, and the 15-min alarm all held. Flows (join,
+      reloads, RETRY, two tabs/4409/busy, leave, full at 8) and the IpGate
+      on real CF-Connecting-IP green too.
+- [x] Timing oracle: measured live (101 live 543 ms vs never-used 727 ms
+      median, 93% one-shot) → every upgrade now spends a refundable *dial*
+      at IpGate, 429 past 20 unrefunded/5 min (live-verified: 20 probes,
+      then 429). Latency gap remains; its price is now a guess's.
+- [x] **Permanent deploy** (2026-11-12): https://neon-arcade-room.lokeshmohanty.workers.dev
+      (`preview_urls = false`), wired into `roomServerUrl`. Live suite
+      green there over IPv4 and IPv6 (flows; hib post-idle; gate run
+      alone). IPv4 is *not* challenged on this account.
+- [ ] Real cross-network *success* (two different public addresses, real
+      phones/carriers) untested: `just test-nat-live` (slirp4netns) works,
+      but from one public IP behind a non-hairpinning CGNAT every pair is an
+      explicit no-route — see docs/network-testing.md live mode.
 
 ## Previous focus (2026-10-18)
 
@@ -75,10 +114,10 @@ outranked by any live link.
 
 Remaining for deploy (see `worker/README.md`):
 
-- [ ] `npx wrangler login` and `npx wrangler deploy` — the Worker is not
-      deployed yet. No accounts, no secrets; it is a free-tier deploy.
-- [ ] Add the deployed URL to `lib/room-join.js`'s `NeonArcade.roomServerUrl`
-      (or instruct users to `?rs=<url>`) so join-by-code is live.
+- [x] Deployed 2026-11-11: `https://neon-arcade-room.lokeshmohanty.workers.dev`, wired into
+      `lib/room-join.js`'s `NeonArcade.roomServerUrl` (it held a dead
+      placeholder, `games-party.workers.dev`, before). (A self-hosted server is set per browser with
+      `localStorage["neon.rs"]`; `?rs=` is honoured only for loopback.)
 
 ## Previous focus (2026-08-27)
 

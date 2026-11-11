@@ -19,7 +19,7 @@ handshake per person and nothing else.
 - **`games.js`** — `NeonArcade.registerGame()`: the registry every game plugs into, plus `mountGamePage` for single-game pages.
 - **`party.js`** — `NeonArcade.mountParty()`: the persistent party screen — roster, teams, game switching, host handover.
 - **`lobby.js`** — `NeonArcade.mountLobby()`: the invite/answer UI used by the per-game pages, plus the bot controls that let one person start a game alone.
-- **`room-join.js`** — `NeonArcade.hostRoom()` / `joinRoom(code, { signal })` / `rejoinToken()` / `releaseRejoin()` / `roomServerReachable()`: client-side glue for the optional Cloudflare-Worker room server (`worker/`). Joins are by six-digit code over a WebSocket; `joinRoom` resolves only once a link is open *and* a host is known (never into a hostless party), and an `AbortSignal` cancels it, releasing the claim; rejoin tokens survive a reload. Falls back to the classic scan/paste flow when the server is unreachable. See `docs/room-server.md` for the design and `worker/README.md` for deployment.
+- **`room-join.js`** — `NeonArcade.hostRoom()` / `joinRoom(code, { signal })` / `rejoinToken()` / `releaseRejoin()` / `roomServerReachable()`: client-side glue for the optional Cloudflare-Worker room server (`worker/`). Joins are by six-digit code over a WebSocket; `joinRoom` resolves only once a link is open *and* a host is known (never into a hostless party), and an `AbortSignal` cancels it, releasing the claim; rejoin tokens survive a reload. `releaseRejoin()` gives a claim back with a `release` that never binds, resolving `"busy"` (token kept) when another tab holds the seat live. The server is `localStorage["neon.rs"]` or the default; `?rs=` only when it names a loopback server; the reachability probe is `GET /ping`. A tab whose seat another tab of the same browser took over (same token; the server hangs up with 4409) stands down and calls `opts.onDisplaced()` instead of re-dialling. Falls back to the classic scan/paste flow when the server is unreachable. See `docs/room-server.md` for the design and `worker/README.md` for deployment.
 - **`qr.js`** — `NeonArcade.qrCanvas()`: a self-contained QR encoder, so invites can be scanned instead of typed.
 - **`qr-decode.js`** — `NeonArcade.qrDecode()` / `scanQr()`: a self-contained QR *decoder* plus a camera scanner.
 - **`secrets.js`** — `NeonArcade.makeSecrets(room)`: sealed private channels (so a *relaying player* cannot read a dealt secret) and commit-reveal (so the host cannot either). Optional. `games/battleship.js` is the worked example for commit-reveal, where verifying the digest is only half the check; **no game currently uses the sealed channel** — see `docs/index.md` for why.
@@ -265,11 +265,19 @@ pasting.
 | `NeonArcade.isBotId(id)` | a bot's id is prefixed `bot_`, so routing can tell without the record |
 | `deleteParty()` | host only: end it for everyone |
 | `leave()` | tell the party we are going (the seat drops at once), then close every connection. Never called on reload/unload |
+| `detach()` | close every connection *without* telling anyone, as a reload would — the seat is held as RECONNECTING. For when the same member id is reconnecting from elsewhere (another tab took the seat; room-join's "displaced") |
 | `createInvite({ forPeer }?)` | mint an invite (any member). Refuses with `err.reason === "full"` at `maxMembers` — unless `forPeer` names a member who already holds a seat (a reload coming back), whose own seat is not counted against them |
 
 `createHost`/`createGuest` take `onLeave(reason)`, called once on every exit:
-`"left"` (`leave()`), `"evicted"` (the host removed us) or `"closed"` (the
-party was deleted). `lib/room-join.js` uses it to release the room-server claim.
+`"left"` (`leave()`), `"evicted"` (the host removed us), `"closed"` (the
+party was deleted) or `"detached"` (`detach()`). `lib/room-join.js` uses it to
+release the room-server claim — on every reason but `"detached"`.
+
+`onError(message, info?)` carries `info.reason === "no-route"` when a link
+failed ICE and we hold no other — the pair has no path (no TURN). And
+`onIsolated()` fires when the *last* link closes while the roster still has
+people: the mesh has nothing left to renegotiate over, so room-join re-dials
+the room server to be offered to again (see docs/network-testing.md).
 
 `makeAction` is idempotent: calling it twice with one name returns the same
 channel, so `room.makeAction("state").send(...)` inside a helper is fine.
@@ -282,7 +290,10 @@ cannot grow it without bound.
 
 The only external contact is **STUN** (`stun.cloudflare.com`,
 `stun.l.google.com`), used to discover each peer's public IP:port. It never
-sees game data. Pass `iceServers` to `createHost`/`createGuest` to override.
+sees game data. Pass `iceServers` to `createHost`/`createGuest` to override,
+or `localStorage["neon.stun"] = "host:port"` for a whole session — the NAT
+lab's hook (`scripts/test-nat.mjs`), STUN only. Deliberately not a query
+param: a link anyone can send must not choose a player's STUN server.
 
 Gathering stops shortly after the first server-reflexive candidate rather than
 waiting for `complete`, because the rest is usually redundant interfaces — this

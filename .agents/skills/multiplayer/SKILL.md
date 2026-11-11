@@ -33,7 +33,20 @@ tell you. Read them before changing anything here.
 ```sh
 node scripts/test-codec.mjs    # signalling codec round-trip, no browser
 node scripts/test-hub.mjs      # room hub: codes, claims, TTLs — pure logic
+node scripts/test-worker-do.mjs # the DO shell through a hand-made eviction
+                               # (fake state), and the per-IP gate
 node scripts/test-room.mjs     # join by code, reconnect, fallback
+node scripts/test-worker.mjs   # the real worker under wrangler dev + real
+                               # browsers (just test-worker; not in just test)
+scripts/test-nat.sh            # across real (namespaced) NATs: symmetric,
+                               # network switch, netem, blocked room server
+                               # (just test-nat; nix shell + unshare, not in
+                               # just test) — docs/network-testing.md
+just test-live <url>           # a DEPLOYED worker on real Cloudflare: flows,
+                               # hibernation (needs --var ROOM_DEBUG:1),
+                               # alarm, IpGate, timing oracle (test-live.mjs)
+just test-nat-live <url>       # the NAT lab in front of the real internet
+                               # (slirp4netns) — docs/network-testing.md
 node scripts/test-party.mjs    # three real browser peers: recruiting, teams,
                                # game switching, host succession
 node scripts/test-scan.mjs     # SCAN REPLY against a fake camera
@@ -83,6 +96,9 @@ repo over `http://127.0.0.1`; `file://` and `http://<lan-ip>` will not do.
 - `memory/unrefereed-honesty.md` — how a game with no trustworthy referee is
   made honest: commit, answer for your own board, reveal, and audit **both** the
   digest and every answer. Verifying the digest alone is the half-fix.
+- `memory/cross-network.md` — what the NAT lab found: the no-route verdict,
+  why an isolated member re-announces to the room server, the glare rule, and
+  the lab's own conntrack and IPv6 traps.
 - `memory/room-server.md` — the room server's invariants (mesh is
   authoritative, room server is advisory), the progressive-enhancement rule,
   and the traps that caught two test failures.

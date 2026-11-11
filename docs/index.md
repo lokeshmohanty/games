@@ -15,6 +15,7 @@ questions about this project from this folder alone.
 - [Rounds and phases](#rounds-and-phases) — the shared clock for timed and simultaneous-turn games
 - [Adding a game](#adding-a-game) — the module contract
 - [Installing it](#installing-it) — the PWA: manifest, icons, service worker, offline
+- [Testing across real networks](network-testing.md) — the NAT lab: symmetric NAT, network switches, lossy links, a blocked room server
 - [`../lib/README.md`](../lib/README.md) — the P2P core, registry, party, lobby and QR APIs
 - (still missing: per-game design notes, decision log)
 
@@ -26,6 +27,7 @@ questions about this project from this folder alone.
 | Test the party end to end | `node scripts/test-party.mjs` — three real browser peers at 390x844: guest-side recruiting, teams, game switching, host succession |
 | Test the room hub (codes, claims, TTLs) | `node scripts/test-hub.mjs` — pure hub logic against the real rules, no browser, no Cloudflare account needed |
 | Test the join-by-code path | `node scripts/test-room.mjs` — the real client (lib/room-join.js, net.js, the party and lobby screens) against the in-page mock room server; WebRTC handshake itself is real |
+| Test across real (simulated) networks | `just test-nat` — NAT routers built from network namespaces (cone, full cone, symmetric), netem loss/latency, a network switch mid-party, a blocked room server; real Chrome per device and the real worker under `wrangler dev`. Needs `nix shell`, so not in `just test`. See [network-testing.md](network-testing.md) |
 | Regenerate a portal preview gif | `scripts/make-preview.sh <game>` (or `all`) — plays the game headless and writes `assets/<game>.gif` |
 | Serve it locally | `just run` — http://127.0.0.1:8000. `just serve-lan` binds every interface for phone testing, but a plain LAN http:// address is not a secure context, so SCAN REPLY will not work there (use PASTE) |
 | Run everything | `just test`, or `just --list` for the rest |
@@ -564,8 +566,10 @@ the favicon via `<link rel="icon">`.
   phone camera. Nothing here reproduces glare, autofocus or motion blur. A
   640x480 webcam is recorded as passing at close range only; below that, PASTE
   is the answer.
-- The mesh is tested with three peers; nothing has exercised the 8-player cap,
-  and no test forces a pair to fail so the relay path runs in anger.
+- The mesh is tested with three peers; nothing has exercised the 8-player cap.
+  The relay path *does* now run in anger: `test-nat.mjs` scenario 4 puts two
+  peers behind symmetric NATs, which cannot link, and their messages arrive
+  through the third.
 - Bot *strength* is now measured for two of the six. Onitama's bot wins 20 of
   20 against random play; Light Cycles' wins 30 of 30 against a rider that only
   avoids crashing, and a per-tick budget assertion keeps the search inside its
@@ -595,14 +599,20 @@ the favicon via `<link rel="icon">`.
 - When two direct links to the same peer open at once, each side keeps the one
   that opened *last* and closes the other. If the two sides disagree on the
   order, both links close and the pair falls back to relaying until the next
-  roster change. Not observed; reasoned from the code.
+  roster change. Not observed; reasoned from the code. The one place two
+  offers were *made* likely — two isolated members re-announcing to the room
+  server together — now has a glare rule in room-join (the lower id's offer
+  stands); relayed negotiation already had one.
 - A relayed negotiation is abandoned after 15 s, and nothing retries it on a
   timer — the next roster change does. A pair that failed once stays
   relay-only until somebody joins, leaves or is edited.
-- The 3 s grace on `disconnected` is reasoned, not observed on a phone. Note
-  it cannot rescue a real network *switch* (wifi to mobile data changes the
-  address, and nothing here performs an ICE restart) — only a link that stalls
-  and recovers on the same path. Its cost on a closed tab is measured (above).
+- The 3 s grace on `disconnected` is observed in the NAT lab, not on a phone:
+  4 s and 8 s blackouts keep the link; Chrome itself declares `disconnected`
+  some seconds in, so a link survives a blackout of roughly 9 s. It cannot
+  rescue a network *switch* (nothing performs an ICE restart); that heals by
+  the member re-announcing itself to the room server once its last link
+  drops, measured at ~10.5 s from switch to links back. A classic (no room
+  server) party has no such path: a switched member is simply gone.
 - `leave()`'s `__gone` is best-effort: it is handed to the channel, which is
   kept alive 250 ms to drain. A page that navigates away instantly may cut it
   off, and the peers then fall back to the probe (and, for a room-server
@@ -636,8 +646,11 @@ the favicon via `<link rel="icon">`.
 - The Firefox install hints are reasoned from the platform, not observed —
   every browser test here runs headless Chrome. Firefox itself is unverified.
 - Cross-network play over mobile data is expected to fail on carriers using
-  CGNAT/symmetric NAT — confirmed in the wild on 2026-08-10. This is the
-  no-TURN trade-off, not a bug; the error now names which case you hit.
+  CGNAT/symmetric NAT — confirmed in the wild on 2026-08-10, and reproduced in
+  the NAT lab (symmetric vs symmetric, and symmetric vs a port-restricted
+  cone: explicit error at ~15 s). This is the no-TURN trade-off, not a bug;
+  the error now names which case you hit. The lab's NATs are Linux's; no real
+  carrier's has been modelled (see network-testing.md, "What it cannot show").
 - There is no TURN server by choice, so players behind symmetric NAT cannot
   connect at all; this surfaces as an explicit error, not a hang.
 - Installability and offline are verified against headless Chrome only. No real
