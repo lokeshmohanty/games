@@ -88,6 +88,21 @@ async function invite(inviter, joiner, label) {
 	console.log(`  · ${label} joined`);
 }
 
+/**
+ * The message of the next confirm() on `page`, answered with `accept`; or
+ * "(no dialog)" if none comes — a missing confirmation is a failure to
+ * report, not a reason to hang.
+ */
+const nextDialog = (page, accept) =>
+	new Promise((done) => {
+		const timer = setTimeout(() => done("(no dialog)"), 5000);
+		page.once("dialog", async (d) => {
+			clearTimeout(timer);
+			done(d.message());
+			await (accept ? d.accept() : d.dismiss());
+		});
+	});
+
 const names = async (page) =>
 	await page.locator(".party-member .party-name").allTextContents();
 
@@ -384,6 +399,24 @@ try {
 		);
 	}
 
+	console.log("\nparty: the host's way out");
+	// Asking is not leaving: the host is told who inherits, says no, and is
+	// still the host of a party of three afterwards.
+	const heirName = await p2.evaluate(() => window.__party.room.self().name);
+	const asked = nextDialog(host, false);
+	await host.locator("a.neon-btn", { hasText: "ALL GAMES" }).click();
+	const question = await asked;
+	check(
+		"the host's leave confirmation names the heir",
+		question.includes(`crown will pass to ${heirName}`),
+		question,
+	);
+	check(
+		"declining the confirmation leaves the host where they were",
+		host.url().startsWith(PARTY) &&
+			(await host.evaluate(() => !window.__party.room.closed && window.__party.room.isHost())),
+	);
+
 	console.log("\nparty: losing the host");
 	await host.evaluate(() => window.__party.room.setGame(null));
 	await p2.locator(".party-member").first().waitFor({ timeout: TIMEOUT });
@@ -411,6 +444,130 @@ try {
 		{ timeout: TIMEOUT },
 	);
 	check("the party survived losing its host", (await names(p2)).length === 2);
+
+	console.log("\nparty: leaving through ALL GAMES");
+	// Its own context, so the rejoin token under test is nobody else's.
+	// `?mockroom=1` gives the page a room server, so it hosts with a code and
+	// a token — the state the portal banner used to silently rejoin.
+	const solo = await browser.newContext({
+		viewport: { width: 390, height: 844 },
+		isMobile: true,
+		hasTouch: true,
+	});
+	const leaver = await solo.newPage();
+	leaver.on("pageerror", (err) => {
+		console.log(`  FAIL page error on leaver: ${err.message}`);
+		failures++;
+	});
+	await leaver.goto(PARTY + "?mockroom=1");
+	await leaver.locator(".party-code-digits").waitFor({ timeout: TIMEOUT });
+	const firstCode = await leaver.locator(".party-code-digits").textContent();
+	check(
+		"a room-server party holds a rejoin token",
+		await leaver.evaluate(() => !!localStorage.getItem("neon.room")),
+	);
+
+	// The party code's QR, unfolded, at phone size.
+	await leaver.locator("button", { hasText: "SHOW QR" }).click();
+	const qr = await leaver.evaluate(() => {
+		const r = document.querySelector(".party-code-qr")?.getBoundingClientRect();
+		return {
+			rect: r && { left: r.left, right: r.right, width: r.width },
+			scroll: document.documentElement.scrollWidth,
+			client: document.documentElement.clientWidth,
+		};
+	});
+	check(
+		"the party code's QR fits the phone",
+		!!qr.rect && qr.rect.left >= 0 && qr.rect.right <= qr.client && qr.rect.width >= 150,
+		JSON.stringify(qr.rect),
+	);
+	check(
+		"the QR does not make the party screen scroll sideways",
+		qr.scroll <= qr.client,
+		`scrollWidth ${qr.scroll} > clientWidth ${qr.client}`,
+	);
+	// Read back with the arcade's own decoder, the one SCAN REPLY uses.
+	const qrLink = await leaver.evaluate(() => {
+		const c = document.querySelector(".party-code-qr");
+		const img = c.getContext("2d").getImageData(0, 0, c.width, c.height);
+		return NeonArcade.qrDecode(img)?.text ?? null;
+	});
+	check(
+		"the QR carries the party's #c= link",
+		typeof qrLink === "string" && qrLink.endsWith(`#c=${firstCode}`),
+		String(qrLink),
+	);
+
+	const alone = nextDialog(leaver, true);
+	await Promise.all([
+		leaver.waitForURL(/index\.html/, { timeout: TIMEOUT }),
+		leaver.locator("a.neon-btn", { hasText: "ALL GAMES" }).click(),
+	]);
+	check(
+		"a host alone is told the party ends",
+		/nobody else is here/.test(await alone),
+		await alone,
+	);
+	check(
+		"leaving through ALL GAMES drops the rejoin token",
+		await leaver.evaluate(() => localStorage.getItem("neon.room") === null),
+	);
+	// What the portal's party banner does, with the mock still attached so a
+	// surviving token would have somewhere to reconnect to.
+	await leaver.goto(PARTY + "?mockroom=1");
+	await leaver.locator(".party-code-digits").waitFor({ timeout: TIMEOUT });
+	const banner = await leaver.evaluate(() => ({
+		sub: document.querySelector(".lobby-sub")?.textContent ?? "",
+		host: window.__party.room?.isHost() ?? false,
+	}));
+	check(
+		"the party banner after leaving hosts a new party instead of rejoining",
+		banner.host && !/Reconnecting/.test(banner.sub),
+		JSON.stringify(banner),
+	);
+
+	console.log("\nparty: a code join the network refuses");
+	// `?rs=` at a port nothing listens on: the dial fails as "unreachable",
+	// which is the network's fault, not the party's — so the screen must say
+	// so and offer RETRY, not just a fresh party.
+	await leaver.goto(PARTY + "?rs=http://127.0.0.1:1#c=123456");
+	const retry = leaver.locator("button", { hasText: /^RETRY$/ });
+	const offered = await retry
+		.waitFor({ timeout: TIMEOUT })
+		.then(() => true)
+		.catch(() => false);
+	check("an unreachable room server offers RETRY", offered);
+	const failed = await leaver.evaluate(() => {
+		const row = [...document.querySelectorAll(".lobby-row")].find((r) =>
+			/RETRY/.test(r.textContent),
+		);
+		const box = (n) => n && n.getBoundingClientRect();
+		return {
+			status: document.querySelector(".lobby-status.is-error")?.textContent ?? "",
+			fresh: /START A NEW PARTY/.test(row?.textContent ?? ""),
+			buttons: [...(row?.children ?? [])].map((b) => {
+				const r = box(b);
+				return { left: r.left, right: r.right };
+			}),
+			scroll: document.documentElement.scrollWidth,
+			client: document.documentElement.clientWidth,
+		};
+	});
+	check(
+		"the failure is spelled out, not left as a wait",
+		/room server/i.test(failed.status),
+		failed.status,
+	);
+	check("a fresh party is still offered next to RETRY", failed.fresh);
+	check(
+		"the RETRY row fits the phone",
+		failed.buttons.length >= 3 &&
+			failed.buttons.every((b) => b.left >= 0 && b.right <= failed.client) &&
+			failed.scroll <= failed.client,
+		JSON.stringify(failed),
+	);
+	await solo.close();
 } catch (err) {
 	console.log(`\n  FAIL unexpected: ${err.message}`);
 	failures++;

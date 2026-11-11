@@ -31,8 +31,8 @@ Four places in `net.js`, each a real bug if forgotten:
 |---|---|
 | `_meshUp` | opens a WebRTC connection to a browser that does not exist — a full ICE timeout, on every roster change, forever, silently |
 | `_send` broadcast `missing` | counts a bot as a peer somebody must relay to, so every broadcast asks for pointless forwarding |
-| `_heir` | nominates a bot for the crown; nothing is there to accept it and the party is stuck |
-| `_hostLost` | leaves bots in the roster after the only browser simulating them has gone — seats that never move again |
+| `_ranked` (behind `_heir` / `heir()`) | nominates a bot for the crown; nothing is there to accept it and the party is stuck |
+| `_vacateCrown` | leaves bots in the roster after the only browser simulating them has gone — seats that never move again |
 
 `scripts/test-bots.mjs` asserts the first one from the guest's side
 (`directPeers()` must not grow when the host adds a bot) because it is the one

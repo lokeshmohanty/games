@@ -43,25 +43,32 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 /** Every envelope that crossed a link, so a relay's view can be inspected. */
 const wire = [];
 
+/**
+ * A fake link pair, not yet registered with either room — hand each end to
+ * `_linkOpened` to exercise the real "a connection just opened" path. A closed
+ * end stops carrying anything, as a real channel would.
+ */
+function linkPair(a, b) {
+	const end = (self, other, peer) => ({
+		peerId: other.selfId,
+		closed: false,
+		send(env) {
+			if (this.closed) return;
+			const copy = structuredClone(env);
+			wire.push({ from: self.selfId, to: other.selfId, env: copy });
+			setTimeout(() => other._inbound(peer(), copy), 1);
+		},
+		close() {
+			this.closed = true;
+		},
+	});
+	const linkA = end(a, b, () => linkB);
+	const linkB = end(b, a, () => linkA);
+	return [linkA, linkB];
+}
+
 function connect(a, b) {
-	const linkA = {
-		peerId: b.selfId,
-		send(env) {
-			const copy = structuredClone(env);
-			wire.push({ from: a.selfId, to: b.selfId, env: copy });
-			setTimeout(() => b._inbound(linkB, copy), 1);
-		},
-		close() {},
-	};
-	const linkB = {
-		peerId: a.selfId,
-		send(env) {
-			const copy = structuredClone(env);
-			wire.push({ from: b.selfId, to: a.selfId, env: copy });
-			setTimeout(() => a._inbound(linkA, copy), 1);
-		},
-		close() {},
-	};
+	const [linkA, linkB] = linkPair(a, b);
 	a.links.set(b.selfId, linkA);
 	b.links.set(a.selfId, linkB);
 }
@@ -72,9 +79,9 @@ function connect(a, b) {
  * everything else has to be relayed, exactly as on a network where two phones
  * cannot see each other.
  */
-async function party(names, topology) {
+async function party(names, topology, opts = {}) {
 	const rooms = names.map((name, i) =>
-		i === 0 ? NeonArcade.createHost({ name }) : NeonArcade.createGuest({ name }),
+		i === 0 ? NeonArcade.createHost({ ...opts, name }) : NeonArcade.createGuest({ ...opts, name }),
 	);
 	for (const r of rooms) {
 		r._meshUp = () => {};
@@ -133,7 +140,7 @@ console.log("\nprivate channels");
 	const relayed = wire.filter((w) => w.from === ana.selfId && w.env.a === "s$hand");
 	check("Ana did relay it", relayed.length > 0);
 	const plaintext = JSON.stringify(relayed.map((w) => w.env));
-	check("what the relay carried holds no plaintext", !plaintext.includes("B2") && !plaintext.includes("fleet"), plaintext.slice(0, 160));
+	check("what the relay carried holds no plaintext", !plaintext.includes('"B2"') && !plaintext.includes('"fleet"'), plaintext.slice(0, 160));
 
 	// And she cannot open it either: her own key derives to a different secret.
 	const eaves = [];
@@ -316,6 +323,235 @@ console.log("\nround clock");
 	solo.dispose();
 	host.leave();
 	ana.leave();
+}
+
+// ---------------------------------------------------------------------------
+console.log("\nmembership and the crown");
+
+const ids = (room) => room.getMembers().map((m) => m.id).sort().join(",");
+const bare = (opts, host = true) => {
+	const r = host ? NeonArcade.createHost(opts) : NeonArcade.createGuest(opts);
+	r._meshUp = () => {};
+	r.resume();
+	return r;
+};
+
+{
+	// A suspect's probe timer used to survive leave(): its handle was stored
+	// inside an object that clearTimeout silently ignored, so the room went on
+	// dropping members and firing callbacks after it had closed.
+	const [host, ana] = await party(["Host", "Ana"], [[0, 1]]);
+	const late = [];
+	for (const k of ["onPeerLeave", "onParty", "onHostVacant", "onPeerJoin"]) {
+		host[k] = () => host.closed && late.push(k);
+	}
+	host._linkClosed(host.links.get(ana.selfId));
+	check("a dropped link puts the member under probe", host.suspects.has(ana.selfId));
+	host.leave();
+	await sleep(2800); // past DEPARTURE_GRACE_MS
+	check("no callback fires after leave(), even for a pending probe", late.length === 0, late.join(","));
+	ana.leave();
+}
+
+{
+	// Two hosts at the same term — a partition that crowned on both sides —
+	// settle on the lower id, and the one stepping down is not lost from it.
+	const a = bare({ name: "A" });
+	const b = bare({ name: "B" });
+	connect(a, b);
+	a._commitParty();
+	b._commitParty();
+	await sleep(40);
+	const [low, high] = a.selfId < b.selfId ? [a, b] : [b, a];
+	check("two hosts at one term agree on one crown", a.hostId() === b.hostId());
+	check("the lower id keeps it", low.isHost() && !high.isHost(), `host=${a.hostId()}`);
+	check("the host that stepped down keeps its seat", ids(a) === ids(b) && a.getMembers().length === 2, `${ids(a)} / ${ids(b)}`);
+	a.leave();
+	b.leave();
+}
+
+{
+	// A higher term wins whatever the ids, and the host that loses carries the
+	// members only it can reach into the winning record.
+	const c = bare({ name: "C" });
+	const d = bare({ name: "D" });
+	const e = bare({ name: "E" }, false);
+	connect(c, e);
+	c._addMember(e.selfId, "E");
+	c._commitParty();
+	await sleep(20);
+	connect(c, d);
+	d.party.term = 3;
+	d._commitParty();
+	c._commitParty();
+	await sleep(60);
+	check("the higher term takes the crown", c.hostId() === d.selfId && d.isHost(), `c sees ${c.hostId()}`);
+	check("the old host stepped down", !c.isHost());
+	check("its members followed it into the winning record", ids(d) === [c.selfId, d.selfId, e.selfId].sort().join(","), ids(d));
+	check("and they hear the new host", e.hostId() === d.selfId, `e sees ${e.hostId()}`);
+	for (const r of [c, d, e]) r.leave();
+}
+
+{
+	// A member that wrongly concluded the host was gone computed an heir — but
+	// a host that is still speaking at the same term wins it back.
+	const [host, ana, bo] = await party(["Host", "Ana", "Bo"], [[0, 1], [0, 2], [1, 2]]);
+	bo._applyGone(host.selfId);
+	check("a false alarm moves the crown locally", bo.hostId() !== host.selfId);
+	host.setGame(null);
+	await sleep(30);
+	check("the live host's next record heals it", bo.hostId() === host.selfId && !!bo.getMember(host.selfId), bo.hostId());
+	for (const r of [host, ana, bo]) r.leave();
+}
+
+{
+	// The newcomer's side of a fresh link used to introduce its inviter to the
+	// host under the name baked into the invite — renaming the host back to
+	// whatever it was called when it minted it.
+	const host = bare({ name: "Host" });
+	const guest = bare({ name: "Newbie" }, false);
+	host.setName("Renamed");
+	const [toGuest, toHost] = linkPair(host, guest);
+	toHost.introducedName = "Host"; // what the invite said
+	toGuest.introducedName = "Newbie";
+	guest._linkOpened(toHost);
+	host._linkOpened(toGuest);
+	await sleep(40);
+	check("the newcomer learns the host's record", guest.hostId() === host.selfId);
+	check("an introduction never renames the inviter", host.self().name === "Renamed" && guest.getMember(host.selfId)?.name === "Renamed", host.self().name);
+	check("the newcomer is seated under its own name", host.getMember(guest.selfId)?.name === "Newbie");
+	host.leave();
+	guest.leave();
+}
+
+{
+	// Leaving on purpose frees the seat at once — even one the room server
+	// would otherwise hold for five minutes — and passes the crown on the spot.
+	const [host, ana, bo, cy] = await party(["Host", "Ana", "Bo", "Cy"], [
+		[0, 1], [0, 2], [0, 3], [1, 2], [1, 3], [2, 3],
+	]);
+	host.party.members.find((m) => m.id === ana.selfId).rs = true;
+	host._commitParty();
+	await sleep(20);
+	const reasons = [];
+	ana.onLeave = (r) => reasons.push(r);
+	ana.leave();
+	await sleep(30);
+	check("leave() tells the room server why", reasons.join() === "left", reasons.join());
+	check("peers drop a leaver's seat at once, room-server seat included",
+		!host.getMember(ana.selfId) && !bo.getMember(ana.selfId) && !cy.getMember(ana.selfId));
+
+	const botId = host.addBot("B");
+	await sleep(20);
+	check("heir() is the longest-present other member", host.heir() === bo.selfId, host.heir());
+	host.party.members.find((m) => m.id === bo.selfId).reconnecting = Date.now();
+	check("heir() skips a reconnecting seat", host.heir() === cy.selfId, host.heir());
+	delete host.party.members.find((m) => m.id === bo.selfId).reconnecting;
+	check("heir() never names a bot", host.heir() !== botId);
+	check("heir() is null with nobody to take it", bare({ name: "Solo" }).heir() === null);
+
+	host.transferHost(botId);
+	check("the crown cannot be handed to a bot", host.isHost());
+
+	let got = 0;
+	host.makeAction("ping").onMessage = () => got++;
+	host.emitAs(botId, "ping", 1, { target: host.selfId });
+	await sleep(10);
+	check("emitAs to ourselves delivers exactly once", got === 1, `${got}`);
+
+	const heir = host.heir();
+	host.leave();
+	await sleep(30);
+	check("the host leaving crowns its heir at once", bo.hostId() === heir && cy.hostId() === heir, `${bo.hostId()} / ${cy.hostId()}`);
+	check("everyone drops the host's seat", !bo.getMember(host.selfId) && !cy.getMember(host.selfId));
+	check("the host's bots go with it", bo.bots().length === 0 && cy.bots().length === 0);
+
+	const why = [];
+	cy.onLeave = (r) => why.push(r);
+	bo.removeMember(cy.selfId);
+	await sleep(20);
+	check("an eviction reaches onLeave as such", why.join() === "evicted", why.join());
+	bo.leave();
+}
+
+{
+	const [host, ana] = await party(["Host", "Ana"], [[0, 1]]);
+	const why = [];
+	ana.onLeave = (r) => why.push(r);
+	host.deleteParty();
+	await sleep(300);
+	check("a deleted party reaches onLeave as such", why.join() === "closed", why.join());
+}
+
+{
+	// The room server's "back on the socket" clears a mark it set itself, so a
+	// member reached only by relay is not RECONNECTING forever after a blip —
+	// but a mark the mesh concluded is still the link's to clear.
+	const host = bare({ name: "Host", reconnectGraceMs: 60_000 });
+	host.party.members.push({ id: "relayonly", name: "R", team: null, joined: Date.now(), rs: true });
+	host.serverPeerState("relayonly", false);
+	check("a socket drop marks a room-server member", !!host.getMember("relayonly").reconnecting);
+	host.serverPeerState("relayonly", true);
+	check("and their return clears that mark", !host.getMember("relayonly").reconnecting);
+	host._confirmGone("relayonly");
+	host.serverPeerState("relayonly", true);
+	check("a mark the mesh concluded stays until a link opens", !!host.getMember("relayonly").reconnecting);
+	host.leave();
+}
+
+{
+	// A relayed offer to somebody who is not there must not hang around: it
+	// used to keep the pair in `negotiating` forever, so after they came back
+	// nobody ever offered again and the pair stayed relay-only for good.
+	const made = [];
+	globalThis.RTCPeerConnection = class {
+		constructor() {
+			made.push(this);
+			this.iceGatheringState = "complete";
+			this.connectionState = "new";
+		}
+		createDataChannel() {
+			return { readyState: "connecting", close() {} };
+		}
+		async createOffer() {
+			return { type: "offer", sdp: "v=0\r\n" };
+		}
+		async setLocalDescription(d) {
+			this.localDescription = d;
+		}
+		addEventListener() {}
+		removeEventListener() {}
+		close() {
+			this.closed = true;
+		}
+	};
+	const room = NeonArcade.createHost({ name: "Host", selfId: "0000000000" });
+	room.relayTimeoutMs = 60;
+	room.party.members.push({ id: "zzzzzzzzzz", name: "Z", team: null, joined: Date.now() });
+	room._meshUp();
+	await sleep(10);
+	check("an offer to a member we lack a link to goes out", made.length === 1 && room.negotiating.has("zzzzzzzzzz"));
+	await sleep(100);
+	check("an unanswered offer times out and is forgotten",
+		!room.negotiating.has("zzzzzzzzzz") && !room.pending.has("r:zzzzzzzzzz"));
+	check("and its PeerConnection is closed", made[0].closed === true);
+	room._meshUp();
+	await sleep(10);
+	check("so the next roster change can try again", made.length === 2);
+
+	const warn = console.warn;
+	console.warn = () => {};
+	made[1].connectionState = "failed";
+	made[1].onconnectionstatechange();
+	console.warn = warn;
+	check("a failed negotiation is forgotten too, though it never opened", !room.negotiating.has("zzzzzzzzzz"));
+
+	room.party.members.find((m) => m.id === "zzzzzzzzzz").reconnecting = Date.now();
+	room._meshUp();
+	await sleep(10);
+	check("nobody offers to a seat held for a reconnect", made.length === 2, `${made.length}`);
+	room.leave();
+	delete globalThis.RTCPeerConnection;
 }
 
 console.log(failures ? `\n${failures} failing\n` : "\nall passing\n");

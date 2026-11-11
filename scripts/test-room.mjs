@@ -12,9 +12,10 @@
  * client above it is not.
  *
  * A reload is simulated as what a reload actually is: every connection dies
- * (`room.leave()`) and the one thing that survives — the rejoin token — is
- * put back. Nothing else in the page is re-created, because nothing else
- * survives a reload either.
+ * without a goodbye — no `room.leave()`, which would hand the seat back —
+ * the room server sees the socket drop, and the one thing that survives, the
+ * rejoin token, is put back. Nothing else in the page is re-created, because
+ * nothing else survives a reload either.
  *
  * The server-side rules (claims, rate limits, TTLs) are not tested here;
  * scripts/test-hub.mjs covers them against the real hub logic.
@@ -101,6 +102,19 @@ try {
 	await page.evaluate(() => {
 		localStorage.removeItem("neon.room");
 		localStorage.removeItem("neon.rs");
+		/**
+		 * A reload of `made`'s page: links die, the signalling socket dies,
+		 * nothing is said on the way out — and the token survives.
+		 */
+		window.__reload = (made, token) => {
+			const r = made.room;
+			r.closed = true;
+			for (const link of [...r.links.values(), ...r.pending.values()]) link.close();
+			r.links.clear();
+			r.pending.clear();
+			window.__neonRoomMock.drop(r.selfId);
+			localStorage.setItem("neon.room", JSON.stringify(token));
+		};
 	});
 
 	// ------------------------------------------------- 1. join by code
@@ -112,6 +126,7 @@ try {
 			onError: (m) => (window.__errs ??= []).push(m),
 		});
 		window.__host = made;
+		window.__hostToken = NeonArcade.rejoinToken();
 		return made.code;
 	});
 	check("host gets a 6-digit code", /^\d{6}$/.test(code ?? ""), String(code));
@@ -128,9 +143,14 @@ try {
 			onError: (m) => (window.__errs ??= []).push(m),
 		});
 		window.__guest = made;
+		window.__guestToken = NeonArcade.rejoinToken();
 		return made.room.selfId;
 	}, code);
 	check("guest joined", !!guestId);
+	check(
+		"joinRoom resolved only once a link was open",
+		await page.evaluate(() => window.__guest.room.directPeers().length === 1),
+	);
 	check("guest kept its own id", await page.evaluate(() => NeonArcade.rejoinToken()?.id === window.__guest.room.selfId));
 
 	// The offer crossed the mock, the WebRTC handshake completed, and each
@@ -177,12 +197,7 @@ try {
 
 	// ---------------------------------------------- 2. reload and rejoin
 	console.log("\nroom: reload, seat held, rejoin");
-	await page.evaluate(() => {
-		// A reload: every connection dies; the token is what survives.
-		const token = NeonArcade.rejoinToken();
-		window.__guest.room.leave();
-		localStorage.setItem("neon.room", JSON.stringify(token));
-	});
+	await page.evaluate(() => window.__reload(window.__guest, window.__guestToken));
 	check(
 		"the seat is held as RECONNECTING, not dropped",
 		await until(
@@ -224,13 +239,59 @@ try {
 		),
 	);
 
-	// ------------------------------------------- 3. grace runs out
+	// -------------------------------------- 3. and again, and again
+	// The offer guard once cleared only for brand-new members, so a member
+	// who reloaded a second time was never offered to again.
+	console.log("\nroom: a guest reloads twice");
+	for (const round of [2, 3]) {
+		await page.evaluate(() => window.__reload(window.__guest, window.__guestToken));
+		await until(page, () => window.__host.room.directPeers().length === 0, undefined, "link down");
+		const again = await page.evaluate(async (c) => {
+			try {
+				const made = await NeonArcade.joinRoom(c, { name: "Guest", reconnectGraceMs: 2000, answerTimeoutMs: 15000 });
+				window.__guest = made;
+				return made.room.selfId;
+			} catch (err) {
+				return `error: ${err.reason}`;
+			}
+		}, code);
+		check(`rejoin #${round} reconnected the same seat`, again === guestId, String(again));
+	}
+
+	// ------------------------------------------------ 4. the host reloads
+	// The host is the oldest member; the server once named them as their
+	// own offerer when they came back, so nobody offered and the host could
+	// never reconnect. Now the guest offers.
+	console.log("\nroom: the host reloads and reconnects");
+	const hostId = await page.evaluate(() => window.__host.room.selfId);
+	await page.evaluate(() => window.__reload(window.__host, window.__hostToken));
+	await until(page, () => window.__guest.room.directPeers().length === 0, undefined, "link down");
+	const hostBack = await page.evaluate(async (c) => {
+		try {
+			const made = await NeonArcade.joinRoom(c, { name: "Host", reconnectGraceMs: 2000, answerTimeoutMs: 15000 });
+			window.__host = made;
+			return made.room.selfId;
+		} catch (err) {
+			return `error: ${err.reason}`;
+		}
+	}, code);
+	check("the host's rejoin resolved with its own id", hostBack === hostId, String(hostBack));
+	check(
+		"host and guest are linked and agree on two members",
+		await until(
+			page,
+			() =>
+				window.__host.room.directPeers().length === 1 &&
+				window.__host.room.getMembers().length === 2 &&
+				window.__guest.room.getMembers().length === 2,
+			undefined,
+			"host relink",
+		),
+	);
+
+	// ------------------------------------------- 5. grace runs out
 	console.log("\nroom: grace expiry drops the seat");
-	await page.evaluate(() => {
-		const token = NeonArcade.rejoinToken();
-		window.__guest.room.leave();
-		localStorage.setItem("neon.room", JSON.stringify(token));
-	});
+	await page.evaluate(() => window.__reload(window.__guest, window.__guestToken));
 	check(
 		"after the grace, the member is dropped",
 		await until(
@@ -241,7 +302,193 @@ try {
 		),
 	);
 
-	// -------------------------------------------------- 4. the UI
+	// ----------------------------------------- 6. nobody left to answer
+	// A code whose members have all gone — their claims outlive them until
+	// the TTL — still says "joined". The join must not wait forever for an
+	// offer nobody will make: it fails, explicitly, inside the deadline.
+	console.log("\nroom: a code nobody answers");
+	const answerless = await page.evaluate(async () => {
+		localStorage.removeItem("neon.room");
+		const lone = await NeonArcade.hostRoom({ name: "Gone" });
+		window.__reload(lone, NeonArcade.rejoinToken());
+		localStorage.removeItem("neon.room");
+		const started = Date.now();
+		try {
+			await NeonArcade.joinRoom(lone.code, { name: "Late", answerTimeoutMs: 1500 });
+			return { reason: "resolved" };
+		} catch (err) {
+			return { reason: err.reason, message: err.message, ms: Date.now() - started, token: NeonArcade.rejoinToken() };
+		}
+	});
+	check("joining it fails with no-answer", answerless.reason === "no-answer", JSON.stringify(answerless));
+	check("within the deadline", answerless.ms < 1500 + 1000, String(answerless.ms));
+	check("with a human sentence", /nobody/i.test(answerless.message ?? ""));
+	check("and leaves no rejoin token behind", answerless.token === null);
+
+	// ------------------------------- 6b. a rejoin nobody answers
+	// A lone host who reloads has nobody to answer them. The party may only
+	// be slow, so the claim and the token survive for RETRY; giving them
+	// back is START A NEW PARTY's job (releaseRejoin), not the timeout's.
+	console.log("\nroom: a rejoin nobody answers keeps its claim");
+	const heldRejoin = await page.evaluate(async () => {
+		localStorage.removeItem("neon.room");
+		const lone = await NeonArcade.hostRoom({ name: "Lone" });
+		const token = NeonArcade.rejoinToken();
+		window.__reload(lone, token);
+		const claims = () => window.__neonRoomMock.rooms.get(lone.code);
+		let reason;
+		try {
+			await NeonArcade.joinRoom(lone.code, { name: "Lone", answerTimeoutMs: 1500 });
+			reason = "resolved";
+		} catch (err) {
+			reason = err.reason;
+		}
+		const kept = { reason, token: NeonArcade.rejoinToken()?.id === token.id, claim: !!claims()?.has(token.id) };
+		await NeonArcade.releaseRejoin();
+		return { ...kept, tokenAfter: NeonArcade.rejoinToken(), roomAfter: !!claims() };
+	});
+	check("it fails with no-answer", heldRejoin.reason === "no-answer", JSON.stringify(heldRejoin));
+	check("the token survives, for RETRY", heldRejoin.token === true);
+	check("the claim survives on the server", heldRejoin.claim === true);
+	check(
+		"releaseRejoin gives both back (and the empty room goes)",
+		heldRejoin.tokenAfter === null && heldRejoin.roomAfter === false,
+		JSON.stringify(heldRejoin),
+	);
+
+	// ------------------------------- 6c. two hostless members meet
+	// The lone host reloads; meanwhile a newcomer types the code and is
+	// told to offer to the returning host. They link — and neither has a
+	// record, so neither knows a host. Resolving on "a link opened" once
+	// left both in a party with nobody at its head, forever. A join now
+	// needs a host as well as a link; nobody crowns themselves at term 0.
+	console.log("\nroom: two members with no host never settle for that");
+	const hostless = await page.evaluate(async () => {
+		localStorage.removeItem("neon.room");
+		const lone = await NeonArcade.hostRoom({ name: "Host" });
+		const token = NeonArcade.rejoinToken();
+		window.__reload(lone, token);
+		localStorage.removeItem("neon.room");
+		const fresh = NeonArcade.joinRoom(lone.code, { name: "Newbie", answerTimeoutMs: 3000 });
+		await new Promise((r) => setTimeout(r, 300));
+		localStorage.setItem("neon.room", JSON.stringify(token));
+		const back = NeonArcade.joinRoom(lone.code, { name: "Host", answerTimeoutMs: 3000 });
+		const settled = await Promise.allSettled([fresh, back]);
+		const claims = window.__neonRoomMock.rooms.get(lone.code);
+		return {
+			outcomes: settled.map((s) =>
+				s.status === "fulfilled" ? `resolved host=${s.value.room.hostId()}` : s.reason.reason,
+			),
+			hostClaim: !!claims?.has(token.id),
+			claims: claims?.size ?? 0,
+		};
+	});
+	check(
+		"neither join resolves into a hostless party",
+		hostless.outcomes.every((o) => o === "no-answer"),
+		JSON.stringify(hostless),
+	);
+	check(
+		"the newcomer's claim is released, the rejoiner's held",
+		hostless.hostClaim && hostless.claims === 1,
+		JSON.stringify(hostless),
+	);
+
+	// --------------------------------------- 6d. a party full of bots
+	// Host + guest + six bots is eight. The guest's own held seat once
+	// counted against them, so after a reload they could never get back in;
+	// and a genuine newcomer waited out the whole deadline to hear "nobody
+	// answered" instead of "full".
+	console.log("\nroom: a full party");
+	const full = await page.evaluate(async () => {
+		localStorage.removeItem("neon.room");
+		const host = await NeonArcade.hostRoom({ name: "Host", reconnectGraceMs: 60000 });
+		localStorage.removeItem("neon.room");
+		let guest = await NeonArcade.joinRoom(host.code, { name: "G" });
+		const token = NeonArcade.rejoinToken();
+		await new Promise((r) => setTimeout(r, 500));
+		for (let i = 0; i < 6; i++) host.room.addBot();
+		await new Promise((r) => setTimeout(r, 500));
+		const size = host.room.getMembers().length;
+		const guestId = guest.room.selfId;
+		window.__reload(guest, token);
+		let back;
+		try {
+			guest = await NeonArcade.joinRoom(host.code, { name: "G", answerTimeoutMs: 15000 });
+			back = guest.room.selfId === guestId;
+		} catch (err) {
+			back = `error: ${err.reason}`;
+		}
+		localStorage.removeItem("neon.room");
+		const started = Date.now();
+		let newcomer;
+		try {
+			await NeonArcade.joinRoom(host.code, { name: "Late", answerTimeoutMs: 15000 });
+			newcomer = { reason: "resolved" };
+		} catch (err) {
+			newcomer = { reason: err.reason, ms: Date.now() - started, message: err.message };
+		}
+		const claims = window.__neonRoomMock.rooms.get(host.code)?.size;
+		host.room.leave();
+		guest.room.leave();
+		return { size, back, newcomer, claims };
+	});
+	check("the party is full", full.size === 8, String(full.size));
+	check("a member of the full party reconnects after a reload", full.back === true, String(full.back));
+	check("a newcomer hears full", full.newcomer.reason === "full", JSON.stringify(full.newcomer));
+	check("long before the deadline", full.newcomer.ms < 5000, String(full.newcomer.ms));
+	check("and the newcomer's claim is given back", full.claims === 2, String(full.claims));
+
+	// ---------------------------------------- 6e. cancelling a join
+	// START A NEW PARTY during a reconnect used to navigate away with the
+	// claim still held. An aborted join hands it back on the spot.
+	console.log("\nroom: an aborted rejoin releases its claim");
+	const aborted = await page.evaluate(async () => {
+		localStorage.removeItem("neon.room");
+		const lone = await NeonArcade.hostRoom({ name: "Lone" });
+		const token = NeonArcade.rejoinToken();
+		window.__reload(lone, token);
+		const ctl = new AbortController();
+		const pending = NeonArcade.joinRoom(lone.code, { name: "Lone", signal: ctl.signal, answerTimeoutMs: 15000 });
+		await new Promise((r) => setTimeout(r, 300));
+		const started = Date.now();
+		ctl.abort();
+		// Synchronous by contract: the claim is gone before abort() returns.
+		const roomAtAbort = !!window.__neonRoomMock.rooms.get(lone.code);
+		const tokenAtAbort = NeonArcade.rejoinToken();
+		let reason;
+		try {
+			await pending;
+			reason = "resolved";
+		} catch (err) {
+			reason = err.reason;
+		}
+		return { reason, ms: Date.now() - started, roomAtAbort, tokenAtAbort };
+	});
+	check("it rejects aborted, at once", aborted.reason === "aborted" && aborted.ms < 500, JSON.stringify(aborted));
+	check(
+		"the claim and the token are gone before abort() returns",
+		aborted.roomAtAbort === false && aborted.tokenAtAbort === null,
+		JSON.stringify(aborted),
+	);
+
+	// ------------------------------- 6f. late news of a departed member
+	// A `rs` or `back` vouch can arrive after its subject has left; the host
+	// once seated them again as "Player".
+	console.log("\nroom: a late vouch does not resurrect anybody");
+	const ghost = await page.evaluate(async () => {
+		localStorage.removeItem("neon.room");
+		const host = await NeonArcade.hostRoom({ name: "Host" });
+		const before = host.room.getMembers().length;
+		host.room._inbound(null, { __i: { id: "ghost1", rs: true }, f: "other", t: host.room.selfId, id: "late-rs" });
+		host.room._inbound(null, { __i: { id: "ghost2", back: true }, f: "other", t: host.room.selfId, id: "late-back" });
+		const after = host.room.getMembers().length;
+		host.room.leave();
+		return { before, after };
+	});
+	check("the host's roster is unchanged", ghost.before === ghost.after, JSON.stringify(ghost));
+
+	// -------------------------------------------------- 7. the UI
 	console.log("\nroom: the screens");
 	const ui = await context.newPage();
 	// The earlier sections left a rejoin token in localStorage; without this
@@ -283,7 +530,7 @@ try {
 		(await bad.locator("button", { hasText: "START A NEW PARTY" }).count()) > 0,
 	);
 
-	// ------------------------------------------- 5. the fallback path
+	// ------------------------------------------- 8. the fallback path
 	console.log("\nroom: the zero-server fallback");
 	const plain = await context.newPage();
 	await plain.goto(PAGE("connect4.html"));

@@ -649,13 +649,15 @@
       // code is the one piece of party plumbing a newcomer meets before they
       // have a party page open. The prompt is deliberately plain: it works
       // with the page opened off the filesystem and inside the PWA shell.
+      // The same rule as NeonArcade.goJoinCode (lib/lobby.js), copied rather
+      // than loaded: the portal stays free of lib/ apart from pwa.js.
       function joinWithCode(event) {
         event.stopPropagation();
         const raw = prompt("Enter the 6-digit party code");
-        const code = (raw || "").replace(/\D/g, "").slice(0, 6);
-        if (code.length === 6) {
-          window.location.href = "party.html#c=" + encodeURIComponent(code);
-        }
+        if (raw == null) return; // cancelled
+        const code = raw.replace(/\D/g, "").slice(0, 6);
+        if (code.length !== 6) return alert("That is not a six-digit party code.");
+        window.location.href = "party.html#c=" + code;
       }
     </script>
 

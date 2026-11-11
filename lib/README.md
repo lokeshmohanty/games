@@ -19,7 +19,7 @@ handshake per person and nothing else.
 - **`games.js`** — `NeonArcade.registerGame()`: the registry every game plugs into, plus `mountGamePage` for single-game pages.
 - **`party.js`** — `NeonArcade.mountParty()`: the persistent party screen — roster, teams, game switching, host handover.
 - **`lobby.js`** — `NeonArcade.mountLobby()`: the invite/answer UI used by the per-game pages, plus the bot controls that let one person start a game alone.
-- **`room-join.js`** — `NeonArcade.hostRoom()` / `joinRoom()` / `rejoinToken()` / `roomServerReachable()`: client-side glue for the optional Cloudflare-Worker room server (`worker/`). Joins are by six-digit code over a WebSocket; rejoin tokens survive a reload. Falls back to the classic scan/paste flow when the server is unreachable. See `docs/room-server.md` for the design and `worker/README.md` for deployment.
+- **`room-join.js`** — `NeonArcade.hostRoom()` / `joinRoom(code, { signal })` / `rejoinToken()` / `releaseRejoin()` / `roomServerReachable()`: client-side glue for the optional Cloudflare-Worker room server (`worker/`). Joins are by six-digit code over a WebSocket; `joinRoom` resolves only once a link is open *and* a host is known (never into a hostless party), and an `AbortSignal` cancels it, releasing the claim; rejoin tokens survive a reload. Falls back to the classic scan/paste flow when the server is unreachable. See `docs/room-server.md` for the design and `worker/README.md` for deployment.
 - **`qr.js`** — `NeonArcade.qrCanvas()`: a self-contained QR encoder, so invites can be scanned instead of typed.
 - **`qr-decode.js`** — `NeonArcade.qrDecode()` / `scanQr()`: a self-contained QR *decoder* plus a camera scanner.
 - **`secrets.js`** — `NeonArcade.makeSecrets(room)`: sealed private channels (so a *relaying player* cannot read a dealt secret) and commit-reveal (so the host cannot either). Optional. `games/battleship.js` is the worked example for commit-reveal, where verifying the digest is only half the check; **no game currently uses the sealed channel** — see `docs/index.md` for why.
@@ -75,10 +75,30 @@ concluding: it broadcasts a probe, and anyone still holding a live link to that
 member vouches for them. Silence means gone, and the conclusion is broadcast so
 the whole party drops them at the same moment.
 
+A deliberate `leave()` skips the probe: the leaver broadcasts its own `__gone`
+before closing, so peers drop the seat at once — including a room-server seat
+that would otherwise be held RECONNECTING for the reconnect grace. A reload or
+a closed tab never calls `leave()`, which is exactly why that seat *is* held.
+
 If the member who went was the host, the crown passes to the longest-present
-remaining member automatically; every browser computes the same heir from the
-same roster, so no UI offer is needed. The party continues. The only thing that
-ends a party is the host explicitly deleting it.
+remaining member automatically (bots and reconnecting seats excluded); every
+browser computes the same heir from the same roster, so no UI offer is needed.
+`room.heir()` names that member in advance. The party continues. The only thing
+that ends a party is the host explicitly deleting it.
+
+The record carries a crown **term**, bumped by whoever takes or hands over the
+crown. A record with a higher term always wins, so a host that was cut off and
+comes back steps down on hearing the newer one, and carries the members only it
+could reach into the winning record. Two hosts at the same term (a partition
+that crowned on both sides) settle on the lower id. A member that merely
+*computed* an heir yields to a host that is still speaking at the old term,
+which is how a false alarm heals.
+
+A relayed negotiation that has not opened after 15 s is abandoned, so the next
+roster change can try that pair again; nobody offers to a seat held for a
+reconnect until its owner is back. A link reported `disconnected` gets 3 s to
+recover (a briefly lost signal often does) before it counts as dropped — which
+also adds 3 s to noticing a closed tab, since that arrives the same way.
 
 ## Adding a game
 
@@ -149,7 +169,7 @@ as `http://`. Load in this order before the game script:
 <script src="lib/secrets.js"></script> <!-- games with hidden information -->
 <script src="lib/rounds.js"></script>  <!-- games with timed or simultaneous phases -->
 <script src="lib/lobby.js"></script>
-<script src="lib/party.js"></script>   <!-- party.html only -->
+<script src="lib/party.js"></script>   <!-- party.html only; needs lobby.js loaded first -->
 <script src="games/connect4.js"></script>
 ```
 
@@ -159,6 +179,20 @@ as `http://`. Load in this order before the game script:
 
 The party screen in `container`; mounted games build themselves into `stage`.
 Handles joining (`#i=` in the URL), recruiting, teams, switching and succession.
+
+### Shared handshake pieces (`lib/lobby.js`)
+
+The party shell and the game-page lobby walk the same handshake, so
+`lobby.js` exports the pieces both use, and **`party.js` requires `lobby.js`
+to be loaded before it**.
+
+| export | description |
+| --- | --- |
+| `NeonArcade.el(tag, props)` | the small DOM builder both screens use |
+| `NeonArcade.savedName()` / `rememberName(name)` | the display name remembered in `localStorage` (`neon.name`) |
+| `NeonArcade.goJoinCode(raw)` | navigate to `party.html#c=<6 digits>`; returns `false` (and stays put) for anything but six digits |
+| `NeonArcade.shareBlock({ label, hint, value, qrValue, linkValue, title })` | a code box with a copy button and a QR; a labelled `.share` card when `label` is given. `linkValue` adds a second copy-as-link button so the QR stays small |
+| `NeonArcade.replyEntry({ room, setStatus, placeholder, scanPrompt, onConnected })` | the inviter's reply box with CONNECT / PASTE / SCAN REPLY. Returns `{ nodes, row, close }` — place `nodes`, add buttons to `row`, and always call `close()` on teardown (it stops the camera) |
 
 ### `NeonArcade.mountGamePage(lobbyEl, stage, gameId)`
 
@@ -212,7 +246,6 @@ pasting.
 | method | description |
 | --- | --- |
 | `selfId` | this peer's random id |
-| `getPeers()` | array of other member ids |
 | `peerCount()` | number of other members |
 | `getMembers()` | `[{ id, name, team, joined, bot? }]`, in join order |
 | `getMember(id)` / `self()` | one member record |
@@ -223,15 +256,20 @@ pasting.
 | `setName(name)` | change your display name |
 | `setTeam(id, team)` | host only: `"A"`, `"B"` or `"spectator"` |
 | `setGame(id)` | host only: everyone mounts it; `null` returns to the party |
-| `transferHost(id)` | host only: hand over the crown |
+| `transferHost(id)` | host only: hand over the crown (never to a bot) |
+| `heir()` | who would take the crown if we left now; skips us, bots and reconnecting seats; `null` if nobody |
 | `removeMember(id)` | host only: remove someone (a bot included) |
 | `addBot(team?)` | host only: seat a simulated member; defaults to the emptier side. Returns its id |
 | `bots()` | every bot in the roster (readable by anyone) |
 | `emitAs(botId, action, data, opts?)` | host only: send as a bot, and deliver locally too |
 | `NeonArcade.isBotId(id)` | a bot's id is prefixed `bot_`, so routing can tell without the record |
-| `claimHost()` | take a vacant crown (fallback; succession is normally automatic) |
 | `deleteParty()` | host only: end it for everyone |
-| `leave()` | close every connection |
+| `leave()` | tell the party we are going (the seat drops at once), then close every connection. Never called on reload/unload |
+| `createInvite({ forPeer }?)` | mint an invite (any member). Refuses with `err.reason === "full"` at `maxMembers` — unless `forPeer` names a member who already holds a seat (a reload coming back), whose own seat is not counted against them |
+
+`createHost`/`createGuest` take `onLeave(reason)`, called once on every exit:
+`"left"` (`leave()`), `"evicted"` (the host removed us) or `"closed"` (the
+party was deleted). `lib/room-join.js` uses it to release the room-server claim.
 
 `makeAction` is idempotent: calling it twice with one name returns the same
 channel, so `room.makeAction("state").send(...)` inside a helper is fine.

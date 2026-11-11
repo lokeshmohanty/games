@@ -178,14 +178,38 @@ party probes first, and anyone still connected to that member vouches for them.
 Only silence counts as gone, and that conclusion is broadcast so everyone drops
 them together.
 
+Leaving on purpose is not a dropped link: `room.leave()` broadcasts the
+leaver's own `__gone` first, so everyone drops the seat (and passes the crown,
+if it was the host's) immediately. A reload or a closed tab never calls it.
+
 If the host was the one who went, the longest-present remaining member (ties
-broken by id, so everyone nominates the same person) is **offered** the crown —
-never given it silently. Everyone else is told who is taking over. The only
-thing that ends a party is the host explicitly choosing DELETE PARTY.
+broken by id, so everyone nominates the same person; bots and reconnecting
+seats skipped) **takes the crown automatically** — no offer, no button.
+`room.heir()` names that member beforehand, for the host's leave prompt. The
+only thing that ends a party is the host explicitly choosing DELETE PARTY.
+
+The party record carries a crown **term**. The member who takes the crown (or
+the host who hands it over) bumps it and publishes; everyone else only
+*computes* the heir and waits for that record. Ordering records by term is what
+reconciles two hosts:
+
+- a higher term always wins — a host cut off by a partition steps down when it
+  hears the newer record, and introduces the members only it could reach to the
+  new host;
+- two hosts at the same term (both sides of a partition crowned someone) settle
+  on the lower id, which every browser agrees on;
+- a member that computed an heir yields to a host still speaking at the old
+  term, which is how a false "the host is gone" heals.
+
+A link reported `disconnected` gets 3 s to recover before it counts as dropped,
+because a phone on a briefly lost signal often recovers the same connection.
+The cost is paid by a closed tab, which also arrives as `disconnected`: in
+headless Chrome, closing the host's tab re-crowned the heir after 8 s without
+the grace and 11 s with it. A deliberate `leave()` is not affected.
 
 A page reload is the one case that cannot be rescued: WebRTC credentials are
 per-connection, so a reloaded browser must handshake again — though any member
-can invite them straight back in.
+can invite them straight back in, and a room-server member does so on its own.
 
 ## Bots
 
@@ -213,8 +237,9 @@ Bot ids are prefixed `bot_` so the **routing** code can recognise one from an id
 alone, without consulting the record. That matters in four places in `net.js`,
 and each is a bug if forgotten: `_meshUp` must not try to open a connection to
 one (a full ICE timeout, every roster change, forever); a broadcast must not
-count one as a peer somebody has to relay to; `_heir` must never nominate one
-for the crown; and `_hostLost` must drop them all, because the only browser
+count one as a peer somebody has to relay to; `_ranked` (behind `_heir` and
+`heir()`) must never nominate one for the crown, and neither may
+`transferHost`; and `_vacateCrown` must drop them all, because the only browser
 simulating them has gone.
 
 Where the brains live:
@@ -560,6 +585,28 @@ the favicon via `<link rel="icon">`.
   flaky** — one failure in five runs on 2026-08-27, timing out waiting for the
   crown to be offered after the host's page closes. The other four passed and
   nothing else in the suite failed. Not investigated.
+- The crown term converges two hosts on one, but **the term itself is not
+  authenticated**: any member can publish a record with a higher term and take
+  the crown, exactly as before the term existed any member could publish one
+  naming itself host. A member that wrongly concludes the host is gone *and* is
+  its own computed heir crowns itself, and the real host steps down; the party
+  converges, but on the wrong host. Tested over a fake transport only
+  (`test-plumbing.mjs`); no real partition has been staged.
+- When two direct links to the same peer open at once, each side keeps the one
+  that opened *last* and closes the other. If the two sides disagree on the
+  order, both links close and the pair falls back to relaying until the next
+  roster change. Not observed; reasoned from the code.
+- A relayed negotiation is abandoned after 15 s, and nothing retries it on a
+  timer — the next roster change does. A pair that failed once stays
+  relay-only until somebody joins, leaves or is edited.
+- The 3 s grace on `disconnected` is reasoned, not observed on a phone. Note
+  it cannot rescue a real network *switch* (wifi to mobile data changes the
+  address, and nothing here performs an ICE restart) — only a link that stalls
+  and recovers on the same path. Its cost on a closed tab is measured (above).
+- `leave()`'s `__gone` is best-effort: it is handed to the channel, which is
+  kept alive 250 ms to drain. A page that navigates away instantly may cut it
+  off, and the peers then fall back to the probe (and, for a room-server
+  member, the reconnect grace).
 - `lib/rounds.js` does not survive host succession. If the crown moves
   mid-round the clock stops with it; every other game here has the same
   property, and nothing recovers a game in progress.

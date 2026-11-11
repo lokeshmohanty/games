@@ -11,11 +11,40 @@ session pay for it.*
 act → record → clear the item. This is the single inbox — do not create a
 separate `TODO.md`.*
 
-## Current focus (2026-10-18)
+## Current focus (2026-11-11) — multiplayer fix pass
+
+Review of net/party/lobby/room-join + worker, then fixes (uncommitted until
+Lokesh reviews). Headlines:
+
+- **TURN removed** (Metered fetch in the worker; Lokesh: join by code "if
+  possible without turn, remove it"). Code join = SDP over the room server,
+  then plain STUN — identical NAT behaviour to scan/paste.
+- Host could never reconnect after reload (hub named the rejoiner as its own
+  offerer); a second guest reload never got an offer; code joins could hang
+  with no error. `joinRoom` now resolves on first open link or rejects
+  `no-answer` (~30s; also waits for a host). Verified against real `wrangler dev`, not deployed CF.
+- Claim release on deliberate leave; per-IP rate limit (was one shared
+  bucket); hub rebuilt after hibernation; `{t:"ping"}` probe.
+- net.js: `party.term` reconciles two hosts; leave() broadcasts `__gone`,
+  clears suspect timers, closes late links; relayed offers time out; public
+  `room.heir()`; `claimHost`/`getPeers` removed; 3s `disconnected` grace
+  (re-crown after a closed host tab ~11s, was ~8s — set
+  `DISCONNECT_GRACE_MS` to 0 to revert).
+- party/lobby: leave buttons really leave, RETRY on network errors, QR for
+  the party code, invite/reply panel + helpers deduplicated into lobby.js.
+
+Open:
+
+- [ ] Brute-forcing *different* codes is not rate limited — each code is its
+      own Durable Object. Needs a shared counter (Cloudflare Rate Limiting
+      binding). Decision pending.
+- [ ] Hibernation/eviction untested on real Cloudflare.
+
+## Previous focus (2026-10-18)
 
 The room server shipped. A Cloudflare Worker + Durable Object (`worker/`) now
-handles rendezvous: join by six-digit code, rejoin after reload, TURN
-credentials served alongside. All game data still flows peer-to-peer; the room
+handles rendezvous: join by six-digit code, rejoin after reload (TURN was
+served alongside until 2026-11-11). All game data still flows peer-to-peer; the room
 server sees only SDP offers/answers. Progressive enhancement throughout —
 when it is unreachable, the classic scan/paste flow is offered unchanged.
 
