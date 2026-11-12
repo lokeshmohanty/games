@@ -809,6 +809,16 @@ NeonArcade.registerGame({
 			}
 		})();
 
+		// The bidder to move lost connection: say so; the host may pass them over.
+		const stall = NeonArcade.turnWait(ctx, {
+			turn: () => (phase === "bid" && !over ? turn : null),
+			skip: () => {
+				nextTurn();
+				pushState();
+				nudgeBot();
+			},
+		});
+
 		return {
 			onPeerJoin() {
 				if (!ctx.isHost) return;
@@ -851,6 +861,7 @@ NeonArcade.registerGame({
 			}),
 			unmount() {
 				disposed = true;
+				stall.dispose();
 				clearTimeout(botTimer);
 				rounds.dispose();
 				secrets.dispose();

@@ -123,7 +123,8 @@ NeonArcade.registerGame({
 ```
 
 `mount(ctx)` receives `root`, `room`, `isHost`, `seatOf(id)`, `seats(team)`,
-`players()`, `nameOf(id)`, `isBot(id)`, `botSeats(team)` and `end()`. It
+`players()`, `nameOf(id)`, `isBot(id)`, `botSeats(team)`, `end()` and `canEnd`
+(whether `end()` does anything — the party shell, not a game page). It
 **must** return an object with
 `unmount()`: games are swapped without a page reload, so anything left running
 — a `requestAnimationFrame` loop, an interval, a window listener — will fight
@@ -140,6 +141,13 @@ reload, whose fresh page knows nothing (party shell only; net.js itself is
 silent about a held seat coming back). Treat it as "send this player
 everything": every game's `onPeerJoin` is a full state push, and a second one
 for a newcomer is harmless.
+
+A **turn game** calls `NeonArcade.turnWait(ctx, { turn, skip })` once at mount
+(and `dispose()` at unmount): `turn()` is the member id to move or null,
+`skip(id)` the game's own rule for passing a turn. When the player to move is
+RECONNECTING everyone sees "Waiting for X — reconnecting (m:ss)"; after 30 s
+(`NeonArcade.turnWaitMs` for tests) the host chooses WAIT / SKIP TURN /
+END GAME (the last only where `ctx.canEnd`). Nothing happens on its own.
 
 `shape` tells the party screen how to read team assignments: `teams` is Team A
 against Team B, `coop` puts everyone on one side, `free` ignores teams. Whatever

@@ -102,7 +102,8 @@ repo over `http://127.0.0.1`; `file://` and `http://<lan-ip>` will not do.
   answers it, NAT self-classification (a hard NAT's offer stands), the
   manual reply's ~15 s window, and the lab's own conntrack and IPv6 traps.
 - `memory/leaving-and-presence.md` — Lokesh's rules for leaving a party (every
-  exit asks in an in-page dialog, never `confirm()`; everyone is told by toast),
+  exit asks in an in-page dialog, never `confirm()`; everyone is told by toast;
+  a stalled turn waits 30 s, then the host decides),
   and the back-button guard's browser traps (gesture-gated history entries,
   popstate on fragment links, Playwright skipping `beforeunload`).
 - `memory/reload-mid-game.md` — how a returner gets the running game back

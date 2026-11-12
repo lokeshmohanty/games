@@ -40,8 +40,10 @@ Audit backlog (2026-11-12), owner to pick — highest first:
       volley (2026-11-12, test-worker 10). Not covered: a reload that outlasts
       a call's 4 s opening window (Liar's Dice) or the 4 s open phase (Neon
       Bid) still misses that opening.
-- [ ] Turn games stall up to 5 min on a RECONNECTING seat; no in-game "waiting
-      for X (m:ss)", no skip/bot-takeover. Onitama never ends when a side leaves.
+- [x] Turn games on a RECONNECTING seat: banner "Waiting for X — reconnecting
+      (0:30)", then the host decides WAIT / SKIP TURN / END GAME (Lokesh: host
+      decides, 30 s). `NeonArcade.turnWait`, in Connect 4, Onitama, Liar's Dice.
+      Onitama: a side that leaves loses (2026-11-13, test-worker 11).
 - [ ] No wake lock / visibilitychange: screen sleep drops players; host's rAF
       sims (tug-of-war, neon-survival) freeze when its tab is hidden.
 - [ ] Host blip drops its bots for good (`_vacateCrown`); onPeerLeave fires

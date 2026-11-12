@@ -521,6 +521,45 @@ canvas {
   }
 }
 
+/* A turn game waiting on a player who lost connection (games.js turnWait).
+   Bottom of the screen, over the game's own controls — nothing there can be
+   played while it shows, since it is not your turn. */
+.turn-wait {
+  position: fixed;
+  left: 50%;
+  bottom: calc(env(safe-area-inset-bottom) + 12px);
+  transform: translateX(-50%);
+  z-index: 45;
+  width: min(358px, calc(100vw - 32px));
+  box-sizing: border-box;
+  padding: 10px 14px;
+  border: 1px solid var(--accent2);
+  border-radius: 12px;
+  background: rgba(10, 10, 10, 0.92);
+  backdrop-filter: blur(4px);
+  color: #fff;
+  font-family: var(--font);
+  font-size: 0.9rem;
+  text-align: center;
+}
+.turn-wait p {
+  margin: 0;
+}
+.turn-wait-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: center;
+}
+.turn-wait-actions:not(:empty) {
+  margin-top: 10px;
+}
+.turn-wait-actions .neon-btn {
+  flex: 1;
+  min-height: 44px;
+  padding: 8px 6px;
+  font-size: 0.78rem;
+}
+
 /* PARTY, mid-game (party.js): the way back to the party screen while a game
    runs. The portal link's twin on the other side of the same top band, which
    every game already keeps clear (ui.js gameShell's 52px). */

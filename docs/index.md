@@ -178,6 +178,14 @@ page navigation** — nobody reconnects and nobody re-scans.
   screen up over it (the game keeps running underneath): BACK TO GAME for
   everyone, END GAME (asked first) for the host. Picking another game from
   there asks too, since it ends the one running.
+- **A turn game waiting on a lost player** (Connect 4, Onitama, Liar's Dice)
+  says so: "Waiting for X — reconnecting (0:30)" for everyone. After 30 s the
+  host decides — WAIT (another 30 s, for everyone), SKIP TURN (Onitama hands a
+  card over, as a stuck player would) or END GAME (asked first). Lokesh chose
+  "host decides" over a bot taking the seat. The seat itself is still held for
+  the full grace; a player who leaves for good is handled by each game
+  (Onitama: the side that stays wins). The collecting games (Battleship, Neon
+  Bid, Draw & Guess) never stall — their phases have deadlines.
 
 ### When the host goes
 

@@ -582,7 +582,8 @@ NeonArcade.registerGame({
 				parts.push({ key: "s", text: "Dealing…", className: "g-muted" });
 			} else if (state.winner !== null) {
 				const who = state.winner === me ? "You win" : `${ctx.nameOf(state.seats[state.winner]) ?? "They"} win`;
-				const how = state.by === "stone" ? "the Way of the Stone" : "the Way of the Stream";
+				const how = state.by === "left" ? `${state.leaver} left`
+					: state.by === "stone" ? "the Way of the Stone" : "the Way of the Stream";
 				parts.push({ key: "s", text: `${who} — ${how}.` });
 			} else if (me === null) {
 				parts.push({ key: "s", text: "Spectating", className: "g-muted" });
@@ -668,6 +669,7 @@ NeonArcade.registerGame({
 			turn: state.turn,
 			winner: state.winner,
 			by: state.by,
+			leaver: state.leaver,
 			started: state.started,
 			seats: state.seats,
 			last: state.last,
@@ -775,6 +777,19 @@ NeonArcade.registerGame({
 		render();
 		begin();
 
+		// The side to move lost connection: say so; the host may pass for them —
+		// the same move a stuck player makes, handing a card over.
+		const stall = NeonArcade.turnWait(ctx, {
+			turn: () => (state.started && state.winner === null ? state.seats[state.turn] : null),
+			skip: () => {
+				if (!ctx.isHost || state.winner !== null) return;
+				applyPass(state, state.turn, state.hands[state.turn][0]);
+				broadcast();
+				render();
+				maybeBot();
+			},
+		});
+
 		return {
 			onPeerJoin() {
 				if (!ctx.isHost) return;
@@ -783,9 +798,17 @@ NeonArcade.registerGame({
 				broadcast();
 				render();
 			},
-			onPeerLeave() {
+			onPeerLeave(id, info) {
 				if (!ctx.isHost) return;
-				seatPlayers();
+				// A seated player gone for good mid-game: the one still sitting wins.
+				const side = state.seats.indexOf(id);
+				if (state.started && state.winner === null && side >= 0) {
+					state.winner = 1 - side;
+					state.by = "left";
+					state.leaver = info?.name ?? "Your opponent";
+				} else {
+					seatPlayers();
+				}
 				broadcast();
 				render();
 			},
@@ -811,6 +834,7 @@ NeonArcade.registerGame({
 			}),
 			unmount() {
 				disposed = true;
+				stall.dispose();
 				clearTimeout(botTimer);
 				window.removeEventListener("resize", onResize);
 				window.removeEventListener("orientationchange", onResize);

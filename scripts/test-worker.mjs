@@ -33,6 +33,9 @@
  *      position, the canvas, and its own committed fleet, cup or bid, so
  *      the audit at the end does not call it a cheat (Battleship, Liar's
  *      Dice, Neon Bid, Onitama, Light Cycles, Draw & Guess).
+ *  11. a turn game whose player to move lost connection says so, then
+ *      the host decides (WAIT / SKIP TURN / END GAME); Onitama ends when
+ *      a side leaves.
  *
  * Wrangler comes from $WRANGLER (a command line), else `wrangler` on PATH,
  * else `nix shell nixpkgs#wrangler` (npx wrangler cannot link workerd on
@@ -986,6 +989,149 @@ try {
 
 		await g.context().close();
 		await h.context().close();
+	}
+	// ------------------ 11. a turn game waiting on a player who lost connection
+	// The seat is held RECONNECTING for minutes; the game says who it waits
+	// for, and after the wait (3 s here, 30 s for real) the host decides:
+	// WAIT, SKIP TURN or END GAME. Onitama ends when a side leaves for good.
+	console.log("\nworker: a turn game waits on a lost player, then the host decides");
+	{
+		const h = await person("tw-host");
+		const a = await person("tw-guest");
+		const w = await person("tw-watch");
+		for (const p of [h, a, w]) {
+			await p.addInitScript(() => {
+				window.NeonArcade = window.NeonArcade || {};
+				window.NeonArcade.turnWaitMs = 3000;
+			});
+		}
+		const t = await host(h);
+		check("(guest and watcher join by code)", (await joinByCode(a, t.code)) && (await joinByCode(w, t.code)) && (await waitForMembers(h, 3)));
+		const selfId = (p) => p.evaluate(() => window.__party.room.selfId);
+		const ids = { host: await selfId(h), guest: await selfId(a), watch: await selfId(w) };
+		const setUp = (game, teams) =>
+			h.evaluate(({ game, teams }) => {
+				const r = window.__party.room;
+				for (const [id, team] of Object.entries(teams)) r.setTeam(id, team);
+				r.setGame(game);
+			}, { game, teams });
+		const mountedOn = (page, game) =>
+			page
+				.waitForFunction((id) => window.__party?.game === id && !!window.__party.handle, game, { timeout: TIMEOUT })
+				.then(() => true, () => false);
+		const dbg = (page) => page.evaluate(() => window.__party.handle?.debug?.() ?? null);
+		const bar = (page) => page.locator(".turn-wait:not([hidden])");
+		const barText = async (page, re) => {
+			try {
+				await bar(page).locator("p", { hasText: re }).waitFor({ timeout: 15_000 });
+				return true;
+			} catch {
+				return false;
+			}
+		};
+		const drop = async (col) => {
+			const box = await h.locator("#board").boundingBox();
+			await h.mouse.click(box.x + (box.width / 7) * (col + 0.5), box.y + box.height / 2);
+		};
+		const turnIs = (n) => h.waitForFunction((n) => window.__party.handle.debug().turn === n, n, { timeout: TIMEOUT }).then(() => true, () => false);
+
+		await setUp("connect4", { [ids.host]: "A", [ids.guest]: "B", [ids.watch]: "spectator" });
+		check("connect 4: all three mount it", (await mountedOn(h, "connect4")) && (await mountedOn(a, "connect4")) && (await mountedOn(w, "connect4")));
+		await drop(3);
+		check("connect 4: the host moves, the guest is to play", await turnIs(2));
+		await a.close();
+		// Both at once: the countdown is only three seconds long here.
+		const counting = await Promise.all([h, w].map((p) => barText(p, /Waiting for .+ reconnecting \(0:0\d\)/)));
+		check("connect 4: the host is told who it waits for, with a countdown", counting[0]);
+		check("connect 4: and so is everyone else", counting[1]);
+		check("connect 4: after the wait the host decides", await barText(h, /hasn't come back\.$/));
+		const buttons = await h.locator(".turn-wait button").allTextContents();
+		check("connect 4: WAIT, SKIP TURN, END GAME", buttons.join() === "WAIT,SKIP TURN,END GAME", buttons.join());
+		check("connect 4: the others are told the host decides", await barText(w, /hasn't come back — .+ decides\./));
+		const fit = await h.evaluate(() => {
+			const r = document.querySelector(".turn-wait").getBoundingClientRect();
+			const btns = [...document.querySelectorAll(".turn-wait button")].map((b) => b.getBoundingClientRect().height);
+			return { left: r.left, right: r.right, bottom: r.bottom, minBtn: Math.min(...btns), doc: document.documentElement.scrollWidth };
+		});
+		check("connect 4: the banner fits the phone, buttons clear 44px", fit.left >= 0 && fit.right <= 390 && fit.bottom <= 844 && fit.minBtn >= 44 && fit.doc <= 390, JSON.stringify(fit));
+		await h.locator(".turn-wait button", { hasText: "WAIT" }).click();
+		const again = await Promise.all([h, w].map((p) => barText(p, /reconnecting \(0:0\d\)/)));
+		check("connect 4: WAIT starts the countdown again", again[0]);
+		check("connect 4: for everyone", again[1]);
+		await barText(h, /hasn't come back\.$/);
+		await h.locator(".turn-wait button", { hasText: "SKIP TURN" }).click();
+		check("connect 4: SKIP TURN gives the move back", await turnIs(1));
+		check("connect 4: and the banner goes", await bar(h).waitFor({ state: "detached", timeout: 3000 }).then(() => true, () => h.locator(".turn-wait").isHidden()));
+		await drop(4);
+		check("connect 4: waiting on the guest again", (await turnIs(2)) && (await barText(h, /hasn't come back\.$/)));
+		await h.locator(".turn-wait button", { hasText: "END GAME" }).click();
+		const asked = await nextDialog(h, true);
+		check("connect 4: END GAME asks first", /End the game for everyone/.test(asked), asked);
+		const ended = await Promise.all([h, w].map((p) => p.waitForFunction(() => window.__party.game === null, null, { timeout: TIMEOUT }).then(() => true, () => false)));
+		check("connect 4: and everyone is back on the party screen", ended.every(Boolean));
+
+		// SKIP TURN in the other two turn games, against the seat still held.
+		const skipOnce = async (label) => {
+			check(`${label}: the host is asked about the lost player`, await barText(h, /hasn't come back\.$/));
+			await h.locator(".turn-wait button", { hasText: "SKIP TURN" }).click();
+		};
+		await setUp("onitama", { [ids.host]: "A", [ids.guest]: "B", [ids.watch]: "spectator" });
+		check("onitama: the host mounts it", await mountedOn(h, "onitama"));
+		await h.waitForFunction(() => window.__party.handle.debug().started, null, { timeout: TIMEOUT });
+		let d = await dbg(h);
+		if (d.turn === d.mySide) {
+			const mv = await h.evaluate(() => {
+				const d = window.__party.handle.debug();
+				return window.NeonArcade.onitamaRules.legalMoves({ board: d.board, hands: d.hands, side: d.side, turn: d.turn }, d.mySide)[0];
+			});
+			await h.locator(".oni-card:not(.theirs):not(.side)").nth(d.hands[d.mySide].indexOf(mv.card)).click();
+			const box = await h.locator(".oni-board").boundingBox();
+			for (const [row, col] of [mv.from, mv.to]) {
+				const [sr, sc] = d.mySide === 1 ? [4 - row, 4 - col] : [row, col];
+				await h.mouse.click(box.x + (sc + 0.5) * (box.width / 5), box.y + (sr + 0.5) * (box.width / 5));
+			}
+			await h.waitForFunction((t) => window.__party.handle.debug().turn !== t, d.turn, { timeout: TIMEOUT });
+		}
+		d = await dbg(h);
+		await skipOnce("onitama");
+		const passed = await h
+			.waitForFunction((t) => window.__party.handle.debug().turn !== t, d.turn, { timeout: TIMEOUT })
+			.then(() => true, () => false);
+		check("onitama: SKIP TURN passes a card for them and gives the move back", passed && (await dbg(h)).winner === null);
+		await h.evaluate(() => window.__party.room.setGame(null));
+
+		await setUp("liars-dice", { [ids.host]: "A", [ids.guest]: "B", [ids.watch]: "spectator" });
+		check("liar's dice: the host mounts it", await mountedOn(h, "liars-dice"));
+		// The roll waits out its 12 s deadline for the cup that never comes.
+		await h.waitForFunction(() => window.__party.handle.debug().phase === "bid", null, { timeout: TIMEOUT });
+		d = await dbg(h);
+		if (d.turn === ids.host) {
+			await h.locator(".ld-actions button", { hasText: /^BID/ }).click();
+			await h.waitForFunction((g) => window.__party.handle.debug().turn === g, ids.guest, { timeout: TIMEOUT });
+		}
+		await skipOnce("liar's dice");
+		const back = await h
+			.waitForFunction((me) => window.__party.handle.debug().turn === me, ids.host, { timeout: TIMEOUT })
+			.then(() => true, () => false);
+		check("liar's dice: SKIP TURN passes the bidding on", back);
+		await h.evaluate(() => window.__party.room.setGame(null));
+
+		// Onitama: the watcher plays the host and leaves on purpose mid-game.
+		await setUp("onitama", { [ids.host]: "A", [ids.guest]: "spectator", [ids.watch]: "B" });
+		check("onitama: both mount it", (await mountedOn(h, "onitama")) && (await mountedOn(w, "onitama")));
+		await w.evaluate(() => window.__party.room.leave());
+		const won = await h
+			.waitForFunction(() => {
+				const d = window.__party.handle.debug();
+				return d.winner === d.mySide && d.by === "left";
+			}, null, { timeout: TIMEOUT })
+			.then(() => true, () => false);
+		check("onitama: a side that leaves loses — the host wins", won, JSON.stringify(await dbg(h)).slice(0, 200));
+		const hud = await h.locator(".g-hud").textContent().catch(() => "");
+		check("onitama: and says why", /You win — .+ left\./.test(hud ?? ""), hud);
+		await h.evaluate(() => window.__party.room.setGame(null));
+		for (const p of [h, w]) await p.context().close();
+		await a.context().close().catch(() => {});
 	}
 } catch (err) {
 	console.log(`  FAIL ${err.stack ?? err}`);

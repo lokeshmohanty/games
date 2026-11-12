@@ -513,6 +513,16 @@ NeonArcade.registerGame({
 		draw();
 		updateHud();
 
+		// The player to move lost connection: say so, and let the host skip them.
+		const stall = NeonArcade.turnWait(ctx, {
+			turn: () => (state.started && state.winner === null ? (state.turn === RED ? state.red : state.yellow) : null),
+			skip: () => {
+				state.turn = state.turn === RED ? YELLOW : RED;
+				broadcastState();
+				afterMove();
+			},
+		});
+
 		return {
 			onPeerJoin: rosterChanged,
 			onPeerLeave: rosterChanged,
@@ -521,6 +531,7 @@ NeonArcade.registerGame({
 			/** Team assignments changed in the party screen mid-game. */
 			onRoster: () => rosterChanged(null),
 			unmount() {
+				stall.dispose();
 				clearTimeout(botTimer);
 				botTimer = null;
 				canvas.removeEventListener("click", onClick);

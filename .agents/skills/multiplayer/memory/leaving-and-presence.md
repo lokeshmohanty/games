@@ -41,3 +41,11 @@ Traps found building it:
   `nameOf(id)` returns "Player". net.js now passes `{ name, reason }`.
 
 Related: [[bots-as-members]], [[room-server]].
+
+**Stalled turns (Lokesh, 2026-11-13):** a turn game whose player to move is
+RECONNECTING shows a countdown banner, then **the host decides** (WAIT /
+SKIP TURN / END GAME) after **30 s** — he chose this over a bot taking the
+seat. `NeonArcade.turnWait` (games.js); test-worker 11. Test traps: a
+member's team survives across games, so a closed guest still on team B takes
+the next game's B seat; with the 3 s test wait, check every page's countdown
+at once or it has already run out.
