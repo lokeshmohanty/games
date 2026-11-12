@@ -1777,6 +1777,124 @@ try {
 	// ------------------------------- 6f. late news of a departed member
 	// A `rs` or `back` vouch can arrive after its subject has left; the host
 	// once seated them again as "Player".
+	// ------------------- 6e22. a returning host is heard by everyone
+	// Three members; the host reloads. The server names the oldest stayer
+	// (A) to offer, and A relinks inside its own departure grace, so A
+	// never doubted the host. The other stayer (B) did conclude the host
+	// gone first — its vouch request went out while every link to the host
+	// was down — so it holds the host's seat RECONNECTING and has computed
+	// A as heir (unheard). B's _meshUp skips a held seat, and the host,
+	// the higher id, never offers to B over the relay: before 2026-11-12
+	// nobody told B the host was back, and B stayed unlinked with its own
+	// crown for good (NAT lab scenario 11, a cone host and two carriers).
+	// Now a returning host that adopts a record naming itself publishes it.
+	console.log("\nroom: a returning host's record reaches a member who gave up on it");
+	const heard = await page.evaluate(async () => {
+		const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+		localStorage.removeItem("neon.room");
+		const h = await NeonArcade.hostRoom({ name: "H", reconnectGraceMs: 60_000 });
+		const hToken = NeonArcade.rejoinToken();
+		localStorage.removeItem("neon.room");
+		const a = await NeonArcade.joinRoom(h.code, { name: "A", reconnectGraceMs: 60_000 });
+		// B under the lowest id there is, so B is the one who must offer.
+		localStorage.setItem("neon.room", JSON.stringify({ code: h.code, id: "000000000000", secret: "lowest-id" }));
+		const b = await NeonArcade.joinRoom(h.code, { name: "B", reconnectGraceMs: 60_000 });
+		const hid = h.room.selfId;
+		for (let i = 0; i < 100 && !(b.room.directPeers().includes(a.room.selfId) && b.room.directPeers().includes(hid)); i++) await wait(100);
+		const meshed = b.room.directPeers().length === 2;
+		window.__reload(h, hToken);
+		// B's own conclusion, as if its vouch request found nobody linked.
+		b.room._confirmGone(hid);
+		const bGaveUp = !!b.room.party.members.find((m) => m.id === hid)?.reconnecting && b.room.hostId() !== hid;
+		const back = await NeonArcade.joinRoom(h.code, { name: "H", reconnectGraceMs: 60_000 });
+		let ok = false;
+		for (let i = 0; i < 100 && !ok; i++) {
+			await wait(100);
+			ok =
+				b.room.directPeers().includes(hid) &&
+				b.room.hostId() === hid &&
+				b.room.getMembers().every((m) => !m.reconnecting) &&
+				back.room.directPeers().length === 2;
+		}
+		const out = {
+			meshed,
+			bGaveUp,
+			ok,
+			bPeers: b.room.directPeers(),
+			bHost: b.room.hostId(),
+			hid,
+			bRc: b.room.getMembers().filter((m) => m.reconnecting).map((m) => m.id),
+			hostPeers: back.room.directPeers().length,
+		};
+		for (const r of [b, a, back]) r.room.leave();
+		return out;
+	});
+	check("three members meshed before the host's reload", heard.meshed, JSON.stringify(heard));
+	check("B held the host's seat and computed another heir", heard.bGaveUp, JSON.stringify(heard));
+	check("the returning host's record reaches B: B links to it and names it host", heard.ok, JSON.stringify(heard));
+
+	// --------- 6e23. a member back from a reload, and a lost relayed offer
+	// Three members; A reloads. B (the lowest id, so B offers over the
+	// relay) suspected A while nobody held a link to it. The host relinks A,
+	// and its commit sends B's relayed offer on its way — through a host
+	// that, in NAT lab scenario 11, did not hold A's link yet: the offer was
+	// lost. B then concluded A gone (RECONNECTING; _meshUp skips a held
+	// seat) and, A being the higher id, nobody offered again: unmeshed for
+	// good. Now a new link is announced (`__alive`, so a suspicion it
+	// answers is settled) and an expired relayed offer that was never
+	// answered is sent once more.
+	console.log("\nroom: a third member does not give up on one back from a reload");
+	// `drops`: 1, the host loses the copy of B's offer sent before anyone
+	// was linked to A, and the copy B sends again on an `__alive` links
+	// them at once; "all", it loses every copy of that offer (same id), and
+	// only the expiry's fresh offer is left.
+	const lostOffer = (drops) =>
+		page.evaluate(async (drops) => {
+			const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+			localStorage.removeItem("neon.room");
+			const h = await NeonArcade.hostRoom({ name: "H", reconnectGraceMs: 60_000 });
+			localStorage.removeItem("neon.room");
+			let a = await NeonArcade.joinRoom(h.code, { name: "A", reconnectGraceMs: 60_000 });
+			const aToken = NeonArcade.rejoinToken();
+			localStorage.setItem("neon.room", JSON.stringify({ code: h.code, id: "000000000000", secret: `lowest-id-${drops}` }));
+			const b = await NeonArcade.joinRoom(h.code, { name: "B", reconnectGraceMs: 60_000 });
+			const aid = a.room.selfId;
+			for (let i = 0; i < 100 && b.room.directPeers().length < 2; i++) await wait(100);
+			const meshed = b.room.directPeers().length === 2;
+			b.room.relayTimeoutMs = 4000;
+			// The host loses B's relayed offers to A, as a forwarder with no
+			// link to A yet does.
+			let dropped = 0;
+			let first = null;
+			const inbound = h.room._inbound.bind(h.room);
+			h.room._inbound = (link, msg) => {
+				if (msg?.__g === "offer" && msg.f === b.room.selfId && msg.t === aid) {
+					first ??= msg.id;
+					if (drops === "all" ? msg.id === first : dropped < drops) return void dropped++;
+				}
+				return inbound(link, msg);
+			};
+			window.__reload(a, aToken);
+			a = await NeonArcade.joinRoom(h.code, { name: "A", reconnectGraceMs: 60_000 });
+			let gaveUp = false;
+			let linked = false;
+			const t0 = Date.now();
+			while (Date.now() - t0 < 12_000 && !linked) {
+				await wait(100);
+				if (b.room.party.members.find((m) => m.id === aid)?.reconnecting) gaveUp = true;
+				linked = b.room.directPeers().includes(aid) && a.room.directPeers().includes(b.room.selfId);
+			}
+			const out = { meshed, dropped, gaveUp, linked, ms: Date.now() - t0 };
+			for (const r of [b, a, h]) r.room.leave();
+			return out;
+		}, drops);
+	const once = await lostOffer(1);
+	check("three members meshed, and B's first relayed offer to A was lost", once.meshed && once.dropped === 1, JSON.stringify(once));
+	check("B never held A's seat as RECONNECTING (the host's new link vouched)", !once.gaveUp, JSON.stringify(once));
+	check("B sent the same offer again on the host's __alive: linked well inside the relay expiry", once.linked && once.ms < 3000, JSON.stringify(once));
+	const all = await lostOffer("all");
+	check("every copy lost: the expired, unanswered offer is made afresh and links", all.dropped >= 1 && all.linked && all.ms >= 3000, JSON.stringify(all));
+
 	console.log("\nroom: a late vouch does not resurrect anybody");
 	const ghost = await page.evaluate(async () => {
 		localStorage.removeItem("neon.room");

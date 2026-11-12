@@ -89,19 +89,31 @@ async function invite(inviter, joiner, label) {
 }
 
 /**
- * The message of the next confirm() on `page`, answered with `accept`; or
+ * The text of the next in-page question (NeonArcade.ask) on `page`,
+ * answered with `accept`; or
  * "(no dialog)" if none comes — a missing confirmation is a failure to
  * report, not a reason to hang.
  */
-const nextDialog = (page, accept) =>
-	new Promise((done) => {
-		const timer = setTimeout(() => done("(no dialog)"), 5000);
-		page.once("dialog", async (d) => {
-			clearTimeout(timer);
-			done(d.message());
-			await (accept ? d.accept() : d.dismiss());
-		});
-	});
+const nextDialog = async (page, accept) => {
+	const dlg = page.locator("dialog.neon-ask[open]");
+	const shown = await dlg
+		.waitFor({ timeout: 5000 })
+		.then(() => true)
+		.catch(() => false);
+	if (!shown) return "(no dialog)";
+	const text = (await dlg.locator("p").textContent()) ?? "";
+	await dlg.locator(`[data-ask="${accept ? "yes" : "no"}"]`).click();
+	return text;
+};
+
+/** Whether a notice (NeonArcade.toast) with `text` shows up on `page`. */
+const toastOn = (page, text) =>
+	page
+		.locator(".neon-toast", { hasText: text })
+		.first()
+		.waitFor({ timeout: TIMEOUT })
+		.then(() => true)
+		.catch(() => false);
 
 const names = async (page) =>
 	await page.locator(".party-member .party-name").allTextContents();
@@ -417,10 +429,163 @@ try {
 			(await host.evaluate(() => !window.__party.room.closed && window.__party.room.isHost())),
 	);
 
+	console.log("\nparty: back to the party from a running game");
+	// Nothing used to lead from a running game back to the party screen.
+	await host.evaluate(() => window.__party.room.setGame("tug-of-war"));
+	for (const page of [host, p2, p3]) await page.locator("#tug-canvas").waitFor({ timeout: TIMEOUT });
+	const pill = await p2.evaluate(() => {
+		const p = document.querySelector(".party-pill");
+		const r = p && !p.hidden ? p.getBoundingClientRect() : null;
+		const l = document.querySelector(".portal-link").getBoundingClientRect();
+		return { r: r && { left: r.left, right: r.right, bottom: r.bottom }, portalRight: l.right, vw: innerWidth };
+	});
+	check(
+		"a running game shows PARTY, clear of ← All games, on the phone",
+		!!pill.r && pill.r.right <= pill.vw && pill.r.left > pill.portalRight && pill.r.bottom <= 52,
+		JSON.stringify(pill),
+	);
+	await p2.locator(".party-pill").click();
+	const peek = await p2.evaluate(() => ({
+		shown: !document.getElementById("party").hidden,
+		game: window.__party.game,
+		buttons: [...document.querySelectorAll("#party button")].map((b) => b.textContent),
+	}));
+	check("PARTY pulls the party screen up over the game", peek.shown && peek.game === "tug-of-war", JSON.stringify(peek));
+	check("…with BACK TO GAME, and no END GAME for a guest", peek.buttons.includes("BACK TO GAME") && !peek.buttons.includes("END GAME"));
+	await p2.locator("button", { hasText: "BACK TO GAME" }).click();
+	check(
+		"BACK TO GAME puts it away, the game still running",
+		await p2.evaluate(() => document.getElementById("party").hidden && window.__party.game === "tug-of-war"),
+	);
+
+	await host.locator(".party-pill").click();
+	let endQ = nextDialog(host, false);
+	await host.locator("button", { hasText: "END GAME" }).click();
+	endQ = await endQ;
+	check("END GAME asks first", /End Tug of War for everyone/i.test(endQ), endQ);
+	check("…and KEEP PLAYING keeps it", await host.evaluate(() => window.__party.game === "tug-of-war"));
+	endQ = nextDialog(host, true);
+	await host.locator("button", { hasText: "END GAME" }).click();
+	await endQ;
+	const backAll = await Promise.all(
+		[host, p2, p3].map((page) =>
+			page
+				.waitForFunction(() => window.__party.game === null && !document.getElementById("party").hidden, null, { timeout: TIMEOUT })
+				.then(() => true)
+				.catch(() => false),
+		),
+	);
+	check("END GAME brings everyone back to the party screen", backAll.every(Boolean), JSON.stringify(backAll));
+	check("…and PARTY is gone with the game", (await p2.locator(".party-pill:not([hidden])").count()) === 0);
+
+	console.log("\nparty: every way out asks, and everyone is told");
+	// A fourth player, so the three above stay for the succession below.
+	const p4 = await context.newPage();
+	p4.on("pageerror", (err) => {
+		console.log(`  FAIL page error on p4: ${err.message}`);
+		failures++;
+	});
+	await invite(p2, p4, "p4");
+	const p4Name = await p4.evaluate(() => window.__party.room.self().name);
+	check("the host is told who joined", await toastOn(host, `${p4Name} joined the party.`));
+	const stillIn = (page) => page.evaluate(() => !!window.__party.room && !window.__party.room.closed);
+
+	// "← All games", the fixed link on every page — it used to just navigate.
+	let q = nextDialog(p4, false);
+	await p4.locator("a.portal-link").click();
+	q = await q;
+	check("← All games asks before leaving", /Leave the party/.test(q), q);
+	check("…says the others will be told", /others will be told/.test(q), q);
+	check("…and STAY keeps the player in the party", p4.url().startsWith(PARTY) && (await stillIn(p4)));
+
+	// The question fits the phone, safe answer first.
+	await p4.locator("a.portal-link").click();
+	const askBox = await p4.evaluate(() => {
+		const r = document.querySelector("dialog.neon-ask[open] .neon-ask-box")?.getBoundingClientRect();
+		const focused = document.activeElement?.dataset?.ask ?? null;
+		return { r: r && { left: r.left, right: r.right }, vw: innerWidth, focused };
+	});
+	check(
+		"the question fits a 390px phone",
+		!!askBox.r && askBox.r.left >= 16 && askBox.r.right <= askBox.vw - 16,
+		JSON.stringify(askBox),
+	);
+	check("STAY has the focus, not LEAVE", askBox.focused === "no", String(askBox.focused));
+	await p4.keyboard.press("Escape");
+	check("Escape means stay", (await p4.locator("dialog.neon-ask[open]").count()) === 0 && (await stillIn(p4)));
+
+	// The back button / swipe-back lands on the guard entry and asks there.
+	q = nextDialog(p4, false);
+	await p4.goBack();
+	q = await q;
+	check("going back asks before leaving", /Go back and leave/.test(q), q);
+	check("…and STAY keeps them in", await stillIn(p4));
+	q = nextDialog(p4, false);
+	await p4.goBack();
+	q = await q;
+	check("…and asks again on the next back", /Go back and leave/.test(q), q);
+
+	// A tab close or reload: the browser's own prompt is all a page can have.
+	const unload = new Promise((done) => {
+		const timer = setTimeout(() => done(null), 5000);
+		p4.once("dialog", async (d) => {
+			clearTimeout(timer);
+			done(d.type());
+			await d.dismiss();
+		});
+	});
+	await p4.close({ runBeforeUnload: true });
+	check("closing the tab mid-party raises the browser's prompt", (await unload) === "beforeunload");
+	check("…and dismissing it keeps the tab", !p4.isClosed() && (await stillIn(p4)));
+
+	// Now really leave: the others are told, and how.
+	q = nextDialog(p4, true);
+	await Promise.all([p4.waitForURL(/index\.html/, { timeout: TIMEOUT }), p4.locator("a.portal-link").click()]);
+	await q;
+	check("LEAVE leaves for the portal", /index\.html/.test(p4.url()));
+	check("the host is told who left", await toastOn(host, `${p4Name} left the party.`));
+	check("so is everyone else", await toastOn(p3, `${p4Name} left the party.`));
+	const toastBox = await host.evaluate(() => {
+		const r = document.querySelector(".neon-toast")?.getBoundingClientRect();
+		const layer = document.querySelector(".neon-toasts");
+		return {
+			r: r && { left: r.left, right: r.right, top: r.top },
+			vw: innerWidth,
+			taps: layer && getComputedStyle(layer).pointerEvents,
+		};
+	});
+	check(
+		"the notice fits the phone and takes no taps",
+		!!toastBox.r && toastBox.r.left >= 0 && toastBox.r.right <= toastBox.vw && toastBox.taps === "none",
+		JSON.stringify(toastBox),
+	);
+	await p4.close();
+
 	console.log("\nparty: losing the host");
-	await host.evaluate(() => window.__party.room.setGame(null));
-	await p2.locator(".party-member").first().waitFor({ timeout: TIMEOUT });
+	// Mid-game: the game's state was the host's, so it ends, and says so.
+	await host.evaluate(() => window.__party.room.setGame("tug-of-war"));
+	for (const page of [host, p2, p3]) await page.locator("#tug-canvas").waitFor({ timeout: TIMEOUT });
+	const hostName = await host.evaluate(() => window.__party.room.self().name);
+	const p2Name = await p2.evaluate(() => window.__party.room.self().name);
+	const told = Promise.all([
+		toastOn(p2, "You are the host now."),
+		toastOn(p3, `${p2Name} is the host now.`),
+		toastOn(p3, `${hostName} lost connection and left the party.`),
+		toastOn(p3, "The host left, so the game ended."),
+	]);
 	await host.close();
+	const [heirTold, restTold, dropTold, endTold] = await told;
+	check("a game the host was running ends, and everyone is told why", endTold);
+	check(
+		"…and everyone is back on the party screen",
+		await p3
+			.waitForFunction(() => window.__party.game === null && !document.getElementById("party").hidden, null, { timeout: TIMEOUT })
+			.then(() => true)
+			.catch(() => false),
+	);
+	check("the heir is told the crown is theirs", heirTold);
+	check("the rest are told who holds it now", restTold);
+	check("…and that the host's connection went, not that they chose to leave", dropTold);
 	// p2 joined before p3, so p2 is the heir. The crown passes automatically —
 	// no offer, no button, just the succession the moment the host is gone.
 	await p2.locator(".party-tag.is-host").first().waitFor({ timeout: TIMEOUT });

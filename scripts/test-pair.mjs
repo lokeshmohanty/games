@@ -45,6 +45,8 @@
  * default stun.cloudflare.com:3478), so its only server-reflexive candidate
  * is IPv4. Host candidates over IPv6 still exist; they cannot pair with an
  * IPv4-only remote anyway.
+ * --browser=firefox / --remote-browser=firefox: Playwright's Firefox on this
+ * machine / the remote instead of the system Chrome (see firefoxEnv).
  * --diag: wrap RTCPeerConnection (test instrumentation) and print, after
  * each reconnect, who offered, the candidates signalled and every pair's
  * check counters. --no-punch skips the browserless hole-punch probe,
@@ -69,7 +71,7 @@
  */
 import { createRequire } from "node:module";
 import { execFileSync, spawn } from "node:child_process";
-import { existsSync, globSync } from "node:fs";
+import { existsSync, globSync, readFileSync, writeFileSync } from "node:fs";
 import { createSocket } from "node:dgram";
 import { randomBytes } from "node:crypto";
 import { createInterface } from "node:readline";
@@ -291,9 +293,35 @@ function loadPlaywright() {
 	return require(join(cache, "node_modules", "playwright"));
 }
 
+/**
+ * --browser=firefox (this machine) / --remote-browser=firefox (the remote):
+ * Playwright's own Firefox build instead of the system Chrome (`playwright
+ * install firefox` with the same playwright this script loads). On NixOS
+ * that build finds none of its shared libraries; through nix-ld it runs
+ * with LD_LIBRARY_PATH pointing at them, which is built here once with
+ * `nix build` and cached (FIREFOX_LD_LIBRARY_PATH overrides).
+ */
+const BROWSER = opt("browser", "chrome");
+const FIREFOX_LIBS = ["stdenv.cc.cc.lib", "gtk3", "pango.out", "atk", "cairo", "gdk-pixbuf", "glib.out", "alsa-lib", "freetype", "fontconfig.lib", "dbus.lib", "xorg.libX11", "xorg.libxcb", "xorg.libXrandr", "xorg.libXcomposite", "xorg.libXcursor", "xorg.libXdamage", "xorg.libXi", "xorg.libXext", "xorg.libXfixes", "xorg.libXrender", "xorg.libXtst", "libGL", "mesa", "at-spi2-atk", "harfbuzz", "libxkbcommon", "xorg.libXScrnSaver", "libdrm", "libgbm"];
+function firefoxEnv() {
+	if (process.env.FIREFOX_LD_LIBRARY_PATH) return { ...process.env, LD_LIBRARY_PATH: process.env.FIREFOX_LD_LIBRARY_PATH };
+	if (!existsSync("/etc/NIXOS")) return process.env;
+	const cache = join(homedir(), ".cache", "neon-pair-firefox-ld");
+	if (!existsSync(cache)) {
+		const out = execFileSync("nix", ["build", "--no-link", "--print-out-paths", ...FIREFOX_LIBS.map((p) => `nixpkgs#${p}`)]).toString();
+		const libs = out.split("\n").filter((l) => l && !/-(man|bin|dev)$/.test(l)).map((l) => `${l}/lib`);
+		writeFileSync(cache, libs.join(":"));
+	}
+	return { ...process.env, LD_LIBRARY_PATH: readFileSync(cache, "utf8").trim() };
+}
+const launch = () =>
+	BROWSER === "firefox"
+		? loadPlaywright().firefox.launch({ env: firefoxEnv() })
+		: loadPlaywright().chromium.launch({ executablePath: chromePath(), args: ["--no-sandbox"] });
+
 let browser = null;
 async function person(tagName, init = {}) {
-	browser ??= await loadPlaywright().chromium.launch({ executablePath: chromePath(), args: ["--no-sandbox"] });
+	browser ??= await launch();
 	const context = await browser.newContext({ viewport: { width: 390, height: 844 } });
 	await context.addInitScript((kv) => {
 		try {
@@ -590,10 +618,11 @@ function driver(init = {}) {
 			case "stats":
 				return { pairs: await pairInfo(page) };
 			case "leave": {
-				// ALL GAMES, confirmed: the deliberate leave (leaveThenGo).
-				page.once("dialog", (d) => d.accept());
+				// ALL GAMES, confirmed in the page's own question: the
+				// deliberate leave (lobby.js leaveParty).
 				const t = Date.now();
 				await page.locator("a.neon-btn", { hasText: /^ALL GAMES$/ }).click();
+				await page.locator('dialog.neon-ask[open] [data-ask="yes"]').click({ timeout: 5000 }).catch(() => {});
 				await page.waitForURL(/index\.html/, { timeout: 15_000 }).catch(() => {});
 				return { ms: Date.now() - t, url: page.url(), token: await page.evaluate(() => localStorage.getItem("neon.room")).catch(() => "?") };
 			}
@@ -675,7 +704,7 @@ function remoteSide(remote) {
 	// --rs-remote: the same server as the remote sees it, when the forward
 	// here could not take the remote's port.
 	const rs = opt("rs-remote", "") || process.env.RS_REMOTE || RS;
-	const extra = [`--site=${opt("site-remote", "") || SITE}`, ...(rs ? [`--rs=${rs}`] : []), ...(flag("diag") ? ["--diag"] : [])];
+	const extra = [`--site=${opt("site-remote", "") || SITE}`, `--browser=${opt("remote-browser", "chrome")}`, ...(rs ? [`--rs=${rs}`] : []), ...(flag("diag") ? ["--diag"] : [])];
 	const child = spawn("ssh", ["-o", "BatchMode=yes", remote, "node", `${REMOTE_DIR}/test-pair.mjs`, "drive", ...extra], { stdio: ["pipe", "pipe", "pipe"] });
 	const waiting = new Map();
 	let seq = 0;
@@ -794,7 +823,7 @@ async function pairRole() {
 		if (!ok) failures++, row && (row.fails = (row.fails ?? 0) + 1);
 	};
 
-	console.log(`site: ${PARTY}   room server: ${RS || "the page's default"}   remote: ${remote}   host: ${remoteHosts ? remote : "this machine"}   runs: ${runs}${stun4 ? "   local STUN: IPv4 literal only" : ""}`);
+	console.log(`site: ${PARTY}   room server: ${RS || "the page's default"}   remote: ${remote}   host: ${remoteHosts ? remote : "this machine"}   runs: ${runs}   browsers: ${BROWSER} here, ${opt("remote-browser", "chrome")} there${stun4 ? "   local STUN: IPv4 literal only" : ""}`);
 	execFileSync("ssh", ["-o", "BatchMode=yes", remote, "mkdir", "-p", REMOTE_DIR]);
 	execFileSync("scp", ["-q", "-o", "BatchMode=yes", SELF, `${remote}:${REMOTE_DIR}/test-pair.mjs`]);
 
@@ -832,7 +861,9 @@ async function pairRole() {
 	const far = remoteSide(remote);
 	const H = remoteHosts ? far : local;
 	const G = remoteHosts ? local : far;
-	const dir = `${H.name.slice(0, 9)}>${G.name.slice(0, 9)}`;
+	// c/f: Chrome or Firefox on that side.
+	const br = (side) => (side === local ? BROWSER : opt("remote-browser", "chrome"))[0];
+	const dir = `${H.name.slice(0, 9)}/${br(H)}>${G.name.slice(0, 9)}/${br(G)}`;
 
 	for (let run = 1; run <= runs; run++) {
 		row = { run, dir, mode: stun4 ? "stun4" : "default" };
@@ -993,10 +1024,10 @@ async function pairRole() {
 	}
 
 	if (runs) {
-		console.log("\nrun dir                  join        rtt    lower pair at join (host l->r / guest l->r, offerer)  guest reload 1        guest reload 2        RETRY      host reload (crown)              leave    outcome");
+		console.log("\nrun dir                      join        rtt    lower pair at join (host l->r / guest l->r, offerer)  guest reload 1        guest reload 2        RETRY      host reload (crown)              leave    outcome");
 		for (const r of rows) {
 			const c = (v, w) => String(v ?? "-").padEnd(w);
-			console.log(`${c(r.run, 4)}${c(r.dir, 21)}${c(r.join, 12)}${c(r.rtt != null ? r.rtt + "ms" : null, 7)}${c(r.lower, 6)}${c(r.pair, 48)}${c(r.gr1, 22)}${c(r.gr2, 22)}${c(r.retry, 11)}${c(r.hostReload && r.crown ? `${r.hostReload} (${r.crown})` : r.hostReload, 33)}${c(r.leave, 9)}${r.outcome ?? "?"}`);
+			console.log(`${c(r.run, 4)}${c(r.dir, 25)}${c(r.join, 12)}${c(r.rtt != null ? r.rtt + "ms" : null, 7)}${c(r.lower, 6)}${c(r.pair, 48)}${c(r.gr1, 22)}${c(r.gr2, 22)}${c(r.retry, 11)}${c(r.hostReload && r.crown ? `${r.hostReload} (${r.crown})` : r.hostReload, 33)}${c(r.leave, 9)}${r.outcome ?? "?"}`);
 		}
 		console.log("  (off=H/G: who offered the link in use; +swap: it is the role-swapped retry)");
 	}

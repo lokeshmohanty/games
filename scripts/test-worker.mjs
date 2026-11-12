@@ -316,16 +316,18 @@ async function joinByCode(page, code) {
 	return waitForMembers(page, 2);
 }
 
-/** The next confirm()'s message, answered with `accept`; "(no dialog)" if none. */
-const nextDialog = (page, accept) =>
-	new Promise((done) => {
-		const timer = setTimeout(() => done("(no dialog)"), 5000);
-		page.once("dialog", async (d) => {
-			clearTimeout(timer);
-			done(d.message());
-			await (accept ? d.accept() : d.dismiss());
-		});
-	});
+/** The next in-page question's text (NeonArcade.ask), answered with `accept`; "(no dialog)" if none. */
+const nextDialog = async (page, accept) => {
+	const dlg = page.locator("dialog.neon-ask[open]");
+	const shown = await dlg
+		.waitFor({ timeout: 5000 })
+		.then(() => true)
+		.catch(() => false);
+	if (!shown) return "(no dialog)";
+	const text = (await dlg.locator("p").textContent()) ?? "";
+	await dlg.locator(`[data-ask="${accept ? "yes" : "no"}"]`).click();
+	return text;
+};
 
 /**
  * Make `page` deaf to the room server's "offer to them" duty: its offers

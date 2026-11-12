@@ -101,6 +101,10 @@ repo over `http://127.0.0.1`; `file://` and `http://<lan-ip>` will not do.
   hangs up), the glare rule, the one-direction NAT and the role swap that
   answers it, NAT self-classification (a hard NAT's offer stands), the
   manual reply's ~15 s window, and the lab's own conntrack and IPv6 traps.
+- `memory/leaving-and-presence.md` — Lokesh's rules for leaving a party (every
+  exit asks in an in-page dialog, never `confirm()`; everyone is told by toast),
+  and the back-button guard's browser traps (gesture-gated history entries,
+  popstate on fragment links, Playwright skipping `beforeunload`).
 - `memory/room-server.md` — the room server's invariants (mesh is
   authoritative, room server is advisory), the progressive-enhancement rule,
   and the traps that caught two test failures.

@@ -82,6 +82,7 @@ deadline plus slack) — never a spinner.
 | 7 | one router drops the room server's port | a code join says "Could not reach the room server" with RETRY; that client still hosts classically (no code) and the invite/reply connects it | 8.1 s (the dial timeout) |
 | 8 | three cone NATs, one switches network | only the mover re-announces; it is back in the full mesh, the crown never moves, nobody sees an error | 10.9 s |
 | 10 | `portdep` host + `cone` guest; then `cone` host + `portdep` guest + a second `cone` guest under id `000000000000` | the carrier classifies hard, the cone not; join, three guest reloads and two host reloads each reconnect with links both ways in < 6 s on the carrier's own first-try offer (no swap); the reverse join, two carrier-guest reloads and two cone-host reloads the same; the relayed pair (the low-id cone offers first; the relay knows nothing of NATs) links after the swap; nobody sees an error | (2026-11-12, hard-NAT glare preference) join 0.3 s, guest reloads 0.3 s, host reloads 0.5 s; reverse join 0.6 s, its reloads 0.5–0.6 s, cone-host reloads 0.3 s; relayed pair 15.7 s. With the classification switched off (same run, `natHard` forced null): host reloads 15.4 s, reverse join 15.7 s, carrier-guest reloads 15.4 s — the swap. Before the earlier fixes: guest reloads failed 2 of 3 at 16.4 s |
+| 11 | two `portdep` carriers facing each other (code join, guest reload, host reload); then a `cone` host + two `portdep` guests | every phase connects directly on the first try (no swap) in < 6 s, both classify hard; in the three-member party the carrier pair links directly over the mesh relay, and again after each carrier's reload and a host reload; nobody sees an error. The join check also accepts an explicit error within 35 s, so a regression to no-path can never pass as a hang | (2026-11-12) join 0.3 s, reloads 0.3 s; three members: meshed at once, each reload 0.4–0.8 s. Before the fixes below, the host reload failed 3 runs of 3 (one carrier never re-linked; split crown) and the higher-id carrier's reload never re-meshed the carrier pair. See "Two carrier NATs facing each other" |
 
 ## Bugs it found (fixed 2026-11-11)
 
@@ -350,3 +351,138 @@ The reply screen carries REPLY_NOW ("Do it right away: between some
 networks a reply only works for about 15 seconds.") from the start. The
 `--manual` check "answerer still waiting, no verdict" fails by design
 past ~15 s on this pair (it was written for loopback).
+
+### Production, Chrome and Firefox (2026-11-12, d6c7f18 deployed)
+
+The live site and the deployed worker (no `--site`/`--rs`), real public
+STUN, `just test-pair` with the new browser flags:
+
+    just test-pair --browser=firefox [--remote-browser=firefox] [--remote-hosts]
+
+`--browser` / `--remote-browser` run Playwright's own Firefox build (the
+`playwright install firefox` matching the playwright the script loads:
+1.62.1 → firefox-1538 here, 1.64.1 → firefox-1555 on bhaskara) instead of
+the system Chrome. On NixOS that build runs through nix-ld; the script
+builds its library path once with `nix build` (`FIREFOX_LIBS`, cached in
+`~/.cache/neon-pair-firefox-ld`; `FIREFOX_LD_LIBRARY_PATH` overrides).
+Firefox's `getStats` has no `currentRoundTripTime`, so its pair shows
+`rtt=0ms`; the ping RTT column is real.
+
+| run | host → guest (browser) | lower id | join | guest reload 1 | guest reload 2 | host reload (crown) | leave |
+|---|---|---|---|---|---|---|---|
+| F1 | Airtel (Firefox) → bhaskara (Chrome) | host | 5.8 s | 2.8 s | 4.4 s | 4.3 s (moved) | 0.2 s |
+| F2 | Airtel (Firefox) → bhaskara (Chrome) | guest | 4.7 s | 2.6 s | 2.6 s | 3.6 s (moved) | 0.2 s |
+| F3 | bhaskara (Chrome) → Airtel (Firefox) | host | 5.7 s | 3.6 s | 3.6 s | 2.8 s (kept) | 0.2 s |
+| F4 | bhaskara (Chrome) → Airtel (Firefox) | host | 4.0 s | 3.9 s | 3.6 s | 2.6 s (kept) | 0.2 s |
+| F5 | bhaskara (Firefox) → Airtel (Firefox) | guest | 4.1 s | 2.4 s | 1.9 s | 1.9 s (kept) | 0.2 s |
+| C1 | Airtel (Chrome) → bhaskara (Chrome), control | guest | 3.6 s | 2.6 s | 2.7 s | 3.5 s (moved) | 0.2 s |
+| C2 | bhaskara (Chrome) → Airtel (Chrome), control | host | 4.4 s | 4.5 s | 3.0 s | 2.7 s (kept) | 0.2 s |
+
+All 7 runs passed every phase, no page errors, every link srflx↔srflx
+UDP/IPv4, ping RTT 73–230 ms, and **the link in use was offered by the
+Airtel side every time, never the role-swapped retry** — in Firefox as in
+Chrome, whatever the ids.
+
+**`NeonArcade.classifyNat()` in Firefox, on the live site** (Firefox 153,
+Playwright's build; `fresh: true`, three asks each):
+
+| machine | Firefox | Chrome (same page) |
+|---|---|---|
+| this one (Airtel CGNAT) | `true`, 151–199 ms | `true`, 60–270 ms |
+| bhaskara (institute NAT, dead Tailscale IPv6) | `false`, 50–79 ms | `false`, 2.03–2.04 s (the `NAT_SOFT_SETTLE_MS` settle; was `null` before the per-family fix) |
+
+Raw Firefox candidates on Airtel (one RTCPeerConnection, DEFAULT_ICE):
+
+    candidate:1 1 UDP 1686052607 2401:4900:88c8:…:ed70 57229 typ srflx raddr 0.0.0.0 rport 0
+    candidate:3 1 UDP 1685987327 223.181.108.216 13313 typ srflx raddr 0.0.0.0 rport 0
+    candidate:3 1 UDP 1685986815 223.181.108.216 25355 typ srflx raddr 0.0.0.0 rport 0
+
+So Firefox, like Chrome, gives one foundation per base: both IPv4 srflx
+share foundation `3` with two ports (hard), and IPv6 has its own (`1`).
+`raddr`/`rport` are zeroed (mDNS on, host candidates are `<uuid>.local`).
+Firefox also emits an end-of-candidates candidate with an empty
+`candidate` string before the `null` one; classifyNat skips it. Gathering
+completes in ~100–300 ms (Chrome: until its STUN timeouts). bhaskara's
+Firefox produced only one IPv4 srflx and no IPv6 STUN attempt at all
+(gathering complete in ~60 ms, no error), hence `false` where Chrome had
+the 40 s IPv6 timeouts.
+
+**`icecandidateerror` in Firefox** (an unreachable `stun:192.0.2.1:3478`
+and a silent `stun.cloudflare.com:3479` added): `address: null`,
+`port: null`, `errorText: ""`, `errorCode: 701`, `url` set, at ~11 s.
+Chrome (same page): `address: "0.0.0.x"` / `"[0:0:0:x:x:x:x:x]"` (masked,
+family still readable), `errorText: "STUN binding request timed out."`, at
+~40 s. classifyNat reads Firefox's null address as "family unknown" and
+vetoes every family — but only an error *before* the 2 s settle can do
+that, and Firefox's come at ~11 s, so the verdicts above stand; the worst
+case is `null` (the old lower-id rule), never a wrong `true`.
+
+### Two carrier NATs facing each other (lab scenario 11, 2026-11-12)
+
+Both ends `portdep`. **A direct path forms, on the first try, every time:**
+join 0.3 s, guest and host reloads 0.3 s, no swap, both classify hard (so
+neither mark wins glare; the lower id offers). Mechanism, from the
+selected pairs (`srflx → prflx` on the offerer): the answerer checks first,
+its check leaves its carrier from a fresh random port and reaches the
+offerer's STUN mapping before the offerer has sent to that endpoint, so it
+gets in; the offerer's triggered check goes back down the same flow. Only
+one side's packets need to arrive first. Three members (a `cone` host and
+two carriers): each carrier reaches the host on its own offer, and the
+carrier pair links directly over the mesh relay (lower id offers, first
+try), again after a carrier reload and after a host reload.
+
+**The stricter reading is falsified, not just untested.** The measurement
+behind `portdep` ("once this side has sent to the peer, the peer's packets
+to the :3478 mapping are dropped") could mean a set of *endpoints* (the
+lab) or of *addresses*. With the address reading the lab's two-carrier
+host reload failed both tries and said no-route at 30.8 s (explicit, with
+"no route between them" — the verdict path held), and in the three-member
+party a reloaded cone host never re-linked one carrier. But the same
+address reading also predicts that a carrier↔cone pair cannot reconnect
+after a reload (the carrier has sent to the cone's address), and on the
+real pair every such reload reconnects in 1.8–4.5 s. So the real Airtel
+carrier is not address-keyed; the lab keeps the endpoint model, and the
+two-carrier result above is the one it predicts. A real two-carrier test
+needs a second carrier: two phones on one carrier meet only by hairpinning
+(see live mode), which this one does not do.
+
+**Bug found and fixed (lib/net.js, undeployed): a returning host was never
+heard by a member who had given up on it.** Three members, the host
+reloads (3 of 3 lab runs with two carriers, both filter readings): the
+room server names the oldest
+stayer (A) to offer; A relinks inside its own 2.5 s departure grace and
+never doubts the host. The other stayer (B) had asked "who still reaches
+the host?" while every link to it was down, so it held the host's seat
+RECONNECTING and computed A as heir (unheard, term unchanged). B's
+`_meshUp` skips a held seat, the host — the higher id — never offers to B
+over the relay, and the host, adopting A's copy of the record, never
+republished it: B stayed unlinked, with its own crown, for good, and no
+error said so. Traced with a throwaway debug scenario; with three cones it
+healed only because the host had the lower id there (so it offered).
+Fix: `_applyParty` — a member that adopts a record naming itself host,
+not having held the crown a moment before, marks itself heard and commits
+the record (`_commitParty`), which every other member takes and meshes
+from. Pinned by test-room 6e22 (fails without it); lab scenario 11's host
+reload then 0.5 s.
+
+**…and its sibling, for any member back from a reload (fixed, undeployed).**
+The next lab run failed a *carrier* reload instead (40.7 s). A throwaway
+ten-reload trace: every reload of the higher-id carrier left the pair
+unmeshed. The room server announces the returner; the host clears its
+held seat and commits, and the other carrier (the lower id) offers over
+the relay at once — through a host that has not relinked the returner
+yet, so the offer goes nowhere (a relayed message has no delivery
+guarantee). Its negotiation then sits unanswered for the 15 s relay
+expiry; its own departure check, asked while nobody had a link, concludes
+the returner gone at 2.5 s (RECONNECTING, so `_meshUp` skips it); and the
+returner, the higher id, never offers. Unmeshed for good, the party
+running on the relay. Three changes in net.js: a new link is announced
+(`__alive` from `_linkOpened`), which settles anyone's open suspicion of
+that member; on that announcement an unanswered relayed offer is sent
+again *unchanged* (same envelope id, so a far side that did get the first
+drops the copy as seen); and a relayed offer that expires never answered
+is made afresh, once (`resend`) — the far side never saw it, so no swap
+would ever come. Ten reloads alternating the two carriers afterwards:
+0.4–0.8 s each (were 15.3 s with only the expiry resend, never without
+it). test-room 6e23 pins each: no RECONNECTING, linked < 3 s with one copy
+lost, linked after the expiry with every copy of the first offer lost.

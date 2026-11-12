@@ -129,6 +129,11 @@ NeonArcade.registerGame({
 — a `requestAnimationFrame` loop, an interval, a window listener — will fight
 the next game for input. Optional `onPeerJoin` / `onPeerLeave` / `onRoster`
 handlers on the same object are called when the party changes under you.
+`onPeerLeave(id, { name, reason })` gets the departed member's name — they are
+already out of the roster, so `nameOf(id)` no longer knows it — and how they
+went: `"left"` (on purpose), `"dropped"` (lost, not back within the grace),
+`"removed"` (by the host), `"crown"` (a bot that went with its host's crown) or
+`"gone"` (vanished from the host's record with no goodbye of its own).
 
 `shape` tells the party screen how to read team assignments: `teams` is Team A
 against Team B, `coop` puts everyone on one side, `free` ignores teams. Whatever
@@ -195,6 +200,11 @@ to be loaded before it**.
 | `NeonArcade.goJoinCode(raw)` | navigate to `party.html#c=<6 digits>`; returns `false` (and stays put) for anything but six digits |
 | `NeonArcade.shareBlock({ label, hint, value, qrValue, linkValue, title })` | a code box with a copy button and a QR; a labelled `.share` card when `label` is given. `linkValue` adds a second copy-as-link button so the QR stays small |
 | `NeonArcade.replyEntry({ room, setStatus, placeholder, scanPrompt, onConnected })` | the inviter's reply box with CONNECT / PASTE / SCAN REPLY. Returns `{ nodes, row, close }` — place `nodes`, add buttons to `row`, and always call `close()` on teardown (it stops the camera) |
+| `NeonArcade.ask(question, { ok, cancel })` | a yes/no question in the page's own `<dialog class="neon-ask">` (buttons `[data-ask="yes"]` / `[data-ask="no"]`); resolves `true` for yes. Never `confirm()`: it freezes the page's JS — the host's game loop and the mesh's relaying with it. Escape and a tap outside mean no; a second question dismisses the first |
+| `NeonArcade.toast(text, kind)` | a notice over whatever is on screen (`.neon-toasts`, under the portal link), `kind` `"good"` / `"warn"`; takes no taps, gone after 4.5 s, at most 3 |
+| `NeonArcade.presence()` | `{ sync(room), left(room, id, info) }`: feed it every roster callback and it toasts what changed — joined, left (with the reason), lost connection (after 2.5 s still lost) and back, the crown moving (after 1.2 s still moved). The first sync with a room is silent |
+| `NeonArcade.guardParty({ room, askAlone })` | register the page's party: `room()` returns the live room or null. From then on "← All games" (and any `a[data-leaves]`), back / swipe-back (a history entry pushed on the first tap) and `beforeunload` (only with another person present) all go through `leaveParty`. `askAlone`: ask even with nobody else here (the party shell; a game page with only bots is never asked) |
+| `NeonArcade.leaveParty(question)` / `leaveQuestion(room, question)` | ask (naming the heir, for a host), then `leave()` and wait for `roomSettled()`; resolves `true` once it may navigate, `false` if they stayed. Not asked, it still leaves — that is what drops the rejoin token |
 | `NeonArcade.REPLY_NOW` / `NeonArcade.replyFailed(setStatus)` | the replier's side of a hand-carried reply: the "do it right away" sentence for the reply screen (between some networks a reply works for ~15 s — docs/index.md Honest gaps), and, on a `no-route` before the link ever opened, the error status plus `{ hint, again }` — a hint node and a MAKE A NEW REPLY button (a reload: the same `#i=` invite answered afresh) for the caller to place |
 
 ### `NeonArcade.mountGamePage(lobbyEl, stage, gameId)`
@@ -212,7 +222,11 @@ them watching. `coop`/`free` games put everybody on one side.
 ### `NeonArcade.mountLobby(container, opts)`
 
 The lobby itself: `gameName`, `game` (the registered def, for seat counts and
-bots), `onReady(room)`, `onStart()`, `onPeerJoin(id)`, `onPeerLeave(id)`.
+bots), `onReady(room)`, `onStart()`, `onEnd()` (the session ended under a
+running game — the host left, or the connection failed — so take the game
+down: the terminal screen is drawn in the lobby, beneath the stage),
+`onPeerJoin(id)`, `onPeerLeave(id, info)`. When the crown moves (1.5 s settle)
+the lobby ends the session itself: it leaves the room and says the host left.
 
 It offers two host paths: **INVITE A FRIEND** (the handshake) and **PLAY A
 BOT** / **PLAY ALONE** (no handshake at all — it seats enough bots to make the

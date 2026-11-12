@@ -222,9 +222,7 @@ Fix for "who offers after a reload is a glare coin flip" (above). Decided:
   `icecandidateerror`; anything uncertain is `null` = the old rule.
   Started by room-join before the dial, never awaited. This
   machine (Airtel) classified hard from headless Chrome: 7085 vs 31597.
-  **VERIFY on Firefox:** foundation = base is what Chrome and Safari do;
-  Firefox is unchecked. Wrong there only reads hard as not-hard (the old
-  rule), never the reverse — two ports are still required in one group.
+  Firefox: foundation = base there too (checked 2026-11-12, below).
 - **Decided per address family, not vetoed by any error** (bhaskara,
   2026-11-12). A Tailscale `fd7a:` IPv6 address with no IPv6 route: IPv4
   answered from both servers in 45 ms with one mapping, every IPv6 STUN
@@ -235,8 +233,8 @@ Fix for "who offers after a reload is a glare coin flip" (above). Decided:
   so "settled" is the only evidence); an error whose `address` shows no
   family vetoes all. Mis-reading soft is harmless — only `natHard ===
   true` changes behaviour — but a hard NAT whose second answer is > 2 s
-  late would read soft. test-room (stubbed candidate stream). VERIFY what
-  Firefox/Safari put in the error's `address`.
+  late would read soft. test-room (stubbed candidate stream). Firefox
+  puts `null` in the error's `address` (below); Safari unchecked.
 - **Re-asked, not once per page** (review, 2026-11-12). Remembered per
   set of STUN servers (`fresh` replaces it; fewer than two servers =
   `null`, never remembered — it used to poison the page's one cache).
@@ -273,7 +271,8 @@ Fix for "who offers after a reload is a glare coin flip" (above). Decided:
   the lower id. test-plumbing counts RTCPeerConnections: classification
   lives in room-join, never in the Room constructor, for that reason.
 - **Not covered:** the mesh relay (`_openRelayed`, lower id) still needs
-  the swap; two hard sides; a NAT hard in filtering only.
+  the swap for a cone↔carrier pair; a NAT hard in filtering only. (Two
+  hard sides: lab scenario 11, below.)
 - **Verified on the real pair (2026-11-12, undeployed,
   docs/network-testing.md "Hard-NAT offer rule…"):** 7/7 runs both ways,
   Airtel's offer in use every time, no role swap; reloads 1.8–3.6 s; joins
@@ -304,3 +303,63 @@ Fix for "who offers after a reload is a glare coin flip" (above). Decided:
   since there ICE never connected. 3/3 green after. If a real "same
   invite, new reply" ever fails to link after a *connected* first reply,
   this is the suspect.
+
+## Firefox, and two carriers facing each other (2026-11-12, d6c7f18 live)
+
+- **Firefox groups srflx by base like Chrome.** Live site, Firefox 153
+  (Playwright's build): on Airtel both IPv4 srflx share foundation `3`,
+  ports differ → `classifyNat()` `true`; bhaskara `false` (~60 ms — its
+  Firefox never tries IPv6 STUN). `raddr 0.0.0.0` as in Chrome. Firefox's
+  `icecandidateerror`: `address`/`port` `null`, `errorText` "", 701 at
+  ~11 s (Chrome: masked `0.0.0.x`, ~40 s) — a family veto for all, but
+  only within the 2 s settle, so harmless. No lib change needed.
+- **Real pair on production, both browsers: 7/7 runs, every phase,
+  Airtel's offer every time, no swap**; joins 3.6–5.8 s, reloads
+  1.9–4.5 s (docs/network-testing.md "Production, Chrome and Firefox").
+- **Two `portdep` carriers connect directly, first try** (lab scenario
+  11): the answerer's check, from a random port, reaches the offerer's
+  STUN mapping before the offerer has sent to that endpoint; the
+  offerer's triggered check rides back on that flow (`srflx → prflx`).
+  Same over the mesh relay with a cone host. No no-route to assert — the
+  join check still accepts "explicit error ≤ 35 s" so a regression cannot
+  hang silently.
+- **Trap: "the carrier drops a peer it has sent to" has two readings.**
+  Keyed by *address* (not endpoint), two carriers fail a host reload
+  (explicit no-route, 30.8 s) — but that reading also predicts
+  carrier↔cone reloads fail, and on the real pair they never do. Check a
+  stricter NAT model against *every* real observation before believing
+  what it predicts.
+- **Bug, fixed 2026-11-12 (net.js `_applyParty`, undeployed): a
+  returning host was never heard by a member who gave up on it.** Three
+  members, host reloads; the server-named stayer relinks inside its 2.5 s
+  departure grace, the other stayer had already concluded the host gone
+  (its `__q` went out while every link to the host was down) → seat held
+  RECONNECTING, crown computed to the heir, `_meshUp` skips the held seat,
+  the higher-id host never offers. The host adopted the stayer's record
+  naming itself host and never republished → permanent split crown, one
+  member unlinked, no error. Now: adopting a record that newly names us
+  host commits it (and sets `heard`). Lab 11: 3/3 failed before, 0.5 s
+  after; test-room 6e22 (forces the give-up with `_confirmGone`, lowest
+  id `000000000000` on the giver-up). Lesson: three-member *host*
+  reloads were never in the lab before scenario 11 — scenario 4/8/10's
+  three-member parts reload guests or move a guest.
+- **Sibling bug, same day: a returner's relayed offer is lost.** The
+  server's "back" notice + host commit make the lower-id members offer
+  over the relay before anyone has relinked the returner → forwarded
+  nowhere (targeted relays are fire-and-forget) → unanswered for the 15 s
+  expiry, their departure check (asked while nobody had a link) marks the
+  returner RECONNECTING, and the higher-id returner never offers. Every
+  higher-id carrier reload in a ten-round trace. Fix: `__alive` on every
+  link open (settles suspicions), `_resendOffer` re-sends the same
+  envelope (same id → deduped) on `__alive`, and an expired unanswered
+  relayed offer is made afresh once (`resend`). 0.4–0.8 s after;
+  test-room 6e23 (two cases; each check verified to fail without its
+  piece). Trap for tests: a dropped-once offer is healed by *any* later
+  `__alive` (the vouch re-ask sends one) — to isolate the expiry path,
+  drop every copy of the first envelope id.
+- Test-side: `test-pair --browser=firefox` / `--remote-browser=firefox`;
+  Playwright's Firefox on NixOS needs ~30 nixpkgs libs via nix-ld
+  (`firefoxEnv`, cached path). bhaskara's playwright is 1.64.1
+  (firefox-1555), this machine's npx one 1.62.1 (firefox-1538). The
+  Firefox processes on bhaskara under `/nix/store/…firefox-158` are the
+  owner's desktop browser — never kill them in cleanup.

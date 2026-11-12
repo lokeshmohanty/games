@@ -406,15 +406,17 @@ async function joinByCode(page, code) {
 	const w = await waitUntil(page, inParty, NO_ANSWER_WAIT);
 	return { ok: w.ok, ms: Date.now() - start };
 }
-const nextDialog = (page, accept) =>
-	new Promise((done) => {
-		const timer = setTimeout(() => done("(no dialog)"), 5000);
-		page.once("dialog", async (d) => {
-			clearTimeout(timer);
-			done(d.message());
-			await (accept ? d.accept() : d.dismiss());
-		});
-	});
+const nextDialog = async (page, accept) => {
+	const dlg = page.locator("dialog.neon-ask[open]");
+	const shown = await dlg
+		.waitFor({ timeout: 5000 })
+		.then(() => true)
+		.catch(() => false);
+	if (!shown) return "(no dialog)";
+	const text = (await dlg.locator("p").textContent()) ?? "";
+	await dlg.locator(`[data-ask="${accept ? "yes" : "no"}"]`).click();
+	return text;
+};
 const muteOffers = (page, muted) =>
 	page.evaluate((m) => {
 		if (!window.__muteInstalled) {

@@ -910,7 +910,85 @@ try {
 			.then(() => true)
 			.catch(() => false);
 		check("…and the new reply connects", linked);
+
+		// A game page is a party of its own: walking off it with somebody
+		// else in it asks first, and they are told.
+		const guestName = await replier.evaluate(() => window.__game.room.self().name);
+		await replier.locator("a.portal-link").click();
+		const asked = await replier
+			.locator("dialog.neon-ask[open]")
+			.waitFor({ timeout: 5000 })
+			.then(() => true)
+			.catch(() => false);
+		check("a game page asks before ← All games walks out on the other player", asked);
+		await Promise.all([
+			replier.waitForURL(/index\.html/, { timeout: TIMEOUT }),
+			replier.locator('dialog.neon-ask[open] [data-ask="yes"]').click(),
+		]);
+		const told = await inviter
+			.locator(".neon-toast", { hasText: `${guestName} left the party.` })
+			.waitFor({ timeout: TIMEOUT })
+			.then(() => true)
+			.catch(() => false);
+		check("…and the one left behind is told", told);
 		await pair.close();
+	}
+
+	console.log("\nleaving: a game page whose host goes says so");
+	// A game page has no party screen to fall back to: the guest used to sit
+	// on a board — or on "waiting for the host" — that would never move again.
+	for (const midGame of [true, false]) {
+		const pair = await browser.newContext({ viewport: { width: 390, height: 844 } });
+		const [hostP, guestP] = [await pair.newPage(), await pair.newPage()];
+		for (const p of [hostP, guestP]) {
+			p.on("pageerror", (err) => {
+				console.log(`  FAIL page error: ${err.message}`);
+				failures++;
+			});
+		}
+		await hostP.goto(url("connect4.html"));
+		await hostP.locator("button", { hasText: "INVITE A FRIEND" }).first().click();
+		const box = hostP.locator("textarea.share-code").first();
+		await box.waitFor({ timeout: TIMEOUT });
+		await guestP.goto(await box.inputValue());
+		const reply = guestP.locator("textarea.share-code").first();
+		await reply.waitFor({ timeout: TIMEOUT });
+		await hostP.locator("textarea.share-code").last().fill(await reply.inputValue());
+		await hostP.locator("button.neon-btn", { hasText: /^CONNECT$/ }).first().click();
+		await guestP.waitForFunction(() => /Connected/.test(document.querySelector(".lobby-status")?.textContent ?? ""), null, { timeout: TIMEOUT });
+		if (midGame) {
+			await hostP.locator("button", { hasText: "START GAME" }).first().click();
+			await guestP.waitForFunction(() => window.__game?.handle, null, { timeout: TIMEOUT });
+		}
+		await hostP.close();
+		const msg = midGame ? "The host left, so the game ended." : "The host left before the game started.";
+		const told = await guestP
+			.locator(".neon-toast", { hasText: msg })
+			.waitFor({ timeout: TIMEOUT })
+			.then(() => true)
+			.catch(() => false);
+		check(`${midGame ? "mid-game" : "before START"}: the guest is told the host left`, told);
+		const after = await guestP.evaluate(() => ({
+			stage: document.getElementById("stage").hidden,
+			handle: !!window.__game.handle,
+			ways: [...document.querySelectorAll("#lobby button, #lobby a.neon-btn")].map((b) => b.textContent),
+			closed: window.__game.room.closed,
+		}));
+		check(
+			"…and lands on a screen with a way on, not a frozen board",
+			after.stage && !after.handle && after.closed && after.ways.includes("HOST A NEW GAME") && after.ways.includes("ALL GAMES"),
+			JSON.stringify(after),
+		);
+		await pair.close();
+	}
+
+	console.log("\nleaving: one person against the bots is never asked");
+	{
+		const lone = await context.newPage();
+		await startSolo(lone, "connect4.html", "PLAY A BOT");
+		await Promise.all([lone.waitForURL(/index\.html/, { timeout: TIMEOUT }), lone.locator("a.portal-link").click()]);
+		check("← All games from a bots-only game goes straight to the portal", (await lone.locator("dialog.neon-ask").count()) === 0);
+		await lone.close();
 	}
 
 	// --------------------------------------------------- bots in a party

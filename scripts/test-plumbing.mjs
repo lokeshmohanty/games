@@ -531,25 +531,29 @@ const bare = (opts, host = true) => {
 	room._meshUp();
 	await sleep(10);
 	check("an offer to a member we lack a link to goes out", made.length === 1 && room.negotiating.has("zzzzzzzzzz"));
+	await sleep(70);
+	// Never answered, so perhaps never delivered (a relayed message has no
+	// delivery guarantee): made afresh, once (test-room 6e23).
+	check("an unanswered offer that expires is made afresh, once", made.length === 2 && made[0].closed === true && room.negotiating.has("zzzzzzzzzz"), `${made.length}`);
 	await sleep(100);
 	check("an unanswered offer times out and is forgotten",
-		!room.negotiating.has("zzzzzzzzzz") && !room.pending.has("r:zzzzzzzzzz"));
-	check("and its PeerConnection is closed", made[0].closed === true);
+		!room.negotiating.has("zzzzzzzzzz") && !room.pending.has("r:zzzzzzzzzz") && made.length === 2, `${made.length}`);
+	check("and its PeerConnection is closed", made[1].closed === true);
 	room._meshUp();
 	await sleep(10);
-	check("so the next roster change can try again", made.length === 2);
+	check("so the next roster change can try again", made.length === 3);
 
 	const warn = console.warn;
 	console.warn = () => {};
-	made[1].connectionState = "failed";
-	made[1].onconnectionstatechange();
+	made[2].connectionState = "failed";
+	made[2].onconnectionstatechange();
 	console.warn = warn;
 	check("a failed negotiation is forgotten too, though it never opened", !room.negotiating.has("zzzzzzzzzz"));
 
 	room.party.members.find((m) => m.id === "zzzzzzzzzz").reconnecting = Date.now();
 	room._meshUp();
 	await sleep(10);
-	check("nobody offers to a seat held for a reconnect", made.length === 2, `${made.length}`);
+	check("nobody offers to a seat held for a reconnect", made.length === 3, `${made.length}`);
 	room.leave();
 	delete globalThis.RTCPeerConnection;
 }

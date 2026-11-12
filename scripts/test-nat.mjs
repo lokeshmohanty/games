@@ -462,6 +462,7 @@ async function device(site, tag) {
 	);
 	const page = await context.newPage();
 	page.on("dialog", (d) => d.accept());
+	sayYes(page);
 	page.on("pageerror", (err) => {
 		console.log(`  FAIL page error on ${tag}: ${err.message}`);
 		failures++;
@@ -490,6 +491,7 @@ async function hostDevice(tag) {
 	}, LIVE);
 	const page = await context.newPage();
 	page.on("dialog", (d) => d.accept());
+	sayYes(page);
 	page.on("pageerror", (err) => {
 		console.log(`  FAIL page error on ${tag}: ${err.message}`);
 		failures++;
@@ -593,6 +595,21 @@ async function exchange(devs, limit = 10_000) {
 }
 
 // ------------------------------------------------------------- party flows
+
+/**
+ * Answer the page's own questions (NeonArcade.ask — "leave this party for
+ * the other one?" and the like) yes, as page.on("dialog") used to answer
+ * them when they were confirm(): an in-page <dialog> raises no such event.
+ */
+function sayYes(page) {
+	const yes = page.locator('dialog.neon-ask[open] [data-ask="yes"]');
+	const timer = setInterval(() => {
+		yes.count()
+			.then((n) => n && yes.click({ timeout: 1000 }))
+			.catch(() => {});
+	}, 250);
+	page.on("close", () => clearInterval(timer));
+}
 
 /** Host a party through the room server; returns its code. */
 async function hostByCode(dev) {
@@ -1105,6 +1122,125 @@ scenario(10, "a port-dependent carrier NAT: its offer stands, both directions", 
 		check("the relayed pair (cone offers to carrier) links after the swap", c.ok, c.last.map(brief).join(" | "), Date.now() - start);
 		const after = await Promise.all(devs.map(state));
 		check("nobody was shown an error", after.every((s) => !s.error), after.map(brief).join(" | "));
+	} finally {
+		await closeAll(devs);
+		dropSites(sites);
+	}
+});
+
+scenario(11, "two port-dependent carrier NATs facing each other", async () => {
+	// Both ends behind the carrier CGNAT (`portdep`): each side's checks
+	// leave from a fresh random port, and each NAT takes a stranger's packets
+	// only on its STUN mapping, and only from somebody it has not sent to
+	// first. Both classify hard, so neither mark wins glare (lower id) and
+	// nobody offers back. Established 2026-11-12: a direct path forms on the
+	// first try. The answerer checks first (it has both descriptions before
+	// the offerer has the answer); its check, from an unpredictable port,
+	// reaches the offerer's STUN mapping before the offerer has sent to that
+	// endpoint, and the offerer's triggered check goes back down the same
+	// flow — a peer-reflexive pair. One side's packets getting in first is
+	// all a pair needs. (A stricter reading of the carrier — refusing any
+	// port of an *address* it has sent to — fails here on a reload, but it
+	// also fails the cone↔carrier reloads that work on the real pair, so the
+	// real carrier is not that: docs/network-testing.md, scenario 11.)
+	const FAST_MS = 6000;
+	/** Every link the page holds: who offered, the swap's or not, its pair. */
+	const links = (dev) =>
+		dev.page.evaluate(async () => {
+			const out = [];
+			for (const l of window.__party?.room?.links?.values() ?? []) {
+				let pair = null;
+				const st = await l.pc?.getStats();
+				st?.forEach((r) => {
+					if (r.type === "candidate-pair" && r.nominated && r.state === "succeeded")
+						pair = `${st.get(r.localCandidateId)?.candidateType}->${st.get(r.remoteCandidateId)?.candidateType}`;
+				});
+				out.push({ peer: l.peerId, offered: !!l.offered, retry: !!l.retry, pair });
+			}
+			return out;
+		});
+	/** The link between `a` and `b`, as `a` holds it: a first try, not the swap. */
+	const firstTry = async (a, b) => {
+		const id = (await state(b)).room?.id;
+		const l = (await links(a)).find((x) => x.peer === id);
+		return { ok: !!l && !!l.pair && !l.retry, l };
+	};
+	const reloadTimed = async (dev, devs) => {
+		const start = Date.now();
+		await dev.page.reload();
+		const r = await waitFor(dev, (s) => inParty(s) || s.error, FAIL_BOUND_MS + 10_000);
+		const ok = r.ok && inParty(r.s);
+		const c = ok ? await converged(devs, 40_000, { links: true }) : { ok: false, last: [] };
+		return { ok: ok && c.ok, ms: Date.now() - start, s: r.s };
+	};
+
+	{
+		// Two members, join by code, then each reloads.
+		const sites = [await makeSite("portdep"), await makeSite("portdep")];
+		const devs = [await device(sites[0], "carrierA"), await device(sites[1], "carrierB")];
+		const tag = "carrier↔carrier:";
+		try {
+			const [h, g] = devs;
+			const made = await hostByCode(h);
+			const j = await joinByCode(g, made.code, FAIL_BOUND_MS + 10_000);
+			// Whichever way it goes, never a wait without end.
+			check(`${tag} code join: joined, or an explicit error within the bound`, j.joined || (!!j.s?.error && j.ms <= FAIL_BOUND_MS), brief(j.s), j.ms);
+			check(`${tag} code join connects directly in < ${FAST_MS / 1000}s`, j.joined && j.ms < FAST_MS, brief(j.s), j.ms);
+			if (j.joined) {
+				const nat = await Promise.all(devs.map(state));
+				check(`${tag} both classify hard`, nat.every((s) => s.room?.nat === true), JSON.stringify(nat.map((s) => s.room?.nat)));
+				const o = await firstTry(h, g);
+				check(`${tag} …on the first try, no swap`, o.ok, JSON.stringify(o.l));
+				const x = await exchange(devs);
+				check(`${tag} messages flow`, x.ok, "", x.ms);
+				for (const [who, dev] of [["guest", g], ["host", h]]) {
+					const r = await reloadTimed(dev, devs);
+					check(`${tag} ${who} reload reconnects (links both ways) in < ${FAST_MS / 1000}s`, r.ok && r.ms < FAST_MS, brief(r.s), r.ms);
+					const o2 = await firstTry(h, g);
+					check(`${tag} …on the first try, no swap`, o2.ok, JSON.stringify(o2.l));
+				}
+				const after = await Promise.all(devs.map(state));
+				check(`${tag} nobody was shown an error`, after.every((s) => !s.error), after.map(brief).join(" | "));
+			}
+		} finally {
+			await closeAll(devs);
+			dropSites(sites);
+		}
+	}
+
+	// Three members: a cone host each carrier reaches on its own offer, and
+	// the carrier pair meshed by the relay (`_openRelayed`, lower id offers —
+	// both hard, so the marks do not decide). Same answer: direct, first try.
+	const sites = [await makeSite("cone"), await makeSite("portdep"), await makeSite("portdep")];
+	const devs = [await device(sites[0], "cone"), await device(sites[1], "carrierA"), await device(sites[2], "carrierB")];
+	try {
+		const [h, a, b] = devs;
+		const made = await hostByCode(h);
+		const ja = await joinByCode(a, made.code);
+		check("carrier A joins the cone host", ja.joined, brief(ja.s), ja.ms);
+		const jb = await joinByCode(b, made.code);
+		check("carrier B joins the cone host", jb.joined, brief(jb.s), jb.ms);
+		let start = Date.now();
+		const c = await converged(devs, FAIL_BOUND_MS, { links: true });
+		check(`the two carriers link directly over the relay in < ${FAST_MS / 1000}s`, c.ok && Date.now() - start < FAST_MS, c.last.map(brief).join(" | "), Date.now() - start);
+		const o = await firstTry(a, b);
+		check("…on the first try, no swap", o.ok, JSON.stringify(o.l));
+		const x = await exchange(devs);
+		check("messages flow among all three", x.ok, "", x.ms);
+		// Each carrier reloads (whichever has the lower id is the one the
+		// relay makes offer), then the host.
+		for (const [who, dev] of [["carrier B", b], ["carrier A", a], ["cone host", h]]) {
+			const r = await reloadTimed(dev, devs);
+			check(`${who} reload: full mesh back (the carrier pair too) in < ${FAST_MS / 1000}s`, r.ok && r.ms < FAST_MS, brief(r.s), r.ms);
+			const o2 = await firstTry(a, b);
+			check("…the carrier pair on a first try", o2.ok, JSON.stringify(o2.l));
+			const x2 = await exchange(devs);
+			check("…messages flow among all three", x2.ok, "", x2.ms);
+		}
+		// Past the relay's 15 s expiry: nothing left over turns into an error.
+		await sleep(17_000);
+		const after = await Promise.all(devs.map(state));
+		check("nobody was shown an error", after.every((s) => !s.error && s.room?.peers.length === 2), after.map(brief).join(" | "));
 	} finally {
 		await closeAll(devs);
 		dropSites(sites);

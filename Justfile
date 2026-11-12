@@ -99,7 +99,8 @@ test-nat-live url *args:
 # --site=URL / --rs=URL (both sides; loopback URLs forwarded over ssh -L test
 # the working tree without a deploy), --site-remote / --rs-remote (the same
 # servers as the remote reaches them), --manual=SECS[,remote] (scan/paste
-# handshake, reply carried after SECS).
+# handshake, reply carried after SECS), --browser=firefox / --remote-browser=firefox
+# (Playwright's Firefox instead of the system Chrome on that side).
 # See docs/network-testing.md.
 
 # Two real machines, two real networks: join, traffic, reloads, leave; NAT classification.

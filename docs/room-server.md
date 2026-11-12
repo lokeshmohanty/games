@@ -318,7 +318,11 @@ answer: it sets the offer aside and offers back, marked — on the far side
 that meets the far side's own offer in flight, and wins. Bounded: only a
 hard side does it, never to a hard offer, never to the marked retry; if its
 own offer cannot be made it answers the set-aside one. Two hard members
-(both carrier NATs, symmetric ones) fall back to the lower id and the swap.
+(both carrier NATs, symmetric ones) fall back to the lower id and the swap
+— and between two `portdep` carriers in the NAT lab (scenario 11) the
+lower id's first try is enough: the answerer's check reaches the
+offerer's STUN mapping first, every join and reload links in 0.3 s, over
+the room server and over the mesh relay alike.
 The mesh relay (`_openRelayed`) is unchanged — it knows nothing of NATs, so
 a relayed pair in the wrong direction still waits for the swap. Tests:
 test-codec (the mark), test-room 6e19 (the rule, the offer-back, a hard
@@ -363,11 +367,16 @@ unknown act alike; the cost of the settle is that a hard NAT whose second
 answer is more than 2 s late reads soft (the old rule). test-room, stubbed
 candidate stream.
 
-*VERIFY — Firefox.* Grouping by foundation assumes foundation = base
-(address + protocol), as Chrome and Safari compute it; Firefox has not
-been checked. Its failure would only read a hard NAT as not hard — the old
-lower-id rule — never the reverse, since two ports are still required
-within one group.
+*Firefox (checked 2026-11-12, live site, Firefox 153).* Foundation = base
+there too: on the owner's carrier both IPv4 srflx candidates carry
+foundation `3` with two ports, IPv6 its own, so `classifyNat()` reads
+`true` (151–199 ms); on bhaskara's institute NAT, `false` (50–79 ms).
+Firefox's `icecandidateerror` has `address: null` (Chrome: a masked
+`0.0.0.x` / `[0:0:0:x:x:x:x:x]`), so in Firefox an error vetoes every
+family — but only one landing within the 2 s settle could, and Firefox's
+STUN timeouts come at ~11 s. Worst case `null`, never a wrong `true`.
+Raw candidates and errors: docs/network-testing.md, "Production, Chrome
+and Firefox".
 
 **A pair whose first try fails is tried once with the roles swapped.** Some
 NATs open only to a peer whose checks arrive first, and the ICE answerer
@@ -516,6 +525,29 @@ reconnectable member (shown as RECONNECTING in the roster UI, driven by the
 `connected:false` peer notices). Within the grace, a rejoin restores identity
 and seat; after it, the member is dropped with today's `__gone` broadcast.
 Members who never joined via the room server keep today's behaviour untouched.
+
+**A returning host republishes its record** (2026-11-12, undeployed). A
+host back from a reload gets the record from whichever stayer links first;
+it names the host, so the host adopts it — and until then never sent it
+on. A second stayer that had concluded the host gone before the first
+relinked holds the host's seat RECONNECTING and has computed an heir; its
+`_meshUp` skips the held seat and the host (if the higher id) never
+offers to it, so only the host's record could clear the mark, and none
+came: unlinked for good, with its own crown, no error (NAT lab scenario
+11, three of three runs). net.js `_applyParty` now commits a record that
+newly names us host (and marks us heard). test-room 6e22.
+
+**A member back from a reload is announced, and offers to it are not
+lost** (2026-11-12, undeployed). The same race for any returner: the
+server's notice clears its held seat and the host's commit sets the
+lower-id members offering over the relay *before* anyone has relinked it,
+so the offer is forwarded nowhere; their own departure check, asked while
+nobody had a link, then held the seat RECONNECTING, and the higher-id
+returner never offers. net.js now broadcasts `__alive` for every link
+that opens (settling such suspicions), re-sends an unanswered relayed
+offer unchanged (same envelope id, deduplicated by `_markSeen`) on that
+announcement, and makes a relayed offer that expired unanswered afresh,
+once. test-room 6e23; NAT lab 11 reloads both carriers.
 
 ## No TURN
 
@@ -682,15 +714,18 @@ from the worker; it was removed before the first deploy.)
   undeployed): a client whose own mapping is port-dependent says so on its
   offers and its offer stands (above). In the lab every reload, both
   directions, reconnects on the carrier's first-try offer in ~0.3–0.6 s.
-  **Not yet measured on the real pair** (`just test-pair`, VERIFY): the
-  real carrier must classify hard (it showed two srflx ports, :3478 vs
-  :19302, from this machine on 2026-11-12) and the institute NAT soft.
-  Still blind: a NAT that is hard in *filtering* only (classification sees
-  one mapping), two hard sides, a STUN server that is silent (`null`, old
-  rule), and the mesh relay — those still rely on the role swap (~18 s).
-  A tab on the previous build costs a hard member ~6 s
-  (`GLARE_FALLBACK_MS`) before it answers that tab's offer. Firefox's
-  candidate foundations are unchecked (VERIFY; harmless if wrong).
+  Measured on the real pair against production (2026-11-12, d6c7f18,
+  `just test-pair`, Chrome and Firefox on either side): the carrier
+  classifies hard and the institute NAT soft in both browsers, and in 7
+  runs every join and reload linked on the carrier's own offer, no swap
+  (docs/network-testing.md). Still blind: a NAT that is hard in
+  *filtering* only (classification sees one mapping), a STUN server that
+  is silent (`null`, old rule), and a cone↔carrier pair over the mesh
+  relay in the wrong direction — those still rely on the role swap
+  (~18 s). Two hard sides are lab-only (scenario 11: direct, first try);
+  a real second carrier is untested. A tab on the previous build costs a
+  hard member ~6 s (`GLARE_FALLBACK_MS`) before it answers that tab's
+  offer.
 
 - **Verified on real Cloudflare — a temporary deployment, not the owner's
   account.** On 2026-11-11 the worker ran on a `wrangler deploy --temporary`

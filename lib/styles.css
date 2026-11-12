@@ -440,3 +440,113 @@ canvas {
   font-size: 0.75rem;
   margin-top: 6px;
 }
+
+/* The in-page question (NeonArcade.ask). A <dialog> in the top layer, so it
+   sits above every game, overlay and the portal link without a z-index war.
+   The dialog itself is the backdrop-sized hit area for "tap outside = no";
+   the box inside is what you read. */
+.neon-ask {
+  padding: 0;
+  border: none;
+  background: transparent;
+  max-width: min(26rem, calc(100vw - 32px));
+  color: #fff;
+}
+.neon-ask::backdrop {
+  background: rgba(0, 0, 0, 0.7);
+  backdrop-filter: blur(2px);
+}
+.neon-ask-box {
+  padding: 20px 18px 16px;
+  border: 1px solid var(--accent);
+  border-radius: 10px;
+  background: var(--panel);
+  box-shadow: 0 0 24px var(--accent-glow);
+  font-family: var(--font);
+}
+.neon-ask-box p {
+  margin: 0 0 16px;
+  line-height: 1.45;
+}
+.neon-ask-box .lobby-row {
+  justify-content: flex-end;
+}
+
+/* Notices (NeonArcade.toast): under the portal link, over whatever is on
+   screen, and never in the way — they take no taps, so a game's controls
+   beneath keep working while one is up. */
+.neon-toasts {
+  position: fixed;
+  top: calc(env(safe-area-inset-top) + 52px);
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 60;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  width: max-content;
+  max-width: calc(100vw - 32px);
+  pointer-events: none;
+}
+.neon-toast {
+  padding: 8px 14px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: rgba(10, 10, 10, 0.88);
+  backdrop-filter: blur(4px);
+  color: #fff;
+  font-family: var(--font);
+  font-size: 0.85rem;
+  text-align: center;
+  animation: neon-toast-in 0.2s ease-out;
+}
+.neon-toast.is-good {
+  border-color: var(--good);
+  color: var(--good);
+}
+.neon-toast.is-warn {
+  border-color: var(--accent2);
+  color: #ffd6ff;
+}
+@keyframes neon-toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .neon-toast {
+    animation: none;
+  }
+}
+
+/* PARTY, mid-game (party.js): the way back to the party screen while a game
+   runs. The portal link's twin on the other side of the same top band, which
+   every game already keeps clear (ui.js gameShell's 52px). */
+.party-pill {
+  position: fixed;
+  top: calc(env(safe-area-inset-top) + 10px);
+  right: max(12px, env(safe-area-inset-right));
+  z-index: 50;
+  padding: 7px 14px;
+  border: 1px solid var(--accent);
+  border-radius: 999px;
+  background: rgba(10, 10, 10, 0.75);
+  backdrop-filter: blur(4px);
+  color: var(--accent);
+  font-family: var(--font);
+  font-size: 0.78rem;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+/* The party screen pulled up over a running game, which keeps running
+   underneath. Below the portal link (50) and the notices (60). */
+.party-peek {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  background: var(--bg);
+  overflow-y: auto;
+}

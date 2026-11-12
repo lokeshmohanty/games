@@ -11,7 +11,44 @@ session pay for it.*
 act → record → clear the item. This is the single inbox — do not create a
 separate `TODO.md`.*
 
-## Neon Bid (2026-11-12) — built, uncommitted
+## Leaving and presence (2026-11-12) — built, uncommitted
+
+Every exit asks (in-page `<dialog>`, not `confirm()`), back/swipe-back trapped,
+`beforeunload` with others present, toasts for join/leave/lost/back/crown —
+docs/index.md "When the host goes", lib/README.md lobby.js table. sw.js v13.
+Green: test-party, test-bots, test-room, test-worker (wrangler dev), codec,
+hub, worker-do, pwa, scan. test-plumbing has 2 failures that come from the
+*other* in-flight net.js work (offer resend), not this — HEAD + this change
+passes. test-pair/test-nat/test-live helpers moved to the dialog, not run.
+Not yet tried on a real phone (iOS swipe-back, Android back gesture).
+
+Audit backlog (2026-11-12), owner to pick — highest first:
+- [x] Party: way back from a running game — PARTY pill → party screen over
+      the game, BACK TO GAME / END GAME (2026-11-12, test-party).
+- [x] Host leaves mid-game → the game *ends* with a notice (new host clears it
+      after 1.5 s; game page ends the session with a way on). Not resumed:
+      games still keep state on the starting host (2026-11-12, test-party,
+      test-bots).
+- [ ] Game page: still no room server/rejoin — any reload/blip >~9 s ends it.
+- [ ] Maybe: hand a game over instead of ending it (needs per-game state
+      transfer; `ctx.isHost` is a snapshot, games.js:156).
+- [ ] Returner after reload not re-synced (onPeerJoin skipped for held seat) in
+      light-cycles, battleship, liars-dice, neon-bid, onitama, draw-guess.
+- [ ] Reload loses secrets: battleship re-rolls the fleet → flagged cheat;
+      liar's dice / neon bid can't reveal. Persist commitments per round.
+- [ ] Turn games stall up to 5 min on a RECONNECTING seat; no in-game "waiting
+      for X (m:ss)", no skip/bot-takeover. Onitama never ends when a side leaves.
+- [ ] No wake lock / visibilitychange: screen sleep drops players; host's rAF
+      sims (tug-of-war, neon-survival) freeze when its tab is hidden.
+- [ ] Host blip drops its bots for good (`_vacateCrown`); onPeerLeave fires
+      before the crown moves.
+- [ ] Portal START A PARTY / code join skip `releaseRejoin` (old seat held 5 min;
+      can steal another tab's token). No `online` redial, no offline banner.
+- [ ] Perf: party `render()` rebuilds the whole screen (and QR) on every roster
+      event, even hidden behind a game, and eats a name being typed; Link send
+      queue unbounded; invites cancelled never close their PeerConnection.
+
+## Neon Bid (2026-11-12) — shipped in 25c76f2
 
 New game per `docs/neon-bid.md`: `games/neon-bid.js` + `neon-bid.html`,
 party/portal/sw.js (VERSION v12) wired, `scripts/test-neon-bid.mjs` in
@@ -171,6 +208,31 @@ Open:
       classifyNat decides per address family: bhaskara (soft IPv4, dead
       Tailscale IPv6 timing out 701) read `null`, now `false` in ~2 s
       (`NAT_SOFT_SETTLE_MS`); stubbed-stream test in test-room.
+- [x] **Firefox + two-carrier verification (2026-11-12, against d6c7f18
+      as deployed; test/docs changes uncommitted):**
+      Firefox groups srflx foundations by base like Chrome —
+      `classifyNat()` `true` on Airtel, `false` on bhaskara; its
+      `icecandidateerror.address` is `null` (harmless). `just test-pair`
+      on production, new `--browser=firefox` / `--remote-browser=firefox`:
+      7/7 runs (Firefox↔Chrome both ways ×2, Firefox↔Firefox, Chrome
+      control both ways) passed every phase on Airtel's offer, no swap.
+      NAT lab scenario 11 (both `portdep`; + a cone third): direct on the
+      first try, 0.3 s, also over the mesh relay.
+- [ ] **Returning host republishes (2026-11-12, lib/net.js, uncommitted,
+      NOT deployed):** found by lab 11 — in a three-member party a host
+      reload left a member who had concluded the host gone unlinked with
+      its own crown, for good (3/3). `_applyParty` now commits a record
+      that newly names us host. test-room 6e22. Sibling (same day): a
+      member back from a reload was offered to over the relay before
+      anyone had relinked it — offer lost, seat held RECONNECTING, never
+      re-meshed. `__alive` on link open, same-envelope resend on it, and a
+      fresh offer once after an unanswered expiry. test-room 6e23.
+      `just test`, `just test-worker` green; `just test-nat` green but
+      for scenario 7 (classic invite textarea never appears — fails the
+      same with HEAD's net.js; the tree also carries someone else's
+      uncommitted lobby.js/party.js/styles.css work, suspected, VERIFY).
+      Needs the owner's review + deploy, then `just test-pair` on
+      production (and a three-device party, VERIFY).
 - [ ] Real cross-network *success* (two different public addresses, real
       phones/carriers) untested: `just test-nat-live` (slirp4netns) works,
       but from one public IP behind a non-hairpinning CGNAT every pair is an

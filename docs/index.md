@@ -174,6 +174,10 @@ page navigation** — nobody reconnects and nobody re-scans.
   the people actually playing.
 - **Host controls** — assign teams, add or remove a bot, remove a member, hand
   over the crown, or delete the party.
+- **PARTY, mid-game** — a pill top-right while a game runs pulls the party
+  screen up over it (the game keeps running underneath): BACK TO GAME for
+  everyone, END GAME (asked first) for the host. Picking another game from
+  there asks too, since it ends the one running.
 
 ### When the host goes
 
@@ -185,6 +189,25 @@ them together.
 Leaving on purpose is not a dropped link: `room.leave()` broadcasts the
 leaver's own `__gone` first, so everyone drops the seat (and passes the crown,
 if it was the host's) immediately. A reload or a closed tab never calls it.
+
+**Every way out asks first, and everyone left is told** (lib/lobby.js
+`guardParty` / `leaveParty` / `presence`). The fixed "← All games" link, ALL
+GAMES, NEW PARTY, HOST A NEW GAME, opening another party's link, and the back
+button or swipe-back (a history entry of the page's own, pushed on the first
+tap — Chrome skips one pushed without a gesture) all raise the same in-page
+question, which names the heir for a host; REMOVE and MAKE HOST ask too. The
+question is a `<dialog>`, never `confirm()`, which would freeze the host's game
+loop and relaying for everyone while it was up. A tab close or reload can only
+get the browser's own "Leave site?" prompt, and only with another person in
+the party; going ahead is not a leave — the seat is held, as a reload should.
+The party shell asks even a host who is alone (the party ends); a game page
+with only bots never asks.
+
+Everyone else gets a toast, over the game if one is running: who joined, who
+left and how (on purpose, lost connection, removed by the host), who lost
+connection and came back, and who holds the crown now. A reconnecting mark or a
+crown move is announced only if it still holds a moment later (2.5 s / 1.2 s),
+so a blip that heals is not news.
 
 If the host was the one who went, the longest-present remaining member (ties
 broken by id, so everyone nominates the same person; bots and reconnecting
@@ -657,9 +680,14 @@ the favicon via `<link rel="icon">`.
   kept alive 250 ms to drain. A page that navigates away instantly may cut it
   off, and the peers then fall back to the probe (and, for a room-server
   member, the reconnect grace).
-- `lib/rounds.js` does not survive host succession. If the crown moves
-  mid-round the clock stops with it; every other game here has the same
-  property, and nothing recovers a game in progress.
+- `lib/rounds.js` does not survive host succession, and neither does any game:
+  each keeps its state on the host that started it. So a crown that moves
+  under a running game **ends it** — on the party screen the new host sets the
+  game to none 1.5 s after the move (a flicker that settles back ends nothing)
+  and everyone is told "The host left, so the game ended."; on a game page the
+  session ends on a screen with HOST A NEW GAME / ALL GAMES. Nothing *resumes*
+  a game in progress. A room-server host that merely lost its connection loses
+  the game too, since the crown does not wait out the reconnect grace.
 - **Battleship's audit is never triggered in real play**, because no player here
   can cheat: every client runs the same honest `answerShot`. The audit is tested
   against deliberately corrupted answers, which is the right test, but a genuine
@@ -687,8 +715,12 @@ the favicon via `<link rel="icon">`.
   exhaustive sweep of the back two rows and one 3x3 corner against all 120
   pairs, produced none. The rule is implemented faithfully; the branch is
   almost certainly unreachable and its test fixture is built by hand.
-- The Firefox install hints are reasoned from the platform, not observed —
-  every browser test here runs headless Chrome. Firefox itself is unverified.
+- The Firefox install hints are reasoned from the platform, not observed.
+  Firefox's *multiplayer* is verified (2026-11-12): `just test-pair
+  --browser=firefox` on production, Firefox↔Chrome and Firefox↔Firefox
+  across two real networks, every phase passed, and `classifyNat` reads the
+  carrier NAT hard there as in Chrome (docs/network-testing.md). Every other
+  suite runs headless Chrome.
 - Cross-network play over mobile data is expected to fail on carriers using
   CGNAT/symmetric NAT — confirmed in the wild on 2026-08-10, and reproduced in
   the NAT lab (symmetric vs symmetric, and symmetric vs a port-restricted
