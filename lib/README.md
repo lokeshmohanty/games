@@ -94,8 +94,10 @@ that crowned on both sides) settle on the lower id. A member that merely
 *computed* an heir yields to a host that is still speaking at the old term,
 which is how a false alarm heals.
 
-A relayed negotiation that has not opened after 15 s is abandoned, so the next
-roster change can try that pair again; nobody offers to a seat held for a
+A relayed negotiation that has not opened after 15 s is abandoned — and, the
+first time, tried once more the other way round (the higher id offers: some
+NATs connect only when *they* offer) — so the next roster change can try that
+pair again; nobody offers to a seat held for a
 reconnect until its owner is back. A link reported `disconnected` gets 3 s to
 recover (a briefly lost signal often does) before it counts as dropped — which
 also adds 3 s to noticing a closed tab, since that arrives the same way.
@@ -193,6 +195,7 @@ to be loaded before it**.
 | `NeonArcade.goJoinCode(raw)` | navigate to `party.html#c=<6 digits>`; returns `false` (and stays put) for anything but six digits |
 | `NeonArcade.shareBlock({ label, hint, value, qrValue, linkValue, title })` | a code box with a copy button and a QR; a labelled `.share` card when `label` is given. `linkValue` adds a second copy-as-link button so the QR stays small |
 | `NeonArcade.replyEntry({ room, setStatus, placeholder, scanPrompt, onConnected })` | the inviter's reply box with CONNECT / PASTE / SCAN REPLY. Returns `{ nodes, row, close }` — place `nodes`, add buttons to `row`, and always call `close()` on teardown (it stops the camera) |
+| `NeonArcade.REPLY_NOW` / `NeonArcade.replyFailed(setStatus)` | the replier's side of a hand-carried reply: the "do it right away" sentence for the reply screen (between some networks a reply works for ~15 s — docs/index.md Honest gaps), and, on a `no-route` before the link ever opened, the error status plus `{ hint, again }` — a hint node and a MAKE A NEW REPLY button (a reload: the same `#i=` invite answered afresh) for the caller to place |
 
 ### `NeonArcade.mountGamePage(lobbyEl, stage, gameId)`
 
@@ -266,7 +269,9 @@ pasting.
 | `deleteParty()` | host only: end it for everyone |
 | `leave()` | tell the party we are going (the seat drops at once), then close every connection. Never called on reload/unload |
 | `detach()` | close every connection *without* telling anyone, as a reload would — the seat is held as RECONNECTING. For when the same member id is reconnecting from elsewhere (another tab took the seat; room-join's "displaced") |
-| `createInvite({ forPeer }?)` | mint an invite (any member). Refuses with `err.reason === "full"` at `maxMembers` — unless `forPeer` names a member who already holds a seat (a reload coming back), whose own seat is not counted against them |
+| `createInvite({ forPeer, retry, hard }?)` | mint an invite (any member). Refuses with `err.reason === "full"` at `maxMembers` — unless `forPeer` names a member who already holds a seat (a reload coming back), whose own seat is not counted against them. `retry` marks the role-swapped second try (below); `NeonArcade._codec.isRetrySignal(code)` reads that mark synchronously. `hard` marks an offer from a hard-NAT network (`natHard`, below; `h.` prefix, `isHardSignal`) for the far side's glare rule. Rejects with `reason: "withdrawn"` if the invite was dropped while it gathered |
+| `natHard` | this network's NAT maps one local port to different public ports per destination (`true`), does not (`false`), or unknown (`null`). Set by room-join from `NeonArcade.classifyNat()` — in parallel with the dial, never awaited, and asked again on isolation and on `online` / `navigator.connection` `change`; pin it with the `natHard` option |
+| `dropInvites(forPeer)` | close every invite minted `forPeer` that no answer has taken — an invite never expires on its own, so whoever knows it will not be answered (the far side's glare rule set it aside, the peer went away) drops it. One that took an answer is left to finish. Returns how many it closed |
 
 `createHost`/`createGuest` take `onLeave(reason)`, called once on every exit:
 `"left"` (`leave()`), `"evicted"` (the host removed us), `"closed"` (the
@@ -274,10 +279,25 @@ party was deleted) or `"detached"` (`detach()`). `lib/room-join.js` uses it to
 release the room-server claim — on every reason but `"detached"`.
 
 `onError(message, info?)` carries `info.reason === "no-route"` when a link
-failed ICE and we hold no other — the pair has no path (no TURN). And
+failed ICE and we hold no other — the pair has no path (no TURN).
+`onRouteFailed(peerId, { offered, message })` comes first, for a link made
+with `createInvite`/`answerInvite` on its first try: return true when you can
+still signal that peer, and swap the roles — offer back with
+`createInvite({ forPeer, retry: true })` if we answered, or expect their offer
+if we offered (the no-route verdict then waits 8 s for it). room-join does
+this over the room server. And
 `onIsolated()` fires when the *last* link closes while the roster still has
 people: the mesh has nothing left to renegotiate over, so room-join re-dials
 the room server to be offered to again (see docs/network-testing.md).
+
+A direct link both ends have described that has not opened 20 s later
+(`room.openTimeoutMs`) is failed as ICE `failed` would be — once ICE is up
+(DTLS/SCTP still retrying) it gets one more period first. The offerer's
+clock starts in `acceptAnswer`. The answerer's starts only with
+`answerInvite(code, { watch: true })`, which is for an answer a machine
+delivers (room-join passes it). The scan/paste flows (party.js, lobby.js)
+call `answerInvite(code)` without it: a person carries that reply back, for
+as long as it takes.
 
 `makeAction` is idempotent: calling it twice with one name returns the same
 channel, so `room.makeAction("state").send(...)` inside a helper is fine.
@@ -291,9 +311,24 @@ cannot grow it without bound.
 The only external contact is **STUN** (`stun.cloudflare.com`,
 `stun.l.google.com`), used to discover each peer's public IP:port. It never
 sees game data. Pass `iceServers` to `createHost`/`createGuest` to override,
-or `localStorage["neon.stun"] = "host:port"` for a whole session — the NAT
-lab's hook (`scripts/test-nat.mjs`), STUN only. Deliberately not a query
-param: a link anyone can send must not choose a player's STUN server.
+or `localStorage["neon.stun"] = "host:port"` (or two, comma-separated) for a
+whole session — the NAT lab's hook (`scripts/test-nat.mjs`), STUN only.
+Deliberately not a query param: a link anyone can send must not choose a
+player's STUN server.
+
+`NeonArcade.classifyNat(iceServers?, { fresh }?)` asks those two STUN servers
+(two hosts, two ports) where one local socket appears from, remembered per set
+of servers unless `fresh` (fewer than two servers: `null`, never remembered):
+two different
+public ports for one base mean a **hard** NAT (endpoint/port-dependent
+mapping), which connects only as the ICE *offerer*. Resolves `true` (two
+ports for one base, at once), `false` (an address family with one mapping and
+no STUN error of its own, 2 s after its first mapping or at gathering
+complete — another family's timeouts do not veto it), or `null` (fewer than
+two servers, every mapped family erroring, nothing by 5 s). No
+traffic but STUN to servers already configured. room-join stores it as
+`room.natHard`, marks that side's offers `h.`, and its glare rule lets a hard
+offer stand over a plain one (docs/room-server.md, "Who offers to whom").
 
 Gathering stops shortly after the first server-reflexive candidate rather than
 waiting for `complete`, because the rest is usually redundant interfaces — this

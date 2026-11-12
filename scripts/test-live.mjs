@@ -5,7 +5,7 @@
  *
  *   RS_URL=https://<worker>.workers.dev node scripts/test-live.mjs
  *   just test-live https://<worker>.workers.dev
- *   … --only=ping,oracle,flows,hib,alarm,gate (default: ping,flows,hib; oracle and gate each run alone, 5 min after any other run)
+ *   … --only=ping,oracle,flows,hib,redraw,alarm,gate (default: ping,flows,hib,redraw; oracle and gate each run alone, 5 min after any other run)
  *
  * Every other suite runs the worker under `wrangler dev`, which is the real
  * code but not Cloudflare's edge: no hibernation, no real CF-Connecting-IP,
@@ -26,16 +26,25 @@
  *           deployment's ROOM_DEBUG var set, the object's instance id proves
  *           it was really evicted. Then: an offer relayed to a hibernated
  *           socket, a socket close announced, a browser reload rejoining.
+ *   redraw  `/room/new` whose first draw is a live code: the Worker must
+ *           forward the client's upgrade a second time (`new Request(url,
+ *           request)` after the 409), which only a deployment can vouch
+ *           for. Forced by `?draw=<live code>`, honoured only when the
+ *           deployment sets ROOM_DEBUG and ROOM_TEST_FORCE_REDRAW (a debug
+ *           deployment, never the real one); skipped with a note otherwise.
  *   alarm   a room with nobody attached is swept by its alarm 15 min after
  *           its last touch — nothing touches it in between. ~16 min.
  *   gate    LAST, because it spends this machine's guess budget for five
- *           minutes: the 11th wrong code is blocked, a valid claim still
- *           rejoins from the blocked address, /ping is never limited.
+ *           minutes: the 11th wrong code is refused (`blocked`), a member still
+ *           re-dials from the exhausted address on its pass, the address
+ *           still hosts (`/room/new`), /ping is never limited. Needs the
+ *           deployment's ROOM_PASS_KEY secret (worker/README.md).
  *
  * All node-side sockets come from one address — this machine's — so unlike
  * test-worker.mjs nothing here forges CF-Connecting-IP (Cloudflare sets it).
- * Every join/host from here is charged and refunded on success; only the
- * gate section makes failing guesses.
+ * Every join from here is charged and refunded on success, hosts dial
+ * `/room/new` (never a dial or a guess), and re-dials ride member passes;
+ * only claim probes (claimOf) and the gate section make failing guesses.
  */
 import { createRequire } from "node:module";
 import { execFileSync } from "node:child_process";
@@ -47,6 +56,7 @@ import dns from "node:dns";
 import { homedir } from "node:os";
 import { dirname, join, resolve as resolvePath } from "node:path";
 import { fileURLToPath } from "node:url";
+import { DIAL_FAILS } from "../worker/hub.js";
 
 const require = createRequire(import.meta.url);
 const ROOT = resolvePath(dirname(fileURLToPath(import.meta.url)), "..");
@@ -58,15 +68,21 @@ const NO_ANSWER_WAIT = 50_000;
 const args = process.argv.slice(2);
 const RS = (process.env.RS_URL || args.find((a) => /^https?:\/\//.test(a)) || "").replace(/\/+$/, "");
 if (!RS) {
-	console.error("usage: RS_URL=https://<worker>.workers.dev node scripts/test-live.mjs [--only=ping,oracle,flows,hib,alarm,gate]");
+	console.error("usage: RS_URL=https://<worker>.workers.dev node scripts/test-live.mjs [--only=ping,oracle,flows,hib,redraw,alarm,gate]");
 	process.exit(2);
 }
 const only = (args.find((a) => a.startsWith("--only=")) ?? "").slice(7);
-const SECTIONS = only ? new Set(only.split(",")) : new Set(["ping", "flows", "hib"]);
+const SECTIONS = only ? new Set(only.split(",")) : new Set(["ping", "flows", "hib", "redraw"]);
 // gate counts exactly ten wrong guesses from this IP, so it must start with
-// a clean 5-min budget: oracle spends up to 20 unrefunded dials, and hib's
+// a clean 5-min budget: oracle spends all DIAL_FAILS (10) dials, and hib's
 // claim probes (a join with a wrong secret) are guesses too. Run gate on its
 // own, 5 min after anything else, and run oracle on its own as well.
+// Hosting no longer spends a dial (`/room/new`, since 2026-11-12) and
+// re-dials ride passes, so what flows + hib spend from one address is
+// their claim probes (claimOf: a guess and an unrefunded dial each) —
+// eight or so, under DIAL_FAILS (10). A section failing "blocked" ran out
+// of dials: run flows and hib apart. (redraw spends none: a host and a
+// refunded join.)
 if ((SECTIONS.has("gate") || SECTIONS.has("oracle")) && SECTIONS.size > 1) {
 	console.error("gate and oracle each need this IP's clean 5-min budget: run each alone (--only=gate), 5 min after any other run");
 	process.exit(2);
@@ -107,18 +123,20 @@ const secret = () => randomBytes(12).toString("hex");
 
 /**
  * A long-lived room socket from node: `send`, a queue of replies to `next`
- * on, and `close`. Opens to `/room/<code>`.
+ * on, and `close`. Opens to `/room/<code>` (`"new"` hosts), with `pass`
+ * ({id, pass, exp}) in the query when given — a member's re-dial.
  */
-function sock(code) {
+function sock(code, pass = null) {
 	return new Promise((done, fail) => {
-		const ws = new WebSocket(`${WS}/room/${code}`);
+		const query = pass ? "?" + new URLSearchParams({ id: pass.id, exp: pass.exp, pass: pass.pass }) : "";
+		const ws = new WebSocket(`${WS}/room/${code}${query}`);
 		const inbox = [];
 		const waiters = [];
 		const s = {
 			ws,
 			inbox,
 			closed: null,
-			send: (m) => ws.send(JSON.stringify({ code, ...m })),
+			send: (m) => ws.send(JSON.stringify(code === "new" ? m : { code, ...m })),
 			/** The next message matching `pred`, or {t:"timeout"}. */
 			next(pred = () => true, ms = 10_000) {
 				const i = inbox.findIndex(pred);
@@ -165,9 +183,16 @@ async function call(code, msg) {
 const claimOf = async (code, id) => (await call(code, { t: "join", id, secret: "probe-" + secret() })).reason ?? "free";
 
 /**
- * A bare WebSocket upgrade, timed: ms to the 101 and the object's instance
- * id (X-Room-Instance, only under ROOM_DEBUG). Hung up at once — a socket
- * that never sends anything is never charged and never binds.
+ * A bare WebSocket upgrade, timed: ms to the 101, the object's instance
+ * id (X-Room-Instance, only under ROOM_DEBUG) and the draw count of a
+ * `/room/new` (X-Room-Draws, likewise). Hung up at once — a socket that
+ * never sends anything never binds (its dial stays spent).
+ *
+ * A refusal past the dial budget is a 101 too: the routing Worker accepts
+ * that socket itself, says `{t:"error", reason:"blocked"}` and hangs up —
+ * a browser never sees an HTTP status. So a 101 waits briefly for a first
+ * frame (a room's socket sends nothing unasked) and reads `blocked` as the
+ * 429 it stands for.
  */
 function dial(code) {
 	return new Promise((done) => {
@@ -185,10 +210,17 @@ function dial(code) {
 			family: Number(process.env.LIVE_FAMILY) || undefined,
 		});
 		const start = performance.now();
-		req.on("upgrade", (res, socket) => {
+		req.on("upgrade", (res, socket, head) => {
 			const ms = performance.now() - start;
-			socket.destroy();
-			done({ ok: true, ms, instance: res.headers["x-room-instance"] ?? null });
+			let bytes = head.toString("latin1");
+			const settle = () => {
+				socket.destroy();
+				if (bytes.includes('"blocked"')) done({ ok: false, status: 429 });
+				else done({ ok: true, ms, instance: res.headers["x-room-instance"] ?? null, draws: res.headers["x-room-draws"] ?? null });
+			};
+			if (bytes) return settle();
+			const timer = setTimeout(settle, 400);
+			socket.once("data", (d) => ((bytes += d.toString("latin1")), clearTimeout(timer), settle()));
 		});
 		req.on("response", (res) => (res.resume(), done({ ok: false, status: res.statusCode })));
 		req.on("error", (e) => done({ ok: false, error: e.message }));
@@ -214,26 +246,25 @@ async function firstReply(code) {
 	}
 }
 
-/** Host a node-side room; resolves { code, id, secret, s } with s open. */
+/**
+ * Host a node-side room (`/room/new`: the server draws the code); resolves
+ * { code, id, secret, pass, exp, s } with s open.
+ */
 async function nodeHost() {
-	for (let i = 0; i < 5; i++) {
-		const code = code6();
-		const id = "h" + secret().slice(0, 6);
-		const sec = secret();
-		const s = await sock(code);
-		s.send({ t: "host", id, secret: sec });
-		const r = await s.next();
-		if (r.t === "room") return { code, id, secret: sec, s };
-		s.close();
-		if (r.reason !== "taken") throw new Error("host: " + JSON.stringify(r));
-	}
-	throw new Error("host: five collisions");
+	const id = "h" + secret().slice(0, 6);
+	const sec = secret();
+	const s = await sock("new");
+	s.send({ t: "host", id, secret: sec });
+	const r = await s.next();
+	if (r.t !== "room") throw new Error("host: " + JSON.stringify(r));
+	return { code: r.code, id, secret: sec, pass: r.pass, exp: r.exp, s };
 }
-async function nodeJoin(code, id = "g" + secret().slice(0, 6), sec = secret()) {
-	const s = await sock(code);
+/** Join `code`; with `pass` ({id, pass, exp}) on the URL, as a member's re-dial. */
+async function nodeJoin(code, id = "g" + secret().slice(0, 6), sec = secret(), pass = null) {
+	const s = await sock(code, pass);
 	s.send({ t: "join", id, secret: sec });
 	const r = await s.next((m) => m.t === "joined" || m.t === "error");
-	return { id, secret: sec, s, r };
+	return { id, secret: sec, s, r, pass: r.pass, exp: r.exp };
 }
 
 const stats = (xs) => {
@@ -492,13 +523,15 @@ try {
 			return right / (L.length + F.length);
 		};
 		console.log(`  ·    one-shot classifier accuracy: 101 ${(acc(liveDial, freshDial) * 100).toFixed(0)}%, reply ${(acc(liveReply, freshReply) * 100).toFixed(0)}% (50% = no signal)`);
-		// Since the dial gate (2026-11-11) a prober gets DIAL_FAILS (20)
-		// unrefunded upgrades per 5 min, then 429 for every code alike.
+		// Since the dial gate (2026-11-11) a prober gets DIAL_FAILS (10, the
+		// guess limit since 2026-11-12) unrefunded upgrades per 5 min, then
+		// 429 for every code alike. The live room's host (`/room/new`)
+		// spent none of them.
 		const probes = liveDial.length + freshDial.length + liveReply.length + freshReply.length;
 		console.log(`  ·    probes that reached a room before refusal: ${probes}; then ${JSON.stringify(refused)}`);
 		check(
 			"probing is capped: refused (429) within the dial budget",
-			refused.length > 0 && refused.every((s) => s === 429) && probes <= 20,
+			refused.length > 0 && refused.every((s) => s === 429) && probes <= DIAL_FAILS,
 			`${probes} probes, refused ${JSON.stringify(refused)}`,
 		);
 		live.s.close();
@@ -671,6 +704,35 @@ try {
 		await b.context().close();
 	}
 
+	if (SECTIONS.has("redraw")) {
+		section = "redraw";
+		console.log("\nlive: a live first draw is redrawn (the second forward of one upgrade)");
+		const live = await nodeHost();
+		const probe = await dial(`new?draw=${live.code}`);
+		if (!probe.ok) check("(the forced /room/new upgraded)", false, JSON.stringify(probe));
+		else if (probe.draws === null) {
+			console.log("  ·    skipped: no X-Room-Draws — needs a debug deployment (--var ROOM_DEBUG:1 --var ROOM_TEST_FORCE_REDRAW:1), never the real one");
+		} else if (probe.draws === "1") {
+			console.log("  ·    skipped: ROOM_DEBUG is set but ROOM_TEST_FORCE_REDRAW is not (the draw was not forced)");
+		} else {
+			check("a forced live first draw took two draws and still upgraded", probe.draws === "2", `draws=${probe.draws}`);
+			// End to end: the re-forwarded socket carries a host to a room.
+			const got = await new Promise((done) => {
+				const ws = new WebSocket(`${WS}/room/new?draw=${live.code}`);
+				const timer = setTimeout(() => (ws.close(), done({ t: "timeout" })), 10_000);
+				ws.onopen = () => ws.send(JSON.stringify({ t: "host", id: "r" + secret().slice(0, 6), secret: secret() }));
+				ws.onmessage = (e) => (clearTimeout(timer), ws.close(), done(JSON.parse(e.data)));
+				ws.onerror = () => (clearTimeout(timer), done({ t: "error", reason: "socket" }));
+			});
+			check("the redrawn socket hosts a room under another code", got.t === "room" && /^\d{6}$/.test(got.code) && got.code !== live.code, JSON.stringify(got));
+			check("the live room's host is undisturbed", live.s.closed === null, String(live.s.closed));
+			const guest = await nodeJoin(live.code);
+			check("and the live room still seats a guest", guest.r.t === "joined", JSON.stringify(guest.r));
+			guest.s.close();
+		}
+		live.s.close();
+	}
+
 	if (SECTIONS.has("alarm")) {
 		section = "alarm";
 		console.log("\nlive: the alarm sweeps an abandoned room (~16 min, nothing touches it)");
@@ -688,20 +750,33 @@ try {
 	if (SECTIONS.has("gate")) {
 		section = "gate";
 		console.log("\nlive: the guess limit on real CF-Connecting-IP (spends this IP's budget for 5 min)");
-		// A real member first, with a claim to come back with.
+		// A real member first, with a claim — and a pass — to come back
+		// with. Hosting is `/room/new`: no dial, no guess.
 		const h = await nodeHost();
 		const mem = await nodeJoin(h.code);
 		mem.s.close();
+		check("the deployment issues member passes (ROOM_PASS_KEY is set)", !!h.pass && !!mem.pass, JSON.stringify({ host: !!h.pass, member: !!mem.pass }));
 		const answers = [];
-		for (let i = 0; i < 10; i++) answers.push((await call(code6(), { t: "join", id: "x", secret: "y" })).reason);
-		check("ten wrong codes: no-room each", answers.every((r) => r === "no-room"), answers.join());
-		const eleventh = await call(code6(), { t: "join", id: "x", secret: "y" });
-		check("the eleventh is blocked", eleventh.reason === "blocked", JSON.stringify(eleventh));
+		for (let i = 0; i < DIAL_FAILS; i++) answers.push((await call(code6(), { t: "join", id: "x", secret: "y" })).reason);
+		check(`${DIAL_FAILS} wrong codes: no-room each`, answers.every((r) => r === "no-room"), answers.join());
+		// A WebSocket hides the 429; the socket simply fails.
+		// Refused before any room, on a socket the Worker accepts itself
+		// to say why (a browser never sees the 429 it stands for).
+		const next = await call(code6(), { t: "join", id: "x", secret: "y" });
+		check("the next upgrade is refused before any room: blocked", next.reason === "blocked", JSON.stringify(next));
 		const right = await call(h.code, { t: "join", id: "new", secret: "z" });
-		check("even the right code is blocked for a newcomer", right.reason === "blocked", JSON.stringify(right));
-		const back = await nodeJoin(h.code, mem.id, mem.secret);
-		check("a valid claim still rejoins from the blocked address", back.r.t === "joined", JSON.stringify(back.r));
-		back.s.close();
+		check("even the right code is refused for a newcomer", right.reason === "blocked", JSON.stringify(right));
+		// What equal budgets used to cost a shared address: its members'
+		// re-dials. A pass is checked before the gate (2026-11-12).
+		const back = await nodeJoin(h.code, mem.id, mem.secret, { id: mem.id, pass: mem.pass, exp: mem.exp }).catch((err) => ({ r: { t: "refused", err: String(err) } }));
+		check("a member re-dials from the exhausted address on its pass", back.r.t === "joined", JSON.stringify(back.r));
+		back.s?.close();
+		const bare = await nodeJoin(h.code, mem.id, mem.secret).catch((err) => ({ r: { t: "refused", err: String(err) } }));
+		check("without the pass it would not have", bare.r.t !== "joined", JSON.stringify(bare.r));
+		bare.s?.close();
+		const again = await nodeHost().catch((err) => ({ err: String(err) }));
+		check("and the exhausted address still hosts (/room/new)", /^\d{6}$/.test(again.code ?? ""), JSON.stringify(again.err ?? again.code));
+		again.s?.close();
 		let pings = 0;
 		for (let i = 0; i < 20; i++) if ((await fetch(`${RS}/ping`)).status === 204) pings++;
 		check("/ping is never limited (20/20)", pings === 20, `${pings}/20`);

@@ -27,3 +27,6 @@ target
 .gitnexus/
 graphify-out/
 CLAUDE.md
+
+# wrangler dev secrets (ROOM_PASS_KEY; worker/README.md): local only, never committed
+.dev.vars*

@@ -88,5 +88,28 @@ check("answer link parses", fromLink.peerId === "peer000001");
 const fromInvite = await unpackSignal(`https://example.test/party.html#i=${code}`);
 check("invite link parses", fromInvite.peerId === "peer000001");
 
+// The role-swapped retry is readable without inflating the code: the room
+// glue decides glare synchronously, inside one message handler.
+const { isRetrySignal } = win.NeonArcade._codec;
+const retryCode = await packSignal({ s: "ab12", i: "peer000001", r: 1 }, SDP);
+check("a retry is marked, synchronously", isRetrySignal?.(retryCode) === true && isRetrySignal(code) === false);
+check("and unpacks as one", (await unpackSignal(retryCode)).retry === true && out.retry === false);
+check("a retry link parses too", isRetrySignal(`https://example.test/party.html#i=${retryCode}`) && (await unpackSignal(`https://example.test/party.html#i=${retryCode}`)).peerId === "peer000001");
+
+// The hard-NAT mark (net.js classifyNat) rides the code the same way, for
+// the glare rule's synchronous read — alone, and after a retry mark.
+const { isHardSignal } = win.NeonArcade._codec;
+const hardCode = await packSignal({ s: "ab12", i: "peer000001", h: 1 }, SDP);
+const bothCode = await packSignal({ s: "ab12", i: "peer000001", r: 1, h: 1 }, SDP);
+check("a hard offer is marked, synchronously", isHardSignal?.(hardCode) === true && isHardSignal(code) === false && isHardSignal(retryCode) === false);
+check("…and is not read as a retry", isRetrySignal(hardCode) === false);
+const hardOut = await unpackSignal(hardCode);
+check("a hard offer unpacks as one, whole", hardOut.hard === true && hardOut.retry === false && hardOut.peerId === "peer000001" && hardOut.sdp === out.sdp && out.hard === false);
+const bothOut = await unpackSignal(bothCode);
+check("both marks together round-trip", isRetrySignal(bothCode) && isHardSignal(bothCode) && bothOut.retry && bothOut.hard && bothOut.slot === "ab12");
+check("a hard link parses too", isHardSignal(`https://example.test/party.html#i=${hardCode}`) && (await unpackSignal(`https://example.test/party.html#i=${hardCode}`)).hard === true);
+const plainCode = await packSignal({ s: "ab12", i: "peer000001" }, SDP);
+check("the mark costs two characters", hardCode === "h." + plainCode, `${hardCode.length} vs ${plainCode.length}`);
+
 console.log(failures ? `\n${failures} failure(s)` : "\nall codec checks passed");
 process.exit(failures ? 1 : 0);

@@ -36,18 +36,56 @@ const SEAT_GRACE_MS = 5 * 60 * 1000;
 // to guess at, so the limit is what makes a live code hard to find within its
 // TTL; 10 failures per 5 minutes lets a mistyping friend through and stops a
 // loop of guesses.
-const JOIN_FAILS = 10;
+export const JOIN_FAILS = 10;
 const JOIN_FAIL_WINDOW_MS = 5 * 60 * 1000;
-// Every WebSocket to a room is charged one *dial* at the routing Worker,
-// refunded once its first host/join/release succeeds (index.js). Measured on
-// real Cloudflare, 2026-11-11: a never-used code's object answers the upgrade
-// ~180 ms later than a live one's (it is being created), which told a live
-// code from a dead one ~90% of the time in one try — for free, since a socket
-// that sends nothing was never charged. Unrefunded dials are what a prober
-// spends; a real member's are refunded. Twice the guess budget, because a
-// member's legitimate failures (a party that ended under a reload, a dial
-// cut off mid-way) cost one each too.
-export const DIAL_FAILS = 2 * JOIN_FAILS;
+// Every WebSocket to a room that carries no valid member pass is charged
+// one *dial* at the routing Worker, refunded once its first join/release
+// succeeds (index.js). Measured on real Cloudflare, 2026-11-11: a never-used code's object
+// answers the upgrade ~180 ms later than a live one's (it is being created),
+// which told a live code from a dead one ~90% of the time in one try — for
+// free, since a socket that sends nothing was never charged. Unrefunded
+// dials are what a prober spends; a member's are refunded.
+//
+// The same budget as guesses, and never more: every code anyone tests —
+// by the 101's timing or by `join` — costs one unrefunded dial when it
+// turns out dead (and `host` tests none: the server draws its code), so
+// a prober tests at most DIAL_FAILS codes per window whichever way it
+// asks, and the oracle is never cheaper than a plain guess (which, on a
+// live code, gets the guesser *in*). It was twice
+// this until 2026-11-12, which let a prober test twenty codes per window
+// against the guess limit's ten.
+//
+// Since 2026-11-12 only strangers spend it. A member re-dials with a *pass*
+// (below) the routing Worker checks before the gate, and a host dials
+// `/room/new`, which reveals nothing and is charged against HOST_ROOMS
+// instead — so a shared address (a LAN party, a carrier's CGNAT) that
+// typos ten codes loses joins *by newcomers* for the window, never its
+// members' re-dials and never its hosting.
+export const DIAL_FAILS = JOIN_FAILS;
+// Rooms one address may open per window (`/room/new`, never refunded).
+// Hosting reveals nothing — the server draws the code — so this is not a
+// guess limit, only a cap on creating objects; generous, because a LAN
+// party's every NEW PARTY comes from one address.
+export const HOST_ROOMS = 30;
+// ...and per IPv6 /48 as well as per /64 (index.js). A /64 is one
+// customer, but a /48 is routinely one site, and it holds 65 536 /64s:
+// counted by /64 alone, one /48 could open two million rooms per window
+// and hold every code. Four customers' worth: a site with several busy
+// LANs is not refused, and a /48 can hold at most this many codes per
+// window (a reservation that never hosts lapses after RESERVE_MS).
+export const HOST_SITE_ROOMS = 4 * HOST_ROOMS;
+// How long a code drawn for `/room/new` is held for a socket that has not
+// said `host` (15 seconds). The client says `host` the moment its socket
+// opens; a socket that stays silent is holding a code nobody can use, and
+// without a limit, HOST_ROOMS sockets per window held open were codes
+// squatted for as long as the attacker liked.
+export const RESERVE_MS = 15 * 1000;
+// The longest member id a seat is granted under. A pass carries the id in
+// its URL and `checkPass` refuses longer ones, so a longer id would be a
+// seat whose every re-dial is charged; client ids are 12 characters.
+const MAX_ID = 64;
+// How long a member pass is good for: as long as any room can live.
+export const PASS_TTL_MS = ROOM_CAP_MS;
 
 const CODE = /^\d{6}$/;
 // What one member may send another through the hub.
@@ -57,6 +95,73 @@ const RELAYED = new Set(["offer", "answer", "full"]);
 async function sha256(str) {
 	const bytes = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(str));
 	return [...new Uint8Array(bytes)].map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+/** Bytes as unpadded base64url — a pass rides a URL query. */
+const base64url = (bytes) =>
+	btoa(String.fromCharCode(...new Uint8Array(bytes))).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+const fromBase64url = (str) => {
+	const bin = atob(str.replace(/-/g, "+").replace(/_/g, "/"));
+	return Uint8Array.from(bin, (c) => c.charCodeAt(0));
+};
+// Base64url has slack: 43 characters carry 258 bits for a 256-bit MAC, so
+// four spellings of the last character decode to the same bytes. Only the
+// one `base64url` writes is a pass — otherwise one pass is four strings,
+// and anything keyed or logged by the string sees four passes.
+const canonicalBase64url = (str) => {
+	try {
+		return base64url(fromBase64url(str)) === str;
+	} catch {
+		return false;
+	}
+};
+
+// One imported HMAC key per secret string: importKey is not free, and the
+// routing Worker checks a pass on every member's upgrade.
+const hmacKeys = new Map();
+const hmacKey = (secret) => {
+	if (!hmacKeys.has(secret)) {
+		hmacKeys.set(
+			secret,
+			crypto.subtle.importKey("raw", new TextEncoder().encode(secret), { name: "HMAC", hash: "SHA-256" }, false, ["sign", "verify"]),
+		);
+	}
+	return hmacKeys.get(secret);
+};
+const passMessage = (code, id, exp) => new TextEncoder().encode(`${code}.${id}.${exp}`);
+
+/**
+ * A member pass: base64url(HMAC-SHA256(key, `${code}.${id}.${exp}`)). The
+ * room issues one with every seat it grants (host, join, rejoin); the
+ * client presents it on every later dial of that room, and the routing
+ * Worker lets a valid one through without charging the dial gate. It
+ * proves only "this id was seated in this room", which the holder already
+ * knows — a prober cannot make one, so it reveals nothing about any code.
+ *
+ * @param {string} key  the ROOM_PASS_KEY secret
+ * @param {number} exp  ms since the epoch; the pass is void after it
+ */
+export async function signPass(key, code, id, exp) {
+	return base64url(await crypto.subtle.sign("HMAC", await hmacKey(key), passMessage(code, id, exp)));
+}
+
+/**
+ * Does `pass` prove `id`'s seat in `code` until `exp`? Constant-time (the
+ * runtime's own HMAC verify). Anything malformed is simply false.
+ * `ignoreExpiry` is for the room's own bookkeeping (index.js): it must
+ * never think a dial was charged when the Worker let it through free.
+ */
+export async function checkPass(key, code, id, exp, pass, { now = Date.now(), ignoreExpiry = false } = {}) {
+	if (!key || !CODE.test(code ?? "") || typeof id !== "string" || !id || id.length > MAX_ID) return false;
+	if (typeof pass !== "string" || !/^[A-Za-z0-9_-]{43}$/.test(pass) || !canonicalBase64url(pass)) return false;
+	const when = Number(exp);
+	if (!Number.isSafeInteger(when) || String(when) !== String(exp)) return false;
+	if (!ignoreExpiry && when <= now) return false;
+	try {
+		return await crypto.subtle.verify("HMAC", await hmacKey(key), fromBase64url(pass), passMessage(code, id, when));
+	} catch {
+		return false;
+	}
 }
 
 /**
@@ -115,8 +220,9 @@ export function makeLimiter({ now = Date.now, entries = new Map(), max = JOIN_FA
 }
 
 /**
- * @param {object} adapter  `{ send(socket, msg), close?(socket) }` — how the
- *   hub talks back. `close` hangs up a socket a rejoin has replaced.
+ * @param {object} adapter  `{ send(socket, msg), close?(socket, code, reason) }`
+ *   — how the hub talks back. `close` hangs up a socket a rejoin has
+ *   replaced (4409) or a reservation that lapsed unhosted (4408).
  * @param {object} [opts]
  * @param {() => number} [opts.now]  clock injection for the TTL tests.
  * @param {object} [opts.limiter]  `{ charge(ip), refund(ip) }`, sync or
@@ -124,18 +230,28 @@ export function makeLimiter({ now = Date.now, entries = new Map(), max = JOIN_FA
  *   default is a limiter local to this hub, which is all a test needs.
  */
 export function makeHub(adapter, { now = Date.now, limiter = makeLimiter({ now }) } = {}) {
-	// code -> { code, members: Map(id -> member), lastTouch, createdAt }
+	// code -> { code, members: Map(id -> member), lastTouch, createdAt, pending }
 	// member -> { id, secretHash, socket, joinedAt, leftAt }
+	// `pending` is the socket a reserved room waits for (`reserve`), until
+	// it says `host`; a pending room is nobody's party yet, and every
+	// question about its code is answered as if it did not exist.
 	const rooms = new Map();
+	const pendingRoom = new Map(); // socket -> the room it reserved
 	// The reverse index sockets are looked up by, so a relay costs one map
 	// hop instead of a scan of every member of every room.
 	const socketRoom = new Map(); // socket -> { room, id }
+	// Sockets that have asked for a seat (host, join or release). One ask
+	// per socket: the client never sends two, and a second — pipelined
+	// behind the first while it awaits its hash or the gate — is how one
+	// socket came to be bound under several ids, and its one dial refunded
+	// once per success (2026-11-12, review).
+	const asked = new WeakSet();
 
 	/**
-	 * Run one host/join under the limiter: charged before anything is
+	 * Run one join/release under the limiter: charged before anything is
 	 * looked up, refunded only when it succeeded. Every refusal stays
-	 * charged — "taken" and "full" included, because each says a code is
-	 * live, which is exactly what a guesser is fishing for.
+	 * charged — "full" and "no-claim" included, because each says a code
+	 * is live, which is exactly what a guesser is fishing for.
 	 *
 	 * Only for attempts that prove nothing. A rejoin with a valid claim
 	 * never comes here (see `join`): it is the one request a guesser
@@ -148,6 +264,33 @@ export function makeHub(adapter, { now = Date.now, limiter = makeLimiter({ now }
 		const answer = await attempt();
 		if (answer.t !== "error") await limiter.refund(ip);
 		return answer;
+	};
+
+	/** The room `code` names, unless it is only reserved (or absent). */
+	const live = (code) => {
+		const room = rooms.get(code);
+		return room && !room.pending ? room : undefined;
+	};
+	/**
+	 * Claim `socket`'s one ask, synchronously — before any await, so two
+	 * pipelined messages cannot both see it unclaimed. False when it was
+	 * already claimed: the caller answers `bound` and changes nothing.
+	 */
+	const ask = (socket) => {
+		if (asked.has(socket)) return false;
+		asked.add(socket);
+		return true;
+	};
+	const BOUND = { t: "error", reason: "bound" };
+	/** Has the reservation on `room` outlived RESERVE_MS unhosted? */
+	const lapsed = (room) => !!room.pending && now() - room.createdAt >= RESERVE_MS;
+
+	/** Drop a reservation whose socket went before saying `host`. */
+	const unreserve = (socket) => {
+		const room = pendingRoom.get(socket);
+		if (!room) return;
+		pendingRoom.delete(socket);
+		if (rooms.get(room.code) === room && room.pending === socket) rooms.delete(room.code);
 	};
 
 	const touch = (room) => {
@@ -222,7 +365,7 @@ export function makeHub(adapter, { now = Date.now, limiter = makeLimiter({ now }
 	 * with no await in between for a release to slip into.
 	 */
 	const claimed = async (room, id, secret) => {
-		if (!room || typeof id !== "string" || !id) return null;
+		if (!room || room.pending || typeof id !== "string" || !id) return null;
 		const secretHash = await sha256(String(secret ?? ""));
 		if (rooms.get(room.code) !== room) return null; // swept or released meanwhile
 		prune(room);
@@ -239,6 +382,10 @@ export function makeHub(adapter, { now = Date.now, limiter = makeLimiter({ now }
 	 */
 	const attach = async (room, socket, { id, secret }) => {
 		if (typeof id !== "string" || !id) return { t: "error", reason: "bad-code" };
+		// Every seat comes with a pass for its id, and checkPass refuses
+		// ids past MAX_ID — so a longer one would be a seat whose re-dials
+		// are all charged. Refused up front instead, explicitly.
+		if (id.length > MAX_ID) return { t: "error", reason: "bad-id" };
 		const secretHash = await sha256(String(secret ?? ""));
 		prune(room);
 		let member = room.members.get(id);
@@ -256,48 +403,74 @@ export function makeHub(adapter, { now = Date.now, limiter = makeLimiter({ now }
 		rooms,
 
 		/**
-		 * Open a room under the code the client drew; the caller becomes its
-		 * first member and claim. A collision answers "taken" and the client
-		 * redraws — never joining a host into a live party, which would hand
-		 * one party's offers to another. Charged before the room exists, so
-		 * a refused host cannot leave a memberless room squatting on the
-		 * code — and "taken" stays charged, or hosting would be a free way
-		 * to ask which codes are live.
+		 * Hold `code` for `socket` if nobody has it: create-if-free, the
+		 * one question the routing Worker asks while it draws a code for
+		 * `/room/new` (index.js). Answered to the Worker, never to a
+		 * client — a client that hosts is told only the code it got, so
+		 * hosting says nothing about any other code. The room is
+		 * *pending* until the socket says `host`; its socket closing
+		 * first gives the code back.
 		 */
-		async host(socket, ip, msg) {
-			const { code } = msg;
-			if (!CODE.test(code ?? "")) return { t: "error", reason: "bad-code" };
-			return limited(ip, async () => {
-				if (rooms.has(code)) return { t: "error", reason: "taken" };
-				const room = { code, members: new Map(), lastTouch: now(), createdAt: now() };
-				rooms.set(code, room);
-				const refused = await attach(room, socket, msg);
-				if (refused) {
-					rooms.delete(code);
-					return refused;
-				}
-				return { t: "room", code };
-			});
+		reserve(socket, code, reservedAt = now()) {
+			if (!CODE.test(code ?? "") || rooms.has(code)) return false;
+			// `reservedAt` is the original reservation's time when a wake-up
+			// re-reserves (index.js): RESERVE_MS runs from the draw, never
+			// from the wake, so evictions cannot stretch a squat.
+			const room = { code, members: new Map(), lastTouch: reservedAt, createdAt: reservedAt, pending: socket };
+			rooms.set(code, room);
+			pendingRoom.set(socket, room);
+			return true;
+		},
+
+		/**
+		 * Open the room this socket reserved; the caller becomes its first
+		 * member and claim. Never charged: the server drew the code, so a
+		 * host learns nothing it could have guessed — it was charged
+		 * against a guess (and a dial) until 2026-11-12, when the client
+		 * drew codes and a dead one's success was the answer. A socket
+		 * that reserved nothing (a plain `/room/<code>` one) is
+		 * `bad-code`: no client chooses a code to host any more.
+		 */
+		async host(socket, msg) {
+			if (!ask(socket)) return BOUND;
+			const room = pendingRoom.get(socket);
+			if (!room || rooms.get(room.code) !== room) return { t: "error", reason: "bad-code" };
+			// Past RESERVE_MS the code is not this socket's any more, even
+			// if the sweep that frees it has not run yet.
+			if (lapsed(room)) {
+				unreserve(socket);
+				return { t: "error", reason: "expired" };
+			}
+			pendingRoom.delete(socket);
+			room.pending = null;
+			room.lastTouch = room.createdAt = now();
+			const refused = await attach(room, socket, msg);
+			if (refused) {
+				rooms.delete(room.code);
+				return refused;
+			}
+			return { t: "room", code: room.code };
 		},
 
 		async join(socket, ip, msg) {
+			if (!ask(socket)) return BOUND;
 			const { code } = msg;
 			if (!CODE.test(code ?? "")) return { t: "error", reason: "bad-code" };
 			// A valid claim is checked first and never charged: it proves
 			// the sender already holds a seat here, so it guesses nothing —
 			// and it is exactly what every member of a party re-dials with
 			// after a blip, all at once, often from one shared address.
-			const live = rooms.get(code);
-			const known = await claimed(live, msg.id, msg.secret);
+			const room = live(code);
+			const known = await claimed(room, msg.id, msg.secret);
 			if (known) {
-				bind(live, known, socket);
+				bind(room, known, socket);
 				return { t: "joined" };
 			}
 			// Anything else is a guess as often as a typo. After 10 of them
 			// in 5 minutes, the answer is "blocked" for a while, not another
 			// round of guesses.
 			return limited(ip, async () => {
-				const room = rooms.get(code);
+				const room = live(code);
 				if (!room) return { t: "error", reason: "no-room" };
 				return (await attach(room, socket, msg)) ?? { t: "joined" };
 			});
@@ -324,6 +497,7 @@ export function makeHub(adapter, { now = Date.now, limiter = makeLimiter({ now }
 
 		/** The socket went away. The claim stays; the seat waits. */
 		leave(socket) {
+			unreserve(socket);
 			const here = socketRoom.get(socket);
 			if (!here) return;
 			socketRoom.delete(socket);
@@ -371,18 +545,20 @@ export function makeHub(adapter, { now = Date.now, limiter = makeLimiter({ now }
 		 * claim lapses with the grace, which errs towards keeping a seat.)
 		 *
 		 * A verified claim is never charged, as in `join`; anything else
-		 * is a guess and is charged like one.
+		 * is a guess and is charged like one. `socket`, when given, spends
+		 * its one ask (`bound` if it already asked).
 		 */
-		async releaseClaim(ip, { code, id, secret }) {
+		async releaseClaim(ip, { code, id, secret }, socket = null) {
+			if (socket && !ask(socket)) return BOUND;
 			if (!CODE.test(code ?? "")) return { t: "error", reason: "bad-code" };
-			const room = rooms.get(code);
+			const room = live(code);
 			const known = await claimed(room, id, secret);
 			if (known) {
 				if (known.socket) return { t: "busy" };
 				forget(room, known);
 				return { t: "released" };
 			}
-			return limited(ip, async () => ({ t: "error", reason: rooms.has(code) ? "no-claim" : "no-room" }));
+			return limited(ip, async () => ({ t: "error", reason: live(code) ? "no-claim" : "no-room" }));
 		},
 
 		/**
@@ -393,7 +569,9 @@ export function makeHub(adapter, { now = Date.now, limiter = makeLimiter({ now }
 		 * exactly the brittleness the room server exists to remove.
 		 */
 		snapshot(code) {
-			const room = rooms.get(code);
+			// A reservation is not persisted: it lives exactly as long as
+			// its socket, which an eviction re-reserves from (index.js).
+			const room = live(code);
 			if (!room) return null;
 			return {
 				code: room.code,
@@ -436,6 +614,7 @@ export function makeHub(adapter, { now = Date.now, limiter = makeLimiter({ now }
 			const room = rooms.get(code);
 			const member = id && room?.members.get(id);
 			if (!member) return;
+			asked.add(socket); // it asked before the eviction
 			member.socket = socket;
 			member.leftAt = null;
 			socketRoom.set(socket, { room, id });
@@ -446,11 +625,21 @@ export function makeHub(adapter, { now = Date.now, limiter = makeLimiter({ now }
 		 * can sleep on an alarm instead of polling. A room with nobody
 		 * attached expires 15 minutes after it was last touched; one with
 		 * members attached is kept alive by the touches their traffic makes,
-		 * until the 24-hour cap says even that is enough.
+		 * until the 24-hour cap says even that is enough. A reservation
+		 * lapses RESERVE_MS after its draw, and its socket is hung up.
 		 */
 		sweep() {
 			const time = now();
+			// A reservation nobody hosted within RESERVE_MS: hang its socket
+			// up and give the code back. Before, a silent `/room/new`
+			// socket held its code for as long as it stayed open.
+			for (const [socket, room] of pendingRoom) {
+				if (!lapsed(room)) continue;
+				unreserve(socket);
+				adapter.close?.(socket, 4408, "unhosted");
+			}
 			for (const [code, room] of rooms) {
+				if (room.pending) continue;
 				const attached = [...room.members.values()].some((m) => m.socket);
 				const idle = time - room.lastTouch >= ROOM_TTL_MS;
 				const expired = time - room.createdAt >= ROOM_CAP_MS;
@@ -458,6 +647,10 @@ export function makeHub(adapter, { now = Date.now, limiter = makeLimiter({ now }
 			}
 			let next = Infinity;
 			for (const room of rooms.values()) {
+				if (room.pending) {
+					next = Math.min(next, room.createdAt + RESERVE_MS);
+					continue;
+				}
 				const attached = [...room.members.values()].some((m) => m.socket);
 				next = Math.min(next, attached ? room.createdAt + ROOM_CAP_MS : room.lastTouch + ROOM_TTL_MS);
 			}

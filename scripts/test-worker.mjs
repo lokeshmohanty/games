@@ -23,6 +23,12 @@
  *      offers RETRY, which works once the server is back;
  *   7. a second tab with the same rejoin token takes the seat once — the
  *      first stands down and says so, rather than the two trading it.
+ *   8. a leave owed mid-redial is a `release`: it never takes the seat
+ *      from another tab holding it live (it used to join, and 4409 it).
+ *   9. a party behind one shared address (a LAN party, a carrier's CGNAT)
+ *      whose address has spent every dial on typos still reloads into its
+ *      seats — members re-dial on their passes — and that address still
+ *      hosts party after party (`/room/new`, capped only at HOST_ROOMS).
  *
  * Wrangler comes from $WRANGLER (a command line), else `wrangler` on PATH,
  * else `nix shell nixpkgs#wrangler` (npx wrangler cannot link workerd on
@@ -31,10 +37,13 @@
  *
  * Every node-side probe sends its own CF-Connecting-IP, which `wrangler dev`
  * passes through, so probes never share a rate-limit bucket with each other
- * or with the browsers. State is persisted to a fresh temp dir per run.
+ * or with the browsers. State is persisted to a fresh temp dir per run, and
+ * the member-pass key is a fresh random `--var ROOM_PASS_KEY` per run (a
+ * worker/.dev.vars, if there is one, is overridden by it).
  */
 import { createRequire } from "node:module";
 import { execFileSync, spawn } from "node:child_process";
+import { randomBytes } from "node:crypto";
 import { existsSync, globSync, mkdtempSync, rmSync } from "node:fs";
 import { createServer } from "node:net";
 import { homedir, tmpdir } from "node:os";
@@ -109,7 +118,14 @@ async function startWrangler() {
 	const port = await freePort();
 	const inspector = await freePort();
 	const state = mkdtempSync(join(tmpdir(), "neon-room-"));
-	const args = ["dev", "--port", String(port), "--ip", "127.0.0.1", "--inspector-port", String(inspector), "--persist-to", state];
+	const args = [
+		"dev",
+		"--port", String(port),
+		"--ip", "127.0.0.1",
+		"--inspector-port", String(inspector),
+		"--persist-to", state,
+		"--var", `ROOM_PASS_KEY:${randomBytes(32).toString("base64url")}`,
+	];
 	const [cmd, ...pre] = process.env.WRANGLER
 		? process.env.WRANGLER.split(/\s+/)
 		: onPath("wrangler")
@@ -176,11 +192,56 @@ function call(code, msg, ip = freshIp()) {
 	});
 }
 /**
+ * Host a room from node as `ip`: `/room/new`, then `host`. Resolves the
+ * reply (`{t:"room", code, pass, exp}`), or an error, then hangs up — the
+ * claim outlives the socket.
+ */
+function hostCall(ip = freshIp(), id = "h" + Math.random().toString(36).slice(2, 8)) {
+	return new Promise((done) => {
+		const ws = new WebSocket(`${WS}/room/new`, { headers: { "CF-Connecting-IP": ip } });
+		const timer = setTimeout(() => done({ t: "timeout" }), 8000);
+		ws.onopen = () => ws.send(JSON.stringify({ t: "host", id, secret: "s" + id }));
+		ws.onmessage = (e) => {
+			clearTimeout(timer);
+			done({ ...JSON.parse(e.data), id });
+			ws.close();
+		};
+		ws.onerror = () => {
+			clearTimeout(timer);
+			done({ t: "error", reason: "socket" });
+		};
+	});
+}
+/**
  * Does `code` still hold a claim for `id`? A join as `id` with a secret
  * nobody has answers id-taken if the claim is held, "joined" if the seat
  * is free, no-room if the room is gone with it.
  */
 const claimOf = async (code, id) => (await call(code, { t: "join", id, secret: "probe-" + Math.random() })).reason ?? "free";
+/**
+ * What an upgrade to room `code` as `ip` got: 101 when a room took the
+ * socket, 429 when the routing Worker refused it past the dial budget.
+ * A refusal is a socket too — the Worker accepts it itself, says
+ * `{t:"error", reason:"blocked"}` and hangs up 4429 (worker/index.js
+ * `refusal`), since a browser never sees an HTTP status. So: open, send
+ * a `leave` (a room answers an unbound socket's leave by closing it 1000,
+ * charging and binding nothing), and read which came back.
+ */
+const upgradeStatus = (code, ip, query = "") =>
+	new Promise((done) => {
+		const ws = new WebSocket(`${WS}/room/${code}${query}`, { headers: { "CF-Connecting-IP": ip } });
+		let said = null;
+		const timer = setTimeout(() => (ws.close(), done("timeout")), 8000);
+		ws.onopen = () => ws.send(JSON.stringify({ t: "leave" }));
+		ws.onmessage = (e) => (said ??= JSON.parse(e.data));
+		ws.onclose = (e) => {
+			clearTimeout(timer);
+			if (said?.reason === "blocked" && e.code === 4429) done(429);
+			else if (!said && e.code === 1000) done(101);
+			else done(`${e.code} ${JSON.stringify(said)}`);
+		};
+		ws.onerror = () => {};
+	});
 
 // ------------------------------------------------------------ the browsers
 
@@ -196,8 +257,19 @@ const browser = await chromium.launch({
  * rather than `?rs=`, because NEW PARTY navigates to `party.html?fresh=1`
  * and would drop the query, and land on the deployed server.
  */
-async function person(tag) {
-	const context = await browser.newContext({ viewport: { width: 390, height: 844 } });
+// Each person is its own address to the server (wrangler dev passes
+// CF-Connecting-IP through), as people mostly are — except in section 9,
+// which puts a whole party behind one (`ip`).
+let personIp = 0;
+async function person(tag, ip = `10.77.0.${++personIp}`) {
+	const context = await browser.newContext({
+		viewport: { width: 390, height: 844 },
+		extraHTTPHeaders: { "CF-Connecting-IP": ip },
+	});
+	// The extra header makes the cross-origin GET /ping non-simple, so the
+	// browser sends a CORS preflight the worker does not answer; with a
+	// route installed, Playwright fulfils preflights itself.
+	await context.route("**/ping", (route) => route.continue());
 	await context.addInitScript((rs) => {
 		try {
 			localStorage.setItem("neon.rs", rs);
@@ -297,16 +369,19 @@ try {
 		const answers = [];
 		for (let i = 0; i < 10; i++) answers.push((await call(String(710000 + i), { t: "join", id: "x", secret: "y" }, guesser)).reason);
 		check("ten different codes: no-room each", answers.every((r) => r === "no-room"), answers.join());
-		const eleventh = await call("710010", { t: "join", id: "x", secret: "y" }, guesser);
-		check("the eleventh code, a different room again, is blocked", eleventh.reason === "blocked", JSON.stringify(eleventh));
-		// Blocked means blocked for a live code too.
-		const live = await call("710100", { t: "host", id: "h", secret: "s" }, "10.66.0.9");
+		// Every wrong guess also spent its upgrade's dial, and the two
+		// budgets are equal (worker/hub.js DIAL_FAILS), so the eleventh is
+		// refused at the upgrade, before any room object is touched.
+		const eleventh = await upgradeStatus("710010", guesser);
+		check("the eleventh code, a different room again, is refused (429)", eleventh === 429, String(eleventh));
+		// Refused means refused for a live code too.
+		const live = await hostCall("10.66.0.9");
 		check("(a live room to find)", live.t === "room", JSON.stringify(live));
-		const found = await call("710100", { t: "join", id: "g", secret: "g" }, guesser);
-		check("the guesser cannot join even the right code", found.reason === "blocked", JSON.stringify(found));
+		const found = await upgradeStatus(live.code, guesser);
+		check("the guesser cannot reach even the right code", found === 429, String(found));
 		const other = await call("710011", { t: "join", id: "x", secret: "y" }, "10.66.0.2");
 		check("a second IP is unaffected", other.reason === "no-room", JSON.stringify(other));
-		const friend = await call("710100", { t: "join", id: "f", secret: "f" }, "10.66.0.3");
+		const friend = await call(live.code, { t: "join", id: "f", secret: "f" }, "10.66.0.3");
 		check("and joins the live room", friend.t === "joined", JSON.stringify(friend));
 		// The probe is plain HTTP, answered by the routing Worker: no room
 		// object, no gate, so it can never be limited.
@@ -324,11 +399,13 @@ try {
 		// DevTools latency delays the handshake, not frames. So the
 		// assertion is the guarantee: the page does not go until the
 		// server's close has acknowledged the leave.
-		const page = await person("leaver");
 		const ROUNDS = 4;
 		let released = 0;
 		let racedLost = 0;
+		let page;
 		for (let round = 0; round < ROUNDS * 2; round++) {
+			// A person per half, so each half starts from a clean page.
+			if (round % ROUNDS === 0) page = await person("leaver" + round);
 			const portal = round % 2 === 1;
 			const raced = round >= ROUNDS; // second half: without the wait
 			const t = await host(page);
@@ -553,6 +630,161 @@ try {
 		check("the host still counts two", (await members(f)) === 2);
 		await g1.context().close();
 		await f.context().close();
+	}
+
+	// -------------------- 8. a leave owed mid-redial, another tab live
+	console.log("\nworker: a leave owed mid-redial never takes another tab's live seat");
+	{
+		// Found 2026-11-12: the owed leave dialled `join` with the claim
+		// and then `leave` — the join hung up a second tab that had taken
+		// the seat meanwhile (4409), and the leave gave its seat away. It
+		// is a `release` now, which never binds.
+		const f = await person("f3-host");
+		const tf = await host(f);
+		const h1 = await person("h1");
+		// Every socket and peer connection h1 makes is tracked, and
+		// `__offline` makes the next socket impossible — so h1's redials
+		// fail and stay only scheduled.
+		await h1.context().addInitScript(() => {
+			const W = WebSocket;
+			const P = RTCPeerConnection;
+			window.__sockets = [];
+			window.__pcs = [];
+			window.__sent = [];
+			window.RTCPeerConnection = class extends P {
+				constructor(...args) {
+					super(...args);
+					window.__pcs.push(this);
+				}
+			};
+			window.WebSocket = class extends W {
+				constructor(...args) {
+					if (window.__offline) throw new Error("offline");
+					super(...args);
+					window.__sockets.push(this);
+				}
+				send(data) {
+					window.__sent.push(JSON.parse(data).t);
+					return super.send(data);
+				}
+			};
+		});
+		check("h joins f's party by code", await joinByCode(h1, tf.code));
+		const th = await token(h1);
+		// h1's network goes: the signalling socket drops, and so do its
+		// links (so the party offers to whoever comes back as this member).
+		await h1.evaluate(() => {
+			window.__offline = true;
+			window.__sockets.at(-1).close();
+			for (const pc of window.__pcs) pc.close();
+		});
+		await sleep(1500); // a redial or two, failed; the next is scheduled
+		const h2 = await h1.context().newPage();
+		h2.on("pageerror", (err) => {
+			console.log(`  FAIL page error on h2: ${err.message}`);
+			failures++;
+		});
+		await h2.goto(PARTY);
+		check("a second tab reconnects into the seat", await waitInParty(h2, NO_ANSWER_WAIT));
+		check("as the same member", (await h2.evaluate(() => window.__party.room.selfId)) === th.id);
+		// h1 leaves while its redial is scheduled: back online for the
+		// release only — it is dialled synchronously, before any redial
+		// timer could fire.
+		const left = await h1.evaluate(async () => {
+			window.__sent.length = 0;
+			window.__offline = false;
+			const started = Date.now();
+			window.__party.room.leave();
+			await NeonArcade.roomSettled();
+			const ms = Date.now() - started;
+			await new Promise((r) => setTimeout(r, 500));
+			return { ms, sent: [...window.__sent] };
+		});
+		const releases = left.sent.filter((t) => t === "release").length;
+		check("the owed leave never joins", !left.sent.includes("join"), left.sent.join());
+		check("it asks to release, busy each time, four times", releases === 4, left.sent.join());
+		check("and holds navigation 6 s at most", left.ms <= 6500, String(left.ms));
+		const knocked = await h2.locator(".lobby-status", { hasText: /open in another tab/i }).count();
+		check("the live tab was never displaced", knocked === 0);
+		check("and is still in the party", await inParty(h2));
+		check("the claim is still held", (await claimOf(tf.code, th.id)) === "id-taken");
+		await h1.context().close();
+		await f.context().close();
+	}
+
+	// ------------------- 9. a shared address: typos cost newcomers only
+	console.log("\nworker: a party behind one address, its dials spent, keeps its seats");
+	{
+		// Equal budgets (DIAL_FAILS = JOIN_FAILS) used to cost a shared
+		// address everything: ten typos and every upgrade from it was 429 —
+		// members' re-dials too, so a reload landed on RETRY — and its 11th
+		// party fell back to the classic flow. Members now re-dial on their
+		// passes and hosting is /room/new, so only newcomers pay.
+		const lan = "100.64.42.1";
+		const host1 = await person("lan-host", lan);
+		const guest1 = await person("lan-guest", lan);
+		const th = await host(host1);
+		check("a host behind the shared address", /^\d{6}$/.test(th?.code ?? ""), JSON.stringify(th));
+		check("its token carries a pass", !!th?.pass && th.exp > Date.now(), JSON.stringify(th));
+		check("a guest behind the same address joins by code", await joinByCode(guest1, th.code));
+		const tg = await token(guest1);
+		check("and holds a pass too", !!tg?.pass, JSON.stringify(tg));
+		// Ten typos from somebody else at the party: the address's dials
+		// (and guesses) are spent.
+		const typos = [];
+		for (let i = 0; i < 10; i++) typos.push((await call(String(720000 + i), { t: "join", id: "x", secret: "y" }, lan)).reason);
+		check("ten typos from the address: no-room each", typos.every((r) => r === "no-room"), typos.join());
+		check("a newcomer from it is now refused (429)", (await upgradeStatus(th.code, lan)) === 429);
+		const passQuery = "?" + new URLSearchParams({ id: tg.id, exp: tg.exp, pass: tg.pass });
+		check("a member's upgrade on its pass is not", (await upgradeStatus(th.code, lan, passQuery)) === 101);
+		const forged = "?" + new URLSearchParams({ id: tg.id, exp: tg.exp, pass: "A".repeat(43) });
+		check("a forged pass is refused like anything unproven", (await upgradeStatus(th.code, lan, forged)) === 429);
+
+		// The guest reloads, then the host does: both back in their seats.
+		await guest1.reload();
+		check("the guest's reload rejoins its seat", await waitInParty(guest1, NO_ANSWER_WAIT));
+		check("as the same member", (await guest1.evaluate(() => window.__party.room.selfId)) === tg.id);
+		check("no RETRY screen", (await guest1.locator("button", { hasText: /^RETRY$/ }).count()) === 0);
+		await host1.reload();
+		check("the host's reload rejoins too", await waitInParty(host1, NO_ANSWER_WAIT));
+		check("as the same member", (await host1.evaluate(() => window.__party.room.selfId)) === th.id);
+		check("both see two members", (await waitForMembers(host1, 2)) && (await waitForMembers(guest1, 2)));
+		check("and the newcomer is still refused", (await upgradeStatus(th.code, lan)) === 429);
+		// And a newcomer's *browser* is told why. A plain 429 reached it as
+		// a dead socket — "Could not reach the room server" — until the
+		// Worker began accepting refused upgrades to say `blocked`.
+		const newcomer = await person("lan-newcomer", lan);
+		await newcomer.goto(`${PARTY}#c=${th.code}`);
+		const toldWhy = await newcomer
+			.locator(".lobby-status", { hasText: /too many attempts/i })
+			.waitFor({ timeout: TIMEOUT })
+			.then(() => true, () => false);
+		check("a newcomer's browser says too many attempts, not unreachable", toldWhy, await newcomer.locator(".lobby-status").first().textContent().catch(() => "?"));
+		await newcomer.context().close();
+
+		// The exhausted address still hosts: a browser, by the room server
+		// (not the classic fallback)...
+		const host2 = await person("lan-host2", lan);
+		const t2 = await host(host2);
+		check("a new party from the address gets a room-server code", /^\d{6}$/.test(t2?.code ?? "") && t2.code !== th.code, JSON.stringify(t2));
+		// ...and party after party from node, well past ten.
+		const hosted = [];
+		for (let i = 0; i < 12; i++) hosted.push(await hostCall(lan));
+		check("twelve more parties from the address all open", hosted.every((r) => r.t === "room"), hosted.map((r) => r.t + (r.reason ? ":" + r.reason : "")).join());
+		const codes = new Set([th.code, t2.code, ...hosted.map((r) => r.code)]);
+		check("every code server-drawn and different", codes.size === 14 && [...codes].every((c) => /^\d{6}$/.test(c)));
+		await guest1.context().close();
+		await host1.context().close();
+		await host2.context().close();
+
+		// Hosting has its own cap: HOST_ROOMS (30) per address per window.
+		const busy = "100.64.43.1";
+		const made = [];
+		for (let i = 0; i < 30; i++) made.push((await hostCall(busy)).t);
+		check("thirty parties from one address open", made.every((t) => t === "room"), made.join());
+		const more = await hostCall(busy);
+		check("the thirty-first is refused at the upgrade: blocked", more.t === "error" && more.reason === "blocked", JSON.stringify(more));
+		check("and that address still joins", (await call([...codes][0], { t: "join", id: "late", secret: "l" }, busy)).t === "joined");
 	}
 } catch (err) {
 	console.log(`  FAIL ${err.stack ?? err}`);

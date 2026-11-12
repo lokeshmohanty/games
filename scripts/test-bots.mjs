@@ -689,6 +689,118 @@ try {
 	const solos = await page.locator("button", { hasText: /PLAY A BOT|PLAY ALONE/ }).count();
 	check("no bot option is offered for a game a bot cannot play", solos === 0);
 
+	// ------------------------------------- a game-page reply that failed
+
+	// The game-page lobby's guest side of the manual handshake (lib/lobby.js
+	// guestFlow): its reply screen says to carry the reply back right away,
+	// and a reply whose link then fails (ICE `failed`, forced — loopback
+	// always has a route) says why and offers MAKE A NEW REPLY, laid out for
+	// a phone. Same rule as the party screen (scripts/test-party.mjs).
+	console.log("\nbots: a game-page reply that failed says so, and offers a new one");
+	{
+		const pair = await browser.newContext({ viewport: { width: 390, height: 844 } });
+		// The replier's *first* reply is also kept from ever reaching the
+		// inviter (the invite's candidates are stripped before it is
+		// answered), as across the networks this models: on loopback its
+		// ICE would connect at once, and a DTLS hello the inviter cached
+		// from it could spoil the second reply's link. sessionStorage
+		// survives the reload, so the second reply is left alone.
+		await pair.addInitScript(() => {
+			const P = RTCPeerConnection;
+			const strip = !sessionStorage.getItem("__stripped");
+			window.__pcs = [];
+			window.RTCPeerConnection = class extends P {
+				constructor(...args) {
+					super(...args);
+					window.__pcs.push(this);
+				}
+				setRemoteDescription(d) {
+					if (strip && d?.type === "offer") {
+						sessionStorage.setItem("__stripped", "1");
+						d = { type: d.type, sdp: d.sdp.replace(/^a=candidate:.*\r\n/gm, "") };
+					}
+					return super.setRemoteDescription(d);
+				}
+			};
+		});
+		const inviter = await pair.newPage();
+		const replier = await pair.newPage();
+		for (const p of [inviter, replier]) {
+			p.on("pageerror", (err) => {
+				console.log(`  FAIL page error: ${err.message}`);
+				failures++;
+			});
+		}
+		await inviter.goto(url("draw-guess.html"));
+		await inviter.locator("button", { hasText: "INVITE A FRIEND" }).first().click();
+		const inviteBox = inviter.locator("textarea.share-code").first();
+		await inviteBox.waitFor({ timeout: TIMEOUT });
+		await replier.goto(await inviteBox.inputValue());
+		const replyBox = replier.locator("textarea.share-code").first();
+		await replyBox.waitFor({ timeout: TIMEOUT });
+		const firstReply = await replyBox.inputValue();
+		const hint = (await replier.locator("#lobby .share-hint").first().textContent()) ?? "";
+		check("the reply screen says to send it back right away", /right away/i.test(hint) && /15 seconds/.test(hint), hint);
+		await replier.evaluate(() => {
+			for (const pc of window.__pcs) {
+				Object.defineProperty(pc, "connectionState", { get: () => "failed" });
+				pc.onconnectionstatechange?.();
+			}
+		});
+		const again = replier.locator("button", { hasText: "MAKE A NEW REPLY" });
+		const offered = await again
+			.waitFor({ timeout: TIMEOUT })
+			.then(() => true)
+			.catch(() => false);
+		check("a failed reply offers MAKE A NEW REPLY", offered);
+		const failed = await replier.evaluate(() => {
+			const btn = [...document.querySelectorAll("button")].find((b) => b.textContent === "MAKE A NEW REPLY");
+			const row = btn?.parentElement;
+			const hint = [...document.querySelectorAll(".share-hint")].find((h) => /new invite/.test(h.textContent));
+			return {
+				status: document.querySelector(".lobby-status.is-error")?.textContent ?? "",
+				hint: hint?.textContent ?? "",
+				boxes: [hint, ...(row?.children ?? [])].filter(Boolean).map((n) => n.getBoundingClientRect().toJSON()),
+				docWidth: document.documentElement.scrollWidth,
+				winWidth: document.documentElement.clientWidth,
+				height: window.innerHeight,
+			};
+		});
+		check(
+			"it says the reply took too long or the networks cannot connect",
+			/not used in time/.test(failed.status) && /cannot connect directly/.test(failed.status) && /new invite/.test(failed.hint),
+			JSON.stringify({ status: failed.status, hint: failed.hint }),
+		);
+		check(
+			"the failure screen fits the phone (390x844)",
+			failed.boxes.length >= 3 &&
+				failed.boxes.every((b) => b.left >= 0 && b.right <= failed.winWidth && b.bottom <= failed.height) &&
+				failed.docWidth <= failed.winWidth,
+			JSON.stringify(failed),
+		);
+		await again.click();
+		const secondReply = await replier
+			.waitForFunction(
+				(old) => {
+					const v = document.querySelector("textarea.share-code")?.value;
+					return v && v !== old ? v : null;
+				},
+				firstReply,
+				{ timeout: TIMEOUT },
+			)
+			.then((h) => h.jsonValue())
+			.catch(() => null);
+		check("MAKE A NEW REPLY answers the same invite afresh", !!secondReply);
+		await inviter.locator("textarea.share-code").last().fill(secondReply ?? "");
+		await inviter.locator("button.neon-btn", { hasText: /^CONNECT$/ }).first().click();
+		const linked = await replier
+			.waitForFunction(() => /Connected/.test(document.querySelector(".lobby-status")?.textContent ?? ""), null, { timeout: TIMEOUT })
+			.then(() => true)
+			.catch(() => false);
+		check("…and the new reply connects", linked);
+		await pair.close();
+	}
+
 	// --------------------------------------------------- bots in a party
 
 	console.log("\nbots: a bot is an ordinary member to everyone else");

@@ -97,8 +97,10 @@ repo over `http://127.0.0.1`; `file://` and `http://<lan-ip>` will not do.
   made honest: commit, answer for your own board, reveal, and audit **both** the
   digest and every answer. Verifying the digest alone is the half-fix.
 - `memory/cross-network.md` — what the NAT lab found: the no-route verdict,
-  why an isolated member re-announces to the room server, the glare rule, and
-  the lab's own conntrack and IPv6 traps.
+  why an isolated member re-announces to the room server (dialling before it
+  hangs up), the glare rule, the one-direction NAT and the role swap that
+  answers it, NAT self-classification (a hard NAT's offer stands), the
+  manual reply's ~15 s window, and the lab's own conntrack and IPv6 traps.
 - `memory/room-server.md` — the room server's invariants (mesh is
   authoritative, room server is advisory), the progressive-enhancement rule,
   and the traps that caught two test failures.

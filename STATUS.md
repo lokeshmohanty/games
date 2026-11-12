@@ -74,6 +74,95 @@ Open:
       (`preview_urls = false`), wired into `roomServerUrl`. Live suite
       green there over IPv4 and IPv6 (flows; hib post-idle; gate run
       alone). IPv4 is *not* challenged on this account.
+- [ ] **Room-server gaps closed (2026-11-12, uncommitted, NOT deployed):**
+      owed leave is a `release` (retried on `busy`, ≤ 6 s nav hold); dial
+      budget = guess budget (10), a host's dial is never refunded (it was a
+      free scan), dial gate fails closed (503). Cost: a shared address with 10
+      unrefunded dials 429s its members' re-dials for ≤ 5 min — see
+      docs/room-server.md Honest gaps. Needs deploy, then `just test-live`
+      oracle/gate (budget 10) — VERIFY.
+- [ ] **Shared-address cost removed (2026-11-12, uncommitted, NOT
+      deployed):** member passes (HMAC of `code.id.exp`, issued with every
+      seat, presented on every re-dial's URL, verified by the routing Worker
+      before IpGate → uncharged) and server-drawn host codes (`/room/new`,
+      create-if-free reservation, no dial/guess, capped HOST_ROOMS = 30 /
+      5 min / address). Budgets stay equal (10). A shared address now loses
+      only *newcomers'* joins after 10 typos. sw.js → v11. Before deploy:
+      `openssl rand -base64 32 | wrangler secret put ROOM_PASS_KEY` in
+      worker/ (orchestrator; worker/README.md). After deploy: `just
+      test-live` (flows, hib), then `--only=gate` alone (asserts a pass
+      re-dial from the exhausted address) and `--only=oracle` alone —
+      VERIFY. Installed PWAs need the new room-join.js before the old
+      client's `{t:"host",code}` stops working: the deploy removes
+      client-chosen hosting, so old cached clients fall back to the classic
+      flow until they update.
+- [ ] **Review fixes on the above (2026-11-12, uncommitted, NOT
+      deployed):** one ask per socket (`bound`) + atomic dial refund
+      (pipelined joins refunded once each); `/room/new` reservations lapse
+      after 15 s (`reservedAt`, alarm, never re-clocked on wake); hosting
+      also capped per IPv6 /48 (120 / 5 min); canonical-base64url passes
+      only, member ids ≤ 64 (`bad-id`); a 429 is now a Worker-accepted
+      socket saying `blocked` ("Too many attempts", not "Could not reach").
+      After deploy: test-live `redraw` on a *debug* deploy (`--var
+      ROOM_DEBUG:1 --var ROOM_TEST_FORCE_REDRAW:1`), and `gate`/`oracle`
+      read `blocked` — VERIFY (docs/room-server.md Honest gaps).
+- [ ] **One-direction NATs (2026-11-12, uncommitted, NOT deployed):** the
+      two-machine test (Airtel CGNAT ↔ bhaskara) connected only when the
+      Airtel side offered; guest reloads failed 15/16. Cause verified: the
+      isolated host's re-announce closed its socket 1 s before re-dialling,
+      and the returning guest landing in that gap was named offerer. Fixes:
+      `rejoinServer` dials first (the hub's 4409 replaces the retired
+      socket); a pair whose first ICE try fails is retried once with the
+      roles swapped (room server and mesh relay; retry flag; no hub
+      change). NAT lab `portdep` profile + scenario 10 (reproduced the
+      failure before the fix). Cost: unconnectable code joins now report
+      no-route at the 30 s deadline (was ~15 s); a wrong-direction pair
+      takes ~15 s longer (now every Airtel-*host* reload). After deploy:
+      `just test-pair --runs=3` — VERIFY guest reload ok, host reload
+      ~20 s. Review fixes (same day, uncommitted): a leftover unanswered
+      invite no longer mutes the swap/no-route (`_trying` counts only
+      links with a peer; glue `dropInvites` on glare loss, backstop,
+      `connected:false`); only the marked retry (`r.` code prefix,
+      `isRetrySignal`) skips glare; a rejoinServer replacement keeps the
+      guards of answered offers only (drops the unanswered invites); the join deadline waits SWAP_WAIT_MS once for a swap
+      under way (worst case 38 s). test-room 6e11–6e14.
+      Regression fixed (same day): dialling first left NAT lab scenario 5
+      ("blackout outlasting the link by 5s") failing ~half the runs — an
+      `offering` notice delivered on the socket being replaced made the
+      blacked-out member offer with host-only candidates; answered, it
+      muted the peer's offer and failed for good. Such notices are now
+      deferred until the replacing dial lands (room-join `owed`); heals
+      2.3 s after the network returns. test-room 6e15; trap in
+      memory/cross-network.md.
+      Open watchdog (same day, uncommitted): a direct link not open 20 s
+      after both descriptions (`OPEN_TIMEOUT_MS`) is failed like ICE
+      `failed` — an answering link stuck in `connecting` no longer blocks
+      the swap/verdict. test-room 6e16; NAT lab 1 run green (5, 6, 10).
+      Regression fixed (same day): it also armed the *manual* answerer, so
+      a scan/paste reply carried back after 20 s found the guest closed
+      (no-route). The answerer now arms only on `answerInvite(code,
+      { watch: true })` (room-join alone); a link whose ICE is up gets one
+      more period before failing. test-room 6e17, 6e18.
+- [ ] **Hard-NAT glare preference + honest manual replies (2026-11-12,
+      uncommitted, NOT deployed):** net.js `classifyNat` (two STUN ports,
+      one socket; `room.natHard`), offers marked `h.`; glare: a hard offer
+      beats a plain one, else lower id; a hard member offered to with
+      nothing in flight offers back. NAT lab: `cone` soft, `portdep` hard
+      (second STUN port 3479); scenario 10 every reload, both directions,
+      < 6 s on the carrier's own offer (15.4 s swaps with it off).
+      Manual flow: reply screen says "right away"; a pre-open no-route says
+      too late / no direct path + MAKE A NEW REPLY. VERIFY on the real pair
+      after deploy (`just test-pair`, both `--remote-hosts` ways): Airtel
+      must read hard, bhaskara soft, reloads ~2 s. Mesh relay still swaps.
+      Review fixes (same day): a set-aside offer is answered if ours goes
+      unanswered for `GLARE_FALLBACK_MS` (6 s) — tabs still on a5a679d
+      cannot read `h.`/`r.` and never answer — and the backstop answers a
+      held one instead of dropping it (test-room 6e20, 6e8); the NAT is
+      re-classified on isolation and `online`/connection `change`, cached
+      per STUN set (6e21); Firefox foundation grouping marked VERIFY.
+      classifyNat decides per address family: bhaskara (soft IPv4, dead
+      Tailscale IPv6 timing out 701) read `null`, now `false` in ~2 s
+      (`NAT_SOFT_SETTLE_MS`); stubbed-stream test in test-room.
 - [ ] Real cross-network *success* (two different public addresses, real
       phones/carriers) untested: `just test-nat-live` (slirp4netns) works,
       but from one public IP behind a non-hairpinning CGNAT every pair is an

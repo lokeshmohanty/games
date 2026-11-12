@@ -8,7 +8,7 @@
 // untestable.
 
 import assert from "assert";
-import { makeHub } from "../worker/hub.js";
+import { checkPass, makeHub, PASS_TTL_MS, RESERVE_MS, signPass } from "../worker/hub.js";
 
 let failures = 0;
 const check = (label, ok, detail = "") => {
@@ -34,7 +34,7 @@ function make() {
 	const hub = makeHub(
 		{
 			send: (socket, msg) => sockets.get(socket).received.push(msg),
-			close: (socket) => (sockets.get(socket).closed = true),
+			close: (socket, code = 4409) => (sockets.get(socket).closed = code),
 		},
 		{ now: clock.now },
 	);
@@ -46,17 +46,24 @@ function make() {
 }
 
 const first = (socket, pred) => socket.received.find(pred);
+/**
+ * Host `msg.code`, as the routing Worker does for `/room/new`: reserve the
+ * code it drew (create-if-free), then the socket's `host` opens it.
+ */
+const open = async (hub, socket, msg) =>
+	hub.reserve(socket, msg.code) ? hub.host(socket, { id: msg.id, secret: msg.secret }) : { t: "error", reason: "taken" };
 const notices = (socket) => socket.received.filter((m) => m.t === "peer");
 
 console.log("\nHosting and joining");
 {
 	const { hub, socket } = make();
 	const host = socket();
-	const res = await hub.host(host, "1.1.1.1", { code: "100001", id: "m1", secret: "s1" });
-	check("host opens the code it drew", res.t === "room" && res.code === "100001", JSON.stringify(res));
+	const res = await open(hub, host, { code: "100001", id: "m1", secret: "s1" });
+	check("host opens the code reserved for it", res.t === "room" && res.code === "100001", JSON.stringify(res));
 	check("no ICE in the reply: STUN is the client's own", !("ice" in res));
-	const clash = await hub.host(socket(), "9.9.9.9", { code: "100001", id: "z", secret: "z" });
-	check("a live code answers taken", clash.reason === "taken");
+	check("a live code cannot be reserved again", hub.reserve(socket(), "100001") === false);
+	const stray = await hub.host(socket(), { id: "z", secret: "z" });
+	check("a socket that reserved nothing cannot host", stray.reason === "bad-code", JSON.stringify(stray));
 
 	const code = res.code;
 	const guest = socket();
@@ -77,7 +84,7 @@ console.log("\nOffering passes to the oldest attached");
 {
 	const { hub, socket } = make();
 	const a = socket();
-	const { code } = await hub.host(a, "1.1.1.1", { code: "100002", id: "a", secret: "1" });
+	const { code } = await open(hub, a, { code: "100002", id: "a", secret: "1" });
 	const b = socket();
 	await hub.join(b, "1.1.1.1", { code, id: "b", secret: "2" });
 	const c = socket();
@@ -105,7 +112,7 @@ console.log("\nRelay");
 {
 	const { hub, socket } = make();
 	const a = socket();
-	const { code } = await hub.host(a, "1.1.1.1", { code: "100003", id: "a", secret: "1" });
+	const { code } = await open(hub, a, { code: "100003", id: "a", secret: "1" });
 	const b = socket();
 	await hub.join(b, "1.1.1.1", { code, id: "b", secret: "2" });
 	hub.relay(a, { t: "offer", to: "b", sdp: "packed-offer" });
@@ -130,7 +137,7 @@ console.log("\nRejoin claims");
 {
 	const { hub, socket } = make();
 	const a = socket();
-	const { code } = await hub.host(a, "1.1.1.1", { code: "100004", id: "a", secret: "s" });
+	const { code } = await open(hub, a, { code: "100004", id: "a", secret: "s" });
 	const b = socket();
 	await hub.join(b, "1.1.1.1", { code, id: "b", secret: "2" });
 	hub.leave(b);
@@ -157,7 +164,7 @@ console.log("\nCapacity");
 {
 	const { hub, socket } = make();
 	const a = socket();
-	const { code } = await hub.host(a, "ip", { code: "100005", id: "a", secret: "1" });
+	const { code } = await open(hub, a, { code: "100005", id: "a", secret: "1" });
 	// The party cap is 8 claims — not 8 sockets — so a member whose socket
 	// dropped still holds one, and a 9th new member is the one refused.
 	for (let i = 0; i < 7; i++) {
@@ -181,7 +188,7 @@ console.log("\nGuessing the code");
 {
 	const { hub, socket } = make();
 	const a = socket();
-	const { code } = await hub.host(a, "ip", { code: "100006", id: "a", secret: "1" });
+	const { code } = await open(hub, a, { code: "100006", id: "a", secret: "1" });
 	check("bad shape refused", (await hub.join(socket(), "guess", { code: "1234", id: "x", secret: "y" })).reason === "bad-code");
 	// Wrong codes are the brute-force path, and they count against the IP
 	// hub-wide — there is no room to hang a per-room counter on.
@@ -206,7 +213,7 @@ console.log("\nTTL and cap");
 	{
 		const { hub, socket } = make();
 		const a = socket();
-		const { code } = await hub.host(a, "ip", { code: "100007", id: "a", secret: "1" });
+		const { code } = await open(hub, a, { code: "100007", id: "a", secret: "1" });
 		hub.leave(a);
 		sleep(15 * 60 * 1000 - 1);
 		hub.sweep();
@@ -221,7 +228,7 @@ console.log("\nTTL and cap");
 		// 15 minutes after the last one left, so a code returns to the pool.
 		const { hub, socket } = make();
 		const a = socket();
-		const { code } = await hub.host(a, "ip", { code: "100008", id: "a", secret: "1" });
+		const { code } = await open(hub, a, { code: "100008", id: "a", secret: "1" });
 		const b = socket();
 		await hub.join(b, "ip", { code, id: "b", secret: "2" });
 		hub.relay(b, { t: "offer", to: "a", sdp: "x" });
@@ -239,7 +246,7 @@ console.log("\nTTL and cap");
 		// party cannot hold a code hostage forever.
 		const { hub, socket } = make();
 		const a = socket();
-		const { code } = await hub.host(a, "ip", { code: "100009", id: "a", secret: "1" });
+		const { code } = await open(hub, a, { code: "100009", id: "a", secret: "1" });
 		sleep(24 * 60 * 60 * 1000 + 1);
 		const next = hub.sweep();
 		check("24-hour cap sweeps even an attached room", !hub.rooms.has(code));
@@ -248,7 +255,7 @@ console.log("\nTTL and cap");
 	{
 		const { hub, socket } = make();
 		const a = socket();
-		const { code } = await hub.host(a, "ip", { code: "100010", id: "a", secret: "1" });
+		const { code } = await open(hub, a, { code: "100010", id: "a", secret: "1" });
 		hub.leave(a);
 		sleep(10 * 60 * 1000);
 		const next = hub.sweep();
@@ -263,7 +270,7 @@ console.log("\nThe returning member is never their own offerer");
 	// nobody offered. The subject of a notice is never its offerer.
 	const { hub, socket } = make();
 	const h = socket();
-	const { code } = await hub.host(h, "1.1.1.1", { code: "200001", id: "h", secret: "hs" });
+	const { code } = await open(hub, h, { code: "200001", id: "h", secret: "hs" });
 	const g = socket();
 	await hub.join(g, "2.2.2.2", { code, id: "g", secret: "gs" });
 	hub.leave(h);
@@ -277,7 +284,7 @@ console.log("\nThe returning member is never their own offerer");
 	// member reattaches, the newcomer is the one told to offer.
 	const { hub: hub2, socket: socket2 } = make();
 	const a = socket2();
-	await hub2.host(a, "1.1.1.1", { code: "200002", id: "a", secret: "as" });
+	await open(hub2, a, { code: "200002", id: "a", secret: "as" });
 	hub2.leave(a);
 	const n = socket2();
 	await hub2.join(n, "3.3.3.3", { code: "200002", id: "n", secret: "ns" });
@@ -291,7 +298,7 @@ console.log("\nReleasing a seat");
 {
 	const { hub, socket } = make();
 	const a = socket();
-	const { code } = await hub.host(a, "1.1.1.1", { code: "200003", id: "a", secret: "as" });
+	const { code } = await open(hub, a, { code: "200003", id: "a", secret: "as" });
 	const b = socket();
 	await hub.join(b, "2.2.2.2", { code, id: "b", secret: "bs" });
 
@@ -307,7 +314,7 @@ console.log("\nReleasing a seat");
 	// the pool now, not 15 minutes from now.
 	const { hub: hub2, socket: socket2 } = make();
 	const solo = socket2();
-	await hub2.host(solo, "1.1.1.1", { code: "200004", id: "s", secret: "ss" });
+	await open(hub2, solo, { code: "200004", id: "s", secret: "ss" });
 	await hub2.release(solo, { id: "s", secret: "ss" });
 	check("the last release closes the room", !hub2.rooms.has("200004"));
 }
@@ -319,7 +326,7 @@ console.log("\nStale claims do not fill a room");
 	// claim is nobody's, and must not answer "full" to the next guest.
 	const { hub, socket } = make();
 	const a = socket();
-	const { code } = await hub.host(a, "1.1.1.1", { code: "200005", id: "a", secret: "1" });
+	const { code } = await open(hub, a, { code: "200005", id: "a", secret: "1" });
 	for (let i = 0; i < 7; i++) {
 		const s = socket();
 		await hub.join(s, `10.0.0.${i}`, { code, id: `m${i}`, secret: `${i}` });
@@ -332,7 +339,7 @@ console.log("\nStale claims do not fill a room");
 	check("after the seat grace a new guest gets in", later.t === "joined", JSON.stringify(later));
 	// And voluntary leavers free their seat at once.
 	const { hub: hub2, socket: socket2 } = make();
-	await hub2.host(socket2(), "1.1.1.1", { code: "200006", id: "a", secret: "1" });
+	await open(hub2, socket2(), { code: "200006", id: "a", secret: "1" });
 	for (let i = 0; i < 7; i++) {
 		const s = socket2();
 		await hub2.join(s, `10.0.0.${i}`, { code: "200006", id: `m${i}`, secret: `${i}` });
@@ -347,14 +354,15 @@ console.log("\nRate limits are per IP");
 	// One stranger's wrong secrets must not lock the party's friends out.
 	const { hub, socket } = make();
 	const a = socket();
-	const { code } = await hub.host(a, "1.1.1.1", { code: "200007", id: "a", secret: "1" });
+	const { code } = await open(hub, a, { code: "200007", id: "a", secret: "1" });
 	for (let i = 0; i < 12; i++) {
 		await hub.join(socket(), "6.6.6.6", { code, id: "a", secret: `wrong${i}` });
 	}
 	check("the guesser is blocked", (await hub.join(socket(), "6.6.6.6", { code, id: "q", secret: "q" })).reason === "blocked");
 	check("a friend on another IP still joins", (await hub.join(socket(), "7.7.7.7", { code, id: "f", secret: "f" })).t === "joined");
-	check("a blocked IP cannot open a room either", (await hub.host(socket(), "6.6.6.6", { code: "200008", id: "q", secret: "q" })).reason === "blocked");
-	check("and a refused host leaves no room squatting the code", !hub.rooms.has("200008"));
+	// Hosting is no guess (the server draws the code; worker/index.js caps
+	// rooms per address at HOST_ROOMS instead), so a blocked address hosts.
+	check("a blocked IP can still open a room", (await open(hub, socket(), { code: "200008", id: "q", secret: "q" })).t === "room");
 }
 
 console.log("\nGuesses charged up front");
@@ -368,11 +376,7 @@ console.log("\nGuesses charged up front");
 	);
 	const looked = answers.filter((a) => a.reason === "no-room").length;
 	check("50 concurrent guesses get 10 lookups", looked === 10, String(looked));
-	// "taken" is an answer too: hosting a live code proves it is live.
-	await hub.host(socket(), "1.1.1.1", { code: "600100", id: "h", secret: "s" });
-	let res;
-	for (let i = 0; i < 11; i++) res = await hub.host(socket(), "8.8.8.8", { code: "600100", id: `t${i}`, secret: "s" });
-	check("probing with host exhausts into blocked", res.reason === "blocked", JSON.stringify(res));
+	await open(hub, socket(), { code: "600100", id: "h", secret: "s" });
 	// Successes are refunded, so a friend who rejoins all evening is never blocked.
 	let ok = true;
 	for (let i = 0; i < 20; i++) ok &&= (await hub.join(socket(), "5.5.5.5", { code: "600100", id: "f", secret: "f" })).t === "joined";
@@ -388,7 +392,7 @@ console.log("\nA valid claim is never charged");
 	const { hub, socket } = make();
 	const ip = "100.64.0.1"; // everyone behind one address
 	const ids = ["h", ...Array.from({ length: 7 }, (_, i) => `m${i}`)];
-	await hub.host(socket(), ip, { code: "600300", id: "h", secret: "sh" });
+	await open(hub, socket(), { code: "600300", id: "h", secret: "sh" });
 	for (const id of ids.slice(1)) await hub.join(socket(), ip, { code: "600300", id, secret: "s" + id });
 	// Nine typos from the same address: one attempt left in the window.
 	for (let i = 0; i < 9; i++) await hub.join(socket(), ip, { code: "999999", id: "x", secret: "y" });
@@ -425,7 +429,7 @@ console.log("\nA claim released from a socket that holds no seat (releaseRejoin)
 	const { hub, socket } = make();
 	const ip = "100.64.1.1";
 	const h = socket();
-	await hub.host(h, "1.1.1.1", { code: "600400", id: "h", secret: "sh" });
+	await open(hub, h, { code: "600400", id: "h", secret: "sh" });
 	const live = socket();
 	await hub.join(live, ip, { code: "600400", id: "x", secret: "sx" });
 	// Use up the address's guesses: a verified release must still work.
@@ -446,7 +450,7 @@ console.log("\nA claim released from a socket that holds no seat (releaseRejoin)
 	// Unproven releases are guesses: charged, and refused once blocked.
 	const fresh = make();
 	const g = fresh.socket();
-	await fresh.hub.host(g, "1.1.1.1", { code: "600401", id: "g", secret: "sg" });
+	await open(fresh.hub, g, { code: "600401", id: "g", secret: "sg" });
 	const tries = [];
 	for (let i = 0; i < 11; i++) tries.push((await fresh.hub.releaseClaim("6.6.6.6", { code: "600401", id: "g", secret: "nope" })).reason);
 	check("a wrong secret is refused, and charged", tries[0] === "no-claim" && tries.at(-1) === "blocked", tries.join());
@@ -457,7 +461,7 @@ console.log("\nA claim released from a socket that holds no seat (releaseRejoin)
 	// The last claim released takes the room with it, as a leave does.
 	const solo = make();
 	const s = solo.socket();
-	await solo.hub.host(s, "1.1.1.1", { code: "600402", id: "s", secret: "ss" });
+	await open(solo.hub, s, { code: "600402", id: "s", secret: "ss" });
 	solo.hub.leave(s);
 	await solo.hub.releaseClaim("1.1.1.1", { code: "600402", id: "s", secret: "ss" });
 	check("the last release closes the room", !solo.hub.rooms.has("600402"));
@@ -467,7 +471,7 @@ console.log("\nFull is relayed without an sdp");
 {
 	const { hub, socket } = make();
 	const a = socket();
-	await hub.host(a, "1.1.1.1", { code: "600200", id: "a", secret: "1" });
+	await open(hub, a, { code: "600200", id: "a", secret: "1" });
 	const b = socket();
 	await hub.join(b, "2.2.2.2", { code: "600200", id: "b", secret: "2" });
 	hub.relay(a, { t: "full", to: "b", sdp: "ignored" });
@@ -494,7 +498,7 @@ console.log("\nEviction round-trip (snapshot → restore → rebind)");
 	// told anything — the mesh, not the hub, is the membership authority.
 	const { hub, socket, sockets } = make();
 	const a = socket();
-	const { code } = await hub.host(a, "1.1.1.1", { code: "100011", id: "a", secret: "1" });
+	const { code } = await open(hub, a, { code: "100011", id: "a", secret: "1" });
 	const b = socket();
 	await hub.join(b, "2.2.2.2", { code, id: "b", secret: "2" });
 
@@ -526,6 +530,136 @@ console.log("\nEviction round-trip (snapshot → restore → rebind)");
 	sleep(24 * 60 * 60 * 1000 + 1);
 	woken.sweep();
 	check("swept room snapshots to null", woken.snapshot(code) === null);
+}
+
+console.log("\nA reserved code is nobody's party yet");
+{
+	// `/room/new`: the routing Worker draws a code and the room reserves it
+	// for the host's socket (create-if-free). Until that socket says
+	// `host`, the code must look exactly like a dead one to everyone else.
+	const { hub, socket } = make();
+	const h = socket();
+	check("a free code is reserved", hub.reserve(h, "700001") === true);
+	check("a reserved code is not reserved twice", hub.reserve(socket(), "700001") === false);
+	check("a reservation is not persisted", hub.snapshot("700001") === null);
+	const early = await hub.join(socket(), "3.3.3.3", { code: "700001", id: "x", secret: "y" });
+	check("a join on a reserved code is no-room, like a dead code", early.reason === "no-room", JSON.stringify(early));
+	const rel = await hub.releaseClaim("3.3.3.3", { code: "700001", id: "x", secret: "y" });
+	check("so is a release", rel.reason === "no-room", JSON.stringify(rel));
+	const res = await hub.host(h, { id: "h", secret: "sh" });
+	check("its socket hosts it", res.t === "room" && res.code === "700001", JSON.stringify(res));
+	check("and the room is live now", (await hub.join(socket(), "3.3.3.3", { code: "700001", id: "g", secret: "sg" })).t === "joined");
+	const twice = await hub.host(h, { id: "h2", secret: "s" });
+	check("a socket hosts once (bound)", twice.reason === "bound", JSON.stringify(twice));
+
+	const gone = socket();
+	hub.reserve(gone, "700002");
+	hub.leave(gone);
+	check("a reservation whose socket went gives the code back", !hub.rooms.has("700002") && hub.reserve(socket(), "700002"));
+	const bad = socket();
+	hub.reserve(bad, "700003");
+	check("a refused host leaves nothing behind", (await hub.host(bad, { id: "", secret: "s" })).reason === "bad-code" && !hub.rooms.has("700003"));
+}
+
+console.log("\nOne ask per socket");
+{
+	// Found 2026-11-12 (review): joins pipelined on one socket — each
+	// awaiting its hash in turn — bound the one socket under every id.
+	// One host/join/release per socket; any second is `bound`.
+	const { hub, socket } = make();
+	const h = socket();
+	const { code } = await open(hub, h, { code: "700500", id: "h", secret: "sh" });
+	const s = socket();
+	const answers = await Promise.all(["a", "b", "c"].map((id) => hub.join(s, "9.9.9.9", { code, id, secret: "s" })));
+	const kinds = answers.map((a) => a.reason ?? a.t);
+	check("three pipelined joins: one joined, two bound", kinds.filter((k) => k === "joined").length === 1 && kinds.filter((k) => k === "bound").length === 2, kinds.join());
+	const seated = ["a", "b", "c"].filter((id) => hub.snapshot(code).members.some((m) => m.id === id));
+	check("one seat bound to the socket, not three", seated.length === 1, seated.join());
+	check("a join after the seat is bound too", (await hub.join(s, "9.9.9.9", { code, id: "d", secret: "s" })).reason === "bound");
+	check("and a release", (await hub.releaseClaim("9.9.9.9", { code, id: "h", secret: "sh" }, s)).reason === "bound");
+	check("a bound answer is no guess (the gate is untouched)", (await hub.join(socket(), "9.9.9.9", { code, id: "e", secret: "s" })).t === "joined");
+}
+
+console.log("\nMember ids are capped at 64 characters");
+{
+	// checkPass refuses ids past 64, so a seat under a longer one was a
+	// seat whose every re-dial is charged. Refused explicitly instead.
+	const { hub, socket } = make();
+	const long = "x".repeat(65);
+	const host = await open(hub, socket(), { code: "700600", id: long, secret: "s" });
+	check("a 65-character host id is bad-id", host.reason === "bad-id", JSON.stringify(host));
+	check("and leaves no room behind", !hub.rooms.has("700600"));
+	await open(hub, socket(), { code: "700601", id: "h", secret: "s" });
+	const j = await hub.join(socket(), "8.8.8.8", { code: "700601", id: long, secret: "s" });
+	check("a 65-character join id is bad-id", j.reason === "bad-id", JSON.stringify(j));
+	const max = "y".repeat(64);
+	check("64 characters is a seat", (await hub.join(socket(), "8.8.8.8", { code: "700601", id: max, secret: "s" })).t === "joined");
+	const key = "id-cap-key";
+	const exp = Date.now() + 1000;
+	check("and every id a seat is granted under can verify its pass", await checkPass(key, "700601", max, exp, await signPass(key, "700601", max, exp)));
+}
+
+console.log("\nA reservation lapses unhosted (RESERVE_MS)");
+{
+	const { hub, socket } = make();
+	const quiet = socket();
+	hub.reserve(quiet, "700700");
+	check("the sweep wakes at the lapse", hub.sweep() === clock.t + RESERVE_MS);
+	sleep(RESERVE_MS - 1);
+	hub.sweep();
+	check("(held until then)", hub.rooms.has("700700") && !quiet.closed);
+	sleep(1);
+	hub.sweep();
+	check("then the socket is hung up (4408)", quiet.closed === 4408, String(quiet.closed));
+	check("and the code is free", !hub.rooms.has("700700") && hub.reserve(socket(), "700700"));
+	check("a late host on it is bad-code", (await hub.host(quiet, { id: "q", secret: "s" })).reason === "bad-code");
+	const slow = socket();
+	hub.reserve(slow, "700701");
+	sleep(RESERVE_MS);
+	check("a host past the lapse, before any sweep, is expired", (await hub.host(slow, { id: "s", secret: "s" })).reason === "expired");
+	check("and frees the code", !hub.rooms.has("700701"));
+	const woke = socket();
+	const drawnAt = clock.t - RESERVE_MS + 1;
+	hub.reserve(woke, "700702", drawnAt);
+	check("a re-reservation keeps its draw time", hub.sweep() === drawnAt + RESERVE_MS);
+	sleep(1);
+	hub.sweep();
+	check("and lapses on that clock, not the wake's", woke.closed === 4408);
+}
+
+console.log("\nMember passes");
+{
+	// The routing Worker lets a member's re-dial past the dial gate on a
+	// pass the room issued with its seat. Nobody without the key can make
+	// one, and one proves a seat in exactly one room, as one member.
+	const key = "test-key-" + Math.random();
+	const exp = Date.now() + PASS_TTL_MS;
+	const pass = await signPass(key, "123456", "m1", exp);
+	check("a pass is 43 base64url characters (an unpadded SHA-256 MAC)", /^[A-Za-z0-9_-]{43}$/.test(pass), pass);
+	check("it verifies", await checkPass(key, "123456", "m1", exp, pass));
+	check("and verifies with exp as the URL carries it, a string", await checkPass(key, "123456", "m1", String(exp), pass));
+	check("never for another code", !(await checkPass(key, "123457", "m1", exp, pass)));
+	check("never for another id", !(await checkPass(key, "123456", "m2", exp, pass)));
+	check("never with a stretched expiry", !(await checkPass(key, "123456", "m1", exp + 1, pass)));
+	check("never under another key", !(await checkPass(key + "x", "123456", "m1", exp, pass)));
+	check("never without a key", !(await checkPass(undefined, "123456", "m1", exp, pass)));
+	const flipped = (pass[0] === "A" ? "B" : "A") + pass.slice(1);
+	check("never with one character changed", !(await checkPass(key, "123456", "m1", exp, flipped)));
+	const junk = ["", "x", pass + "A", null, "!".repeat(43)];
+	const junkOk = await Promise.all(junk.map((p) => checkPass(key, "123456", "m1", exp, p)));
+	check("malformed passes are simply false", junkOk.every((ok) => ok === false), junkOk.join());
+	check("an exp that is not a plain integer is false", !(await checkPass(key, "123456", "m1", exp + ".0", pass)));
+	// 43 characters carry 258 bits for 256: four spellings of the last
+	// character decode alike. Only the canonical one is a pass.
+	const ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
+	const spellings = [...ALPHABET].map((c) => pass.slice(0, 42) + c);
+	const valid = [];
+	for (const p of spellings) if (await checkPass(key, "123456", "m1", exp, p)) valid.push(p);
+	check("only the canonical spelling verifies (no slack-bit variants)", valid.length === 1 && valid[0] === pass, `${valid.length} of 64`);
+	const old = Date.now() - 1;
+	const stale = await signPass(key, "123456", "m1", old);
+	check("an expired pass is void", !(await checkPass(key, "123456", "m1", old, stale)));
+	check("unless expiry is ignored (the room's own bookkeeping)", await checkPass(key, "123456", "m1", old, stale, { ignoreExpiry: true }));
 }
 
 console.log(

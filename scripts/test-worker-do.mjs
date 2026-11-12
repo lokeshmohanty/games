@@ -19,6 +19,7 @@
 // only a deploy shows it.
 
 import worker, { RoomSignal, IpGate } from "../worker/index.js";
+import { DIAL_FAILS, HOST_ROOMS, HOST_SITE_ROOMS, JOIN_FAILS, RESERVE_MS, signPass } from "../worker/hub.js";
 
 let failures = 0;
 const check = (label, ok, detail = "") => {
@@ -48,6 +49,9 @@ function serverSocket(label) {
 		close(code, reason) {
 			this.closed ??= { code, reason };
 		},
+		accept() {
+			this.accepted = true; // only the routing Worker's own sockets: a room's go through state.acceptWebSocket
+		},
 		serializeAttachment(value) {
 			this.att = structuredClone(value);
 		},
@@ -61,9 +65,20 @@ function serverSocket(label) {
 let pairLabel = "?";
 globalThis.WebSocketPair = class {
 	constructor() {
-		this[0] = { client: true };
 		this[1] = serverSocket(pairLabel);
+		this[0] = { client: true, server: this[1] }; // the test's window on the far end
 	}
+};
+/**
+ * The status a browser could act on: an upgrade the routing Worker refused
+ * past a budget is a 101 on a socket of its own that says `blocked` and
+ * hangs up 4429 (index.js `refusal`) — read here as the 429 it stands for.
+ */
+const statusOf = (res) => {
+	const far = res.webSocket?.server;
+	return res.status === 101 && far?.accepted && far.received[0]?.reason === "blocked" && far.closed?.code === 4429
+		? 429
+		: res.status;
 };
 // Node's Response refuses status 101; the Workers runtime does not.
 const NodeResponse = globalThis.Response;
@@ -133,6 +148,21 @@ async function connect(obj, state, code, ip, label) {
 	if (res.status !== 101) throw new Error(`no upgrade: ${res.status}`);
 	return state.sockets.at(-1);
 }
+/**
+ * Open room `code` with a host, as `/room/new` does: the routing Worker
+ * drew `code` and forwards the upgrade to `/room/<code>/new`, and the
+ * socket's `host` opens it. Returns the host's server end.
+ */
+async function hostIn(obj, state, code, ip, label, { id, secret }) {
+	pairLabel = label;
+	const res = await obj.fetch(
+		new Request(`https://room/room/${code}/new`, { headers: { Upgrade: "websocket", "CF-Connecting-IP": ip } }),
+	);
+	if (res.status !== 101) throw new Error(`no host upgrade: ${res.status}`);
+	const ws = state.sockets.at(-1);
+	await say(obj, ws, { t: "host", id, secret });
+	return ws;
+}
 const say = (obj, ws, msg) => obj.webSocketMessage(ws, JSON.stringify(msg));
 const last = (ws, pred = () => true) => ws.received.filter(pred).at(-1);
 
@@ -142,8 +172,7 @@ console.log("\nA room survives eviction");
 {
 	const state = makeState();
 	let obj = new RoomSignal(state, env);
-	const a = await connect(obj, state, "300001", "1.1.1.1", "a");
-	await say(obj, a, { t: "host", code: "300001", id: "a", secret: "sa" });
+	const a = await hostIn(obj, state, "300001", "1.1.1.1", "a", { id: "a", secret: "sa" });
 	check("host answered", last(a)?.t === "room", JSON.stringify(last(a)));
 	tick();
 	const b = await connect(obj, state, "300001", "2.2.2.2", "b");
@@ -213,8 +242,7 @@ console.log("\nA half-open socket never wins a wake-up");
 	// the old one too, and lists it last.
 	const state = makeState();
 	let obj = new RoomSignal(state, env);
-	const a = await connect(obj, state, "300002", "1.1.1.1", "a");
-	await say(obj, a, { t: "host", code: "300002", id: "a", secret: "sa" });
+	const a = await hostIn(obj, state, "300002", "1.1.1.1", "a", { id: "a", secret: "sa" });
 	tick();
 	const old = await connect(obj, state, "300002", "2.2.2.2", "old");
 	await say(obj, old, { t: "join", code: "300002", id: "b", secret: "sb" });
@@ -248,8 +276,7 @@ console.log("\nA claim is released without binding (release)");
 {
 	const state = makeState();
 	const obj = new RoomSignal(state, env);
-	const h = await connect(obj, state, "300010", "1.1.1.1", "h");
-	await say(obj, h, { t: "host", code: "300010", id: "h", secret: "sh" });
+	const h = await hostIn(obj, state, "300010", "1.1.1.1", "h", { id: "h", secret: "sh" });
 	const x = await connect(obj, state, "300010", "2.2.2.2", "x");
 	await say(obj, x, { t: "join", code: "300010", id: "x", secret: "sx" });
 	const gateOps = () => gates.states.get("ip:3.3.3.3")?.data.get("entry")?.count ?? 0;
@@ -294,18 +321,15 @@ console.log("\nGuesses count across rooms (IpGate)");
 	check("an evicted gate still blocks", (await guess("400012", "6.6.6.6")) === "blocked");
 	check("the gate's storage carries an expiry alarm", typeof gates.states.get("ip:6.6.6.6").alarm === "number");
 
-	// Hosting a live code is a guess too: "taken" says the code exists.
 	const live = makeState();
 	const lobj = new RoomSignal(live, env);
-	const h = await connect(lobj, live, "400100", "8.8.8.8", "h");
-	await say(lobj, h, { t: "host", code: "400100", id: "h", secret: "s" });
-	const takes = [];
-	for (let i = 0; i < 11; i++) {
-		const ws = await connect(lobj, live, "400100", "9.9.9.9", "t");
-		await say(lobj, ws, { t: "host", code: "400100", id: `t${i}`, secret: "s" });
-		takes.push(ws.received.at(-1)?.reason);
-	}
-	check("probing with host exhausts into blocked", takes.at(-1) === "blocked", takes.join());
+	await hostIn(lobj, live, "400100", "8.8.8.8", "h", { id: "h", secret: "s" });
+	// No client names a code to host any more: a `host` on a plain room
+	// socket is refused, and asks nothing of the gate.
+	const stray = await connect(lobj, live, "400100", "9.9.9.9", "t");
+	await say(lobj, stray, { t: "host", code: "400100", id: "t", secret: "s" });
+	check("a host on a plain room socket is bad-code", stray.received.at(-1)?.reason === "bad-code", JSON.stringify(stray.received.at(-1)));
+	check("and is no guess", !gates.states.get("ip:9.9.9.9")?.data.has("entry"));
 
 	// A success costs nothing: a friend who joins and rejoins all evening
 	// never runs out of attempts.
@@ -345,8 +369,7 @@ console.log("\nA gate that fails, fails closed");
 	};
 	const state = makeState();
 	const obj = new RoomSignal(state, { GATE: flaky });
-	const h = await connect(obj, state, "400300", "1.1.1.1", "h");
-	await say(obj, h, { t: "host", code: "400300", id: "h", secret: "sh" });
+	const h = await hostIn(obj, state, "400300", "1.1.1.1", "h", { id: "h", secret: "sh" });
 	const m = await connect(obj, state, "400300", "2.2.2.2", "m");
 	await say(obj, m, { t: "join", code: "400300", id: "m", secret: "sm" });
 	check("(a room with a member)", last(m)?.t === "joined", JSON.stringify(last(m)));
@@ -398,27 +421,39 @@ console.log("\nEvery upgrade spends a dial; a member's comes back (timing oracle
 		worker.fetch(new Request(`https://room.test/room/${code}`, { headers: { Upgrade: "websocket", "CF-Connecting-IP": ip } }), workerEnv);
 	const dials = (ip) => gates.states.get("ip:" + ip)?.data.get("dial")?.count ?? 0;
 
+	// Never more probes than guesses: a dead code costs a prober one dial
+	// however it asks, so the 101's timing must buy no more codes per
+	// window than `join` does (2026-11-12; it was 2x).
+	check("the probe budget is the guess budget", DIAL_FAILS === JOIN_FAILS, `${DIAL_FAILS} vs ${JOIN_FAILS}`);
 	const statuses = [];
-	for (let i = 0; i < 20; i++) statuses.push((await upgrade(String(500000 + i), "11.0.0.1")).status);
-	check("twenty silent upgrades are let through", statuses.every((s) => s === 101), statuses.join());
+	for (let i = 0; i < DIAL_FAILS; i++) statuses.push(statusOf(await upgrade(String(500000 + i), "11.0.0.1")));
+	check(`${DIAL_FAILS} silent upgrades are let through`, statuses.every((s) => s === 101), statuses.join());
 	const before = touched;
 	const refused = await upgrade("500020", "11.0.0.1");
-	check("the twenty-first is refused 429", refused.status === 429, String(refused.status));
+	check("the next is refused: blocked (429)", statusOf(refused) === 429, String(refused.status));
+	check(
+		"on a socket the routing Worker accepted itself, saying blocked",
+		refused.webSocket?.server?.accepted === true &&
+			JSON.stringify(refused.webSocket.server.received) === JSON.stringify([{ t: "error", reason: "blocked" }]),
+		JSON.stringify(refused.webSocket?.server?.received),
+	);
 	check("before any room object is touched", touched === before);
 	check("another address is unaffected", (await upgrade("500021", "11.0.0.2")).status === 101);
 	check("/ping is never limited", (await worker.fetch(new Request("https://room.test/ping", { headers: { "CF-Connecting-IP": "11.0.0.1" } }), workerEnv)).status === 204);
 
-	// A member's dials are refunded: host, then rejoin thirty times.
-	const res = await upgrade("500100", "11.0.0.3");
+	// A member's dials are refunded (this gate has no pass key: the
+	// fallback when ROOM_PASS_KEY is unset). Host, then rejoin thirty times.
+	ns.get("code:500100");
 	const { state, obj } = rooms.get("code:500100");
-	check("(upgraded)", res.status === 101);
-	await say(obj, state.sockets.at(-1), { t: "host", code: "500100", id: "h", secret: "sh" });
-	check("a successful host gives its dial back", dials("11.0.0.3") === 0, String(dials("11.0.0.3")));
+	await hostIn(obj, state, "500100", "11.0.0.3", "h", { id: "h", secret: "sh" });
+	await upgrade("500100", "11.0.0.3");
+	await say(obj, state.sockets.at(-1), { t: "join", code: "500100", id: "m", secret: "sm" });
+	check("(a member, whose join refunded its dial)", dials("11.0.0.3") === 0, String(dials("11.0.0.3")));
 	const answers = [];
 	for (let i = 0; i < 30; i++) {
 		const r = await upgrade("500100", "11.0.0.3");
-		if (r.status !== 101) {
-			answers.push(r.status);
+		if (statusOf(r) !== 101) {
+			answers.push(statusOf(r));
 			continue;
 		}
 		const ws = state.sockets.at(-1);
@@ -433,7 +468,8 @@ console.log("\nEvery upgrade spends a dial; a member's comes back (timing oracle
 	check("(upgraded)", r2.status === 101);
 	await say(obj, ws2, { t: "join", code: "500100", id: "n", secret: "sn" });
 	await say(obj, ws2, { t: "join", code: "500100", id: "n", secret: "sn" });
-	check("a second success on one socket refunds nothing more", (gates.states.get("ip:11.0.0.4")?.data.get("dial")?.count ?? 0) === 0);
+	check("a second join on one socket is refused (bound)", last(ws2)?.reason === "bound" && !ws2.closed, JSON.stringify(last(ws2)));
+	check("and refunds nothing more", (gates.states.get("ip:11.0.0.4")?.data.get("dial")?.count ?? 0) === 0);
 	await upgrade("500101", "11.0.0.4");
 	check("so the next silent dial still counts", dials("11.0.0.4") === 1, String(dials("11.0.0.4")));
 
@@ -445,11 +481,493 @@ console.log("\nEvery upgrade spends a dial; a member's comes back (timing oracle
 	check("the alarm clears an expired dial count", !gate.data.has("dial") && gate.alarm === null);
 	check("and the prober may dial again", (await upgrade("500022", "11.0.0.1")).status === 101);
 
-	// A gate that cannot answer lets the upgrade through: a dial cannot
-	// prove a claim yet, and failing closed would cut members off.
+	// A gate that cannot answer refuses the upgrade (2026-11-12; it let it
+	// through). Failing open was a free probe for anyone who could make
+	// their own gate fail by flooding it — and the room then refunded a
+	// dial that was never charged, minting budget.
 	const broken = { idFromName: (n) => n, get: () => ({ fetch: async () => { throw new Error("down"); } }) };
+	const beforeBroken = touched;
 	const r3 = await worker.fetch(new Request("https://room.test/room/500200", { headers: { Upgrade: "websocket", "CF-Connecting-IP": "11.0.0.5" } }), { ROOM: ns, GATE: broken });
-	check("a gate outage fails open for upgrades", r3.status === 101, String(r3.status));
+	check("a gate outage fails closed for upgrades (503)", r3.status === 503, String(r3.status));
+	check("before any room object is touched", touched === beforeBroken);
+
+	// A release refunds only with the claim's secret: a prober's release
+	// on a code it guessed is an error, and its dial stays spent.
+	const rp = await upgrade("500100", "11.0.0.7");
+	check("(upgraded)", rp.status === 101);
+	await say(obj, state.sockets.at(-1), { t: "release", code: "500100", id: "h", secret: "guess" });
+	check("an unproven release keeps its dial spent", dials("11.0.0.7") === 1, String(dials("11.0.0.7")));
+	const rm = await upgrade("500100", "11.0.0.7");
+	check("(upgraded)", rm.status === 101);
+	const mws = state.sockets.at(-1);
+	await obj.webSocketClose(state.sockets.find((w) => w.att?.id === "m" && !w.closed) ?? mws, 1006, "");
+	await say(obj, mws, { t: "release", code: "500100", id: "m", secret: "sm" });
+	check("a verified release gives its own dial back", last(mws)?.t === "released" && dials("11.0.0.7") === 1, `${JSON.stringify(last(mws))} ${dials("11.0.0.7")}`);
+}
+
+console.log("\nOnly a room path with an upgrade reaches a room, and every one is charged");
+{
+	// Every request that could touch a room object must have spent a dial
+	// first; everything else must be answered by the routing Worker alone.
+	let touched = 0;
+	const ns = { idFromName: (n) => n, get: () => (touched++, { fetch: async () => new Response(null, { status: 101 }) }) };
+	const workerEnv = { ROOM: ns, GATE: gates };
+	const dials = (ip) => gates.states.get("ip:" + ip)?.data.get("dial")?.count ?? 0;
+	const send = (path, headers = { Upgrade: "websocket" }, method = "GET") =>
+		worker.fetch(new Request("https://room.test" + path, { method, headers: { ...headers, "CF-Connecting-IP": "11.0.1.1" } }), workerEnv);
+	const variants = [
+		["/room/123456/", 404],
+		["/room/0123456", 404],
+		["/room/12345", 404],
+		["/room/12345a", 404],
+		["/room/%31%32%33%34%35%36", 404],
+		["/room/１２３４５６", 404], // fullwidth digits: \d is ASCII only
+		["//room/123456", 404],
+		["/ROOM/123456", 404],
+		["/room/123456/x", 404],
+		["/room/123456/new", 404], // only the Worker addresses an object's /new
+		["/room/new/", 404],
+		["/room/NEW", 404],
+		["/ping", 204],
+	];
+	const got = [];
+	for (const [path, want] of variants) {
+		const r = await send(path);
+		got.push(`${path}:${r.status}`);
+		if (r.status !== want) check(`${path} answers ${want}`, false, String(r.status));
+	}
+	check("path variants are refused by the Worker", touched === 0 && dials("11.0.1.1") === 0, `${got.join(" ")} touched=${touched}`);
+	const plain = await send("/room/123456", {});
+	const cased = await send("/room/123456", { Upgrade: "WebSocket" });
+	check("a room path without a websocket upgrade is 426, untouched", plain.status === 426 && cased.status === 426 && touched === 0);
+	check("and uncharged (nothing reached a room)", dials("11.0.1.1") === 0);
+	const q = await send("/room/123456?x=1#y");
+	check("a query string is the same room, and charged", q.status === 101 && touched === 1 && dials("11.0.1.1") === 1, `${q.status} ${touched} ${dials("11.0.1.1")}`);
+	await send("/room/123456", { Upgrade: "websocket" }, "POST");
+	check("so is any other method", touched === 2 && dials("11.0.1.1") === 2, `${touched} ${dials("11.0.1.1")}`);
+}
+
+console.log("\nHosting is /room/new: the server draws the code, and it costs no dial");
+{
+	// Until 2026-11-12 the client drew its code and the host's success
+	// said "that code was dead", so every host had to spend a dial and a
+	// guess — and a LAN party that hosted ten times blocked itself. Now the
+	// Worker draws, asks the room to take it only if free, and redraws.
+	const rooms = new Map();
+	let touched = 0;
+	const ns = {
+		idFromName: (n) => n,
+		get(name) {
+			touched++;
+			if (!rooms.has(name)) {
+				const state = makeState();
+				rooms.set(name, { state, obj: new RoomSignal(state, workerEnv) });
+			}
+			const { obj } = rooms.get(name);
+			return { fetch: (req) => obj.fetch(req) };
+		},
+	};
+	const workerEnv = { ROOM: ns, GATE: gates, ROOM_PASS_KEY: "test-pass-key" };
+	const counts = (ip, key) => gates.states.get("ip:" + ip)?.data.get(key)?.count ?? 0;
+	/** `/room/new` from `ip`, then `host`: the reply, or the HTTP status. */
+	const hostNew = async (ip, id = "h" + Math.random().toString(36).slice(2, 8)) => {
+		const res = await worker.fetch(
+			new Request("https://room.test/room/new", { headers: { Upgrade: "websocket", "CF-Connecting-IP": ip } }),
+			workerEnv,
+		);
+		if (statusOf(res) !== 101) return { status: statusOf(res) };
+		const [, room] = [...rooms.entries()].find(([, r]) => r.state.sockets.some((w) => w.att?.host)) ?? [];
+		const ws = room.state.sockets.find((w) => w.att?.host);
+		await say(room.obj, ws, { t: "host", id, secret: "s" + id });
+		return { ...ws.received.at(-1), ws, room, id };
+	};
+
+	const ip = "12.0.0.1";
+	const made = [];
+	for (let i = 0; i < HOST_ROOMS; i++) made.push(await hostNew(ip));
+	check(`${HOST_ROOMS} hosts from one address all open a room`, made.every((r) => r.t === "room"), made.map((r) => r.t ?? r.status).join());
+	check("each under a server-drawn six-digit code", made.every((r) => /^\d{6}$/.test(r.code)));
+	check("all different", new Set(made.map((r) => r.code)).size === HOST_ROOMS);
+	check("each the code of the object that holds it", made.every((r) => rooms.get("code:" + r.code)?.obj.code === r.code));
+	check("each reply carries a member pass", made.every((r) => /^[A-Za-z0-9_-]{43}$/.test(r.pass) && r.exp > Date.now()));
+	check("hosting spent no dial and no guess", counts(ip, "dial") === 0 && counts(ip, "entry") === 0, `${counts(ip, "dial")} ${counts(ip, "entry")}`);
+	const before = touched;
+	const capped = await hostNew(ip);
+	check(`the ${HOST_ROOMS + 1}st is refused 429 (HOST_ROOMS)`, capped.status === 429, JSON.stringify(capped.status ?? capped.t));
+	check("before any room object is touched", touched === before);
+	check("another address still hosts", (await hostNew("12.0.0.2")).t === "room");
+	check("and the capped address still joins", await (async () => {
+		const r = await worker.fetch(new Request(`https://room.test/room/${made[0].code}`, { headers: { Upgrade: "websocket", "CF-Connecting-IP": ip } }), workerEnv);
+		const { state, obj } = rooms.get("code:" + made[0].code);
+		await say(obj, state.sockets.at(-1), { t: "join", code: made[0].code, id: "j", secret: "sj" });
+		return r.status === 101 && last(state.sockets.at(-1))?.t === "joined";
+	})());
+
+	// A drawn code that is live is drawn again, and the client never hears
+	// of it: force the draws to 100000 (live) and then 100001.
+	const draws = [0, 0, 1];
+	const random = crypto.getRandomValues.bind(crypto);
+	crypto.getRandomValues = (arr) => (arr instanceof Uint32Array && draws.length ? ((arr[0] = draws.shift()), arr) : random(arr));
+	const first = await hostNew("12.0.0.3");
+	const second = await hostNew("12.0.0.3");
+	crypto.getRandomValues = random;
+	check("(the first draw opened 100000)", first.code === "100000", JSON.stringify(first.code));
+	check("a live draw is redrawn: the host gets 100001", second.t === "room" && second.code === "100001", JSON.stringify(second.code ?? second.status));
+	check("the live party's host is untouched", rooms.get("code:100000").obj.code === "100000" && !first.ws.closed);
+	const all = [0, 0, 0, 0, 0, 0, 0, 0];
+	crypto.getRandomValues = (arr) => (arr instanceof Uint32Array && all.length ? ((arr[0] = all.shift()), arr) : random(arr));
+	const stuck = await hostNew("12.0.0.4");
+	crypto.getRandomValues = random;
+	check("only draws that all collide give up, 503", stuck.status === 503, JSON.stringify(stuck.status ?? stuck.t));
+
+	const plain = await worker.fetch(new Request("https://room.test/room/new", { headers: { "CF-Connecting-IP": "12.0.0.5" } }), workerEnv);
+	check("/room/new without an upgrade is 426", plain.status === 426);
+	check("and charged nothing", counts("12.0.0.5", "host") === 0);
+	const broken = { idFromName: (n) => n, get: () => ({ fetch: async () => { throw new Error("down"); } }) };
+	const down = await worker.fetch(
+		new Request("https://room.test/room/new", { headers: { Upgrade: "websocket", "CF-Connecting-IP": "12.0.0.6" } }),
+		{ ROOM: ns, GATE: broken },
+	);
+	check("a gate outage fails closed for hosting too (503)", down.status === 503, String(down.status));
+
+	// The reservation survives an eviction before the host speaks.
+	const state = makeState();
+	let obj = new RoomSignal(state, env);
+	pairLabel = "early";
+	await obj.fetch(new Request("https://room/room/700100/new", { headers: { Upgrade: "websocket", "CF-Connecting-IP": "12.0.0.7" } }));
+	const early = state.sockets.at(-1);
+	obj = new RoomSignal(state, env);
+	const rival = await obj.fetch(new Request("https://room/room/700100/new", { headers: { Upgrade: "websocket" } }));
+	check("an evicted object still holds the reservation (409 to a second draw)", rival.status === 409, String(rival.status));
+	await say(obj, early, { t: "host", id: "e", secret: "se" });
+	check("and the host's socket opens it", last(early)?.t === "room" && last(early)?.code === "700100", JSON.stringify(last(early)));
+}
+
+console.log("\nOne upgrade, one ask, one refund — however messages are pipelined");
+{
+	// Found 2026-11-12 (review): webSocketMessage read the attachment once
+	// on entry and refundDial trusted that copy, so joins pipelined on one
+	// socket — each awaiting the gate in turn — all read `dial: true` and
+	// each refunded: one upgrade, six joins, six dials back. And the hub
+	// bound the one socket under every id it was sent.
+	const rooms = new Map();
+	const workerEnv = { ROOM: null, GATE: gates, ROOM_PASS_KEY: "pipe-key" };
+	workerEnv.ROOM = {
+		idFromName: (n) => n,
+		get(name) {
+			if (!rooms.has(name)) {
+				const state = makeState();
+				rooms.set(name, { state, obj: new RoomSignal(state, workerEnv) });
+			}
+			const { obj } = rooms.get(name);
+			return { fetch: (req) => obj.fetch(req) };
+		},
+	};
+	const dials = (ip) => gates.states.get("ip:" + ip)?.data.get("dial")?.count ?? 0;
+	const up = (path, ip) =>
+		worker.fetch(new Request("https://room.test" + path, { headers: { Upgrade: "websocket", "CF-Connecting-IP": ip } }), workerEnv);
+	const z = "13.0.0.1";
+	await up("/room/new", z);
+	const [name, room] = [...rooms.entries()].find(([, r]) => r.state.sockets.length);
+	const code = name.slice(5);
+	await say(room.obj, room.state.sockets.at(-1), { t: "host", id: "h", secret: "sh" });
+	for (let i = 0; i < 5; i++) await up(`/room/${900000 + i}`, z);
+	check("(five silent probes: five dials)", dials(z) === 5, String(dials(z)));
+	await up(`/room/${code}`, z);
+	const ws = room.state.sockets.at(-1);
+	check("(the sixth upgrade is charged too)", dials(z) === 6, String(dials(z)));
+	const ids = ["x1", "x2", "x3", "x4", "x5", "x6"];
+	await Promise.all(ids.map((id) => say(room.obj, ws, { t: "join", code, id, secret: "s" })));
+	const replies = ws.received.map((m) => m.t === "error" ? m.reason : m.t);
+	check("six pipelined joins: one joined, five bound", replies.filter((r) => r === "joined").length === 1 && replies.filter((r) => r === "bound").length === 5, replies.join());
+	check("one upgrade refunds one dial, at most", dials(z) === 5, String(dials(z)));
+	const held = ids.filter((id) => room.state.data.get("room").members.some((m) => m.id === id));
+	check("and the socket holds one seat, not six", held.length === 1, held.join());
+	check("bound is no error close: the socket keeps its seat", !ws.closed, JSON.stringify(ws.closed));
+	await say(room.obj, room.state.sockets.find((w) => w.att?.id === "h"), { t: "offer", to: held[0], sdp: "O" });
+	check("and offers reach it under that one id", last(ws)?.sdp === "O", JSON.stringify(last(ws)));
+	// A release pipelined with a join is one ask too.
+	await up(`/room/${code}`, z);
+	const ws2 = room.state.sockets.at(-1);
+	await Promise.all([
+		say(room.obj, ws2, { t: "release", code, id: held[0], secret: "s" }),
+		say(room.obj, ws2, { t: "join", code, id: "y", secret: "s" }),
+	]);
+	const r2 = ws2.received.map((m) => m.t === "error" ? m.reason : m.t);
+	check("a join pipelined behind a release is bound", r2.join() === "bound,busy" || r2.join() === "busy,bound", r2.join());
+	check("and binds nothing", !room.state.data.get("room").members.some((m) => m.id === "y"));
+}
+
+console.log("\nA reservation nobody hosts lapses (RESERVE_MS)");
+{
+	// Found 2026-11-12 (review): a `/room/new` socket that never said
+	// `host` held its code as long as it stayed open, and an eviction
+	// re-reserved it with a fresh clock — HOST_ROOMS silent sockets per
+	// window, per address, were codes squatted for good.
+	const draw = (obj, code, ip = "13.1.0.1", label = "r") => {
+		pairLabel = label;
+		return obj.fetch(new Request(`https://room/room/${code}/new`, { headers: { Upgrade: "websocket", "CF-Connecting-IP": ip } }));
+	};
+	const state = makeState();
+	let obj = new RoomSignal(state, env);
+	const t0 = Date.now();
+	await draw(obj, "700300");
+	const squat = state.sockets.at(-1);
+	check("a reservation arms the alarm for its lapse", state.alarm === t0 + RESERVE_MS, `${state.alarm} vs ${t0 + RESERVE_MS}`);
+	check("and stores nothing (it is no room yet)", !state.data.has("room"));
+	check("(held meanwhile: a second draw is 409)", (await draw(obj, "700300")).status === 409);
+	tick(RESERVE_MS);
+	await obj.alarm();
+	check("the alarm hangs the silent socket up (4408)", squat.closed?.code === 4408, JSON.stringify(squat.closed));
+	check("and disarms", state.alarm === null, String(state.alarm));
+	const next = await draw(obj, "700300", "13.1.0.2", "next");
+	check("the code is free again: the next draw takes it", next.status === 101, String(next.status));
+	const taker = state.sockets.at(-1);
+	await say(obj, taker, { t: "host", id: "t", secret: "st" });
+	check("and hosts it", last(taker)?.t === "room" && last(taker)?.code === "700300", JSON.stringify(last(taker)));
+	await say(obj, squat, { t: "host", id: "q", secret: "sq" });
+	check("a host on the hung-up socket seats nobody", !state.data.get("room").members.some((m) => m.id === "q"));
+
+	// A late host the alarm has not caught yet (alarms can run late).
+	const s2 = makeState();
+	const o2 = new RoomSignal(s2, env);
+	await draw(o2, "700301");
+	const slow = s2.sockets.at(-1);
+	tick(RESERVE_MS);
+	await say(o2, slow, { t: "host", id: "s", secret: "ss" });
+	check("a host past RESERVE_MS is refused, alarm or not (expired)", last(slow)?.reason === "expired", JSON.stringify(last(slow)));
+	check("and the code is free", (await draw(o2, "700301", "13.1.0.3")).status === 101);
+
+	// An eviction must not resurrect a lapsed reservation, nor restart its clock.
+	const s3 = makeState();
+	let o3 = new RoomSignal(s3, env);
+	await draw(o3, "700302");
+	const evicted = s3.sockets.at(-1);
+	tick(RESERVE_MS - 5000);
+	o3 = new RoomSignal(s3, env); // evicted, 10 s in
+	check("(10 s in, a woken object still holds it)", (await draw(o3, "700302")).status === 409);
+	tick(5000);
+	o3 = new RoomSignal(s3, env); // evicted again, now past RESERVE_MS from the draw
+	const after = await draw(o3, "700302", "13.1.0.4", "after");
+	check("past RESERVE_MS from the draw, a wake-up does not re-reserve it", after.status === 101, String(after.status));
+	check("it hangs the stale socket up instead (4408)", evicted.closed?.code === 4408, JSON.stringify(evicted.closed));
+	await o3.alarm();
+	check("(the alarm keeps the new taker's reservation)", !s3.sockets.at(-1).closed);
+
+	const s4 = makeState();
+	let o4 = new RoomSignal(s4, env);
+	await draw(o4, "700303");
+	const old = s4.sockets.at(-1);
+	delete old.att.reservedAt; // an attachment from before reservedAt existed
+	o4 = new RoomSignal(s4, env);
+	check("an attachment with no reservedAt counts as lapsed on wake", (await draw(o4, "700303")).status === 101 && old.closed?.code === 4408, JSON.stringify(old.closed));
+}
+
+console.log("\nIPv6 hosting is capped per /48 as well as per /64");
+{
+	// One /48 holds 65 536 /64s: counted by /64 alone, a /48 could open
+	// millions of rooms per window and hold every code.
+	const rooms = new Map();
+	let touched = 0;
+	const workerEnv = { ROOM: null, GATE: gates };
+	workerEnv.ROOM = {
+		idFromName: (n) => n,
+		get(name) {
+			touched++;
+			if (!rooms.has(name)) {
+				const state = makeState();
+				rooms.set(name, { state, obj: new RoomSignal(state, workerEnv) });
+			}
+			const { obj } = rooms.get(name);
+			return { fetch: (req) => obj.fetch(req) };
+		},
+	};
+	const hostFrom = async (ip) =>
+		statusOf(await worker.fetch(new Request("https://room.test/room/new", { headers: { Upgrade: "websocket", "CF-Connecting-IP": ip } }), workerEnv));
+	const statuses = [];
+	// HOST_ROOMS from each /64, across enough /64s to fill the /48.
+	for (let i = 0; statuses.length < HOST_SITE_ROOMS; i++) {
+		for (let j = 0; j < HOST_ROOMS && statuses.length < HOST_SITE_ROOMS; j++) statuses.push(await hostFrom(`2001:db8:5:${i.toString(16)}::${(j + 1).toString(16)}`));
+	}
+	check(`${HOST_SITE_ROOMS} hosts across one /48's /64s all open`, statuses.every((s) => s === 101), statuses.filter((s) => s !== 101).join());
+	const before = touched;
+	check("the next, from a fresh /64 in the same /48, is blocked", (await hostFrom("2001:db8:5:ff::1")) === 429);
+	check("before any room object is touched", touched === before);
+	check("another /48 still hosts", (await hostFrom("2001:db8:6::1")) === 101);
+	check("the /48's gate is named by its prefix", gates.states.has("ip:2001:db8:5::/48"), [...gates.states.keys()].filter((k) => k.endsWith("/48")).join());
+	check("IPv4 is never counted by site", ![...gates.states.keys()].some((k) => k.endsWith("/48") && !k.includes(":")));
+	check("nor is IPv4-mapped IPv6", (await hostFrom("::ffff:13.2.0.1")) === 101 && ![...gates.states.keys()].some((k) => k.startsWith("ip:0:0:0::/48")));
+}
+
+console.log("\nThe redraw test hook (ROOM_DEBUG + ROOM_TEST_FORCE_REDRAW only)");
+{
+	// The one path wrangler dev cannot vouch for is the second forward of
+	// a client's upgrade after a 409. `?draw=<live code>` forces it, so
+	// test-live can run it on a debug deployment; unset, nothing changes.
+	const make = (vars) => {
+		const rooms = new Map();
+		const workerEnv = { ROOM: null, GATE: gates, ...vars };
+		workerEnv.ROOM = {
+			idFromName: (n) => n,
+			get(name) {
+				if (!rooms.has(name)) {
+					const state = makeState();
+					rooms.set(name, { state, obj: new RoomSignal(state, workerEnv) });
+				}
+				const { obj } = rooms.get(name);
+				return { fetch: (req) => obj.fetch(req) };
+			},
+		};
+		const open = (query = "") =>
+			worker.fetch(new Request("https://room.test/room/new" + query, { headers: { Upgrade: "websocket", "CF-Connecting-IP": "13.3.0." + (1 + Math.floor(Math.random() * 250)) } }), workerEnv);
+		return { rooms, open };
+	};
+	const liveCode = async (w) => {
+		await w.open();
+		const [name, room] = [...w.rooms.entries()].at(-1);
+		await say(room.obj, room.state.sockets.at(-1), { t: "host", id: "h", secret: "sh" });
+		return name.slice(5);
+	};
+	const debug = make({ ROOM_DEBUG: "1", ROOM_TEST_FORCE_REDRAW: "1" });
+	const live = await liveCode(debug);
+	const forced = await debug.open(`?draw=${live}`);
+	check("a forced live first draw is redrawn: X-Room-Draws 2", forced.status === 101 && forced.headers.get("X-Room-Draws") === "2", `${forced.status} ${forced.headers.get("X-Room-Draws")}`);
+	check("the 101 keeps its socket and the room's own debug header", !!forced.webSocket && !!forced.headers.get("X-Room-Instance"));
+	const [, landed] = [...debug.rooms.entries()].at(-1);
+	check("into another code", landed.obj.code !== live, landed.obj.code);
+	check("the live room is untouched", !debug.rooms.get("code:" + live).state.sockets.some((w) => w.closed));
+	check("an unforced draw takes one", (await debug.open()).headers.get("X-Room-Draws") === "1");
+	check("a malformed draw is ignored", (await debug.open("?draw=012345")).headers.get("X-Room-Draws") === "1");
+
+	const noForce = make({ ROOM_DEBUG: "1" });
+	const live2 = await liveCode(noForce);
+	check("without ROOM_TEST_FORCE_REDRAW, ?draw= is ignored", (await noForce.open(`?draw=${live2}`)).headers.get("X-Room-Draws") === "1");
+	const prod = make({ ROOM_TEST_FORCE_REDRAW: "1" });
+	const live3 = await liveCode(prod);
+	const p = await prod.open(`?draw=${live3}`);
+	check("without ROOM_DEBUG, it is ignored and nothing is said", p.status === 101 && p.headers.get("X-Room-Draws") === null && [...prod.rooms.keys()].at(-1) !== "code:" + live3);
+}
+
+console.log("\nMembers re-dial on a pass, past an exhausted dial gate");
+{
+	// The cost equal budgets put on a shared address (a LAN party, a
+	// carrier's CGNAT): ten typos and every upgrade from it was 429 —
+	// members' re-dials included. A pass the room issued with the seat is
+	// checked by the Worker before the gate, so members never ask it.
+	const rooms = new Map();
+	let touched = 0;
+	const KEY = "pass-key-" + Math.random();
+	const workerEnv = { ROOM: null, GATE: gates, ROOM_PASS_KEY: KEY };
+	workerEnv.ROOM = {
+		idFromName: (n) => n,
+		get(name) {
+			touched++;
+			if (!rooms.has(name)) {
+				const state = makeState();
+				rooms.set(name, { state, obj: new RoomSignal(state, workerEnv) });
+			}
+			const { obj } = rooms.get(name);
+			return { fetch: (req) => obj.fetch(req) };
+		},
+	};
+	const dials = (ip) => gates.states.get("ip:" + ip)?.data.get("dial")?.count ?? 0;
+	const upgrade = (path, ip) =>
+		worker.fetch(new Request("https://room.test" + path, { headers: { Upgrade: "websocket", "CF-Connecting-IP": ip } }), workerEnv);
+	const withPass = (code, id, { exp, pass }) => `/room/${code}?${new URLSearchParams({ id, exp, pass })}`;
+	const lan = "100.64.7.1"; // the whole party, one address
+
+	// Host and a member, both from the shared address.
+	const code = "800100";
+	workerEnv.ROOM.get("code:" + code);
+	const { state, obj } = rooms.get("code:" + code);
+	const h = await hostIn(obj, state, code, lan, "h", { id: "h", secret: "sh" });
+	const hostPass = last(h);
+	check("the host's room reply carries a pass", !!hostPass.pass && hostPass.exp > Date.now(), JSON.stringify(hostPass));
+	await upgrade(`/room/${code}`, lan);
+	const m = state.sockets.at(-1);
+	await say(obj, m, { t: "join", code, id: "m", secret: "sm" });
+	const memberPass = last(m);
+	check("a join's joined reply carries one too", memberPass.t === "joined" && !!memberPass.pass, JSON.stringify(memberPass));
+
+	// Ten typos: the shared address's dial budget is gone.
+	for (let i = 0; i < DIAL_FAILS; i++) {
+		const r = await upgrade(`/room/${810000 + i}`, lan);
+		if (statusOf(r) !== 101) break;
+		const room = rooms.get("code:" + (810000 + i));
+		await say(room.obj, room.state.sockets.at(-1), { t: "join", code: String(810000 + i), id: "x", secret: "y" });
+	}
+	check("(the address is out of dials)", dials(lan) === DIAL_FAILS, String(dials(lan)));
+	check("a newcomer from it is refused 429", statusOf(await upgrade(`/room/${code}`, lan)) === 429);
+	check("and so is a member's re-dial without its pass", statusOf(await upgrade(`/room/${code}`, lan)) === 429);
+
+	// The whole party re-dials with its passes, as after a wifi blip.
+	const back = [];
+	for (const [id, secret, pass] of [["h", "sh", hostPass], ["m", "sm", memberPass]]) {
+		const r = await upgrade(withPass(code, id, pass), lan);
+		if (statusOf(r) !== 101) {
+			back.push(statusOf(r));
+			continue;
+		}
+		const ws = state.sockets.at(-1);
+		await say(obj, ws, { t: "join", code, id, secret });
+		back.push(last(ws)?.t);
+		check(`${id}'s rejoin is answered with a fresh pass`, !!last(ws)?.pass && last(ws).exp >= pass.exp);
+	}
+	check("every member of the exhausted address re-dials and rejoins", back.every((t) => t === "joined"), back.join());
+	check("charging nothing, and refunding nothing", dials(lan) === DIAL_FAILS, String(dials(lan)));
+	const many = [];
+	for (let i = 0; i < 20; i++) many.push(statusOf(await upgrade(withPass(code, "m", memberPass), lan)));
+	check("twenty re-dials on a pass: all through", many.every((s) => s === 101), many.join());
+	// A pass also lets a seat be given back (releaseRejoin, an owed leave).
+	const rel = await upgrade(withPass(code, "m", memberPass), lan);
+	check("(a release on a pass is let through)", rel.status === 101);
+	for (const w of state.sockets) if (w.att?.id === "m" && !w.closed) await obj.webSocketClose(w, 1006, "");
+	const rws = state.sockets.at(-1);
+	await say(obj, rws, { t: "release", code, id: "m", secret: "sm" });
+	check("and releases the seat", last(rws)?.t === "released", JSON.stringify(last(rws)));
+	check("still charging nothing", dials(lan) === DIAL_FAILS, String(dials(lan)));
+
+	// Anything a prober could present is an unproven upgrade: charged.
+	const probe = "12.1.0.1";
+	const forged = { exp: Date.now() + 60_000, pass: "A".repeat(43) };
+	const cases = [
+		["a forged pass", withPass(code, "h", forged)],
+		["a pass for another code", withPass("800101", "h", hostPass)],
+		["a pass for another member", withPass(code, "z", hostPass)],
+		["a stretched expiry", withPass(code, "h", { ...hostPass, exp: hostPass.exp + 1 })],
+		["a pass with no id", `/room/${code}?${new URLSearchParams({ exp: hostPass.exp, pass: hostPass.pass })}`],
+	];
+	for (const [label, path] of cases) {
+		const was = dials(probe);
+		const r = await upgrade(path, probe);
+		check(`${label} is charged a dial`, r.status === 101 && dials(probe) === was + 1, `${r.status} ${dials(probe)}`);
+	}
+	// Expired: the Worker charges it. The room checks the MAC ignoring
+	// expiry, so it never refunds a dial the Worker might not have charged
+	// — at the edge a member loses one dial; budget is never minted.
+	const exp = Date.now() - 1;
+	const expired = { exp, pass: await signPass(KEY, code, "h", exp) };
+	const late = "12.1.0.2";
+	const r = await upgrade(withPass(code, "h", expired), late);
+	check("an expired pass is charged", r.status === 101 && dials(late) === 1, `${r.status} ${dials(late)}`);
+	await say(obj, state.sockets.at(-1), { t: "join", code, id: "h", secret: "sh" });
+	check("and its join refunds nothing (errs towards the limit)", last(state.sockets.at(-1))?.t === "joined" && dials(late) === 1, String(dials(late)));
+	// A pass waives the dial, never the guess: a wrong claim on a socket
+	// that came in on someone's pass is still charged as one.
+	const guesser = await upgrade(withPass(code, "m", memberPass), "12.1.0.3");
+	check("(through on a pass)", guesser.status === 101);
+	await say(obj, state.sockets.at(-1), { t: "join", code, id: "h", secret: "guess" });
+	const entry = gates.states.get("ip:12.1.0.3")?.data.get("entry")?.count ?? 0;
+	check("a wrong claim on a pass socket is still a guess", last(state.sockets.at(-1))?.reason === "id-taken" && entry === 1, `${JSON.stringify(last(state.sockets.at(-1)))} ${entry}`);
+
+	// Without a key nothing is issued and nothing is honoured: the old way.
+	const bare = { ...workerEnv, ROOM_PASS_KEY: undefined };
+	const r2 = await worker.fetch(new Request("https://room.test" + withPass(code, "h", hostPass), { headers: { Upgrade: "websocket", "CF-Connecting-IP": "12.1.0.4" } }), bare);
+	check("with no key set, a pass is charged like anything else", r2.status === 101 && dials("12.1.0.4") === 1, `${r2.status} ${dials("12.1.0.4")}`);
+	const keyless = makeState();
+	const kobj = new RoomSignal(keyless, { GATE: gates });
+	const kh = await hostIn(kobj, keyless, "800200", "12.1.0.5", "kh", { id: "h", secret: "s" });
+	check("and replies carry no pass", last(kh)?.t === "room" && !("pass" in last(kh)), JSON.stringify(last(kh)));
 }
 
 console.log("\nIPv6 is counted by /64");

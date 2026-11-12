@@ -89,6 +89,23 @@ test-live url *args:
 test-nat-live url *args:
     RS_URL={{url}} scripts/test-nat.sh {{args}}
 
+# Not part of `test`: needs ssh access (keys, BatchMode) to a second machine on
+# a DIFFERENT public network — `bhaskara` by default, PAIR_REMOTE or
+# --remote=<host> otherwise — with node, a system Chrome and Playwright there.
+# Tests the site and room server AS DEPLOYED (SITE=… overrides the site).
+# Copies only scripts/test-pair.mjs to ~/neon-pair-test on the remote and kills
+# its processes at the end. Flags: --runs=N (3), --stun4, --diag, --no-punch,
+# --no-classify, --remote-hosts (the remote hosts, this machine joins),
+# --site=URL / --rs=URL (both sides; loopback URLs forwarded over ssh -L test
+# the working tree without a deploy), --site-remote / --rs-remote (the same
+# servers as the remote reaches them), --manual=SECS[,remote] (scan/paste
+# handshake, reply carried after SECS).
+# See docs/network-testing.md.
+
+# Two real machines, two real networks: join, traffic, reloads, leave; NAT classification.
+test-pair *args:
+    node scripts/test-pair.mjs {{args}}
+
 # Sealed channels, commit-reveal and the round clock, over real routing.
 test-plumbing:
     node scripts/test-plumbing.mjs

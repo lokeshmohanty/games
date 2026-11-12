@@ -17,7 +17,8 @@ same UI paths run, and no game or test notices its absence.
 ## The two invariants the client enforces
 
 1. **The rejoin token is the only thing that survives a reload.** It holds
-   `{code, id, secret}` in `localStorage`. The id is the seat; the secret is
+   `{code, id, secret, pass, exp}` in `localStorage` (`pass`/`exp`: the
+   member pass, when the server issued one). The id is the seat; the secret is
    the claim on it. Everything else — the WebSocket, the data channels, the
    party record — is rebuilt from scratch on every page load.
 
@@ -57,7 +58,7 @@ same UI paths run, and no game or test notices its absence.
 - **Guess limits must span rooms.** Each code is its own Durable Object, so
   a counter in the hub only ever saw guesses at its own code (2026-11-11).
   The count lives in `IpGate` (one DO per IP), charged *before* each
-  host/join and refunded on success — check-then-record let N parallel
+  join and refunded on success — check-then-record let N parallel
   sockets get N guesses. `taken` and `full` count: both say a code is live.
   IPv6 counts by /64. A gate that errors **fails closed** (`blocked`); a
   local fallback let anyone who could overload the gate turn the limit off.
@@ -69,11 +70,24 @@ same UI paths run, and no game or test notices its absence.
   (`claimed` in hub.js) and binds without charging; only unproven attempts
   pay. The client retries `blocked` on a redial with the backoff, as it does
   `unreachable`. Test shape: test-hub "A valid claim is never charged".
+  **The same holds at the upgrade** (2026-11-12): the claim rides the
+  socket, so the dial gate could not see it, and with equal budgets a
+  LAN/CGNAT address that typo'd 10 codes 429'd its members' re-dials. Every
+  seat granted (`room`/`joined`) carries a **member pass**,
+  `HMAC-SHA256(ROOM_PASS_KEY, "code.id.exp")`, which the client stores in
+  the token and puts on every re-dial's URL (`?id=&exp=&pass=`: redial,
+  reload rejoin, owed leave, releaseRejoin); the routing Worker verifies it
+  *before* IpGate and forwards uncharged. A pass waives the dial only —
+  the join still needs the secret, and a wrong claim on a pass socket is a
+  guess. Test shape: test-worker-do "Members re-dial on a pass", test-worker
+  section 9 (two browsers on one `CF-Connecting-IP`, 10 typos, reloads).
 - **Two tabs with the same token fight.** Same localStorage = same claim. Each
   bind hangs up the other's socket with `4409`; a client that redials on
   every close takes it straight back, so the tabs traded the seat every
   second, forever (2026-11-11). A 4409 on the *current* socket can only be
-  another tab — rejoinServer retires the socket it closes, and a redial's
+  another tab — rejoinServer retires the socket its dial replaces (since
+  2026-11-12 it dials *before* hanging up, so the seat is never unattended
+  — see [[cross-network]]), and a redial's
   predecessor is already closed — so the client stands down: `room.detach()`
   (links closed with no `__gone`, since the id lives on in the other tab),
   claim and token untouched, party screen "open in another tab" + USE THIS
@@ -89,20 +103,64 @@ same UI paths run, and no game or test notices its absence.
   the displaced screen instead of hosting (a new party would overwrite the
   shared token). Tests: test-hub "A claim released from a socket…",
   test-worker-do "released without binding", test-room 6e6 + the screens,
-  test-worker section 7. The owed leave (`oweLeave`) still binds — a
-  documented gap. The mock
+  test-worker section 7. The owed leave (`oweLeave`) is a `release` too
+  since 2026-11-12 (see below). The mock
   closes a replaced socket with 4409 too. Tests: test-room 6e5 (mock),
   test-worker section 7 (two pages, one context).
 - **A leave mid-redial is owed, not dropped.** With no open socket the
   `leave` used to be skipped and the landing redial hung up silently — seat
-  held 5 min. `oweLeave` brings the redial forward and its socket carries the
-  leave; roomSettled waits for it. **Except after a final refusal**
+  held 5 min. `oweLeave` cancels a scheduled redial and pays with
+  `release` (`releaseOwed`), never `join`+`leave` — that 4409'd a twin tab
+  holding the seat and gave its seat away (2026-11-12). `busy` is retried
+  (1.5 s apart, 4 tries) because it is usually *our own* old socket the
+  server has not seen close; still busy = another tab's, left alone.
+  roomSettled waits ≤ 6 s (OWED_LEAVE_MS). Only a join already on the wire
+  still lands and carries a `leave` (it bound anyway). Tests: test-room
+  6e2/6e2b, test-worker section 8 (closing the tab's RTCPeerConnections
+  too — with its mesh link alive the host never offers to the twin). **Except after a final refusal**
   (`gaveUp`: no-room/full/id-taken): there is no seat to give back, and the
   owed `join` was charged, held navigation ~4 s and could seat us in a party
   that re-hosted the code (test-room 6e7).
 - **The offer backstop clears `glared` too.** OFFERING_MS forgot our offer
   but kept the one set aside for it; a later failed invite answered that
-  stale offer (test-room 6e8, `opts.offerBackstopMs`).
+  stale offer (test-room 6e8, `opts.offerBackstopMs`). Since 2026-11-12 it
+  answers that offer *at* the backstop (if ours was never answered) and
+  keeps nothing — normally `GLARE_FALLBACK_MS` (6 s) has answered it
+  already (`opts.glareFallbackMs`; see [[cross-network]], rollout trap).
+- **Unanswered invites must not mute verdicts** (2026-11-12, review). An
+  invite never expires on its own, and net.js `_trying` counted any invite
+  minted `forPeer` as a negotiation under way — so one left over (a glare
+  loser's set-aside offer, an offer whose answer never came) silenced the
+  role swap *and* the no-route verdict for good; the join ended `no-answer`
+  at 30 s instead of connecting. `_trying` now counts only links with a
+  `peerId` (an answer taken, or an offer we are answering), and the glue
+  closes its own unanswered invite (`room.dropInvites(peer)`) when it loses
+  glare (higher id answering theirs), at the OFFERING_MS backstop and on
+  `connected:false`. A `createInvite` dropped mid-gather rejects
+  `withdrawn`, and the glue's catch leaves the guards alone for it. Test
+  shape: a bare `createInvite({forPeer})` on the guest before a join whose
+  first offer is broken (test-room 6e11).
+- **Glare bypass only for the marked retry.** The swap's offer skips the
+  glare rule because it often arrives before our own failure; an earlier
+  version skipped it for *any* offer from a member who had answered ours,
+  so a plain re-announce offer made two links per pair and the opposite-
+  order `prev.close()` killed both. The mark rides the code (`r.` prefix,
+  `isRetrySignal`, synchronous — an `await unpackSignal` in the message
+  handler would let the next message overtake it). test-room 6e12.
+- **A replacing socket keeps only *answered* offer guards.** `wire()`
+  clears `inflight`/`glared` because a socket that *dropped* left a server
+  that forgot us. rejoinServer's dial replaces a socket still open (the hub
+  binds without a gap), but "still open" may be dead-and-unnoticed (a
+  network switch): an offer sent down it was lost, and keeping its guard
+  would stall the re-offer to the 20 s backstop. Rule:
+  `attempt({ replacing: true })` → `wire(ws, { replacing })` keeps a guard
+  only if the peer answered (`answered`, set on their `answer`); the rest
+  are cleared and their unanswered invites dropped, so the re-offer is the
+  only one (test-room 6e13).
+- **The join deadline waits once for a swap.** 30 s, plus SWAP_WAIT_MS
+  (8 s) once if a swap is under way when it falls: a reload's stale-link
+  wait + gathers + ICE's ~15 s put the swap at ~31–36 s. Worst case 38 s,
+  always a verdict (test-room 6e14).
 - **Only storage chooses the room server.** The server relays SDP, DTLS
   fingerprints included — a link-chosen one could MITM every channel.
   `?rs=` is honoured only when it names loopback (localhost, 127/8, [::1]);
@@ -110,18 +168,91 @@ same UI paths run, and no game or test notices its absence.
 - **The probe is `GET /ping` on the routing Worker**, never a room object
   (it was a WS ping to room 000000: one hot object for every client). The
   mock is always reachable.
-- **Every upgrade spends a dial** (2026-11-11). Measured on real CF: a
-  never-used code's object answers the 101 ~180 ms later than a live one's
-  (93% one-shot accuracy), and a silent socket was free. The routing Worker
-  now charges `IpGate` `/dial` before touching a room; the room refunds on
-  the socket's first successful host/join/release (`refundDial`, once per
-  socket). 20 unrefunded per 5 min, then 429. Fails *open* (a dial can't
-  prove a claim; failing closed would cut members off). Test probes count:
-  a node `claimOf` is a guess *and* an unrefunded dial — a live run that
-  does many burns its own budget (run `gate` after a fresh window).
+- **Every unproven upgrade spends a dial** (2026-11-11). Measured on real
+  CF: a never-used code's object answers the 101 ~180 ms later than a live
+  one's (93% one-shot accuracy), and a silent socket was free. The routing
+  Worker charges `IpGate` `/dial` before touching a room unless the URL
+  carries a valid member pass; the room refunds on the socket's first
+  successful **join/release** (`refundDial`, once per socket).
+  `DIAL_FAILS` **= `JOIN_FAILS`** (10): every dead code tested costs one
+  dial however it is asked, so the oracle is never cheaper than a guess —
+  at 20 it doubled the search rate. **Keep them equal**: the shared-address
+  cost is solved by passes and `/room/new`, never by raising the dial
+  budget. Fails **closed** (503): failing open gave an attacker who flooded
+  their own gate free upgrades, which the room then "refunded" (minting
+  budget). **The room must re-check a pass ignoring expiry** to set the
+  attachment's `dial`: if it honoured expiry, a pass that expired between
+  the Worker's check and the room's would read "charged" and its join
+  would refund a dial nobody paid. Test probes count: a node `claimOf` is
+  a guess *and* an unrefunded dial. test-worker still gives each context
+  its own `CF-Connecting-IP` (`extraHTTPHeaders` + a `**/ping` route so
+  Playwright answers the CORS preflight that header causes), except
+  section 9, which shares one on purpose.
+- **No client chooses a code to host** (2026-11-12). A client-drawn host
+  code made success mean "that code was dead": refunded, it was a free
+  scan; charged (dial + guess), a LAN party that hosted ten times blocked
+  itself. Hosting is `wss://…/room/new`: the Worker draws, forwards the
+  upgrade as `new Request("…/room/<code>/new", request)` (only the Worker
+  can make that path; from outside it is 404), and the object either
+  *reserves* the code for the socket (create-if-free) or answers 409 and
+  the Worker redraws. A reserved room is `pending` in the hub: `join` and
+  `release` answer `no-room` there as on a dead code, it is never
+  persisted, the socket closing frees it, and a wake-up re-reserves from
+  the attachment (`host: true`, no `id`) — see "reservations must
+  expire" below. `host` on a plain room socket is `bad-code`. Its only
+  limits are `HOST_ROOMS` (30 / 5 min / address) and, for IPv6, also
+  `HOST_SITE_ROOMS` (120 / 5 min / **/48**) at the gate — no dial, no
+  guess. Per /64 alone, one /48 (65 536 /64s) could hold every code. The mock does the same (`/room/new`, and
+  `mock.dials` logs each dial's pass as valid/invalid/none).
+- **`ROOM_PASS_KEY` is a deploy-time secret** (`wrangler secret put`,
+  worker/README.md). Unset, the worker issues no passes and charges
+  members' re-dials as before (logged once). Tests never use a shared key:
+  test-worker and test-nat pass `--var ROOM_PASS_KEY:<random>` per run,
+  test-worker-do/test-hub make their own. Never commit `worker/.dev.vars`.
 - **`ROOM_DEBUG` is test-only.** With it the 101 carries `X-Room-Instance`
-  (proves eviction in test-live `hib`); on a real deployment it would
-  re-open the oracle. Never set it there.
+  (proves eviction in test-live `hib`) and a `/room/new` 101 `X-Room-Draws`;
+  on a real deployment it would re-open the oracle. Never set it there.
+  `ROOM_TEST_FORCE_REDRAW` (honoured only *with* ROOM_DEBUG) lets
+  `/room/new?draw=<code>` choose the first draw — test-live `redraw`
+  forces a live one to exercise the 409 re-forward on real CF. Never set
+  it there either: it lets a client pick a code.
+- **Pipelined messages vs attachment reads** (2026-11-12, review). A
+  client may send many frames before the first is answered; each
+  `webSocketMessage` runs concurrently and interleaves at every `await`
+  (`this.hub()`, sha256, the gate). An attachment read on entry is stale
+  by the time it is used: `refundDial` trusted that copy, so six pipelined
+  `join`s each saw `dial: true` and refunded six dials for one upgrade,
+  and the hub bound the socket under all six ids. Rule: **check-and-set
+  shared per-socket state synchronously, before any await** — refundDial
+  re-reads the live attachment and clears `dial` in the same tick; the hub
+  claims the socket's one ask (`asked`, host/join/release) at entry, and
+  any second ask is `bound` (no close, no charge). Test shape: pipeline
+  with `Promise.all` on one socket (test-worker-do "One upgrade, one ask,
+  one refund", test-hub "One ask per socket"); sequential sends never
+  find it.
+- **Reservations must expire** (2026-11-12, review). A `/room/new` socket
+  that never says `host` held its code as long as it stayed open, and a
+  wake-up re-reserved it with a *fresh* clock — squatting, bounded only by
+  HOST_ROOMS sockets per window. Now the attachment carries `reservedAt`,
+  the reservation arms the alarm (`persist` arms it even with nothing to
+  store), the sweep hangs a reservation up after `RESERVE_MS` (15 s,
+  `4408 unhosted`), a late `host` is `expired`, and a wake-up re-reserves
+  only inside the 15 s and on the original clock (`hub.reserve(ws, code,
+  reservedAt)`); a lapsed or `reservedAt`-less one is closed. Anything a
+  wake-up rebuilds from an attachment must keep its original clock.
+- **A refused upgrade is a socket, not a status** (2026-11-12). A browser
+  WebSocket never sees the HTTP status, so a 429 read as "Could not reach
+  the room server". Past a dial/host budget the routing Worker accepts a
+  `WebSocketPair` of its *own* (never a room's: the probe invariant), sends
+  `{t:"error", reason:"blocked"}` and closes 4429. Tests that want "was it
+  refused" read that frame (test-worker `upgradeStatus` sends a `leave`:
+  a room closes 1000 silently, a refusal says `blocked`; test-live `dial`
+  waits briefly for a first frame). 503 (gate down, draws exhausted) stays
+  an HTTP refusal.
+- **Passes are canonical base64url only.** 43 characters carry 258 bits
+  for a 256-bit MAC: four last characters decode alike. `checkPass`
+  re-encodes and compares. Member ids are capped at 64 (`bad-id` at
+  attach) — the cap `checkPass` applies, so every issued pass verifies.
 - **Navigate only after `roomSettled()`.** A `leave` is acknowledged by the
   server closing the socket; anything that navigates after a leave awaits
   it (capped 1.5 s). Never seen lost over loopback, so it is a guarantee,
@@ -154,7 +285,8 @@ same UI paths run, and no game or test notices its absence.
   `roomServerReachable`, and an internal mock (`?mockroom=1`) for tests.
 - `worker/` — the Cloudflare Worker + Durable Object. `hub.js` is the pure
   logic; `index.js` is the DO shell. `wrangler.toml` is the deploy config.
-- `scripts/test-hub.mjs` — the hub rules (codes, claims, TTLs, rate limits).
+- `scripts/test-hub.mjs` — the hub rules (reservations, claims, TTLs, rate
+  limits, passes).
 - `scripts/test-worker-do.mjs` — the DO shell through simulated evictions.
 - `scripts/test-room.mjs` — the client against the in-page mock.
 - `scripts/test-worker.mjs` — the client against real `wrangler dev`.

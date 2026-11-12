@@ -601,10 +601,25 @@ the favicon via `<link rel="icon">`.
   order, both links close and the pair falls back to relaying until the next
   roster change. Not observed; reasoned from the code. The one place two
   offers were *made* likely — two isolated members re-announcing to the room
-  server together — now has a glare rule in room-join (the lower id's offer
-  stands); relayed negotiation already had one.
-- A relayed negotiation is abandoned after 15 s, and nothing retries it on a
-  timer — the next roster change does. A pair that failed once stays
+  server together, or a reload's returner and the member who stayed — now
+  has a glare rule in room-join (a hard-NAT side's offer stands, else the
+  lower id's); relayed negotiation already had one.
+- **A reply carried by hand has ~15 s between some networks.** Measured
+  2026-11-12 between a carrier NAT that connects only as the offerer and an
+  institute NAT: the replying side's own ICE gives up ~15.6 s after its
+  reply is made (Chrome's verdict, not ours), and the scan/paste flow has no
+  signalling channel to rebuild the link over — inherent without TURN. A
+  reply carried back later links to nothing; with the restrictive side
+  replying it never links. The reply screen says to carry it back right
+  away; a reply that fails says it was not used in time or the networks
+  cannot connect directly, and offers MAKE A NEW REPLY (the same invite,
+  answered afresh) or a new invite if the old reply was used. Nothing waits.
+  Join by code has no such window (the room server carries the reply and the
+  role swap). The UI is tested with a forced ICE failure (test-party,
+  test-bots); the 15 s itself only on the real pair.
+- A relayed negotiation is abandoned after 15 s and tried once the other way
+  round (2026-11-12, for NATs that connect in one direction only); after
+  that nothing retries it on a timer — the next roster change does. A pair that failed once stays
   relay-only until somebody joins, leaves or is edited.
 - The 3 s grace on `disconnected` is observed in the NAT lab, not on a phone:
   4 s and 8 s blackouts keep the link; Chrome itself declares `disconnected`
@@ -648,7 +663,8 @@ the favicon via `<link rel="icon">`.
 - Cross-network play over mobile data is expected to fail on carriers using
   CGNAT/symmetric NAT — confirmed in the wild on 2026-08-10, and reproduced in
   the NAT lab (symmetric vs symmetric, and symmetric vs a port-restricted
-  cone: explicit error at ~15 s). This is the no-TURN trade-off, not a bug;
+  cone: explicit error at ~15 s, ~30 s for a code join since the role-swapped
+  second try of 2026-11-12). This is the no-TURN trade-off, not a bug;
   the error now names which case you hit. The lab's NATs are Linux's; no real
   carrier's has been modelled (see network-testing.md, "What it cannot show").
 - There is no TURN server by choice, so players behind symmetric NAT cannot

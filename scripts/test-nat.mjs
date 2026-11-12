@@ -32,6 +32,18 @@
  *              Many mobile carriers. With no TURN, two of these, or one and
  *              a port-restricted cone, cannot connect at all; the code must
  *              say so, not wait.
+ *   portdep    the owner's mobile carrier CGNAT, as measured 2026-11-12
+ *              (docs/network-testing.md, "Two machines"): the mapping toward
+ *              STUN's port 3478 keeps the client's port and takes packets
+ *              from anybody (a DNAT, as fullcone), every other UDP flow gets
+ *              a fresh random port. So a peer's checks reach the client only
+ *              through the STUN mapping, and only if they arrive *before*
+ *              the client has sent to that peer: once it has, the carrier
+ *              drops them (a set of endpoints the client opened its own
+ *              flow to — Linux alone would let them through, resolving the
+ *              conntrack clash, which the carrier does not). Against a cone
+ *              NAT it connects when this side offers and never when it
+ *              answers — the answerer checks first.
  *
  * It must run as root of a user namespace that owns all of this, so it is
  * launched by scripts/test-nat.sh (`nix shell … -c unshare -rn node …`);
@@ -44,6 +56,7 @@
  */
 import { createRequire } from "node:module";
 import { execFileSync, spawn } from "node:child_process";
+import { randomBytes } from "node:crypto";
 import { createSocket } from "node:dgram";
 import { createServer } from "node:http";
 import { request as httpsRequest } from "node:https";
@@ -69,6 +82,10 @@ const PUBLIC = "198.51.100.1"; // TEST-NET-2: never a real address
 const HTTP_PORT = 8000;
 const RS_PORT = 8787;
 const STUN_PORT = 3478;
+// A second STUN port on the same responder, as DEFAULT_ICE has two servers on
+// two ports: net.js classifyNat compares the mappings the two see, and only
+// the portdep router maps them differently ("hard").
+const STUN_PORT_2 = 3479;
 // The lab's own STUN and room servers go in through storage (net.js
 // iceDefault, room-join.js resolveBase): the app takes neither from the URL
 // — `?rs=` only for a loopback server — on purpose.
@@ -236,10 +253,24 @@ async function makeSite(nat, { blockRs = false } = {}) {
 	// Live: the router's way out is the "internet" namespace, which NATs
 	// once more onto slirp4netns and so onto the host's real network.
 	if (LIVE) r("route", "add", "default", "via", PUBLIC);
-	const masq = nat === "symmetric" ? "masquerade fully-random" : "masquerade";
+	const masq =
+		nat === "symmetric"
+			? "masquerade fully-random"
+			: nat === "portdep"
+				? `udp dport ${STUN_PORT} masquerade\n oifname "wan" meta l4proto udp masquerade fully-random\n oifname "wan" masquerade`
+				: "masquerade";
 	const pre =
-		nat === "fullcone"
+		nat === "fullcone" || nat === "portdep"
 			? `chain pre {\n type nat hook prerouting priority -100;\n iifname "wan" udp dport 1024-65535 dnat to ${lanNet}.2\n}`
+			: "";
+	// portdep: an endpoint the client has opened its own (fresh-port) flow
+	// to may not then open one into the STUN mapping (see the header).
+	const talked =
+		nat === "portdep"
+			? `table ip carrier {\nset talked {\n type ipv4_addr . inet_service;\n flags dynamic,timeout;\n timeout 60s;\n}\n` +
+				`chain portdep {\n type filter hook forward priority 0;\n` +
+				` oifname "wan" udp dport != ${STUN_PORT} ct state new update @talked { ip daddr . udp dport }\n` +
+				` iifname "wan" ct state new ip saddr . udp sport @talked drop\n}\n}\n`
 			: "";
 	const block = blockRs
 		? `table inet filter {\nchain rsblock {\n type filter hook forward priority 0;\n ip daddr ${PUBLIC} tcp dport ${RS_PORT} drop\n}\n}`
@@ -254,7 +285,7 @@ async function makeSite(nat, { blockRs = false } = {}) {
 			// conntrack (then refused by the stack), and that confirmed entry
 			// squats on the very port the outbound hole punch needs — the NAT
 			// then picks another port and a cone behaves like a symmetric NAT.
-			`table ip filter {\nchain in {\n type filter hook input priority 0;\n iifname "wan" ct state new drop\n}\n}\n${block}\n`,
+			`table ip filter {\nchain in {\n type filter hook input priority 0;\n iifname "wan" ct state new drop\n}\n}\n${block}\n${talked}`,
 	);
 	return { n, nat, router, client, wan, lan: `${lanNet}.2` };
 }
@@ -287,7 +318,7 @@ function switchNetwork(site) {
  * A STUN binding responder (RFC 5389): enough for a browser to learn its
  * server-reflexive address, which is all STUN ever does here.
  */
-function startStun() {
+function startStun(port = STUN_PORT) {
 	const sock = createSocket("udp4");
 	sock.on("message", (msg, rinfo) => {
 		if (msg.length < 20 || msg.readUInt16BE(0) !== 0x0001 || msg.readUInt32BE(4) !== 0x2112a442) return;
@@ -308,7 +339,7 @@ function startStun() {
 		txn.copy(head, 8);
 		sock.send(Buffer.concat([head, attr]), rinfo.port, rinfo.address);
 	});
-	return new Promise((r) => sock.bind(STUN_PORT, "0.0.0.0", () => r(sock)));
+	return new Promise((r) => sock.bind(port, "0.0.0.0", () => r(sock)));
 }
 
 const TYPES = {
@@ -340,7 +371,9 @@ const persist = mkdtempSync(join(tmpdir(), "neon-nat-rs-"));
 async function startRoomServer() {
 	const proc = spawn(
 		"wrangler",
-		["dev", "--ip", "0.0.0.0", "--port", String(RS_PORT), "--persist-to", persist],
+		// A fresh member-pass key per run, as production has one
+		// (worker/README.md): members' re-dials ride their passes.
+		["dev", "--ip", "0.0.0.0", "--port", String(RS_PORT), "--persist-to", persist, "--var", `ROOM_PASS_KEY:${randomBytes(32).toString("base64url")}`],
 		{
 			cwd: join(ROOT, "worker"),
 			env: { ...process.env, WRANGLER_SEND_METRICS: "false", CI: "1", NO_COLOR: "1" },
@@ -425,7 +458,7 @@ async function device(site, tag) {
 			} catch {}
 		},
 		// Live: the deployed room server, and no STUN override at all.
-		LIVE ? [null, LIVE] : [`${PUBLIC}:${STUN_PORT}`, `http://${PUBLIC}:${RS_PORT}`],
+		LIVE ? [null, LIVE] : [`${PUBLIC}:${STUN_PORT},${PUBLIC}:${STUN_PORT_2}`, `http://${PUBLIC}:${RS_PORT}`],
 	);
 	const page = await context.newPage();
 	page.on("dialog", (d) => d.accept());
@@ -483,6 +516,7 @@ const state = (dev) =>
 						peers: r.directPeers(),
 						members: r.getMembers().map((m) => ({ id: m.id, rc: !!m.reconnecting })),
 						closed: r.closed,
+						nat: r.natHard,
 					}
 				: null,
 		};
@@ -622,6 +656,8 @@ scenario(1, "two port-restricted cone NATs, join by code, reloads", async () => 
 		check("guest joins by code across two NATs", j.joined, brief(j.s), j.ms);
 		const c = await converged([h, g], 15_000);
 		check("both agree on the party", c.ok, c.last.map(brief).join(" | "), c.ms);
+		const nat = await Promise.all([h, g].map(state));
+		check("a cone NAT classifies as not hard", nat.every((s) => s.room?.nat === false), JSON.stringify(nat.map((s) => s.room?.nat)));
 		const x = await exchange([h, g]);
 		check("game messages flow both ways", x.ok, "", x.ms);
 
@@ -673,8 +709,10 @@ scenario(3, "both behind symmetric NAT: explicit failure", async () => {
 		const j = await joinByCode(g, made.code, FAIL_BOUND_MS + 10_000);
 		check("code join does not connect", !j.joined, brief(j.s));
 		check("code join fails with an explicit error within the bound", !!j.s?.error && j.ms <= FAIL_BOUND_MS, brief(j.s), j.ms);
-		// Early and specific: ICE's own verdict (~15s), not joinRoom's 30s
-		// "nobody answered", which would blame a party that did answer.
+		// Specific: ICE's own verdict, not "nobody answered", which would
+		// blame a party that did answer. Since the role swap (2026-11-12)
+		// the second try outlasts joinRoom's 30 s deadline, which then
+		// reports no-route with the first try's message (~30.3 s).
 		check(
 			"the error names the network, not a silent or vanished party",
 			/direct connection/i.test(j.s?.status ?? "") && !/answered|no longer meeting/i.test(j.s?.status ?? ""),
@@ -962,12 +1000,124 @@ scenario(9, "live: a peer on the host's own network and one behind a lab NAT", a
 	}
 });
 
+scenario(10, "a port-dependent carrier NAT: its offer stands, both directions", async () => {
+	// The 2026-11-12 pair (docs/network-testing.md, "Two machines"): the
+	// owner's carrier CGNAT, which connects only as the ICE offerer, against
+	// an institute's cone NAT. After a reload both ends offer, and the lower
+	// id's offer used to stand: half the reloads took the failing direction
+	// and waited ~18 s for the role swap. Now the carrier side classifies
+	// itself hard (two STUN ports, two mappings: net.js classifyNat), marks
+	// its offers, and the glare rule lets them stand — and offered to with
+	// nothing of its own in flight, it offers back. Every reconnect here is
+	// the carrier's own offer, first try, no swap.
+	const FAST_MS = 6000;
+	/** Who offered the link `dev` holds to `peer`, and was it the swap's? */
+	const linkTo = (dev, peer) =>
+		dev.page.evaluate((p) => {
+			const l = window.__party?.room?.links.get(p);
+			return l ? { offered: !!l.offered, retry: !!l.retry } : null;
+		}, peer);
+	/** The carrier's link to `other` is its own first-try offer. */
+	const carrierOffered = async (carrier, other) => {
+		const id = (await state(other)).room?.id;
+		const l = id && (await linkTo(carrier, id));
+		return { ok: !!l && l.offered && !l.retry, l };
+	};
+	/** Reload `dev`; ms until every page is back with new links both ways. */
+	const reloadTimed = async (dev, devs) => {
+		const start = Date.now();
+		await dev.page.reload();
+		const r = await waitFor(dev, (s) => inParty(s) || s.error, 45_000);
+		const ok = r.ok && inParty(r.s);
+		const c = ok ? await converged(devs, 40_000, { links: true }) : { ok: false, last: [] };
+		return { ok: ok && c.ok, ms: Date.now() - start, s: r.s };
+	};
+
+	let sites = [await makeSite("portdep"), await makeSite("cone")];
+	let devs = [await device(sites[0], "carrier"), await device(sites[1], "cone")];
+	try {
+		const [h, g] = devs;
+		const made = await hostByCode(h);
+		const j = await joinByCode(g, made.code);
+		check("cone guest joins the carrier host by code", j.joined, brief(j.s), j.ms);
+		const nat = await Promise.all(devs.map(state));
+		check("the carrier NAT classifies as hard, the cone as not", nat[0].room?.nat === true && nat[1].room?.nat === false, JSON.stringify(nat.map((s) => s.room?.nat)));
+		for (let i = 1; i <= 3; i++) {
+			const r = await reloadTimed(g, devs);
+			check(`guest reload ${i} reconnects (links both ways) in < ${FAST_MS / 1000}s`, r.ok && r.ms < FAST_MS, brief(r.s), r.ms);
+			const o = await carrierOffered(h, g);
+			check(`…on the carrier's own offer, no swap`, o.ok, JSON.stringify(o.l));
+		}
+		for (let i = 1; i <= 2; i++) {
+			const r = await reloadTimed(h, devs);
+			check(`host reload ${i} reconnects in < ${FAST_MS / 1000}s`, r.ok && r.ms < FAST_MS, brief(r.s), r.ms);
+			const o = await carrierOffered(h, g);
+			check(`…on the carrier's own offer, no swap`, o.ok, JSON.stringify(o.l));
+		}
+		const x = await exchange(devs);
+		check("messages flow", x.ok, "", x.ms);
+	} finally {
+		await closeAll(devs);
+		dropSites(sites);
+	}
+
+	// The other way round: the cone side hosts and is the one told to offer
+	// — the direction that cannot work. The carrier guest, offered to with
+	// nothing in flight, offers back marked hard, and the host's glare rule
+	// lets it stand: a first try, not the swap.
+	sites = [await makeSite("cone"), await makeSite("portdep"), await makeSite("cone")];
+	devs = [await device(sites[0], "cone"), await device(sites[1], "carrier"), await device(sites[2], "cone2")];
+	let start;
+	try {
+		const [h, g, g2] = devs;
+		const made = await hostByCode(h);
+		const j = await joinByCode(g, made.code);
+		check("carrier guest joins a cone host by code", j.joined, brief(j.s), j.ms);
+		const o = await carrierOffered(g, h);
+		check("…on its own offer, the first try", o.ok, JSON.stringify(o.l));
+		for (let i = 1; i <= 2; i++) {
+			const r = await reloadTimed(g, [h, g]);
+			check(`carrier guest reload ${i} reconnects in < ${FAST_MS / 1000}s`, r.ok && r.ms < FAST_MS, brief(r.s), r.ms);
+			const o2 = await carrierOffered(g, h);
+			check(`…on the carrier's own offer, no swap`, o2.ok, JSON.stringify(o2.l));
+		}
+		for (let i = 1; i <= 2; i++) {
+			const r = await reloadTimed(h, [h, g]);
+			check(`cone host reload ${i} reconnects in < ${FAST_MS / 1000}s`, r.ok && r.ms < FAST_MS, brief(r.s), r.ms);
+			const o2 = await carrierOffered(g, h);
+			check(`…on the carrier's own offer, no swap`, o2.ok, JSON.stringify(o2.l));
+		}
+		// A third member, joined under the lowest id there is, so the mesh
+		// relay has it offer to the carrier guest (the lower id offers; the
+		// relay knows nothing of NATs) — the direction that fails — and the
+		// role swap still has to carry that pair.
+		// (A token for the code is a claim the server has not seen: it
+		// seats a newcomer under that id.)
+		await g2.page.context().addInitScript((code) => {
+			try {
+				localStorage.setItem("neon.room", JSON.stringify({ code, id: "000000000000", secret: "lab-relay-swap" }));
+			} catch {}
+		}, made.code);
+		start = Date.now();
+		const j2 = await joinByCode(g2, made.code);
+		check("a third member joins the cone host", j2.joined, brief(j2.s), j2.ms);
+		const c = await converged(devs, 60_000, { links: true, trace: VERBOSE });
+		check("the relayed pair (cone offers to carrier) links after the swap", c.ok, c.last.map(brief).join(" | "), Date.now() - start);
+		const after = await Promise.all(devs.map(state));
+		check("nobody was shown an error", after.every((s) => !s.error), after.map(brief).join(" | "));
+	} finally {
+		await closeAll(devs);
+		dropSites(sites);
+	}
+});
+
 // ------------------------------------------------------------- run
 
-let stun, http;
+let stun, stun2, http;
 try {
 	setupInternet();
 	stun = await startStun();
+	stun2 = await startStun(STUN_PORT_2);
 	http = await startHttp();
 	if (LIVE) {
 		await connectInternet();
@@ -997,6 +1147,7 @@ try {
 } finally {
 	for (const c of children) c.kill();
 	stun?.close();
+	stun2?.close();
 	http?.close();
 	liveForwarder?.close();
 	rmSync(wrappers, { recursive: true, force: true });

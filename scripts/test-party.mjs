@@ -445,6 +445,125 @@ try {
 	);
 	check("the party survived losing its host", (await names(p2)).length === 2);
 
+	console.log("\nparty: a carried reply that failed");
+	// Between some networks a reply only works if it is carried back within
+	// ~15 s: the replier's own ICE gives up, and with no signalling channel
+	// nothing can rebuild the link (docs/network-testing.md, "Final code").
+	// The reply screen says to hurry; a failed one says why and offers a new
+	// reply for the same invite. The failure is the real path — ICE reporting
+	// `failed` on the replier's connection (net.js _watch) — forced here
+	// because loopback always has a route.
+	{
+		const pair = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
+		// The replier's *first* reply is also kept from ever reaching the
+		// inviter (the invite's candidates are stripped before it is
+		// answered), as across the networks this models: on loopback its
+		// ICE would connect at once, and a DTLS hello the inviter cached
+		// from it could spoil the second reply's link. sessionStorage
+		// survives the reload, so the second reply is left alone.
+		await pair.addInitScript(() => {
+			const P = RTCPeerConnection;
+			const strip = !sessionStorage.getItem("__stripped");
+			window.__pcs = [];
+			window.RTCPeerConnection = class extends P {
+				constructor(...args) {
+					super(...args);
+					window.__pcs.push(this);
+				}
+				setRemoteDescription(d) {
+					if (strip && d?.type === "offer") {
+						sessionStorage.setItem("__stripped", "1");
+						d = { type: d.type, sdp: d.sdp.replace(/^a=candidate:.*\r\n/gm, "") };
+					}
+					return super.setRemoteDescription(d);
+				}
+			};
+		});
+		const inviter = await pair.newPage();
+		const replier = await pair.newPage();
+		for (const [page, tag] of [[inviter, "inviter"], [replier, "replier"]]) {
+			page.on("pageerror", (err) => {
+				console.log(`  FAIL page error on ${tag}: ${err.message}`);
+				failures++;
+			});
+		}
+		await inviter.goto(PARTY);
+		await inviter.locator(".party-member").first().waitFor({ timeout: TIMEOUT });
+		await inviter.locator("button", { hasText: "ADD PLAYER" }).first().click();
+		const inviteBox = inviter.locator("textarea.share-code").first();
+		await inviteBox.waitFor({ timeout: TIMEOUT });
+		await replier.goto(await inviteBox.inputValue());
+		const replyBox = replier.locator("textarea.share-code").first();
+		await replyBox.waitFor({ timeout: TIMEOUT });
+		const firstReply = await replyBox.inputValue();
+		const hint = await replier.locator(".share-hint").first().textContent();
+		check("the reply screen says to carry it back right away", /right away/i.test(hint) && /15 seconds/.test(hint), hint);
+		const replyLayout = await replier.evaluate(() => ({
+			hint: document.querySelector(".share-hint").getBoundingClientRect().toJSON(),
+			scroll: document.documentElement.scrollWidth,
+			client: document.documentElement.clientWidth,
+		}));
+		check("…and still fits the phone sideways", replyLayout.scroll <= replyLayout.client && replyLayout.hint.right <= replyLayout.client, JSON.stringify(replyLayout));
+		await replier.evaluate(() => {
+			for (const pc of window.__pcs) {
+				Object.defineProperty(pc, "connectionState", { get: () => "failed" });
+				pc.onconnectionstatechange?.();
+			}
+		});
+		const again = replier.locator("button", { hasText: "MAKE A NEW REPLY" });
+		const offered = await again
+			.waitFor({ timeout: TIMEOUT })
+			.then(() => true)
+			.catch(() => false);
+		check("a failed reply offers MAKE A NEW REPLY", offered);
+		const failed = await replier.evaluate(() => {
+			const row = [...document.querySelectorAll(".lobby-row")].find((r) => /MAKE A NEW REPLY/.test(r.textContent));
+			const hint = [...document.querySelectorAll(".share-hint")].find((h) => /new invite/.test(h.textContent));
+			return {
+				status: document.querySelector(".lobby-status.is-error")?.textContent ?? "",
+				hint: hint?.textContent ?? "",
+				hintBox: hint ? hint.getBoundingClientRect().toJSON() : null,
+				buttons: [...(row?.children ?? [])].map((b) => b.getBoundingClientRect().toJSON()),
+				labels: [...(row?.children ?? [])].map((b) => b.textContent),
+				scroll: document.documentElement.scrollWidth,
+				client: document.documentElement.clientWidth,
+				height: window.innerHeight,
+			};
+		});
+		check(
+			"it says the reply took too long or the networks cannot connect",
+			/not used in time/.test(failed.status) && /cannot connect directly/.test(failed.status),
+			failed.status,
+		);
+		check("and what to do about it, never a wait", /straight away/.test(failed.hint) && /new invite/.test(failed.hint), failed.hint);
+		check("a fresh party is still offered beside it", failed.labels.includes("START A NEW PARTY"), JSON.stringify(failed.labels));
+		check(
+			"the failure screen fits the phone (390x844)",
+			failed.buttons.length >= 2 &&
+				failed.buttons.every((b) => b.left >= 0 && b.right <= failed.client && b.bottom <= failed.height) &&
+				failed.hintBox && failed.hintBox.right <= failed.client && failed.hintBox.bottom <= failed.height &&
+				failed.scroll <= failed.client,
+			JSON.stringify(failed),
+		);
+		await again.click();
+		const secondReply = await replier
+			.waitForFunction(
+				(old) => {
+					const v = document.querySelector("textarea.share-code")?.value;
+					return v && v !== old ? v : null;
+				},
+				firstReply,
+				{ timeout: TIMEOUT },
+			)
+			.then((h) => h.jsonValue())
+			.catch(() => null);
+		check("MAKE A NEW REPLY answers the same invite afresh", !!secondReply && secondReply !== firstReply);
+		await inviter.locator("textarea.share-code").last().fill(secondReply);
+		await inviter.locator("button.neon-btn", { hasText: /^CONNECT$/ }).first().click();
+		check("…and the new reply connects", await waitForMembers(replier, 2, "replier"));
+		await pair.close();
+	}
+
 	console.log("\nparty: leaving through ALL GAMES");
 	// Its own context, so the rejoin token under test is nobody else's.
 	// `?mockroom=1` gives the page a room server, so it hosts with a code and
