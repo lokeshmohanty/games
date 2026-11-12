@@ -114,11 +114,12 @@ test-plumbing:
 test-room:
     node scripts/test-room.mjs
 
-# The three games whose rules are testable without a document.
+# The games whose rules are testable without a document.
 test-rules:
     node scripts/test-onitama.mjs
     node scripts/test-light-cycles.mjs
     node scripts/test-battleship.mjs
+    node scripts/test-neon-bid.mjs
 
 # Three real browser peers: recruiting, teams, game switching, succession.
 test-party:

@@ -28,6 +28,9 @@ profile_for() {
     # Constant glow and a moving knot defeat inter-frame compression the same
     # way the survival games do, so it gets the smaller frame too.
     tug-of-war) echo "480 12 low" ;;
+    # The current gem pulses for the whole clip, so the same story: 1.35MB at
+    # the default profile.
+    neon-bid) echo "480 12 low" ;;
     *) echo "600 12 medium" ;;
   esac
 }

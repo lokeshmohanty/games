@@ -1,6 +1,6 @@
 # games — Documentation
 
-*Last synced: 2026-08-27 (Undercover; the portal rebuilt for phones).*
+*Last synced: 2026-11-12 (Neon Bid).*
 
 Entry point for all project documentation. Any LLM should be able to answer
 questions about this project from this folder alone.
@@ -17,7 +17,8 @@ questions about this project from this folder alone.
 - [Installing it](#installing-it) — the PWA: manifest, icons, service worker, offline
 - [Testing across real networks](network-testing.md) — the NAT lab: symmetric NAT, network switches, lossy links, a blocked room server
 - [`../lib/README.md`](../lib/README.md) — the P2P core, registry, party, lobby and QR APIs
-- (still missing: per-game design notes, decision log)
+- [Neon Bid](neon-bid.md) — the sealed-bid gem auction's design, as approved
+- (still missing: design notes for the other games, decision log)
 
 ## How-to (verified commands)
 
@@ -41,6 +42,7 @@ questions about this project from this folder alone.
 | Test Battleship's rules and audit | `node scripts/test-battleship.mjs` — fleets, sinking, and the audit tested by *breaking* it four ways |
 | Test Undercover | `node scripts/test-undercover.mjs` — the deal, the win conditions, and the table sizes that survive a wrong vote |
 | Test Liar's Dice | `node scripts/test-liars-dice.mjs` — wilds, the bid ladder, the at-least rule, and the reveal race that once accused an honest player |
+| Test Neon Bid's rules, audit and bot | `node scripts/test-neon-bid.mjs` — second price, the reserve, tie refunds, scoring and tie-breaks, the bid audit broken six ways, and the bot measured against a random and an even-spending bidder |
 | Test the Light Cycles arena | `node scripts/test-light-cycles.mjs` — head-on collisions, spawn symmetry, and the bot measured against a rider that only avoids crashing |
 | Rebuild the app icons | `node scripts/make-icons.mjs` after editing `assets/icon.svg` — renders the PNGs the manifest needs |
 | Get back to the portal | every page has a fixed `.portal-link` ("← ALL GAMES") linking to `index.html` |
@@ -251,6 +253,7 @@ Where the brains live:
 | Connect 4 | minimax + alpha-beta, 5 plies, centre-first move ordering | `games/connect4.js` |
 | Tug of War | a tap rate (~9/s) with jitter, one timer for all bots | `games/tug-of-war.js` |
 | Neon Survival | steering: inverse-square flee from enemies, drift to gems, wall push-off, speed-capped | `games/neon-survival-mp.js` |
+| Neon Bid | marginal points (plus a share of the rainbow) + half the leader's gain, scaled by credits per lot it can expect to win, ±15% noise | `games/neon-bid.js` (`NeonArcade.neonBidRules.botBid`) |
 | Draw & Guess | none — `bots: false` in its registration | — |
 
 Draw & Guess opts out on purpose. A bot that draws is replaying a canned doodle
@@ -351,6 +354,21 @@ The generalisation: **commit-reveal is the answer whenever players can generate
 their own secret.** The sealed channel only earns its place when one party must
 know something the others must not — a **shared deck**, dealt without
 replacement, where the hands must be disjoint and no player can roll their own.
+
+### Neon Bid: a bid is a commitment
+
+`games/neon-bid.js` ([design](neon-bid.md)) is the third user of the pattern,
+and the simplest: the secret is a single number. Each player commits to
+their bid in a `collect` phase, opens it only after everyone has committed,
+and the host audits each opening **twice** — against its digest, and against
+the bidder's credits *snapshotted before the await* (the Liar's Dice race).
+A bad opening counts as 0, so it neither wins the lot nor sets the winner's
+price. The lot order is shuffled once and published before the first bid, so
+the host — a player — knows nothing the others do not.
+
+Bots' bids are decided and committed while the previous lot is on show,
+because `botSubmit` is synchronous and `commit` is not (the Battleship
+trap); a backstop `submitFor` covers a commitment that is late.
 
 ### The sealed channel has no user
 
@@ -570,8 +588,10 @@ the favicon via `<link rel="icon">`.
   The relay path *does* now run in anger: `test-nat.mjs` scenario 4 puts two
   peers behind symmetric NATs, which cannot link, and their messages arrive
   through the third.
-- Bot *strength* is now measured for two of the six. Onitama's bot wins 20 of
-  20 against random play; Light Cycles' wins 30 of 30 against a rider that only
+- Bot *strength* is now measured for three. Onitama's bot wins 20 of
+  20 against random play; Neon Bid's wins every one of 2,000 games against a
+  random bidder and against one that spends evenly (`test-neon-bid.mjs`, which
+  prints the rates); Light Cycles' wins 30 of 30 against a rider that only
   avoids crashing, and a per-tick budget assertion keeps the search inside its
   own tick with eight bots running. The other four are still asserted only
   negatively — Connect 4's is checked never to leave an immediate win on the
@@ -589,6 +609,11 @@ the favicon via `<link rel="icon">`.
   flaky** — one failure in five runs on 2026-08-27, timing out waiting for the
   crown to be offered after the host's page closes. The other four passed and
   nothing else in the suite failed. Not investigated.
+- `scripts/test-bots.mjs`'s Neon Survival check "the bot ships are being
+  flown, not parked" is **intermittently flaky** — failed 2 of 8 runs on
+  2026-11-12 (both inside a full `just test`; standalone 0 of 5, and 0 of 1
+  with the new Neon Bid section removed). Not investigated; the page is
+  reloaded between sections, so no state is shared with the section before it.
 - The crown term converges two hosts on one, but **the term itself is not
   authenticated**: any member can publish a record with a higher term and take
   the crown, exactly as before the term existed any member could publish one
@@ -642,6 +667,10 @@ the favicon via `<link rel="icon">`.
 - Battleship's placement auto-commits a few seconds before the deadline so a
   player who walks away cannot stall the game. That path is not covered by any
   test — it takes 142 seconds to reach.
+- Neon Bid's bot may be too strong for a casual table: it beats both baseline
+  bidders in every measured game, and nothing here measures it against people.
+  Its audit, like Battleship's, has only been tripped by deliberately broken
+  openings in the rules test — every real client opens honestly.
 - Liar's Dice trusts each player's *roll*. The commitment stops a player
   changing dice after seeing a bid, which is the cheat that decides rounds; it
   does nothing about a modified client that re-rolls until it likes its hand,

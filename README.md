@@ -26,6 +26,9 @@ takes one tap to get there.
   Real-time canvas stroke sync and chat. **The one game with no bots** — a bot
   that draws is replaying a canned doodle and a bot that guesses is reading the
   answer it was handed, and neither is an opponent. 2–8 people.
+- **[Neon Bid](neon-bid.html)** — Twelve gems, 100 credits, every bid sealed
+  and opened together. The winner pays the second-highest bid; sets and a
+  rainbow score. 2–8 players. Design: [`docs/neon-bid.md`](docs/neon-bid.md).
 
 ### Multiplayer (P2P, no server)
 
@@ -52,6 +55,9 @@ that plays a bot is the side that was refereeing anyway.
   it will block yours; it is not trying to be unbeatable.
 - **Tug of War** — taps at about 9 a second with jitter. Mash properly and you
   beat it; ignore the button and you lose.
+- **Neon Bid** — bids what a gem adds to its own hand (plus a share of the
+  rainbow bonus) and half of what it would add to the leader, scaled by the
+  credits it has per lot it can expect to win.
 - **Neon Survival** — flies a ship that flees the nearest enemies and drifts
   toward gems, capped at a speed you are not. It dies like anyone else.
 
@@ -248,6 +254,8 @@ node scripts/test-battleship.mjs    # fleets, sinking, and the reveal audit —
                                     # tested by breaking it four ways
 node scripts/test-liars-dice.mjs    # wilds, the bid ladder, the at-least rule
 node scripts/test-undercover.mjs    # the deal, the win conditions, table sizes
+node scripts/test-neon-bid.mjs      # second price, ties, scoring, the bid audit
+                                    # broken on purpose, the bot vs random
 ```
 
 `just check-precache` catches the one mistake `sw.js` cannot warn about: a page

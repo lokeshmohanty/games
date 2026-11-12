@@ -297,6 +297,118 @@ try {
 		!!ld.lastCall && ld.lastCall.bidderWasRight === (ld.lastCall.actual >= ld.lastCall.bid.count),
 		JSON.stringify(ld.lastCall));
 
+	// ------------------------------------------------------------- neon bid
+	//
+	// A full table — you and seven bots, the most a phone has to hold — played
+	// through all twelve lots. What is checked: the lot order is public before
+	// the first bid, every bid is sealed before any is opened, every opening
+	// audits clean, the second-price arithmetic adds up across the whole game,
+	// and at 390x844 the gem row, the bid controls, the reveal and the final
+	// table all fit without sideways scroll.
+
+	console.log("\nbots: neon bid plays twelve sealed lots at a full table");
+	await page.goto(url("neon-bid.html"));
+	await page.locator("button", { hasText: "PLAY A BOT" }).first().click();
+	for (let i = 0; i < 6; i++) await page.locator("button", { hasText: "ADD BOT" }).first().click();
+	await page.locator("button", { hasText: "START GAME" }).first().click();
+	await page.waitForFunction(() => window.__game?.handle?.debug().phase === "bid", null, { timeout: TIMEOUT });
+
+	let nb = await debug(page);
+	check("eight seats, 100 credits each", nb.players.length === 8 && nb.players.every((p) => p.credits === 100), JSON.stringify(nb.players.map((p) => p.credits)));
+	check("all twelve lots are laid out before the first bid", nb.order.length === 12 && nb.lot === 0, `${nb.order.length} lots, at ${nb.lot}`);
+	await page.waitForFunction(() => window.__game.handle.debug().submitted.length === 7, null, { timeout: TIMEOUT })
+		.catch(() => {});
+	nb = await debug(page);
+	check("the bots have sealed their bids and are waiting on you", nb.submitted.length === 7 && !nb.committed, JSON.stringify(nb.submitted));
+
+	const nbLayout = () => page.evaluate(() => {
+		const r = (sel) => [...document.querySelectorAll(sel)].map((e) => e.getBoundingClientRect());
+		const ctrls = r(".nb-step button, .nb-chips button, .nb-go");
+		const slots = r(".nb-slot");
+		return {
+			docWidth: document.documentElement.scrollWidth,
+			winWidth: window.innerWidth,
+			slots: slots.length,
+			rowRight: Math.round(Math.max(...slots.map((b) => b.right))),
+			rowLeft: Math.round(Math.min(...slots.map((b) => b.left))),
+			controls: ctrls.length,
+			minTap: ctrls.length ? Math.round(Math.min(...ctrls.map((b) => b.height))) : 0,
+			bottom: Math.round(Math.max(0, ...r(".nb-panel > *, .nb-seats, .nb-lot").map((b) => b.bottom))),
+			worth: document.querySelector(".nb-worth")?.textContent ?? "",
+			go: document.querySelector(".nb-go")?.textContent ?? "",
+			chips: [...document.querySelectorAll(".nb-chips button")].map((b) => b.textContent),
+			cards: document.querySelectorAll(".nb-card").length,
+			rows: document.querySelectorAll(".nb-table tr").length - 1,
+		};
+	});
+
+	let lay = await nbLayout();
+	check("the gem row shows all twelve lots", lay.slots === 12, `${lay.slots}`);
+	check("and fits across the phone", lay.rowLeft >= 0 && lay.rowRight <= 390, `${lay.rowLeft}..${lay.rowRight}`);
+	check("neon bid does not scroll sideways", lay.docWidth <= lay.winWidth, `${lay.docWidth} > ${lay.winWidth}`);
+	check("stepper, chips 0/5/10/25 and BID are all there", lay.controls === 7 && lay.chips.join() === "0,5,10,25", JSON.stringify(lay.chips));
+	check("every control clears 44px", lay.minTap >= 44, `${lay.minTap}px`);
+	check("nothing runs off the bottom with eight players", lay.bottom <= 844, `${lay.bottom}px`);
+	check("the current gem says what it is worth to you", /^\+\d+ points? to you/.test(lay.worth), lay.worth);
+
+	// Bid the first lot by the stepper so the control is exercised, then lean
+	// on the chips. The bid is sealed, so the button must stop being a button.
+	await page.locator(".nb-chips button", { hasText: /^5$/ }).click();
+	await page.locator(".nb-step button[aria-label='bid one more']").click();
+	lay = await nbLayout();
+	check("chip then + gives 6", lay.go === "BID 6", lay.go);
+	await page.locator(".nb-go").click();
+	await page.waitForFunction(() => window.__game.handle.debug().committed || window.__game.handle.debug().phase !== "bid", null, { timeout: TIMEOUT });
+	await page.waitForFunction(() => window.__game.handle.debug().phase === "show", null, { timeout: TIMEOUT });
+	lay = await nbLayout();
+	check("all eight bids flip over together", lay.cards === 8, `${lay.cards}`);
+	check("the reveal fits the phone", lay.bottom <= 844 && lay.docWidth <= lay.winWidth, JSON.stringify({ bottom: lay.bottom, w: lay.docWidth }));
+	nb = await debug(page);
+	check("our bid was opened as sealed", nb.results[0]?.bids?.[nb.players[0].id] === 6, JSON.stringify(nb.results[0]?.bids));
+
+	// The rest of the game, as a person would play it.
+	const chipsCycle = ["10", "0", "5", "25"];
+	for (let i = 0; i < 400; i++) {
+		const d = await debug(page);
+		if (d.over) break;
+		if (d.phase === "bid" && !d.committed) {
+			const want = chipsCycle[d.lot % chipsCycle.length];
+			await page.evaluate((want) => {
+				const chip = [...document.querySelectorAll(".nb-chips button")].find((b) => b.textContent === want && !b.disabled)
+					?? document.querySelector(".nb-chips button");
+				chip?.click();
+				document.querySelector(".nb-go:not([disabled])")?.click();
+			}, want);
+		}
+		await sleep(250);
+	}
+	await sleep(500);
+	nb = await debug(page);
+	check("the game reaches the final table", !!nb.over, JSON.stringify({ phase: nb.phase, lot: nb.lot }));
+	check("all twelve lots were settled", nb.results.length === 12, `${nb.results.length}`);
+	check("every opening audited clean", nb.results.every((r) => Object.keys(r.problems ?? {}).length === 0),
+		JSON.stringify(nb.results.map((r) => r.problems)));
+	// Second price, summed over the whole game: nobody paid more than they bid,
+	// the winner never paid more than the runner-up offered, and the credits add up.
+	const paid = Object.fromEntries(nb.players.map((p) => [p.id, 0]));
+	let priced = true;
+	for (const r of nb.results) {
+		if (r.kind !== "won") continue;
+		paid[r.winner] += r.price;
+		const others = Object.entries(r.bids).filter(([id]) => id !== r.winner).map(([, b]) => b);
+		const second = Math.max(0, ...others);
+		if (r.price !== (second > 0 ? second : 1) || r.price > r.bids[r.winner]) priced = false;
+	}
+	check("every winner paid the second-highest bid (or the reserve)", priced);
+	check("credits add up: 100 less what each paid", nb.players.every((p) => p.credits === 100 - paid[p.id]),
+		JSON.stringify(nb.players.map((p) => [p.credits, paid[p.id]])));
+	check("gems in hands = lots won", nb.players.reduce((s, p) => s + p.hand.reduce((a, b) => a + b, 0), 0)
+		=== nb.results.filter((r) => r.kind === "won").length);
+	lay = await nbLayout();
+	check("the end table lists all eight", lay.rows === 8, `${lay.rows}`);
+	check("and fits the phone", lay.bottom <= 844 && lay.docWidth <= lay.winWidth, JSON.stringify({ bottom: lay.bottom, w: lay.docWidth }));
+	check("the winners are the top of the table", nb.over.winners.includes(nb.over.rows[0].id));
+
 	// ------------------------------------------------------------ battleship
 	//
 	// The game the plumbing exists for. What is checked here is the whole chain

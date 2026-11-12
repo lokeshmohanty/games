@@ -11,6 +11,14 @@ session pay for it.*
 act → record → clear the item. This is the single inbox — do not create a
 separate `TODO.md`.*
 
+## Neon Bid (2026-11-12) — built, uncommitted
+
+New game per `docs/neon-bid.md`: `games/neon-bid.js` + `neon-bid.html`,
+party/portal/sw.js (VERSION v12) wired, `scripts/test-neon-bid.mjs` in
+`test-rules`, a full-table section in `test-bots.mjs`, preview gif recorded
+(`just preview neon-bid`, 480px profile). Not yet played by a person on a
+phone; bot strength vs humans unmeasured (it wins 100% vs both baselines).
+
 ## Current focus (2026-11-11) — multiplayer fix pass
 
 Review of net/party/lobby/room-join + worker, then fixes (uncommitted until

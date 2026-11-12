@@ -284,6 +284,55 @@ const GAMES = {
 		},
 	},
 
+	"neon-bid": {
+		file: "neon-bid.html",
+		peers: 2,
+		seconds: 16,
+		async beforeStart([host]) {
+			// Four bidders: a reveal of four cards reads as an auction, two reads
+			// as a coin toss.
+			for (let i = 0; i < 2; i++) {
+				await host.locator("button", { hasText: "ADD BOT" }).first().click().catch(() => {});
+				await sleep(150);
+			}
+		},
+		async play([a, b], seconds) {
+			// Both people bid what the game's own bot would, entered through the
+			// stepper a person would use, so the clip shows sensible prices.
+			const act = (page) =>
+				page.evaluate(() => {
+					const d = window.__game.handle.debug();
+					if (d.phase !== "bid" || d.committed) return;
+					const go = document.querySelector(".nb-go:not([disabled])");
+					const out = document.querySelector(".nb-step output");
+					if (!go || !out) return;
+					const R = window.NeonArcade.neonBidRules;
+					const self = window.__game.room?.selfId ?? d.players[0]?.id;
+					const want = R.botBid({ order: d.order, lot: d.lot, players: d.players }, self);
+					const step = (label) => document.querySelector(`.nb-step button[aria-label='${label}']`)?.click();
+					let now = Number(out.textContent);
+					for (let i = 0; i < 120 && now !== want; i++) {
+						step(now < want ? "bid one more" : "bid one less");
+						const next = Number(document.querySelector(".nb-step output").textContent);
+						if (next === now) break;
+						now = next;
+					}
+					document.querySelector(".nb-go:not([disabled])")?.click();
+				}).catch(() => {});
+
+			const deadline = Date.now() + seconds * 1000;
+			while (Date.now() < deadline) {
+				await sleep(700);
+				await act(a);
+				await sleep(500);
+				await act(b);
+				const done = await a.evaluate(() => !!window.__game.handle.debug().over).catch(() => false);
+				if (done) break;
+			}
+			await sleep(800);
+		},
+	},
+
 	battleship: {
 		file: "battleship.html",
 		peers: 2,
