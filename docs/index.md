@@ -329,7 +329,22 @@ const c = await secrets.commit(myFleet);   // { digest, nonce, value }
 publish(c.digest);                          // now
 publish({ value: c.value, nonce: c.nonce });// at the reveal
 await secrets.verify(opened);               // everyone checks
+secrets.keep("battleship", c);              // survives a reload of this tab
+secrets.kept("battleship");                 // ...and comes back after one
 ```
+
+**A reload must not turn an honest player into a cheat.** A reload keeps the
+seat but not the page, so a commitment held only in a closure is gone: the
+player cannot open it, and the audit then flags them. `keep`/`kept` hold it
+in this tab's `sessionStorage`, scoped by member id. A kept value is never
+trusted by itself — Battleship, Liar's Dice and Neon Bid take it back only
+when the digest the host published for them is its digest (or, for a bid
+still being collected, when the host already counts them in). Battleship
+also re-sends a returner the last volley, whose answer they owed while away.
+The re-sync itself comes from the party shell: a member who mounts a running
+game says so, and the host's game re-sends its state (`onPeerJoin(id,
+{ back: true })`, lib/README.md). Draw & Guess replays the canvas so far.
+test-worker section 10 reloads a guest mid-game in six games.
 
 The digest is taken over a **canonical** serialisation — object keys sorted at
 every depth — because `JSON.stringify` preserves insertion order, so a value

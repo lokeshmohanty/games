@@ -320,6 +320,9 @@ NeonArcade.registerGame({
 		let rounds = null;
 		let strokeThrottle = 0;
 		let pendingStrokes = [];
+		// Every segment on the canvas since it was last cleared, so a player who
+		// reloads mid-drawing gets the picture back, not a blank canvas.
+		const strokeLog = [];
 
 		// ── Helpers ──────────────────────────────────────────────
 		function colorFor(id) {
@@ -353,9 +356,11 @@ NeonArcade.registerGame({
 		function clearCanvas() {
 			c2d.fillStyle = "#111";
 			c2d.fillRect(0, 0, CANVAS_W, CANVAS_H);
+			strokeLog.length = 0;
 		}
 
 		function drawSegment(s) {
+			strokeLog.push(s);
 			c2d.strokeStyle = s.color;
 			c2d.lineWidth = s.size;
 			c2d.lineCap = "round";
@@ -403,14 +408,16 @@ NeonArcade.registerGame({
 				drawing = true;
 				lastPt = pointerPos(e);
 				drawDot(lastPt.x, lastPt.y, drawColor, drawSize);
-				pendingStrokes.push({
+				const dot = {
 					x0: lastPt.x,
 					y0: lastPt.y,
 					x1: lastPt.x,
 					y1: lastPt.y,
 					color: drawColor,
 					size: drawSize,
-				});
+				};
+				pendingStrokes.push(dot);
+				strokeLog.push(dot);
 			};
 			const onMove = (e) => {
 				if (!drawing) return;
@@ -802,6 +809,15 @@ NeonArcade.registerGame({
 		const clearAction = room.makeAction("clear");
 		const guessAction = room.makeAction("guess");
 		const chatAction = room.makeAction("chat");
+		const replayAction = room.makeAction("strokes");
+
+		/** Host: the canvas so far, to one player, in chunks a data channel takes. */
+		function replayTo(peerId) {
+			const all = strokeLog.slice();
+			for (let i = 0; i === 0 || i < all.length; i += 200) {
+				replayAction.send({ first: i === 0, segs: all.slice(i, i + 200) }, { target: peerId });
+			}
+		}
 
 		stateAction.onMessage = (data) => {
 			drawerId = data.drawerId;
@@ -820,6 +836,11 @@ NeonArcade.registerGame({
 		};
 
 		strokeAction.onMessage = (data) => drawSegment(data);
+		replayAction.onMessage = (data, { peerId }) => {
+			if (peerId !== room.hostId()) return;
+			if (data.first) clearCanvas();
+			for (const seg of data.segs ?? []) drawSegment(seg);
+		};
 		clearAction.onMessage = () => clearCanvas();
 		guessAction.onMessage = (data, { peerId }) => handleGuess(data.text, peerId);
 
@@ -857,19 +878,23 @@ NeonArcade.registerGame({
 		updateInputState();
 
 		return {
-			onPeerJoin(peerId) {
+			onPeerJoin(peerId, info) {
 				if (room.isHost()) {
 					assignNames();
 					applyPartyNames();
 					scores[peerId] = scores[peerId] || 0;
 					broadcastState();
+					// The phase and its countdown, which only go out when they change.
+					rounds?.sync();
 					if (
 						(phase === "drawing" || phase === "reveal" || phase === "choosing") &&
 						peerId === drawerId
 					) {
 						wordAction.send({ word: currentWord }, { target: peerId });
 					}
-					addChatLine("", `${nameOf(peerId)} joined`, "system");
+					if (phase === "drawing" || phase === "reveal") replayTo(peerId);
+					// A mounted notice (`back`) also follows every real join.
+					if (!info?.back) addChatLine("", `${nameOf(peerId)} joined`, "system");
 				}
 				assignNames();
 				applyPartyNames();
@@ -892,6 +917,15 @@ NeonArcade.registerGame({
 				applyPartyNames();
 				updateHud();
 			},
+			/** The live round, for the tests. */
+			debug: () => ({
+				phase,
+				drawerId,
+				scores: { ...scores },
+				word: currentWord,
+				hint: wordHint,
+				strokes: strokeLog.length,
+			}),
 			unmount() {
 				// One line where there were four: the round clock owns every timer
 				// this game had, and disposing it is what stops them broadcasting

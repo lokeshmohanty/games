@@ -387,6 +387,7 @@ NeonArcade.registerGame({
 		let botFleets = {}; // botId -> { fleet, commit } — held by the host that plays them
 		let disposed = false;
 		let autoCommitTimer = null;
+		let lastVolley = []; // host: the latest volley, for a player who reloads through it
 
 		const mySeat = () => seats.indexOf(room.selfId);
 		const opponentOf = (id) => seats.find((s) => s && s !== id) ?? null;
@@ -474,6 +475,7 @@ NeonArcade.registerGame({
 					if (!target) continue;
 					volley.push({ by, target, at });
 				}
+				lastVolley = volley;
 				shotsAction.send(volley);
 				applyVolley(volley);
 			},
@@ -541,7 +543,23 @@ NeonArcade.registerGame({
 		async function commitFleet(fleet) {
 			myFleet = fleet;
 			myCommit = await secrets.commit(fleet);
+			secrets.keep("battleship", myCommit);
 			return myCommit.digest;
+		}
+
+		/**
+		 * After a reload, take back the fleet committed before it — if the digest
+		 * the host published for us is that fleet's. The page lost it, and a new
+		 * fleet would answer shots against the wrong water and fail the audit.
+		 */
+		function restoreFleet() {
+			const digest = digests[room.selfId];
+			if (myCommit || !digest) return;
+			const held = secrets.kept("battleship");
+			if (held?.digest !== digest) return;
+			myCommit = held;
+			myFleet = held.value;
+			clearTimeout(autoCommitTimer);
 		}
 
 		function doReveal() {
@@ -581,6 +599,7 @@ NeonArcade.registerGame({
 			seats = msg.seats;
 			digests = msg.digests ?? {};
 			boards = msg.boards ?? {};
+			restoreFleet();
 			over = msg.over ?? null;
 			if (over) {
 				phase = "over";
@@ -966,12 +985,15 @@ NeonArcade.registerGame({
 		window.addEventListener("orientationchange", onResize);
 
 		return {
-			onPeerJoin() {
+			onPeerJoin(id, info) {
 				if (!ctx.isHost) return;
 				seats = [ctx.seats("A")[0] ?? null, ctx.seats("B")[0] ?? null];
 				pushState();
 				setup.sync();
 				battle.sync();
+				// Back from a reload: a volley that went out while they were away
+				// still wants their answer. Answers are deduplicated by square.
+				if (info?.back && lastVolley.length) shotsAction.send(lastVolley, { target: id });
 				render();
 			},
 			onPeerLeave() {

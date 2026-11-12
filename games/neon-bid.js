@@ -422,6 +422,8 @@ NeonArcade.registerGame({
 			},
 			onPhase: (info) => {
 				phase = info.phase;
+				// A reload lands here first, on whatever phase is running.
+				if (info.phase !== "bid") restoreBid(info);
 				if (info.phase === "bid") beginBid(info);
 				else if (info.phase === "open") beginOpen(info);
 				else if (info.phase === "show" && ctx.isHost && settledLot < info.round) settle();
@@ -458,6 +460,7 @@ NeonArcade.registerGame({
 			const me = mySeat();
 			if (me) draft = Math.min(draft, me.credits);
 			setNotice("");
+			restoreBid(info);
 			// Somebody who arrived after the deal has no seat but is still in
 			// `players()`, so the phase waits for them: answer for them.
 			if (!me && ctx.players().includes(room.selfId)) rounds.submit("pass");
@@ -471,6 +474,23 @@ NeonArcade.registerGame({
 					if (held.lot === info.round && !already.includes(id)) rounds.submitFor(id, held.commit.digest);
 				}
 			});
+		}
+
+		/**
+		 * After a reload, take back the bid sealed for this lot before it. Valid
+		 * while bidding if the host already counts us in, and after that only if
+		 * the published digest is its own. Without it the bid is never opened,
+		 * which the audit treats as a pass at best.
+		 */
+		function restoreBid(info) {
+			if (myCommit || ctx.isHost) return;
+			const held = secrets.kept("neon-bid");
+			if (!held || held.lot !== info.round) return;
+			const mine = digests[room.selfId];
+			const ok = mine
+				? mine === held.commit.digest
+				: info.phase === "bid" && info.submitted?.includes(room.selfId);
+			if (ok) myCommit = held;
 		}
 
 		/** Host side. Decide and commit every bot's bid for `lot`, once. */
@@ -508,6 +528,7 @@ NeonArcade.registerGame({
 				return;
 			}
 			myCommit = { lot, bid, commit };
+			secrets.keep("neon-bid", myCommit);
 			rounds.submit(commit.digest);
 			render();
 		}
@@ -576,6 +597,11 @@ NeonArcade.registerGame({
 			digests = msg.digests ?? {};
 			over = msg.over ?? null;
 			if (over) phase = "over";
+			// The digests can land after the phase did (see restoreBid): open now.
+			if (!myCommit && phase === "open") {
+				restoreBid(rounds.state());
+				if (myCommit) beginOpen(rounds.state());
+			}
 			render();
 		};
 

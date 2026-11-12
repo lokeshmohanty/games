@@ -22,7 +22,7 @@ handshake per person and nothing else.
 - **`room-join.js`** — `NeonArcade.hostRoom()` / `joinRoom(code, { signal })` / `rejoinToken()` / `releaseRejoin()` / `roomServerReachable()`: client-side glue for the optional Cloudflare-Worker room server (`worker/`). Joins are by six-digit code over a WebSocket; `joinRoom` resolves only once a link is open *and* a host is known (never into a hostless party), and an `AbortSignal` cancels it, releasing the claim; rejoin tokens survive a reload. `releaseRejoin()` gives a claim back with a `release` that never binds, resolving `"busy"` (token kept) when another tab holds the seat live. The server is `localStorage["neon.rs"]` or the default; `?rs=` only when it names a loopback server; the reachability probe is `GET /ping`. A tab whose seat another tab of the same browser took over (same token; the server hangs up with 4409) stands down and calls `opts.onDisplaced()` instead of re-dialling. Falls back to the classic scan/paste flow when the server is unreachable. See `docs/room-server.md` for the design and `worker/README.md` for deployment.
 - **`qr.js`** — `NeonArcade.qrCanvas()`: a self-contained QR encoder, so invites can be scanned instead of typed.
 - **`qr-decode.js`** — `NeonArcade.qrDecode()` / `scanQr()`: a self-contained QR *decoder* plus a camera scanner.
-- **`secrets.js`** — `NeonArcade.makeSecrets(room)`: sealed private channels (so a *relaying player* cannot read a dealt secret) and commit-reveal (so the host cannot either). Optional. `games/battleship.js` is the worked example for commit-reveal, where verifying the digest is only half the check; **no game currently uses the sealed channel** — see `docs/index.md` for why.
+- **`secrets.js`** — `NeonArcade.makeSecrets(room)`: sealed private channels (so a *relaying player* cannot read a dealt secret) and commit-reveal (so the host cannot either), with `keep`/`kept` so a commitment survives a reload of the tab. Optional. `games/battleship.js` is the worked example for commit-reveal, where verifying the digest is only half the check; **no game currently uses the sealed channel** — see `docs/index.md` for why.
 - **`rounds.js`** — `NeonArcade.makeRounds(ctx, spec)`: the host-owned round/phase clock, including `collect` phases that end when everyone has submitted and `next()` for a phase that ends on a game event. Optional. `games/draw-guess.js` is the game it was generalised from and now runs on.
 - **`ui.js`** — `NeonArcade.gameShell(root, opts)`: the stage, status line and overlay every game was rebuilding. Optional, but new games should use it.
 
@@ -134,6 +134,12 @@ already out of the roster, so `nameOf(id)` no longer knows it — and how they
 went: `"left"` (on purpose), `"dropped"` (lost, not back within the grace),
 `"removed"` (by the host), `"crown"` (a bot that went with its host's crown) or
 `"gone"` (vanished from the host's record with no goodbye of its own).
+`onPeerJoin(id, info)` also fires on the host, with `info.back`, when a member
+mounts the game the host is already running — in practice a returner after a
+reload, whose fresh page knows nothing (party shell only; net.js itself is
+silent about a held seat coming back). Treat it as "send this player
+everything": every game's `onPeerJoin` is a full state push, and a second one
+for a newcomer is harmless.
 
 `shape` tells the party screen how to read team assignments: `teams` is Team A
 against Team B, `coop` puts everyone on one side, `free` ignores teams. Whatever

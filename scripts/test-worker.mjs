@@ -29,6 +29,10 @@
  *      whose address has spent every dial on typos still reloads into its
  *      seats — members re-dial on their passes — and that address still
  *      hosts party after party (`/room/new`, capped only at HOST_ROOMS).
+ *  10. a guest who reloads mid-game comes back to the same game — the
+ *      position, the canvas, and its own committed fleet, cup or bid, so
+ *      the audit at the end does not call it a cheat (Battleship, Liar's
+ *      Dice, Neon Bid, Onitama, Light Cycles, Draw & Guess).
  *
  * Wrangler comes from $WRANGLER (a command line), else `wrangler` on PATH,
  * else `nix shell nixpkgs#wrangler` (npx wrangler cannot link workerd on
@@ -787,6 +791,201 @@ try {
 		const more = await hostCall(busy);
 		check("the thirty-first is refused at the upgrade: blocked", more.t === "error" && more.reason === "blocked", JSON.stringify(more));
 		check("and that address still joins", (await call([...codes][0], { t: "join", id: "late", secret: "l" }, busy)).t === "joined");
+	}
+
+	// ------------------------- 10. a reload mid-game comes back to the game
+	// A reload keeps the seat, but net.js says nothing to the game about a
+	// held seat coming back, and the page forgets everything it held. The
+	// party shell's mounted notice makes the host's game re-send its state,
+	// and secrets.keep brings back what the guest committed to — or the
+	// audit at the end reads an honest player as a cheat.
+	console.log("\nworker: a guest who reloads mid-game comes back to the same game");
+	{
+		const h = await person("rg-host");
+		const g = await person("rg-guest");
+		const t = await host(h);
+		check("(the guest joins by code)", await joinByCode(g, t.code));
+		const ids = await h.evaluate(() => {
+			const r = window.__party.room;
+			return { host: r.selfId, guest: r.getMembers().find((m) => m.id !== r.selfId).id };
+		});
+		const mountedOn = (page, game) =>
+			page
+				.waitForFunction((id) => window.__party?.game === id && !!window.__party.handle?.debug, game, { timeout: TIMEOUT })
+				.then(() => true, () => false);
+		const dbg = (page) => page.evaluate(() => window.__party.handle?.debug?.() ?? null);
+		/** Poll `test(hostDebug, guestDebug)` until it holds; the last pair either way. */
+		async function until(test, ms = 15_000) {
+			const end = Date.now() + ms;
+			let last;
+			while (Date.now() < end) {
+				last = [await dbg(h), await dbg(g)];
+				if (last[0] && last[1] && test(...last)) return { ok: true, last };
+				await sleep(150);
+			}
+			return { ok: false, last };
+		}
+		const show = (r) => JSON.stringify(r.last).slice(0, 400);
+		async function play(game, teams = { host: "A", guest: "B" }) {
+			await h.evaluate(({ id, teams, ids }) => {
+				const r = window.__party.room;
+				r.setTeam(ids.host, teams.host);
+				r.setTeam(ids.guest, teams.guest);
+				r.setGame(id);
+			}, { id: game, teams, ids });
+			return (await mountedOn(h, game)) && (await mountedOn(g, game));
+		}
+		async function reloadGuest(label, game) {
+			await g.reload();
+			check(`${label}: the reload rejoins the party`, await waitInParty(g));
+			check(`${label}: and mounts the game again`, await mountedOn(g, game));
+		}
+		const stop = async () => {
+			await h.evaluate(() => window.__party.room.setGame(null));
+			await sleep(400);
+		};
+
+		// Battleship: both fleets committed, the guest fires and reloads at
+		// once, so the host's shot lands while the guest is away.
+		check("battleship: both mount it", await play("battleship"));
+		for (const p of [h, g]) await p.locator("button", { hasText: "COMMIT FLEET" }).click();
+		let r = await until((a, b) => a.phase === "fire" && b.phase === "fire");
+		check("battleship: both fleets committed", r.ok, show(r));
+		const fire = (page) =>
+			page.evaluate(() => {
+				const d = window.__party.handle.debug();
+				const at = window.NeonArcade.battleshipRules.botTarget(d.theirBoard);
+				document.querySelector(`.bs-grid .bs-cell[data-r="${at[0]}"][data-c="${at[1]}"]:not([disabled])`)?.click();
+			});
+		await fire(g);
+		await sleep(300);
+		const reloading = g.reload();
+		await sleep(200);
+		await fire(h);
+		await reloading;
+		check("battleship: the reload rejoins the party", await waitInParty(g));
+		check("battleship: and mounts the game again", await mountedOn(g, "battleship"));
+		r = await until((a, b) => b.committed && a.shotsAtThem === 1 && b.shotsAtMe === 1 && a.shotsAtMe === 1);
+		check("battleship: the guest has its committed fleet back", r.ok && r.last[1].myFleetCells === 12, show(r));
+		check("battleship: and answered the shot fired while it was away", r.ok, show(r));
+		// A whole game is ~35 volleys of ~1.2 s each.
+		for (const end = Date.now() + 90_000; Date.now() < end; ) {
+			const d = await dbg(h);
+			if (!d || d.over) break;
+			if (d.phase === "fire") {
+				await fire(h);
+				await fire(g);
+			}
+			await sleep(150);
+		}
+		r = await until((a) => !!a.over && a.fleetsRevealed === 2, 20_000);
+		check("battleship: the game reaches a result with both fleets opened", r.ok, show(r));
+		check("battleship: and nobody is called a cheat", r.ok && Object.values(r.last[0].audits).every((v) => v === null), show(r));
+		await stop();
+
+		// Liar's dice: the cup is rolled and committed, then the guest reloads.
+		check("liar's dice: both mount it", await play("liars-dice"));
+		r = await until((a, b) => a.phase === "bid" && b.committed);
+		check("liar's dice: both cups committed", r.ok, show(r));
+		await reloadGuest("liar's dice", "liars-dice");
+		r = await until((a, b) => b.phase === "bid" && b.committed && b.myDice === 5);
+		check("liar's dice: the guest has its five dice back", r.ok, show(r));
+		let bids = 0;
+		for (let i = 0; i < 60; i++) {
+			const d = await dbg(h);
+			if (!d || d.lastCall) break;
+			const page = d.turn === ids.host ? h : g;
+			bids += await page.evaluate((n) => {
+				const btns = [...document.querySelectorAll(".ld-actions button")];
+				const liar = btns.find((b) => b.textContent.includes("LIAR"));
+				const bid = btns.find((b) => b.textContent.startsWith("BID"));
+				if (liar && n >= 2) return liar.click(), 0;
+				if (bid && !bid.disabled) return bid.click(), 1;
+				return 0;
+			}, bids);
+			await sleep(300);
+		}
+		r = await until((a) => !!a.lastCall && a.revealed === 2, 10_000);
+		check("liar's dice: a call opens both cups", r.ok, show(r));
+		check("liar's dice: and nobody is called a cheat", r.ok && !r.last[0].lastCall.cheat && Object.values(r.last[0].verdicts).every((v) => v === null), show(r));
+		await stop();
+
+		// Neon bid: the guest seals a bid, reloads, and the lot settles after.
+		check("neon bid: both mount it", await play("neon-bid"));
+		r = await until((a, b) => a.phase === "bid" && b.phase === "bid");
+		check("neon bid: the first lot is open", r.ok, show(r));
+		await g.locator(".nb-chips button", { hasText: /^5$/ }).click();
+		await g.locator(".nb-go").click();
+		r = await until((a) => a.submitted.includes(ids.guest));
+		check("neon bid: the guest's bid is sealed", r.ok, show(r));
+		await reloadGuest("neon bid", "neon-bid");
+		r = await until((a, b) => b.committed && b.myBid === 5);
+		check("neon bid: the guest has its sealed bid back", r.ok, show(r));
+		await h.locator(".nb-go").click();
+		r = await until((a) => a.results.length === 1);
+		check("neon bid: the lot settles", r.ok, show(r));
+		const lot = r.last?.[0].results[0];
+		check("neon bid: the guest's bid was opened and counted, not a cheat", r.ok && !lot.problems?.[ids.guest], JSON.stringify(lot));
+		await stop();
+
+		// Onitama: one move by whoever the side card says starts, through the
+		// board itself, then the guest reloads; the position must come back.
+		check("onitama: both mount it", await play("onitama"));
+		r = await until((a, b) => a.started && b.started && a.mySide !== null && b.mySide !== null);
+		check("onitama: both are seated", r.ok, show(r));
+		const mover = r.last[0].turn === r.last[0].mySide ? h : g;
+		const d0 = await dbg(mover);
+		const mv = await mover.evaluate(() => {
+			const d = window.__party.handle.debug();
+			return window.NeonArcade.onitamaRules.legalMoves({ board: d.board, hands: d.hands, side: d.side, turn: d.turn }, d.mySide)[0];
+		});
+		await mover.locator(".oni-card:not(.theirs):not(.side)").nth(d0.hands[d0.mySide].indexOf(mv.card)).click();
+		const board = await mover.locator(".oni-board").boundingBox();
+		const cell = board.width / 5;
+		for (const [row, col] of [mv.from, mv.to]) {
+			const [sr, sc] = d0.mySide === 1 ? [4 - row, 4 - col] : [row, col];
+			await mover.mouse.click(board.x + (sc + 0.5) * cell, board.y + (sr + 0.5) * cell);
+		}
+		r = await until((a) => a.turn !== d0.turn);
+		check("onitama: the move is played", r.ok, show(r));
+		await reloadGuest("onitama", "onitama");
+		r = await until((a, b) => b.turn === a.turn && JSON.stringify(a.board) === JSON.stringify(b.board) && JSON.stringify(a.hands) === JSON.stringify(b.hands));
+		check("onitama: the guest sees the position, not a new deal", r.ok, show(r));
+		await stop();
+
+		// Light cycles: mid-race, the walls so far must come back with the guest.
+		check("light cycles: both mount it", await play("light-cycles"));
+		r = await until((a) => a.racing && a.walls > 12);
+		check("light cycles: the race is on", r.ok, show(r));
+		await reloadGuest("light cycles", "light-cycles");
+		r = await until((a, b) => b.riders.length === a.riders.length && Math.abs(a.walls - b.walls) <= 4 && b.mine === ids.guest, 3000);
+		check("light cycles: the guest sees the riders and the walls so far", r.ok, show(r));
+		await stop();
+
+		// Draw & guess: lines on the canvas, then whoever is not drawing reloads.
+		check("draw & guess: both mount it", await play("draw-guess"));
+		r = await until((a) => a.phase === "drawing" && !!a.drawerId, 20_000);
+		check("draw & guess: somebody is drawing", r.ok, show(r));
+		const drawer = r.last?.[0].drawerId === ids.host ? h : g;
+		const box = await drawer.locator("canvas").first().boundingBox();
+		await drawer.mouse.move(box.x + 30, box.y + 30);
+		await drawer.mouse.down();
+		for (let i = 1; i <= 12; i++) {
+			await drawer.mouse.move(box.x + 30 + i * 12, box.y + 30 + i * 6);
+			await sleep(40);
+		}
+		await drawer.mouse.up();
+		r = await until((a, b) => a.strokes > 5 && b.strokes === a.strokes);
+		check("draw & guess: the lines reach both", r.ok, show(r));
+		const strokes = r.last?.[0].strokes;
+		await reloadGuest("draw & guess", "draw-guess");
+		r = await until((a, b) => b.phase === a.phase && b.drawerId === a.drawerId && b.strokes === strokes);
+		check("draw & guess: the guest is back in the round with the picture so far", r.ok, show(r));
+		if (r.last?.[0].drawerId === ids.guest) check("draw & guess: and, drawing, knows the word", r.last[1].word === r.last[0].word, show(r));
+		await stop();
+
+		await g.context().close();
+		await h.context().close();
 	}
 } catch (err) {
 	console.log(`  FAIL ${err.stack ?? err}`);

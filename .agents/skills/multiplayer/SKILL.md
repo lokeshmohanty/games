@@ -105,6 +105,9 @@ repo over `http://127.0.0.1`; `file://` and `http://<lan-ip>` will not do.
   exit asks in an in-page dialog, never `confirm()`; everyone is told by toast),
   and the back-button guard's browser traps (gesture-gated history entries,
   popstate on fragment links, Playwright skipping `beforeunload`).
+- `memory/reload-mid-game.md` — how a returner gets the running game back
+  (the party shell's mounted notice, `secrets.keep/kept` checked against the
+  published digest), and why net.js's own re-announce cannot be relied on.
 - `memory/room-server.md` — the room server's invariants (mesh is
   authoritative, room server is advisory), the progressive-enhancement rule,
   and the traps that caught two test failures.

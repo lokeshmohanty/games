@@ -347,6 +347,7 @@ NeonArcade.registerGame({
 				myHand = rollDice(myDiceCount());
 				myCommit = await secrets.commit(myHand);
 				if (disposed) return;
+				secrets.keep("liars-dice", myCommit);
 				rounds.submit(myCommit.digest);
 				render();
 			}
@@ -521,6 +522,14 @@ NeonArcade.registerGame({
 			turn = msg.turn;
 			starter = msg.starter;
 			digests = msg.digests ?? {};
+			// Back from a reload: the cup this round was committed to, if the
+			// digest on the table is its. Without it there is nothing to bid
+			// from and nothing to open, and an unopened cup reads as cheating.
+			const held = myCommit ? null : secrets.kept("liars-dice");
+			if (held && held.digest === digests[room.selfId]) {
+				myCommit = held;
+				myHand = held.value;
+			}
 			lastCall = msg.lastCall ?? null;
 			if (msg.reveals && Object.keys(msg.reveals).length) reveals = msg.reveals;
 			over = msg.over ?? null;

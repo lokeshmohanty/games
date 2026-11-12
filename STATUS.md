@@ -32,10 +32,14 @@ Audit backlog (2026-11-12), owner to pick — highest first:
 - [ ] Game page: still no room server/rejoin — any reload/blip >~9 s ends it.
 - [ ] Maybe: hand a game over instead of ending it (needs per-game state
       transfer; `ctx.isHost` is a snapshot, games.js:156).
-- [ ] Returner after reload not re-synced (onPeerJoin skipped for held seat) in
-      light-cycles, battleship, liars-dice, neon-bid, onitama, draw-guess.
-- [ ] Reload loses secrets: battleship re-rolls the fleet → flagged cheat;
-      liar's dice / neon bid can't reveal. Persist commitments per round.
+- [x] Returner after reload re-synced: party shell's mounted notice →
+      host's `onPeerJoin(id, {back})`; draw & guess replays the canvas and
+      re-announces its clock (2026-11-12, test-worker 10).
+- [x] Reload keeps secrets: `secrets.keep/kept` (sessionStorage), restored
+      only against the published digest; battleship re-sends the missed
+      volley (2026-11-12, test-worker 10). Not covered: a reload that outlasts
+      a call's 4 s opening window (Liar's Dice) or the 4 s open phase (Neon
+      Bid) still misses that opening.
 - [ ] Turn games stall up to 5 min on a RECONNECTING seat; no in-game "waiting
       for X (m:ss)", no skip/bot-takeover. Onitama never ends when a side leaves.
 - [ ] No wake lock / visibilitychange: screen sleep drops players; host's rAF
