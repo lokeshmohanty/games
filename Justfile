@@ -40,7 +40,7 @@ serve-lan:
     python3 -m http.server {{port}}
 
 # Every suite, in the order they get slower.
-test: community test-codec test-hub test-worker-do test-plumbing test-rules test-room test-party test-scan test-pwa test-bots
+test: community test-codec test-hub test-worker-do test-plumbing test-rules test-room test-party test-scan test-pwa test-bots test-devkit
 
 # No browser needed — the signalling codec round-trip.
 test-codec:
@@ -176,3 +176,13 @@ catalog *args:
 # ../<repo> that has the pinned commit is used instead of GitHub.
 community:
     node scripts/fetch-community.mjs
+
+# The game dev kit as an outside author uses it: the SDK example served by
+# sdk/v1/dev-server.mjs, loaded with party.html?dev=, played to the end.
+test-devkit:
+    node scripts/test-devkit.mjs
+
+# Everything the platform checks before it lists a game (the registry PR
+# check runs this): `just validate-game path/to/game`, `--static` for no browser.
+validate-game *args:
+    node scripts/validate-game.mjs {{args}}

@@ -1,0 +1,47 @@
+# The check every game PR gets: a new or bumped pin in registry/, or a change
+# to the SDK and the scripts that check games. Runs with no secrets and no
+# write access (pull_request), so a fork's PR is safe to check: the pinned
+# code is only ever run inside the sandboxed frame in a headless browser.
+name: Check games
+
+on:
+  pull_request:
+    paths:
+      - "registry/**"
+      - "games/**"
+      - "sdk/**"
+      - "lib/**"
+      - "scripts/manifest.mjs"
+      - "scripts/fetch-community.mjs"
+      - "scripts/validate-game.mjs"
+
+permissions:
+  contents: read
+
+jobs:
+  games:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Fetch every pinned repo
+        run: node scripts/fetch-community.mjs
+      - name: Catalog is up to date
+        run: node scripts/build-catalog.mjs --check
+      - name: Install Playwright (driver only; the runner's Chrome is used)
+        run: npm install --no-save playwright@1.62.1
+      - name: Validate every game
+        env:
+          CHROME: /usr/bin/google-chrome
+        run: |
+          dirs="sdk/v1/example/tic-tac-toe $(ls -d games/*/)"
+          for pin in community/*/*/pin.json; do
+            [ -e "$pin" ] || continue
+            base=$(dirname "$pin")
+            for g in $(node -e 'console.log(require("./"+process.argv[1]).games.join(" "))' "$pin"); do
+              dirs="$dirs $base/$g"
+            done
+          done
+          node scripts/validate-game.mjs $dirs | tee -a "$GITHUB_STEP_SUMMARY"

@@ -20,9 +20,12 @@ six from `../arcade-games` (branch `import`, local only, not pushed) via
 (community precache via importScripts; offline query-less page match).
 Green 2026-11-13: every `just test` suite. Fixed on the way: a 1-in-100
 flake in test-plumbing (random digest contained "B2").
-Next: dev kit (`?dev=` + CORS dev server), `validate-game` + PR check,
-Actions deploy, portal from the catalogs, arcade-games README/tests runner;
-then Phases 1–6 (stats → accounts → …).
+Also built: dev kit (`?dev=` + sdk/v1/dev-server.mjs, test-devkit), SDK
+example game (sdk/v1/example/tic-tac-toe), `just validate-game` (all 11
+pass), PR check workflow (registry-check.yml), deploy.yml fetches community
+games, CONTRIBUTING.md. Green 2026-11-13: full `just test` incl. devkit.
+Next: portal from the catalogs; push/merge on Lokesh's confirmation; then
+Phases 1–6 (stats → accounts → …).
 Not yet: test-worker (wrangler) not re-run since the move — it plays
 neon-bid/neon-survival by id; real-phone check of wake lock / audio /
 fullscreen in the sandbox. `file://` no longer opens games (accepted).

@@ -48,10 +48,17 @@
     <script>
       // Exposed so the tests can inspect the live room and game. `__game` is
       // the name the game pages used to publish; they are party shortcuts now.
-      window.__party = window.__game = NeonArcade.mountParty(
-        document.getElementById("party"),
-        document.getElementById("stage"),
-      );
+      const start = () => {
+        window.__party = window.__game = NeonArcade.mountParty(
+          document.getElementById("party"),
+          document.getElementById("stage"),
+        );
+        if (NeonArcade.devError) NeonArcade.toast(NeonArcade.devError, "warn");
+      };
+      // ?dev= (the game dev kit, lib/bridge.js): its game must be registered
+      // before the party reads ?game=.
+      if (NeonArcade.devGame) NeonArcade.devGame.then(start);
+      else start();
     </script>
   </body>
 </html>

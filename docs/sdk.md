@@ -4,8 +4,8 @@
 `~/.claude/plans/1-a-b-2-generic-whistle.md`. Status: the bridge, the frame
 loader, the catalogs and the registry are built; all ten games run framed
 (four here, six from `lokeshmohanty/arcade-games`). The dev kit,
-`validate-game`, the PR check and the Actions deploy are not built yet
-(**planned** below).*
+`validate-game`, the PR check and the deploy step are built too; the portal
+does not list community games yet (**planned** below).*
 
 ## What changed, and why
 
@@ -171,10 +171,43 @@ runtime from a checkout of this repo (`NEON_PLATFORM`, default `../../games/`).
 `just test` runs `community` first; the browser suites play those games
 through it.
 
+## The dev kit (built 2026-11-13)
+
+`party.html?dev=http://127.0.0.1:PORT/<folder>/&game=dev%2F<id>&fresh=1`
+loads the game whose `game.json` is in that folder into the real party, as
+`dev/<id>` (lib/bridge.js `NeonArcade.devGame`; party.html waits for it
+before mounting the party). Only loopback hosts — the `?rs=` rule
+(`NeonArcade.onLoopback`, room-join.js); anything else is refused with a
+toast. Invite links keep the query, so a second tab joins with the same dev
+game.
+
+`sdk/v1/dev-server.mjs` is what authors run: no dependencies, serves a folder
+on 127.0.0.1 with `Access-Control-Allow-Origin: *`,
+`Access-Control-Allow-Private-Network: true` and `no-store`, refuses paths
+outside the folder, and prints a link per `game.json` found
+(`NEON_PLATFORM` picks another arcade, e.g. `just run`'s).
+**VERIFY:** Safari and Chrome's Local Network Access prompt against the live
+https site — tested only arcade-on-127.0.0.1 so far (`just test-devkit`).
+
+`sdk/v1/example/tic-tac-toe/` is the template and the dev kit's test game.
+
+## Checking a game (built 2026-11-13)
+
+`just validate-game <folder>…` (`scripts/validate-game.mjs`; `--static`
+skips the browser): manifest; entry page exists; scripts/stylesheets inside
+the folder and present; no runtime code loading (import, `import()`,
+`importScripts`, `new Worker("…")`); no network (fetch, XHR, WebSocket,
+EventSource, remote URLs); ≤ 5 MB; then, through the dev kit, mounted with
+bots at 390×844 for 5 s with no page/console error and no sideways scroll.
+
+`.github/workflows/registry-check.yml` runs it on every PR touching
+`registry/`, `games/`, `sdk/`, `lib/` or the checking scripts — no secrets,
+read-only, safe for forks. `.github/workflows/deploy.yml` runs
+`fetch-community.mjs` before uploading the Pages artifact. The author
+workflow is [`CONTRIBUTING.md`](../CONTRIBUTING.md).
+
 ## Planned (not built yet)
 
-- **Dev kit:** `party.html?dev=http://localhost:PORT/` (loopback only) plus
-  a CORS-enabled local server for authors.
-- **`just validate-game <path>`** and the matching PR check.
-- **Deploy:** GitHub Pages from an Actions build that runs `just community`.
-- **Portal** generated from the catalogs.
+- **Portal** generated from the catalogs (cards for community games).
+- Phases 1–6 of the plan: `ctx.reportResult` → stats, accounts,
+  leaderboards, feedback, friends, groups.
