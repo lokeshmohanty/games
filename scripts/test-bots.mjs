@@ -86,6 +86,8 @@ async function startSolo(page, file, button) {
 }
 
 const debug = async (page) => (await gameScope(page, TIMEOUT)).evaluate(() => window.__game.handle.debug());
+/** The running game's scope — its frame for a framed game (gameScope). */
+let G = null;
 
 const { chromium } = loadPlaywright();
 const browser = await chromium.launch({
@@ -145,18 +147,19 @@ try {
 
 	await page.locator("button", { hasText: "START" }).first().click();
 	await page.waitForFunction(() => window.__game?.handle, null, { timeout: TIMEOUT });
+	G = await gameScope(page, TIMEOUT);
 
 	let uc = await debug(page);
 	check("it opens on the player list", uc.phase === "setup", uc.phase);
 	check("no word is on screen before anyone is dealt", uc.onScreen === null);
 
 	// Six players, so the blank is allowed.
-	for (let i = 0; i < 3; i++) await page.locator("button", { hasText: "+ PLAYER" }).click();
-	const inputs = page.locator(".uc-name input");
+	for (let i = 0; i < 3; i++) await G.locator("button", { hasText: "+ PLAYER" }).click();
+	const inputs = G.locator(".uc-name input");
 	const table = ["Ana", "Bo", "Cy", "Di", "Ed", "Fi"];
 	for (const [i, name] of table.entries()) await inputs.nth(i).fill(name);
 
-	const setup = await page.evaluate(() => {
+	const setup = await G.evaluate(() => {
 		const fields = [...document.querySelectorAll(".uc-name input, .uc-toggle, .uc-step button, .uc-actions button")];
 		return {
 			docWidth: document.documentElement.scrollWidth,
@@ -169,9 +172,9 @@ try {
 	check("every field and button clears 44px", setup.minTap >= 44, `${setup.minTap}px`);
 	check("the whole form fits the phone", setup.bottom <= 844, `${setup.bottom}px`);
 
-	await page.locator("button", { hasText: "BLANK: OFF" }).click();
-	await page.locator("button", { hasText: "DEAL" }).click();
-	await page.waitForFunction(() => window.__game.handle.debug().phase === "pass", null, { timeout: TIMEOUT });
+	await G.locator("button", { hasText: "BLANK: OFF" }).click();
+	await G.locator("button", { hasText: "DEAL" }).click();
+	await G.waitForFunction(() => window.__game.handle.debug().phase === "pass", null, { timeout: TIMEOUT });
 
 	uc = await debug(page);
 	check("six players were dealt", uc.players.length === 6, `${uc.players.length}`);
@@ -184,18 +187,18 @@ try {
 	// The whole point: the phone has just changed hands, so nothing is showing.
 	check("nothing is on screen until somebody taps", uc.onScreen === null);
 	check("and no word is in the DOM either",
-		!(await page.locator(".uc-word").count()), "a word was rendered before the tap");
+		!(await G.locator(".uc-word").count()), "a word was rendered before the tap");
 
 	// Walk the deal, checking each person sees their own word and only theirs.
 	const seen = [];
 	for (let i = 0; i < 6; i++) {
-		await page.locator("button", { hasText: "TAP TO SEE" }).click();
+		await G.locator("button", { hasText: "TAP TO SEE" }).click();
 		const state = await debug(page);
-		const shown = await page.locator(".uc-word").textContent();
+		const shown = await G.locator(".uc-word").textContent();
 		seen.push({ who: state.onScreen, shown });
 		check(`${state.onScreen} is shown exactly one word`,
-			(await page.locator(".uc-word").count()) === 1, "more than one word on screen");
-		await page.locator("button", { hasText: "HIDE &" }).click();
+			(await G.locator(".uc-word").count()) === 1, "more than one word on screen");
+		await G.locator("button", { hasText: "HIDE &" }).click();
 		const after = await debug(page);
 		check(`and it is gone once ${state.onScreen} passes it on`, after.onScreen === null);
 	}
@@ -220,17 +223,17 @@ try {
 	// A vote must take two taps: one to pick, one to confirm. A stray thumb on a
 	// phone going round a table would otherwise knock somebody out for good.
 	while ((await debug(page)).phase === "describe") {
-		await page.locator("button", { hasText: /^(NEXT|GO TO VOTE)$/ }).first().click();
+		await G.locator("button", { hasText: /^(NEXT|GO TO VOTE)$/ }).first().click();
 	}
 	uc = await debug(page);
 	check("the round ends at a vote", uc.phase === "vote", uc.phase);
-	await page.locator(".uc-row.pick").first().click();
+	await G.locator(".uc-row.pick").first().click();
 	check("picking somebody does not yet eliminate them",
 		(await debug(page)).phase === "vote" && (await debug(page)).alive === 6,
 		"one tap was enough to vote somebody out");
 	check("a confirmation appears instead",
-		(await page.locator("button", { hasText: "VOTE OUT" }).count()) === 1);
-	await page.locator("button", { hasText: "VOTE OUT" }).click();
+		(await G.locator("button", { hasText: "VOTE OUT" }).count()) === 1);
+	await G.locator("button", { hasText: "VOTE OUT" }).click();
 	uc = await debug(page);
 	check("confirming eliminates them", uc.alive === 5, `${uc.alive}`);
 	check("and says what they were", ["reveal", "guess"].includes(uc.phase), uc.phase);
@@ -332,17 +335,19 @@ try {
 	await page.locator("button", { hasText: "PLAY A BOT" }).first().click();
 	for (let i = 0; i < 6; i++) await page.locator("button", { hasText: "ADD BOT" }).first().click();
 	await page.locator("button", { hasText: "START GAME" }).first().click();
-	await page.waitForFunction(() => window.__game?.handle?.debug().phase === "bid", null, { timeout: TIMEOUT });
+	await page.waitForFunction(() => window.__game?.handle, null, { timeout: TIMEOUT });
+	G = await gameScope(page, TIMEOUT);
+	await G.waitForFunction(() => window.__game.handle.debug().phase === "bid", null, { timeout: TIMEOUT });
 
 	let nb = await debug(page);
 	check("eight seats, 100 credits each", nb.players.length === 8 && nb.players.every((p) => p.credits === 100), JSON.stringify(nb.players.map((p) => p.credits)));
 	check("all twelve lots are laid out before the first bid", nb.order.length === 12 && nb.lot === 0, `${nb.order.length} lots, at ${nb.lot}`);
-	await page.waitForFunction(() => window.__game.handle.debug().submitted.length === 7, null, { timeout: TIMEOUT })
+	await G.waitForFunction(() => window.__game.handle.debug().submitted.length === 7, null, { timeout: TIMEOUT })
 		.catch(() => {});
 	nb = await debug(page);
 	check("the bots have sealed their bids and are waiting on you", nb.submitted.length === 7 && !nb.committed, JSON.stringify(nb.submitted));
 
-	const nbLayout = () => page.evaluate(() => {
+	const nbLayout = () => G.evaluate(() => {
 		const r = (sel) => [...document.querySelectorAll(sel)].map((e) => e.getBoundingClientRect());
 		const ctrls = r(".nb-step button, .nb-chips button, .nb-go");
 		const slots = r(".nb-slot");
@@ -374,13 +379,13 @@ try {
 
 	// Bid the first lot by the stepper so the control is exercised, then lean
 	// on the chips. The bid is sealed, so the button must stop being a button.
-	await page.locator(".nb-chips button", { hasText: /^5$/ }).click();
-	await page.locator(".nb-step button[aria-label='bid one more']").click();
+	await G.locator(".nb-chips button", { hasText: /^5$/ }).click();
+	await G.locator(".nb-step button[aria-label='bid one more']").click();
 	lay = await nbLayout();
 	check("chip then + gives 6", lay.go === "BID 6", lay.go);
-	await page.locator(".nb-go").click();
-	await page.waitForFunction(() => window.__game.handle.debug().committed || window.__game.handle.debug().phase !== "bid", null, { timeout: TIMEOUT });
-	await page.waitForFunction(() => window.__game.handle.debug().phase === "show", null, { timeout: TIMEOUT });
+	await G.locator(".nb-go").click();
+	await G.waitForFunction(() => window.__game.handle.debug().committed || window.__game.handle.debug().phase !== "bid", null, { timeout: TIMEOUT });
+	await G.waitForFunction(() => window.__game.handle.debug().phase === "show", null, { timeout: TIMEOUT });
 	lay = await nbLayout();
 	check("all eight bids flip over together", lay.cards === 8, `${lay.cards}`);
 	check("the reveal fits the phone", lay.bottom <= 844 && lay.docWidth <= lay.winWidth, JSON.stringify({ bottom: lay.bottom, w: lay.docWidth }));
@@ -394,7 +399,7 @@ try {
 		if (d.over) break;
 		if (d.phase === "bid" && !d.committed) {
 			const want = chipsCycle[d.lot % chipsCycle.length];
-			await page.evaluate((want) => {
+			await G.evaluate((want) => {
 				const chip = [...document.querySelectorAll(".nb-chips button")].find((b) => b.textContent === want && !b.disabled)
 					?? document.querySelector(".nb-chips button");
 				chip?.click();
@@ -798,8 +803,9 @@ try {
 
 	console.log("\nbots: neon survival runs for one player, and for one plus bots");
 	await startSolo(page, "neon-survival-mp.html", "PLAY ALONE");
+	G = await gameScope(page, TIMEOUT);
 	await sleep(600);
-	let solo = await page.evaluate(() => ({
+	let solo = await G.evaluate(() => ({
 		active: window.gameActive,
 		ships: Object.keys(window.botShips ?? {}).length,
 		peers: Object.keys(window.peers ?? {}).length,
@@ -815,14 +821,15 @@ try {
 	await addBot.click();
 	await page.locator("button", { hasText: "START GAME" }).first().click();
 	await page.waitForFunction(() => window.__game?.handle, null, { timeout: TIMEOUT });
+	G = await gameScope(page, TIMEOUT);
 	await sleep(400);
 
-	const before = await page.evaluate(() =>
+	const before = await G.evaluate(() =>
 		Object.entries(window.botShips).map(([id, s]) => [id, s.x, s.y]),
 	);
 	check("two bot ships joined the run", before.length === 2, `${before.length} ships`);
 	await sleep(900);
-	const after = await page.evaluate(() =>
+	const after = await G.evaluate(() =>
 		Object.entries(window.botShips).map(([id, s]) => [id, s.x, s.y]),
 	);
 	const moved = before.every(([id, x, y]) => {
@@ -830,7 +837,7 @@ try {
 		return now && Math.hypot(now[1] - x, now[2] - y) > 5;
 	});
 	check("the bot ships are being flown, not parked", moved, JSON.stringify(after));
-	const published = await page.evaluate(
+	const published = await G.evaluate(
 		() => Object.keys(window.peers).filter((id) => id.startsWith("bot_")).length,
 	);
 	check("bot ships are published like any other player", published === 2, `${published}`);

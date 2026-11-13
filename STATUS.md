@@ -23,7 +23,7 @@ offline). Next: frame neon-bid, undercover, neon-survival(-mp); port the six
 in arcade-games; registry + fetch + `validate-game` + dev kit + PR check;
 portal from the catalog; then Phases 1–6 (stats → accounts → …).
 Not yet: real-phone check of wake lock / audio / fullscreen in the sandbox;
-framed games no longer open from `file://` (fetch can't read it) — ask Lokesh.
+framed games no longer open from `file://` — accepted by Lokesh 2026-11-13.
 
 ## Leaving and presence (2026-11-12) — committed (e55a33c…c6a9856)
 

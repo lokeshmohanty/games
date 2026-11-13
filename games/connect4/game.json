@@ -5,10 +5,17 @@
   "blurb": "Drop discs, get four in a row. One against one.",
   "entry": "index.html",
   "shape": "teams",
-  "seats": { "min": 2, "max": 2 },
+  "seats": {
+    "min": 2,
+    "max": 2
+  },
   "bots": true,
   "kind": "duel",
-  "tags": ["alone", "party", "quick"],
+  "tags": [
+    "alone",
+    "duel",
+    "strategy"
+  ],
   "preview": "../../assets/connect4.gif",
   "license": "MIT",
   "author": "lokeshmohanty",

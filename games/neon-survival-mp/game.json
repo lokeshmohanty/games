@@ -1,0 +1,23 @@
+{
+  "sdk": 1,
+  "id": "neon-survival-mp",
+  "name": "NEON SURVIVAL",
+  "blurb": "Dodge the swarm — alone, with bots, or with friends. Last ship flying keeps the run alive.",
+  "entry": "index.html",
+  "shape": "coop",
+  "seats": {
+    "min": 1,
+    "max": 8
+  },
+  "bots": true,
+  "kind": "coop",
+  "tags": [
+    "alone",
+    "party",
+    "quick"
+  ],
+  "preview": "../../assets/neon-survival-mp.gif",
+  "license": "MIT",
+  "author": "lokeshmohanty",
+  "repo": "https://github.com/lokeshmohanty/games"
+}

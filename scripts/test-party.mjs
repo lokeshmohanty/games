@@ -18,7 +18,7 @@ import { existsSync, globSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join, resolve as resolvePath } from "node:path";
 import { fileURLToPath } from "node:url";
-import { serve, gameFrame } from "./serve.mjs";
+import { serve, gameFrame, readyToClick } from "./serve.mjs";
 
 const require = createRequire(import.meta.url);
 const ROOT = resolvePath(dirname(fileURLToPath(import.meta.url)), "..");
@@ -247,14 +247,16 @@ try {
 		[p2, "p2"],
 		[p3, "p3"],
 	]) {
-		await page.locator("#gameCanvas").waitFor({ timeout: TIMEOUT });
-		check(`${tag} switched to Neon Survival`, await page.locator("#gameCanvas").isVisible());
+		const g = await gameFrame(page, TIMEOUT);
+		await g.locator("#gameCanvas").waitFor({ timeout: TIMEOUT });
+		check(`${tag} switched to Neon Survival`, await g.locator("#gameCanvas").isVisible());
 	}
 	const idsAfter = await host.evaluate(() => window.__party.room.directPeers().sort().join(","));
 	check("nobody reconnected across the switch", idsBefore === idsAfter, `${idsBefore} -> ${idsAfter}`);
 	check(
 		"the old game left nothing behind",
-		await host.evaluate(() => document.querySelectorAll("#board, .game-frame").length === 0),
+		// Neon Survival's own frame is the only one: Connect 4's went with it.
+		await host.evaluate(() => document.querySelectorAll("#board").length === 0 && document.querySelectorAll(".game-frame").length === 1),
 	);
 
 	// Draw & Guess is the game `lib/rounds.js` was generalised *from*, and it
@@ -534,7 +536,7 @@ try {
 		return { toMove: d.turn === 1 ? d.red : d.yellow, host: window.__game.ctx.room.selfId };
 	});
 	if (away4.toMove === away4.host) {
-		await host.bringToFront(); // see the note at the new host's move below
+		await readyToClick(host);
 		await hostC4.locator("#board").click();
 		await hostC4.waitForFunction((h) => {
 			const d = window.__game.handle.debug();
@@ -769,10 +771,7 @@ try {
 	}, keptBot);
 	const p2C4 = await gameFrame(p2, TIMEOUT);
 	await p2C4.waitForFunction(() => window.__game.handle?.debug?.().started, null, { timeout: TIMEOUT });
-	// A sandboxed frame is its own process, and Chromium routes a click into
-	// it from the last frame the page drew: a background page has drawn none
-	// since the game mounted, and the click lands on the <iframe> instead.
-	await p2.bringToFront();
+	await readyToClick(p2); // clicks into a game frame: see serve.mjs
 	await p2C4.locator("#board").click();
 	const botAnswered = await p2C4
 		.waitForFunction(() => window.__game.handle.debug().board.flat().filter(Boolean).length === 2, null, { timeout: TIMEOUT })

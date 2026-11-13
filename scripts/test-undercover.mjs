@@ -21,7 +21,7 @@ import { readFileSync } from "node:fs";
 globalThis.window = globalThis;
 globalThis.location = { href: "file:///x", hash: "", pathname: "/x", search: "" };
 globalThis.history = { replaceState() {} };
-for (const f of ["../lib/net.js", "../lib/games.js", "../games/undercover.js"]) {
+for (const f of ["../lib/net.js", "../lib/games.js", "../games/undercover/undercover.js"]) {
 	new Function(readFileSync(new URL(f, import.meta.url), "utf8"))();
 }
 const R = globalThis.NeonArcade.undercoverRules;

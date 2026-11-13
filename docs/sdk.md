@@ -128,7 +128,8 @@ Shell → frame: `init {state}` · `party {state, roster}` · `msg {a, d, from}`
 
 ## Testing a framed game
 
-- Framed games need http(s): `fetch()` cannot read `file://`. The browser
+- Framed games need http(s): `fetch()` cannot read `file://`. Accepted by
+  Lokesh 2026-11-13 — opening a game from `file://` is no longer supported. The browser
   suites serve the repo (`scripts/serve.mjs`); `gameScope(page)` returns the
   frame a game runs in, where `window.__game.{handle, ctx}` lives.
 - Bring a page to the front before clicking into its game frame

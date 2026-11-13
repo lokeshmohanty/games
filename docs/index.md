@@ -292,10 +292,10 @@ Where the brains live:
 
 | Game | Brain | Where |
 |---|---|---|
-| Connect 4 | minimax + alpha-beta, 5 plies, centre-first move ordering | `games/connect4.js` |
+| Connect 4 | minimax + alpha-beta, 5 plies, centre-first move ordering | `games/connect4/connect4.js` |
 | Tug of War | a tap rate (~9/s) with jitter, one timer for all bots | `games/tug-of-war.js` |
-| Neon Survival | steering: inverse-square flee from enemies, drift to gems, wall push-off, speed-capped | `games/neon-survival-mp.js` |
-| Neon Bid | marginal points (plus a share of the rainbow) + half the leader's gain, scaled by credits per lot it can expect to win, ±15% noise | `games/neon-bid.js` (`NeonArcade.neonBidRules.botBid`) |
+| Neon Survival | steering: inverse-square flee from enemies, drift to gems, wall push-off, speed-capped | `games/neon-survival-mp/neon-survival-mp.js` |
+| Neon Bid | marginal points (plus a share of the rainbow) + half the leader's gain, scaled by credits per lot it can expect to win, ±15% noise | `games/neon-bid/neon-bid.js` (`NeonArcade.neonBidRules.botBid`) |
 | Draw & Guess | none — `bots: false` in its registration | — |
 
 Draw & Guess opts out on purpose. A bot that draws is replaying a canned doodle
@@ -414,7 +414,7 @@ replacement, where the hands must be disjoint and no player can roll their own.
 
 ### Neon Bid: a bid is a commitment
 
-`games/neon-bid.js` ([design](neon-bid.md)) is the third user of the pattern,
+`games/neon-bid/neon-bid.js` ([design](neon-bid.md)) is the third user of the pattern,
 and the simplest: the secret is a single number. Each player commits to
 their bid in a `collect` phase, opens it only after everyone has committed,
 and the host audits each opening **twice** — against its digest, and against
@@ -505,7 +505,7 @@ peers agree on the clock to within a second.
 ## Games played on one device
 
 `local: true` in the registration says a game is played by people **in the same
-room, on one phone, passed from hand to hand**. `games/undercover.js` is the
+room, on one phone, passed from hand to hand**. `games/undercover/undercover.js` is the
 first.
 
 This is not a lesser kind of multiplayer. It is the answer to the cost this
@@ -629,6 +629,13 @@ offline copy is precached in one go at install, so with no network you get one
 coherent deploy rather than an accumulation. The preview gifs are deliberately
 left out of that precache (~2 MB, and nobody asked for them yet), which is why
 `assets/placeholder.svg` exists.
+
+**A page offline is matched without its query** when the exact URL was never
+cached: `party.html?game=connect4&fresh=1` gets the precached `party.html`,
+whose script reads the query. Before 2026-11-13 it fell straight to the
+portal, so a game link opened offline depended on having visited that exact
+URL online. A framed game's files (`games/<id>/`) are precached like the
+rest; the shell inlines them from the cache (docs/sdk.md).
 
 **Do not put an SVG in the manifest's `icons`.** Listed with `sizes: "any"`,
 Chrome selects it as *the* install icon, refuses it, and reports

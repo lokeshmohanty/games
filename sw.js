@@ -28,7 +28,7 @@
 // first, a forgotten bump costs an out-of-date *offline* copy — never a stale
 // app for an online player, which is the failure mode that would be hard to
 // notice.
-const VERSION = "arcade-games-v21";
+const VERSION = "arcade-games-v23";
 
 // The shell: everything needed to open any page and start a game with no
 // network at all. The preview gifs are deliberately absent — they are ~2 MB
@@ -71,11 +71,17 @@ const SHELL = [
 	"./games/onitama.js",
 	"./games/light-cycles.js",
 	"./games/battleship.js",
-	"./games/undercover.js",
+	"./games/undercover/index.html",
+	"./games/undercover/undercover.js",
+	"./games/undercover/game.json",
 	"./games/liars-dice.js",
-	"./games/neon-bid.js",
+	"./games/neon-bid/index.html",
+	"./games/neon-bid/neon-bid.js",
+	"./games/neon-bid/game.json",
 	"./games/draw-guess.js",
-	"./games/neon-survival-mp.js",
+	"./games/neon-survival-mp/index.html",
+	"./games/neon-survival-mp/neon-survival-mp.js",
+	"./games/neon-survival-mp/game.json",
 	"./games/tug-of-war.js",
 	"./assets/icon.svg",
 	// Stands in for a preview gif that will not load — which, offline, is all of
@@ -169,6 +175,14 @@ async function networkFirst(request) {
 
 	const res = await fetching;
 	if (res) return res;
+
+	// A page we have seen, but not with this query: party.html?game=… is the
+	// precached party.html, and the query only steers its script. Whether the
+	// exact URL was cached on an earlier visit is luck (test-pwa caught it).
+	if (request.mode === "navigate") {
+		const page = await caches.match(request, { ignoreSearch: true });
+		if (page) return page;
+	}
 
 	// A page we have never seen, with no network. The portal is the one thing
 	// worth offering instead — everything reachable from it is already cached.

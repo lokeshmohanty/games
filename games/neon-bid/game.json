@@ -1,0 +1,23 @@
+{
+  "sdk": 1,
+  "id": "neon-bid",
+  "name": "NEON BID",
+  "blurb": "Twelve gems, 100 credits, sealed bids. The winner pays the second-highest bid.",
+  "entry": "index.html",
+  "shape": "free",
+  "seats": {
+    "min": 2,
+    "max": 8
+  },
+  "bots": true,
+  "kind": "ffa",
+  "tags": [
+    "alone",
+    "party",
+    "strategy"
+  ],
+  "preview": "../../assets/neon-bid.gif",
+  "license": "MIT",
+  "author": "lokeshmohanty",
+  "repo": "https://github.com/lokeshmohanty/games"
+}

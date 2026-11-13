@@ -20,7 +20,7 @@
  */
 import { createRequire } from "node:module";
 import { execFileSync, spawn } from "node:child_process";
-import { existsSync, globSync, mkdtempSync } from "node:fs";
+import { existsSync, globSync, mkdtempSync, readFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { dirname, join, resolve as resolvePath } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -395,8 +395,22 @@ check("requests go through the worker", servesFromWorker);
 
 console.log("\npwa: with the network gone");
 
-// Give the install-time precache a moment to finish before pulling the plug.
-await page.waitForTimeout(2500);
+// Wait for the install-time precache to hold every shell file before pulling
+// the plug — a fixed pause was too short on a cold first run, once the shell
+// grew past 40 files (framed games, the SDK).
+{
+	const sw = readFileSync(join(ROOT, "sw.js"), "utf8");
+	const version = sw.match(/const VERSION = "([^"]+)"/)[1];
+	const shell = [...sw.match(/const SHELL = \[([\s\S]*?)\];/)[1].matchAll(/"(\.\/[^"]*)"/g)].length;
+	const full = await page
+		.waitForFunction(
+			async ([v, n]) => (await (await caches.open(v)).keys()).length >= n,
+			[version, shell],
+			{ timeout: 30_000, polling: 250 },
+		)
+		.then(() => true, () => false);
+	check(`the precache holds all ${shell} shell files before going offline`, full);
+}
 // Aborting every request is a truer "no network" than setOffline, which does
 // not reach the fetches the service worker itself makes — and those are the
 // ones being tested here.

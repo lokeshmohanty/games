@@ -59,3 +59,14 @@ export async function gameScope(page, timeout = 30_000) {
 	const framed = await page.evaluate(() => !!document.querySelector(".game-frame"));
 	return framed ? gameFrame(page, timeout) : page;
 }
+
+/**
+ * Before clicking into a game frame: bring the page to the front and let it
+ * draw twice. A sandboxed frame is its own process, and Chromium routes a click
+ * into it from the page's last drawn frame — a background page that has not
+ * drawn since the game mounted sends the click to the <iframe> element instead.
+ */
+export async function readyToClick(page) {
+	await page.bringToFront();
+	await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
+}
