@@ -103,7 +103,15 @@ everything as JSON.
 
 ## Setting it up (Lokesh, once)
 
-None of this is done yet. The site works without it — signed out, every page
+**Status 2026-11-13: done** — D1, all secrets, GitHub + Google OAuth apps,
+the GitHub App and the "Game feedback" category are set; Worker version
+b35232de deployed with the D1 binding, `UserLive` and the cron. Verified
+live: the API, both providers' redirects, back-page allowlist, test sign-in
+off in production, the room server (`just test-live`). Not yet seen live: a
+real person signing in, a ranked game between two real accounts, a posted
+comment, the first `stats` commit (at :07 past the hour).
+
+Before that: the site works without it — signed out, every page
 behaves as before — but `wrangler.toml` now declares the D1 binding, so the
 **room server cannot be redeployed until step 1 gives it a real database id**.
 Until the secrets exist, sign-in answers 503 "not set up", and feedback and

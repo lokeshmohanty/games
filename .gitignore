@@ -33,3 +33,8 @@ CLAUDE.md
 
 # Generated at deploy by scripts/fetch-community.mjs
 community/
+
+# Secrets written while setting up accounts (docs/accounts.md): never committed.
+.env
+.env.*
+*.pem

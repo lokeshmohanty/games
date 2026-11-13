@@ -11,7 +11,7 @@ session pay for it.*
 act → record → clear the item. This is the single inbox — do not create a
 separate `TODO.md`.*
 
-## Phases 1–6 (2026-11-13) — merged to main (19cc5e8), site deployed; Worker NOT deployed
+## Phases 1–6 (2026-11-13) — merged, site and Worker deployed (b35232de)
 
 Built and green locally: stats/favourites/recents + portal from catalogs
 (Phase 1); accounts, ranked matches, leaderboards, hourly GitHub snapshot,
@@ -23,12 +23,10 @@ main since b597fb6**; fixed here (NeonArcade.sessionStore via the bridge).
 Green 2026-11-13: every `just test` suite + test-accounts (100) + test-social
 + test-worker. arcade-games: branch `platform-2` (titles, reportResult),
 registry pinned to its local commit — push + re-pin before merging.
-Setup progress (branch `accounts-setup`, local): D1 `arcade` created (APAC,
-893ae81c…) + migrated; SESSION_KEY set. Next: Lokesh's Steps A–D (GitHub
-OAuth app, Google OAuth client, GitHub App + Discussions "Game feedback",
-six `wrangler secret put`), then `wrangler deploy` (blocked for the agent by
-the permission classifier — Lokesh runs it or allows it), merge
-`accounts-setup`, live checks. Old note: the one-time setup in docs/accounts.md
+Setup done 2026-11-13: D1 `arcade` (APAC), all secrets, OAuth apps, GitHub
+App, Worker deployed; live API/redirects/room server verified. Still to see
+live: a real sign-in per provider, a ranked game between two real accounts,
+a feedback post, the first `stats` snapshot commit. Old note: the one-time setup in docs/accounts.md
 (D1, SESSION_KEY, GitHub + Google OAuth, GitHub App, Discussions category,
 `wrangler deploy`). Until D1 exists the room server cannot be redeployed.
 Not yet: real-phone check (sandbox wake lock / audio / fullscreen; dev kit
