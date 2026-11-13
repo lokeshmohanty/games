@@ -11,7 +11,7 @@ session pay for it.*
 act → record → clear the item. This is the single inbox — do not create a
 separate `TODO.md`.*
 
-## Themes, search, contributors, PR-only pins (2026-11-13) — branch `themes`, not merged
+## Themes, search, contributors, PR-only pins (2026-11-13) — live (9f3c0bd)
 
 Built and green (every `just test` suite + accounts + social): lib/theme.css
 + theme.js (Paper default from lokeshmohanty.github.io, Neon; fonts
@@ -21,9 +21,12 @@ self-hosted; frames follow; check-colours lint), two-choice game pages
 left, tabs), contribute.html (CONTRIBUTING.md rendered), contributors.html
 (contributor.json), registry-bump.yml (pins move only by PR; trusted owners
 auto-merged). arcade-games branch `themes`: palette + contributor.json.
-Waiting on Lokesh: merge/push confirmation; enable "Allow GitHub Actions to
-create and approve pull requests" (Settings → Actions → General), then the
-first bump PR carries arcade-games' new commit.
+Published 2026-11-13: games main 9f3c0bd (site deployed, checked live in
+both themes), arcade-games main 4ae4d37. The site still pins arcade-games
+efabb70 (old colours) until the first bump PR — which needs Lokesh to enable
+"Allow GitHub Actions to create and approve pull requests" (Settings →
+Actions → General); then registry-bump.yml opens it within 30 min, checks
+it, and (trusted owner) merges and deploys.
 
 ## Phases 1–6 (2026-11-13) — merged, site and Worker deployed (b35232de)
 
