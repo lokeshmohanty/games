@@ -32,7 +32,7 @@ new_sqlite_classes = ["UserLive"]
 [[d1_databases]]
 binding = "DB"
 database_name = "arcade"
-database_id = "00000000-0000-0000-0000-000000000000"
+database_id = "893ae81c-0572-4e96-95fa-50f47747b6da"
 migrations_dir = "migrations"
 
 # The hourly public snapshot to GitHub (api/snapshot.js), at :07.

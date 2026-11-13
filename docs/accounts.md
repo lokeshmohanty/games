@@ -109,10 +109,11 @@ behaves as before — but `wrangler.toml` now declares the D1 binding, so the
 Until the secrets exist, sign-in answers 503 "not set up", and feedback and
 the snapshot are skipped.
 
-1. **D1**: `cd worker && wrangler d1 create arcade --location apac`; put the
-   printed id in `wrangler.toml` (`database_id`); then
-   `wrangler d1 migrations apply arcade --remote`.
-2. **Session key**: `openssl rand -base64 32 | wrangler secret put SESSION_KEY`.
+1. **D1** — *done 2026-11-13*: `arcade`, APAC, id `893ae81c-0572-4e96-95fa-50f47747b6da`
+   (in `wrangler.toml`), migration 0001 applied remotely.
+2. **Session key**: `node -e 'process.stdout.write(require("crypto").randomBytes(32).toString("base64"))' | wrangler secret put SESSION_KEY`
+   (not `openssl`: it is not installed on this machine, and an empty pipe
+   uploads an empty key — which happened once, 2026-11-13).
 3. **GitHub OAuth app** (github.com → Settings → Developer settings → OAuth
    Apps): callback `https://neon-arcade-room.lokeshmohanty.workers.dev/auth/github/callback`;
    `wrangler secret put GITHUB_CLIENT_ID` and `GITHUB_CLIENT_SECRET`.
