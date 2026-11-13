@@ -34,9 +34,17 @@ token lives in the party page's localStorage only.
   players who were in it, each signed in, report the same result. Bots,
   one-phone games, dev-kit games and matches with fewer than two accounts
   never count. A disagreement voids the match.
-- **Feedback via a GitHub App** with a "from <name>" byline — works for
-  Google accounts and nobody grants the arcade access to their GitHub. No
-  giscus.
+- **Feedback from the player's own GitHub account** (changed 2026-11-13:
+  "the discussions should be from the users account"; "for feedback, require
+  github account — he can register and connect both google/github"). One
+  arcade account holds several sign-ins (D1 `identities`); GitHub sign-in
+  and "Connect GitHub" both go through the arcade's **GitHub App**, whose
+  user token can only do what the App may — Discussions on
+  lokeshmohanty/games — and it is **kept, encrypted** (worker/api/vault.js:
+  AES-GCM under a key derived from SESSION_KEY; refreshed when it expires;
+  deleted on disconnect or account deletion) so a comment is posted as the
+  player, "via" the App. The App still opens each game's thread. No giscus,
+  and the old GitHub OAuth app is retired.
 - **D1 is the live store; GitHub holds an hourly public copy of the
   aggregates** (counts and the top 100 per game).
 - **Google and GitHub OAuth, the GitHub App and D1** are the accepted outside
@@ -76,7 +84,8 @@ address per 5-minute window (IpGate `api`).
 | `GET /api/u/<id>` | anyone | public profile (404 when hidden) |
 | `GET /api/friends`, `POST/DELETE /api/friends/<id>`, `POST /api/friends/<id>/invite` | signed in | |
 | `GET/POST /api/groups`, `POST /api/groups/join`, `GET/DELETE /api/groups/<id>`, `DELETE /api/groups/<id>/members/<acct>` | signed in | |
-| `GET /api/feedback/<game>` / `POST` | read: anyone; post: signed in, 5 a day | |
+| `GET /api/feedback/<game>` / `POST` | read: anyone; post: GitHub connected, 5 a day | posted as the player |
+| `POST /api/me/link/<github\|google>`, `DELETE /api/me/identities/<provider>` | signed in | connect / disconnect a sign-in (never the last) |
 | `wss /live` (subprotocols `["neon", token]`) | signed in | presence, invites |
 
 CORS: signed-in answers name the asking origin only if it is in
@@ -87,7 +96,9 @@ or loopback; public reads are open.
 
 | Data | Stored | Public? |
 |---|---|---|
-| Provider + provider user id, display name, avatar URL | D1 `accounts` | name + avatar on a public profile and boards, unless hidden |
+| Display name, avatar URL | D1 `accounts` | name + avatar on a public profile and boards, unless hidden |
+| Sign-ins: provider, provider user id, GitHub login | D1 `identities` | several per account (GitHub, Google); the GitHub login shows on your feedback |
+| GitHub App user token + refresh token | D1 `identities`, AES-GCM encrypted | only to post your feedback as you; Discussions on this repo only; deleted on disconnect or delete |
 | Sessions (id, expiry; 60 days, sliding) | D1 `sessions` | no |
 | Favourites, friends, groups, presence | D1 | no (friends see each other online unless "appear offline") |
 | Ranked matches and ratings | D1 | on boards and public profiles, unless hidden |
@@ -95,7 +106,9 @@ or loopback; public reads are open.
 | Feedback text | GitHub Discussions | yes, with the display name |
 | Hourly snapshot: counts + top 100 per game | GitHub branch `stats` | yes; hidden players left out |
 
-Never stored: email, provider access tokens (used once to read the profile).
+Never stored: email; Google's token (used once to read the profile). The
+GitHub App user token is the one provider token kept — encrypted, narrow,
+and only so your feedback is your own.
 **Delete** removes every row of the account at once; matches stay in the
 other players' histories with the name shown as "(deleted)"; snapshots already
 committed keep the old name and rating until the next one. **Export** returns
@@ -122,9 +135,14 @@ the snapshot are skipped.
 2. **Session key**: `node -e 'process.stdout.write(require("crypto").randomBytes(32).toString("base64"))' | wrangler secret put SESSION_KEY`
    (not `openssl`: it is not installed on this machine, and an empty pipe
    uploads an empty key — which happened once, 2026-11-13).
-3. **GitHub OAuth app** (github.com → Settings → Developer settings → OAuth
-   Apps): callback `https://neon-arcade-room.lokeshmohanty.workers.dev/auth/github/callback`;
-   `wrangler secret put GITHUB_CLIENT_ID` and `GITHUB_CLIENT_SECRET`.
+3. **GitHub sign-in = the GitHub App** (since 2026-11-13; the OAuth app of
+   the first setup is retired): in the App's settings set **Callback URL**
+   `https://neon-arcade-room.lokeshmohanty.workers.dev/auth/github/callback`,
+   keep **Expire user authorization tokens** ticked, **Generate a new client
+   secret**, then `wrangler secret put GH_APP_CLIENT_ID` (the App's *Client
+   ID*, not its App ID) and `GH_APP_CLIENT_SECRET`. Then
+   `wrangler secret delete GITHUB_CLIENT_ID` / `GITHUB_CLIENT_SECRET`, and
+   delete the OAuth app on GitHub.
 4. **Google OAuth client** (console.cloud.google.com → APIs & Services →
    Credentials → OAuth client ID, *Web application*): redirect URI
    `…/auth/google/callback`, consent screen with scopes `openid`, `profile`;
@@ -140,6 +158,12 @@ the snapshot are skipped.
    hourly cron come with it).
 7. Check: sign in on the site with each provider; play a ranked game with a
    second account; wait for :07 past the hour and look at the `stats` branch.
+
+## Migrations
+
+`worker/migrations/0002_identities.sql` adds `identities` (copying each
+account's first sign-in) and the token columns: `wrangler d1 migrations
+apply arcade --remote` before deploying a Worker that reads them.
 
 ## Testing
 
