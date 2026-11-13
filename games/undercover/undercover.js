@@ -44,12 +44,15 @@
 	const CATEGORIES = NeonArcade.undercoverWords.map((c) => ({
 		id: c.id,
 		label: c.label,
+		simple: !!c.simple,
 		pairs: ["easy", "hard"].flatMap((level) =>
 			parse(c[level]).map((words) => ({ words, level, category: c.id }))),
 	}));
 	const ALL_PAIRS = CATEGORIES.flatMap((c) => c.pairs);
 	const PAIRS = ALL_PAIRS.map((p) => p.words);
 	const LEVELS = ["easy", "mixed", "hard"];
+	// What a phone starts with: the everyday topics, easy pairs.
+	const SIMPLE = CATEGORIES.filter((c) => c.simple).map((c) => c.id);
 	const labelOf = (id) => CATEGORIES.find((c) => c.id === id)?.label ?? id;
 
 	/** Every pair the host's choice of categories and difficulty deals from. */
@@ -57,6 +60,26 @@
 		categoryIds.includes(p.category) && (level === "mixed" || p.level === level));
 
 	const pairKey = (pair) => pair.words.join("/").toLowerCase();
+
+	/** The saved WORDS choice, or the starting one; a topic since removed is dropped. */
+	function wordChoice(saved) {
+		const ids = CATEGORIES.map((c) => c.id);
+		let categories = Array.isArray(saved?.categories) ? saved.categories.filter((id) => ids.includes(id)) : [];
+		if (!categories.length) categories = [...SIMPLE];
+		return { categories, level: LEVELS.includes(saved?.level) ? saved.level : "easy" };
+	}
+
+	/** Who played last time and how, or a blank table of three. */
+	function playerChoice(saved) {
+		const names = (Array.isArray(saved?.names) ? saved.names : [])
+			.filter((n) => typeof n === "string").slice(0, MAX_PLAYERS).map((n) => n.slice(0, 14));
+		while (names.length < MIN_PLAYERS) names.push("");
+		return {
+			names,
+			spies: Number.isInteger(saved?.spies) && saved.spies >= 1 ? saved.spies : 1,
+			withBlank: saved?.withBlank === true,
+		};
+	}
 
 	/**
 	 * Draw a pair this phone has not dealt yet.
@@ -190,8 +213,8 @@
 	}
 
 	NeonArcade.undercoverRules = {
-		PAIRS, CATEGORIES, LEVELS, MIN_PLAYERS, MAX_PLAYERS, POINTS, defaultSpies, maxOthers, maxSpies, blankAllowed,
-		shuffle, pairPool, pairKey, drawPair, dealRoles, winner, handPoints,
+		PAIRS, CATEGORIES, SIMPLE, LEVELS, MIN_PLAYERS, MAX_PLAYERS, POINTS, defaultSpies, maxOthers, maxSpies, blankAllowed,
+		shuffle, pairPool, pairKey, drawPair, dealRoles, winner, handPoints, wordChoice, playerChoice,
 	};
 })();
 
@@ -209,8 +232,8 @@ NeonArcade.registerGame({
 
 	mount(ctx) {
 		const {
-			CATEGORIES, LEVELS, MIN_PLAYERS, MAX_PLAYERS, maxSpies, blankAllowed, shuffle, pairPool, pairKey, drawPair,
-			dealRoles, winner, handPoints,
+			CATEGORIES, SIMPLE, LEVELS, MIN_PLAYERS, MAX_PLAYERS, maxSpies, blankAllowed, shuffle, pairPool, pairKey, drawPair,
+			dealRoles, winner, handPoints, wordChoice, playerChoice,
 		} = NeonArcade.undercoverRules;
 
 		const shell = NeonArcade.gameShell(ctx.root, {
@@ -277,9 +300,9 @@ NeonArcade.registerGame({
 		// -------------------------------------------------------------- state
 
 		let phase = "setup";
-		let names = ["", "", ""];
-		let spies = 1;
-		let withBlank = false;
+		// Who is playing, how many undercovers, the blank: kept on the device, so
+		// the same table next time does not set itself up again.
+		let { names, spies, withBlank } = playerChoice(ctx.storage?.get("players"));
 		let deal = null; // { civilianWord, spyWord, players }
 		let handIndex = 0; // whose turn to look at the phone
 		let revealed = false; // is the word on screen right now
@@ -295,10 +318,7 @@ NeonArcade.registerGame({
 		// are kept on the device, so a group that plays every week keeps getting
 		// pairs it has not had (drawPair).
 		const allIds = CATEGORIES.map((c) => c.id);
-		const savedWords = ctx.storage?.get("words") ?? {};
-		let categories = (savedWords.categories ?? allIds).filter((id) => allIds.includes(id));
-		if (!categories.length) categories = allIds;
-		let level = LEVELS.includes(savedWords.level) ? savedWords.level : "mixed";
+		let { categories, level } = wordChoice(ctx.storage?.get("words"));
 		let seen = Array.isArray(ctx.storage?.get("seen")) ? ctx.storage.get("seen") : [];
 		// Points by name, kept on the device until RESET SCORES, so a reload or a
 		// closed tab mid-evening does not wipe the table's tally. By name, so
@@ -326,8 +346,13 @@ NeonArcade.registerGame({
 
 		// -------------------------------------------------------------- setup
 
+		function savePlayers() {
+			ctx.storage?.set("players", { names, spies, withBlank });
+		}
+
 		function renderSetup() {
 			clampSpies();
+			savePlayers();
 			wrap.replaceChildren();
 			wrap.append(el("div", "uc-hint",
 				"Everyone plays on this one phone. Type in who is here, then pass it round."));
@@ -344,6 +369,7 @@ NeonArcade.registerGame({
 				// the list on each one would steal the caret mid-word.
 				input.addEventListener("input", () => {
 					names[i] = input.value;
+					savePlayers();
 					updateSetupActions();
 				});
 				row.append(input);
@@ -391,6 +417,7 @@ NeonArcade.registerGame({
 			opts.append(blank);
 
 			const which = categories.length === CATEGORIES.length ? "ALL"
+				: categories.length === SIMPLE.length && SIMPLE.every((id) => categories.includes(id)) ? "EVERYDAY"
 				: categories.length === 1 ? CATEGORIES.find((c) => c.id === categories[0]).label.toUpperCase()
 				: `${categories.length} TOPICS`;
 			opts.append(button(`WORDS: ${which} · ${level.toUpperCase()}`, () => {
@@ -464,6 +491,11 @@ NeonArcade.registerGame({
 			wrap.append(cats);
 
 			const bulk = el("div", "uc-opts");
+			bulk.append(button("EVERYDAY", () => {
+				categories = [...SIMPLE];
+				saveWords();
+				render();
+			}, { className: "uc-toggle" }));
 			bulk.append(button("ALL", () => {
 				categories = [...allIds];
 				saveWords();

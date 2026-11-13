@@ -26,8 +26,8 @@ for (const f of ["../lib/net.js", "../lib/games.js", "../games/undercover/words.
 }
 const R = globalThis.NeonArcade.undercoverRules;
 const {
-	PAIRS, CATEGORIES, LEVELS, MIN_PLAYERS, MAX_PLAYERS, POINTS, defaultSpies, maxOthers, maxSpies, blankAllowed,
-	pairPool, pairKey, drawPair, dealRoles, winner, handPoints,
+	PAIRS, CATEGORIES, SIMPLE, LEVELS, MIN_PLAYERS, MAX_PLAYERS, POINTS, defaultSpies, maxOthers, maxSpies, blankAllowed,
+	pairPool, pairKey, drawPair, dealRoles, winner, handPoints, wordChoice, playerChoice,
 } = R;
 
 let failures = 0;
@@ -76,6 +76,21 @@ console.log("\ntopics and difficulty");
 		pairPool(["food", "animals"]).length === pairPool(["food"]).length + pairPool(["animals"]).length);
 	check("no topics, no pairs", pairPool([], "mixed").length === 0);
 	check("the three difficulties", LEVELS.join() === "easy,mixed,hard");
+
+	const fresh = wordChoice(undefined);
+	check("a new phone starts easy", fresh.level === "easy");
+	check("…with the everyday topics only",
+		fresh.categories.join() === "food,animals,places,home,jobs,nature,sports,travel,clothes", fresh.categories.join());
+	check("…which still deal plenty", pairPool(SIMPLE, "easy").length >= 200, pairPool(SIMPLE, "easy").length);
+	const back = wordChoice({ categories: ["tech", "gone"], level: "hard" });
+	check("a saved choice comes back, minus a topic since removed", back.categories.join() === "tech" && back.level === "hard");
+	check("a saved choice of nothing starts over", wordChoice({ categories: [], level: "nope" }).categories.length === SIMPLE.length);
+	const p = playerChoice({ names: ["Ana", "Bo", "Cy", "Di"], spies: 2, withBlank: true });
+	check("the table comes back: names, undercovers, blank", p.names.join() === "Ana,Bo,Cy,Di" && p.spies === 2 && p.withBlank);
+	const blank = playerChoice(undefined);
+	check("…or a blank table of three", blank.names.length === MIN_PLAYERS && blank.spies === 1 && !blank.withBlank);
+	check("…and junk is not trusted",
+		playerChoice({ names: [1, "A very long name indeed"], spies: -3 }).names.join() === "A very long na,," && playerChoice({ spies: -3 }).spies === 1);
 
 	const pair = pairPool(["animals"], "hard")[0];
 	const d = dealRoles(names(5), 1, false, Math.random, pair);

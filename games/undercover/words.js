@@ -16,6 +16,10 @@
 // `scripts/test-undercover.mjs` checks it, so add freely and let the test say
 // what collides.
 //
+// `simple: true` marks the everyday topics a phone starts with — ones anybody
+// at the table can describe (Lokesh, 2026-11-14: "by default, make it easy and
+// only select the simpler categories"). The rest are a tap away on WORDS.
+//
 // Format: one string per level, pairs separated by commas, halves by "/".
 // A long list is the point: on a long evening the deal avoids pairs this phone
 // has already shown (undercover.js, `pickPair`), so the more there are, the
@@ -27,6 +31,7 @@ NeonArcade.undercoverWords = [
 	{
 		id: "food",
 		label: "Food & drink",
+		simple: true,
 		easy: `Coffee/Tea, Pizza/Burger, Rice/Noodles, Apple/Pear, Milk/Juice, Cake/Cookie,
 			Ice cream/Yogurt, Banana/Mango, Popcorn/Peanuts, Sandwich/Burrito, Chocolate/Candy,
 			Carrot/Radish, Strawberry/Cherry, Watermelon/Pumpkin, Salt/Sugar, Coconut/Pineapple,
@@ -44,6 +49,7 @@ NeonArcade.undercoverWords = [
 	{
 		id: "animals",
 		label: "Animals",
+		simple: true,
 		easy: `Cat/Dog, Camel/Horse, Lion/Tiger, Elephant/Rhino, Shark/Whale, Eagle/Owl,
 			Squirrel/Hedgehog, Cow/Goat, Snake/Lizard, Monkey/Gorilla, Penguin/Polar bear,
 			Parrot/Pigeon, Giraffe/Zebra, Bear/Moose, Fox/Raccoon, Swan/Pelican, Spider/Scorpion,
@@ -60,6 +66,7 @@ NeonArcade.undercoverWords = [
 	{
 		id: "places",
 		label: "Places",
+		simple: true,
 		easy: `Village/Town, Cinema/Theatre, Beach/Swimming pool, Airport/Railway station,
 			Hospital/Pharmacy, Library/Bookshop, Zoo/Aquarium, Mall/Market, Restaurant/Cafe,
 			Gym/Sauna, Prison/Courthouse, Bank/Post office, Office/Factory, Lighthouse/Windmill,
@@ -76,6 +83,7 @@ NeonArcade.undercoverWords = [
 	{
 		id: "home",
 		label: "Around the house",
+		simple: true,
 		easy: `Pencil/Pen, Soap/Shampoo, Mirror/Window, Candle/Torch, Ladder/Staircase,
 			Toothbrush/Comb, Blanket/Towel, Envelope/Postcard, Fridge/Oven, Sofa/Bed,
 			Chair/Stool, Clock/Calendar, Pillow/Cushion, Fork/Chopsticks, Bucket/Basin,
@@ -92,6 +100,7 @@ NeonArcade.undercoverWords = [
 	{
 		id: "jobs",
 		label: "Jobs & people",
+		simple: true,
 		easy: `Doctor/Nurse, Magician/Clown, Referee/Coach, Teacher/Student, Pilot/Astronaut,
 			Chef/Waiter, Firefighter/Lifeguard, Farmer/Gardener, Police officer/Soldier,
 			Lawyer/Judge, Painter/Sculptor, Singer/Dancer, Plumber/Electrician, Baker/Butcher,
@@ -109,6 +118,7 @@ NeonArcade.undercoverWords = [
 	{
 		id: "nature",
 		label: "Nature & weather",
+		simple: true,
 		easy: `Sun/Moon, Ocean/Lake, Rain/Snow, Volcano/Geyser, Mountain/Hill, Desert/Jungle,
 			Thunder/Lightning, Rainbow/Aurora, Tree/Bush, Rose/Tulip, Star/Planet,
 			Waterfall/Fountain, Cloud/Fog, Earthquake/Tsunami, Summer/Spring, Sand/Mud,
@@ -123,6 +133,7 @@ NeonArcade.undercoverWords = [
 	{
 		id: "sports",
 		label: "Sports & games",
+		simple: true,
 		easy: `Chess/Draughts, Kite/Balloon, Football/Rugby, Tennis/Badminton, Cricket/Baseball,
 			Swimming/Diving, Boxing/Wrestling, Skiing/Snowboarding, Golf/Croquet,
 			Basketball/Volleyball, Cycling/Running, Hockey/Lacrosse, Poker/Rummy,
@@ -155,6 +166,7 @@ NeonArcade.undercoverWords = [
 	{
 		id: "travel",
 		label: "Transport & travel",
+		simple: true,
 		easy: `Bus/Train, Bicycle/Motorbike, Passport/Ticket, Compass/Map, Tent/Cabin,
 			Car/Truck, Aeroplane/Helicopter, Ship/Submarine, Rocket/Satellite, Taxi/Rickshaw,
 			Suitcase/Backpack, Tram/Cable car, Boat/Raft, Ambulance/Fire engine,
@@ -171,6 +183,7 @@ NeonArcade.undercoverWords = [
 	{
 		id: "clothes",
 		label: "Clothes & looks",
+		simple: true,
 		easy: `Beard/Moustache, Sandal/Slipper, Wallet/Purse, Helmet/Cap, Shirt/T-shirt,
 			Jeans/Shorts, Dress/Skirt, Gloves/Socks, Scarf/Tie, Boots/Sneakers, Ring/Bracelet,
 			Watch/Sunglasses, Jacket/Coat, Pyjamas/Swimsuit, Lipstick/Nail polish,
