@@ -1,0 +1,51 @@
+# A contributor's game submission: any pull request that touches registry/.
+# (Lokesh, 2026-11-13: "verify if a contributor PR is valid … run the action
+# only on these".) GitHub's own path filter is what picks these PRs out;
+# submission-report.yml then labels them `game-submission` (+ new / update,
+# and checks passed / changes needed) so they are easy to filter in the list.
+#
+# The rules are scripts/check-submission.mjs: only registry/<owner>/<repo>.json
+# changes, the author's own files (unless a maintainer), a well-formed entry,
+# a commit that exists in the public repo and moves forward on an update;
+# then every game fetched at its pin and checked like `just validate-game`.
+#
+# Runs as `pull_request`: no secrets, a read-only token — a fork's PR is safe,
+# and the pinned games only ever run sandboxed in a headless browser. Its
+# result is uploaded for the report workflow, which has the write access.
+name: Check game submission
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, edited]
+    paths:
+      - "registry/**"
+
+permissions:
+  contents: read
+
+jobs:
+  submission:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: The base branch, to compare against
+        run: git fetch -q origin "${{ github.base_ref }}"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install Playwright (driver only; the runner's Chrome is used)
+        run: npm install --no-save playwright@1.62.1
+      - name: Judge the submission
+        env:
+          CHROME: /usr/bin/google-chrome
+          GITHUB_TOKEN: ${{ github.token }}
+        run: node scripts/check-submission.mjs --base "origin/${{ github.base_ref }}" --out submission
+      - name: Keep the result for the report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: submission
+          path: submission/
+          retention-days: 7

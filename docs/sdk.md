@@ -220,8 +220,24 @@ for updates") ask the GitHub API for the repo's head: a new repo gets GitHub's
 `/new/main?filename=registry/<owner>/<repo>.json&value=…` page filled in
 (head commit, every folder with a game.json); a pinned repo that moved gets
 its pin's edit page and the commit to paste (GitHub cannot pre-fill an edit).
-The pins' commits ride in the catalog (`CONTRIBUTORS[].pins`). The PR is
-checked by `registry-check.yml`.
+The pins' commits ride in the catalog (`CONTRIBUTORS[].pins`).
+
+**Checking a submission** (Lokesh, 2026-11-13). `submission.yml` runs on
+every `pull_request` touching `registry/` (GitHub's path filter is what picks
+contributor PRs out; a label added by a workflow could not trigger another
+run): read-only token, no secrets. `scripts/check-submission.mjs` judges it —
+only `registry/<owner>/<repo>.json` changes; the author's own owner folder
+unless their `author_association` is OWNER/MEMBER/COLLABORATOR; a valid
+entry; the commit exists (GitHub API) and an update is `ahead` of the old
+pin — then fetches and runs `validate-game` on every listed game, writing
+`result.json` + `summary.md` as an artifact. `submission-report.yml`
+(`workflow_run`, write access, never checks out PR code) reads that artifact
+as data, confirms the PR's head is the judged commit, and sets labels
+`game-submission`, `submission: new|update|removal|mixed`, `checks passed` /
+`changes needed`, and keeps one result comment current. The rules are tested
+without network by `scripts/test-submission.mjs` (`just test-submission`).
+`platform-check.yml` (was registry-check.yml) checks changes to the
+platform itself.
 
 ## The dev kit (built 2026-11-13)
 

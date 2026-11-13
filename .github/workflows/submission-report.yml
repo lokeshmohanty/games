@@ -1,0 +1,80 @@
+# Labels a game submission and tells its author the result, after
+# submission.yml has judged it.
+#
+# A pull request's own run cannot label or comment (a fork's token is
+# read-only), so this runs on `workflow_run`, in this repo's context, with
+# write access to issues and pull requests — and therefore never checks out
+# or runs anything from the pull request. It reads the uploaded result.json
+# as data only, and checks its PR number against the run's head commit
+# before touching that PR.
+#
+# Labels (made if missing):
+#   game-submission                 every submission — filter with label:game-submission
+#   submission: new / update / removal / mixed
+#   checks passed / changes needed  the latest result; the other one is removed
+name: Report game submission
+
+on:
+  workflow_run:
+    workflows: ["Check game submission"]
+    types: [completed]
+
+permissions:
+  contents: read
+  issues: write
+  pull-requests: write
+  actions: read
+
+jobs:
+  report:
+    runs-on: ubuntu-latest
+    if: github.event.workflow_run.event == 'pull_request'
+    steps:
+      - name: Fetch the result (data, not code)
+        uses: actions/download-artifact@v4
+        with:
+          name: submission
+          path: submission
+          run-id: ${{ github.event.workflow_run.id }}
+          github-token: ${{ github.token }}
+      - name: Label and comment
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+          CONCLUSION: ${{ github.event.workflow_run.conclusion }}
+        run: |
+          set -euo pipefail
+          test -f submission/result.json || { echo "no result"; exit 0; }
+          pr=$(jq -r '.pr // empty' submission/result.json)
+          kind=$(jq -r '.kind // "none"' submission/result.json)
+          ok=$(jq -r '.ok' submission/result.json)
+          case "$pr" in ''|*[!0-9]*) echo "no PR number"; exit 0;; esac
+          case "$kind" in new|update|removal|mixed|none) ;; *) kind=none;; esac
+          # The result is the PR's: the PR's head must be the commit that was judged.
+          head=$(gh api "repos/$REPO/pulls/$pr" --jq .head.sha)
+          [ "$head" = "$HEAD_SHA" ] || { echo "PR #$pr has moved on ($head); a newer run reports"; exit 0; }
+
+          for l in "game-submission:0e8a16:A game submitted to the arcade (registry/)" \
+                   "submission: new:1d76db:Registers a new games repo" \
+                   "submission: update:5319e7:Moves a pin to a newer commit" \
+                   "submission: removal:b60205:Removes a games repo" \
+                   "submission: mixed:fbca04:Several kinds of change at once" \
+                   "checks passed:2ea44f:The submission check passed" \
+                   "changes needed:d93f0b:The submission check found problems"; do
+            IFS=: read -r name color desc <<< "$l"
+            gh label create "$name" --color "$color" --description "$desc" --repo "$REPO" --force >/dev/null
+          done
+
+          if [ "$ok" = "true" ] && [ "$CONCLUSION" = "success" ]; then good="checks passed"; bad="changes needed"; else good="changes needed"; bad="checks passed"; fi
+          labels="game-submission,$good"
+          [ "$kind" != none ] && labels="$labels,submission: $kind"
+          gh pr edit "$pr" --repo "$REPO" --add-label "$labels"
+          gh pr edit "$pr" --repo "$REPO" --remove-label "$bad" 2>/dev/null || true
+
+          # One comment, kept current: find ours by its marker and replace it.
+          marker="<!-- arcade-submission-report -->"
+          { echo "$marker"; head -c 60000 submission/summary.md; } > body.md
+          id=$(gh api "repos/$REPO/issues/$pr/comments" --paginate --jq ".[] | select(.body | startswith(\"$marker\")) | .id" | head -1)
+          if [ -n "$id" ]; then gh api -X PATCH "repos/$REPO/issues/comments/$id" -F body=@body.md >/dev/null
+          else gh pr comment "$pr" --repo "$REPO" --body-file body.md; fi

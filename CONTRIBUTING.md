@@ -112,8 +112,20 @@ checkout: `just propose owner/name`.) The file it makes:
 }
 ```
 
-The check fetches that commit, validates every listed game and plays each in
-a headless browser. Once a maintainer merges it, the site deploys by itself
+Your pull request is checked by itself (the **Check game submission**
+workflow, on every PR that touches `registry/`):
+
+- it changes only `registry/<you>/<repo>.json` — your own repos;
+- the entry is well formed and its commit is in your public repo;
+- an update moves your pin forward (never back, never to another branch);
+- every listed game is fetched at that commit and passes `validate-game`
+  (manifest, one bundle per script, no network, theme colours, 5 MB, your
+  `contributor.json`, and a play with bots at phone size).
+
+The result is posted as a comment and as labels — `game-submission`,
+`submission: new` / `update`, and `checks passed` / `changes needed` — so
+maintainers can filter submissions (`label:game-submission`). Push a fix and
+it is checked again. Once a maintainer merges it, the site deploys by itself
 and lists your games as `<your-github-user>/<id>`.
 
 **To update**, push to your repo, then press **Check for updates** on your

@@ -1,13 +1,12 @@
-# The check every game PR gets: a new or bumped pin in registry/, or a change
-# to the SDK and the scripts that check games. Runs with no secrets and no
-# write access (pull_request), so a fork's PR is safe to check: the pinned
-# code is only ever run inside the sandboxed frame in a headless browser.
-name: Check games
+# The check for changes to the arcade itself — the SDK, the runtime, this
+# repo's games and the scripts that check games — re-validating every game
+# against them. A contributor's game submission (registry/) has its own
+# check: submission.yml. No secrets, no write access.
+name: Check the platform
 
 on:
   pull_request:
     paths:
-      - "registry/**"
       - "games/**"
       - "sdk/**"
       - "lib/**"

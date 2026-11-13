@@ -40,7 +40,7 @@ serve-lan:
     python3 -m http.server {{port}}
 
 # Every suite, in the order they get slower.
-test: check-colours community test-stats test-codec test-hub test-worker-do test-plumbing test-rules test-room test-party test-scan test-pwa test-bots test-devkit test-theme test-portal
+test: check-colours community test-stats test-submission test-codec test-hub test-worker-do test-plumbing test-rules test-room test-party test-scan test-pwa test-bots test-devkit test-theme test-portal
 
 # No browser needed — the signalling codec round-trip.
 test-codec:
@@ -222,3 +222,8 @@ test-portal:
 # and moved), filled in as far as GitHub allows: `just propose owner/repo`.
 propose repo *games:
     node scripts/propose.mjs {{repo}} {{games}}
+
+# The rules a contributor's pull request is judged by (check-submission.mjs),
+# with no network or git.
+test-submission:
+    node scripts/test-submission.mjs
