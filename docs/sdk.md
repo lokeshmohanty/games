@@ -47,7 +47,8 @@ The entry page does **not** include the SDK: the shell inlines the runtime
 | `id` | 2–32 of `a-z 0-9 -`; community ids are shown as `<owner>/<id>` |
 | `name`, `blurb` | ≤ 40 / ≤ 140 characters |
 | `entry` | an `.html` path inside the game folder |
-| `kind` | `duel` · `ffa` · `teams` · `coop` · `local` (what a result means) |
+| `kind` | `duel` · `ffa` · `teams` · `coop` · `local` (what a result means) · `shared` (a web app: no seats, bots or results) |
+| `app` | an existing web app and its server, run unchanged — see "Web apps" below |
 | `shape` | `teams` · `coop` · `free` (how the party reads teams) |
 | `seats` | `{ min, max }`, 1 ≤ min ≤ max ≤ 16 |
 | `bots` | can the host fill seats with bots |
@@ -93,8 +94,11 @@ accent, onAccent, accent2, good, warn, danger, player(i), alpha(name, a),
 glows, fonts }` — then redraws on `window`'s `neon:theme` event. A colour that
 travels between players is sent as an index (a seat, a pen), so each peer
 draws it in its own theme. Type: `--font-display`, `--font-body`,
-`--font-mono` (values). `validate-game` and `just check-colours` refuse a
-literal colour unless its line says `theme-exempt` and why.
+`--font-mono` (values). First-party games follow this strictly
+(`just check-colours` fails on a literal colour unless its line says
+`theme-exempt`). An outside game may keep its own colours (Lokesh,
+2026-11-14: "allow his own hard-coded colours"): `validate-game` warns, and
+`fetch-community.mjs` marks its published manifest `ownColours: true`.
 
 ### Reporting a result
 
@@ -273,6 +277,117 @@ bots at 390×844 for 5 s with no page/console error and no sideways scroll.
 read-only, safe for forks. `.github/workflows/deploy.yml` runs
 `fetch-community.mjs` before uploading the Pages artifact. The author
 workflow is [`CONTRIBUTING.md`](../CONTRIBUTING.md).
+
+## Web apps: an existing site and its server, unchanged (built 2026-11-14)
+
+**Why.** Lokesh, 2026-11-14, about a friend's React + FastAPI chess variant
+(rajarshi99/locale-chess): "I don't want people to have to do significant
+changes to their code to be able to use my platform. My platform is supposed
+to be plug-n-play." So the platform absorbs the gap: a manifest with `app`
+(`scripts/manifest.mjs` `validateApp`) is a web app, built and run as it is.
+The author adds `game.json` and a licence (CONTRIBUTING.md, "Already have a
+web app?").
+
+**Build** (`scripts/app-build.mjs`, called by `fetch-community.mjs`).
+`app.build.run` runs in `app.build.dir` inside a throwaway
+`node:22-bookworm-slim` container: no env, no tokens, caps dropped, only the
+tarball checkout mounted (`--userns=keep-id` under rootless Podman). In
+`deploy.yml` that happens in a `build-community` job with `contents: read`
+only; the Pages job downloads its output, so author code never runs beside a
+deploy token. The published folder:
+
+```
+web/            the built site (app.build.out, or app.web); every script's
+                location/history rewritten to __neon.location/__neon.history
+                by esbuild --define (parses, runs nothing)
+server/         the Python source (no dotfiles, caches, >512 KB files)
+server/wheels/  pure-Python wheels of what it imports that Pyodide lacks
+game.json       entry web/<page>; app { web, server { kind, target, path,
+                files, deps, wheels, stubs } }; ownColours
+```
+
+`scripts/py-deps.py` walks the server's `pyproject.toml` /
+`requirements.txt` by name (no version solving): in the vendored Pyodide
+lock → `deps`; else the newest pure wheel (`pip download --only-binary
+--platform any`, so no package code runs) → `wheels`; else, and every
+package needing it → `stubs`. Runners (uvicorn, gunicorn…) are skipped.
+Size: 5 MB for web/ + server/, 5 MB apart for the wheels.
+
+**The app's frame** (`lib/bridge.js` `buildFrameDoc` with `app`): only
+`client.js` and `games.js` of the runtime (no arcade styles), then
+`NeonArcade.webApp = { id, address }`, then `sdk/v1/web-shim.js`, then the
+app. Root-absolute paths (`/assets/x.js`) resolve to `web/`; icons and
+preloads are dropped; the app's CSS `url()`s are inlined. The shim:
+
+- registers the game itself (`takeOver` → false);
+- `fetch`/`XMLHttpRequest`: a same-address GET that is a file of `web/` is
+  served from it (`asset`); everything else — any origin — is `{t:"http"}`
+  to the shell;
+- `__neon.location`/`__neon.history`: a virtual address on
+  `https://app.invalid`. `pushState`/`replaceState` send `{t:"address"}`;
+  `location.href = …`/`assign`/`reload` send it with `reload`.
+  `History.prototype` is pointed at it too, for inline scripts the build
+  did not rewrite;
+- `<img>/<source>/<video>/<audio>` `src` and SVG `href`: a path is caught in
+  `setAttribute`/the `src` setter — before the browser starts a load the CSP
+  would block (a console error, which validate-game fails) — and swapped
+  for a blob: URL; markup inserted as HTML is caught by a MutationObserver;
+- `window.open` of a file in `web/` shows it in an overlay frame
+  (`sandbox=""`, no scripts).
+
+**The server** (`lib/py-server.js`, host only): a hidden
+`sandbox="allow-scripts"` frame, CSP `default-src 'none'; script-src
+'unsafe-inline' 'wasm-unsafe-eval'`. Pyodide's two ES modules are inlined
+with their exports turned into globals (`createPyodideModule` is a
+`loadPyodide` option, so the loader imports nothing); its `fetch` asks the
+shell for each file (runtime from `sdk/v1/pyodide/`, wheels from the game's
+`server/wheels/`). `sdk/v1/arcade_server.py` installs a stub importer
+(missing names are classes: `X | None` and subclassing work, calling raises),
+replaces `anyio.to_thread.run_sync` (Pyodide has no threads; Starlette runs
+plain `def` endpoints through it), imports the app — stubbing and retrying
+any installed package that fails to import — and answers each request as
+one ASGI call (or a WSGI call). Requests wait until it is up; 20 s timeout.
+
+**Routing** (`NeonArcade.mountApp`): the host's frame calls the server
+directly; a guest's goes `p$http` → host → `p$httpr`, bodies base64, 1 MB
+cap each way. Addressed messages can be relayed through other phones in
+plaintext (memory: addressed-is-not-private) — fine for a shared screen,
+not for hidden information. The address: `p$addr` to everyone; a phone whose
+address differs remounts its frame there; a late guest asks the host
+(`p$addrq`). A crown change ends the game: the server's memory left with the
+host.
+
+**Runtime** (`scripts/vendor-pyodide.mjs`, `just pyodide`): Pyodide
+314.0.7 from npm (tarball sha512 pinned) plus the wheels of FastAPI and NumPy
+and their dependencies from Pyodide's CDN (each checked against the lock's
+sha256), into `sdk/v1/pyodide/` (git-ignored, ~18 MB) with a lock trimmed to
+them. Fetched at deploy and in the check workflows; never by a phone from
+anywhere but this site. `sw.js` does not precache it (only a host of a web
+app needs it) and serves it cache-first.
+
+**Spikes (2026-11-14, headless Chrome):** Pyodide boots in an opaque
+`srcdoc` frame (≈1.7 s core, 0.3 s FastAPI's packages, 1.3 s importing the
+app — desktop; phone not measured); a JS `fetch` out of it is refused; FastAPI
+with the thread patch and a stubbed `supabase` answered locale-chess's
+`/state`, `/new-game`, `/click`. `pushState` to `about:srcdoc?game=X` is a
+SecurityError by spec and `location` cannot be redefined — hence the
+build-time rewrite.
+
+**Dev kit:** `dev-server.mjs` serves a source-form app in its published
+layout (game.json synthesized, `web/` = your build output, `server/` = your
+server folder, scripts rewritten through `npx esbuild`); packages Pyodide
+lacks are stubs there.
+
+**Tests:** `just test-webapp` — `scripts/fixtures/webapp/` (plain JS +
+FastAPI importing `psycopg2`) with two peers: server on the host only,
+both phones answered, shared address, a guest's click seen by the host's
+poll, images, the rules overlay, no network from JS or Python, the game
+ends when the host leaves.
+
+**Not done / limits:** no caching of builds between deploys (each deploy
+rebuilds every app); Python state is lost on host handover; no WebSocket or
+server-sent events; a server that needs threads, subprocesses or a real
+database does not run; versions of non-Pyodide wheels are not solved.
 
 ## Planned (not built yet)
 

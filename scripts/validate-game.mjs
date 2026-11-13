@@ -10,7 +10,15 @@
 // the shell inlines each script, so it must be complete (docs/sdk.md rule 1);
 // nothing reaches for the network (fetch, XMLHttpRequest, WebSocket,
 // EventSource, http(s) URLs in src/href) — the frame's CSP would block it
-// anyway; the folder is at most 5 MB.
+// anyway; the folder is at most 5 MB. A literal colour is a warning, not a
+// failure: a game may keep its own look (Lokesh, 2026-11-14).
+//
+// A web app (`app`, docs/sdk.md) is checked in its published form — the
+// folder scripts/fetch-community.mjs builds. Its scripts are a bundler's
+// output that talks to its server by design, so the bundle and network
+// checks are skipped: the frame's CSP and sdk/v1/web-shim.js are what hold
+// it. Its server/wheels/ is counted apart (5 MB each), and the browser check
+// waits for the server to answer.
 //
 // Browser: the game is served with the dev kit and mounted in the real party
 // at 390x844 with every other seat a bot (or alone, for a local game); it must
@@ -23,7 +31,7 @@ import { createRequire } from "node:module";
 import { homedir } from "node:os";
 import { dirname, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
-import { validateManifest } from "./manifest.mjs";
+import { COLOUR, validateManifest } from "./manifest.mjs";
 import { gameFrame, serve } from "./serve.mjs";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
@@ -42,6 +50,10 @@ let failures = 0;
 const check = (label, ok, detail = "") => {
 	console.log(`  ${ok ? "ok  " : "FAIL"} ${label}${!ok && detail ? ` — ${detail}` : ""}`);
 	if (!ok) failures++;
+	return ok;
+};
+const warn = (label, ok, detail = "") => {
+	console.log(`  ${ok ? "ok  " : "warn"} ${label}${!ok && detail ? ` — ${detail}` : ""}`);
 	return ok;
 };
 
@@ -92,8 +104,10 @@ function checkStatic(dir) {
 		]),
 	];
 	const scripts = [];
+	const web = m.app ? join(dir, m.app.web ?? "") : null;
 	for (const [kind, ref] of refs) {
-		const path = resolve(dirname(entry), ref);
+		// A web app's "/x" is its own folder's x (lib/bridge.js buildFrameDoc).
+		const path = web && /^\/(?!\/)/.test(ref) ? join(web, ref) : resolve(dirname(entry), ref);
 		const inside = path.startsWith(dir + sep) && !/^[a-z]+:/i.test(ref);
 		if (!check(`${kind} ${ref} is inside the game folder`, inside)) continue;
 		if (!check(`${kind} ${ref} exists`, existsSync(path))) continue;
@@ -103,7 +117,7 @@ function checkStatic(dir) {
 	const inline = [...html.matchAll(/<script\b(?![^>]*\bsrc=)[^>]*>([\s\S]*?)<\/script>/gi)].map((x) => x[1]);
 
 	const code = [...scripts.map((p) => [at(p), readFileSync(p, "utf8")]), ...inline.map((c, i) => [`inline script ${i + 1}`, c])];
-	for (const [name, text] of code) {
+	for (const [name, text] of m.app ? [] : code) {
 		const loads = RUNTIME_LOAD.filter(([re]) => re.test(text)).map(([, what]) => what);
 		check(`${name} is one complete bundle`, !loads.length, `found ${[...new Set(loads)].join(", ")} — bundle it into one file`);
 		const net = NETWORK.filter(([re]) => re.test(text)).map(([, what]) => what);
@@ -111,16 +125,26 @@ function checkStatic(dir) {
 	}
 	// The arcade's theme (lib/theme.css): colours come from its tokens or
 	// NeonArcade.palette(), so the game follows the player's theme.
-	const COLOUR = /#[0-9a-fA-F]{3,8}\b|\b(?:rgba?|hsla?|oklch|oklab|lab|lch)\(\s*\d/;
+	// A game may keep its own colours; it then does not follow the theme.
 	for (const [name, text] of [...code, [m.entry, html]]) {
 		const lines = text.split("\n").filter((l) => COLOUR.test(l.replace(/&#\d+;/g, "")) && !l.includes("theme-exempt"));
-		check(`${name} takes its colours from the theme`, !lines.length, `e.g. "${lines[0]?.trim().slice(0, 60)}" — use var(--…) or NeonArcade.palette()`);
+		warn(`${name} takes its colours from the theme`, !lines.length, `e.g. "${lines[0]?.trim().slice(0, 60)}" — fine, but it won't follow the player's theme; var(--…) or NeonArcade.palette() would`);
 	}
 	const remote = [...html.matchAll(/\b(?:src|href)\s*=\s*["'](https?:)?\/\//gi)];
 	check("the entry page names no remote URL", !remote.length);
 
-	const bytes = walk(dir).reduce((n, f) => n + statSync(f).size, 0);
+	const wheelDir = join(dir, "server", "wheels") + sep;
+	const all = walk(dir);
+	const size = (list) => list.reduce((n, f) => n + statSync(f).size, 0);
+	const bytes = size(all.filter((f) => !m.app || !f.startsWith(wheelDir)));
 	check(`the folder is at most 5 MB (${(bytes / 1048576).toFixed(2)} MB)`, bytes <= MAX_BYTES);
+	if (m.app?.server) {
+		const wheels = size(all.filter((f) => f.startsWith(wheelDir)));
+		check(`its Python wheels are at most 5 MB (${(wheels / 1048576).toFixed(2)} MB)`, wheels <= MAX_BYTES);
+		const files = m.app.server.files ?? [];
+		check("its server's files are all there", files.length > 0 && files.every((f) => existsSync(join(dir, m.app.server.path, f))));
+		warn("every Python package it imports runs in the browser", !m.app.server.stubs?.length, `imported as stubs: ${m.app.server.stubs?.join(", ")}`);
+	}
 	if (m.preview) check(`the preview (${m.preview}) exists`, existsSync(join(dir, m.preview)));
 	return m;
 }
@@ -175,6 +199,10 @@ async function checkBrowser(games) {
 			await page.goto(`${site.base}/party.html?${q}`);
 			if (m.kind === "local") {
 				await page.locator("#party button", { hasText: "START" }).first().click({ timeout: TIMEOUT });
+			} else if (m.kind === "shared") {
+				// One screen, no bots: alone with the friends' controls.
+				await page.locator("button", { hasText: "PLAY WITH FRIENDS" }).first().click({ timeout: TIMEOUT });
+				await page.locator("button", { hasText: "START GAME" }).first().click({ timeout: TIMEOUT });
 			} else {
 				const solo = page.locator("button", { hasText: /PLAY WITH BOTS|SINGLE PLAYER/ }).first();
 				if (!m.bots || !(await solo.count())) {
@@ -188,6 +216,13 @@ async function checkBrowser(games) {
 			}
 			const frame = await gameFrame(page, TIMEOUT).catch(() => null);
 			if (!check("it mounts in its sandboxed frame", !!frame)) continue;
+			if (m.app?.server) {
+				const answered = await page
+					.waitForEvent("console", { predicate: (msg) => /^\[arcade\] server answered \d+/.test(msg.text()), timeout: 60_000 })
+					.then((msg) => Number(msg.text().match(/answered (\d+)/)[1]))
+					.catch(() => null);
+				check("its server starts and answers", answered != null && answered < 500, answered == null ? "no request answered in 60 s" : `HTTP ${answered}`);
+			}
 			await page.waitForTimeout(5000);
 			const width = await frame.evaluate(() => [document.documentElement.scrollWidth, innerWidth]);
 			check("it does not scroll sideways", width[0] <= width[1], `${width[0]} > ${width[1]}`);

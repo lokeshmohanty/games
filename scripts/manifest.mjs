@@ -1,12 +1,59 @@
 // scripts/manifest.mjs — what a game.json must say. Shared by the catalog
 // build, `just validate-game` and the PR check, so all three agree.
 
-export const KINDS = ["duel", "ffa", "teams", "coop", "local"];
+// "shared": a web app (`app` below) — one screen every phone runs; no seats,
+// bots or results.
+export const KINDS = ["duel", "ffa", "teams", "coop", "local", "shared"];
 export const SHAPES = ["teams", "coop", "free"];
 // Licences that let the platform serve a copy of the game (redistribution).
 export const LICENSES = ["MIT", "Apache-2.0", "BSD-2-Clause", "BSD-3-Clause", "ISC", "MPL-2.0", "GPL-3.0", "AGPL-3.0", "0BSD", "Unlicense"];
 
 const ID = /^[a-z0-9][a-z0-9-]{1,31}$/;
+// A literal colour (lib/theme.css owns them; a game should read its tokens).
+export const COLOUR = /#[0-9a-fA-F]{3,8}\b|\b(?:rgba?|hsla?|oklch|oklab|lab|lch)\(\s*\d/;
+// A path inside the repository: no "..", not absolute.
+const PATH = /^(?!\/)(?!.*(?:^|\/)\.\.(?:\/|$))[\w.\/-]+$/;
+const TARGET = /^[A-Za-z_][\w.]*(:[A-Za-z_]\w*)?$/;
+
+/**
+ * An existing web app, run as it is (docs/sdk.md, "Web apps"). As the author
+ * writes it, paths relative to the game folder:
+ *
+ *   "app": { "build": { "dir": "frontend", "run": "npm ci && npm run build", "out": "frontend/dist" },
+ *            "server": { "python": "backend", "asgi": "main:app" } }
+ *
+ * or `"web": "site"` for a folder that needs no build. scripts/app-build.mjs
+ * turns that into the published form, which is what the catalog reads:
+ *
+ *   "app": { "web": "web/", "server": { "kind": "asgi", "target": "main:app", "path": "server/",
+ *            "files": [...], "deps": [...], "wheels": [...] } }
+ */
+export function validateApp(a) {
+	const p = [];
+	if (!a || typeof a !== "object" || Array.isArray(a)) return ['"app" must be an object'];
+	const path = (v, what) => typeof v === "string" && PATH.test(v) || p.push(`"${what}" must be a path inside the repository`);
+	if (a.build != null) {
+		if (typeof a.build !== "object") p.push('"app.build" must be { dir, run, out }');
+		else {
+			path(a.build.dir, "app.build.dir");
+			path(a.build.out, "app.build.out");
+			if (typeof a.build.run !== "string" || !a.build.run || a.build.run.length > 300) p.push('"app.build.run" must be a command of at most 300 characters');
+		}
+	} else path(a.web, "app.web");
+	if (a.server != null) {
+		const s = a.server;
+		if (typeof s !== "object") p.push('"app.server" must be an object');
+		else if (s.files) {
+			// The published form, written by scripts/app-build.mjs.
+			if (!["asgi", "wsgi"].includes(s.kind) || !TARGET.test(s.target ?? "")) p.push('"app.server" is malformed');
+		} else {
+			path(s.python, "app.server.python");
+			const target = s.asgi ?? s.wsgi;
+			if ((s.asgi == null) === (s.wsgi == null) || !TARGET.test(target ?? "")) p.push('"app.server" needs one of "asgi" or "wsgi": "module:app"');
+		}
+	}
+	return p;
+}
 
 /** Problems with a manifest, as sentences; empty when it is fine. */
 export function validateManifest(m) {
@@ -35,6 +82,9 @@ export function validateManifest(m) {
 	if (!LICENSES.includes(m.license)) p.push(`"license" must be one of ${LICENSES.join(", ")}`);
 	if (typeof m.author !== "string" || !m.author) p.push('"author" is required (GitHub user)');
 	if (typeof m.repo !== "string" || !m.repo.startsWith("https://github.com/")) p.push('"repo" must be a https://github.com/ URL');
+	if (m.bots != null && typeof m.bots !== "boolean") p.push('"bots" must be true or false');
+	if (m.app != null) p.push(...validateApp(m.app));
+	if ((m.kind === "shared") !== (m.app != null)) p.push('"kind": "shared" goes with "app", and only with it');
 	return p;
 }
 

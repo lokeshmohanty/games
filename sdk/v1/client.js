@@ -22,8 +22,8 @@
 //   ctx.assets.url(path)   a blob: URL for a file shipped with the game
 //
 // Protocol (shell → frame): init, party, msg, join, leave, answer, asset,
-// takeOver, theme, unmount. (frame → shell): ready, listen, send, emitAs, meta, end, toast,
-// ask, hostNew, result, store, session, asset, reply. Action names travel prefixed by the
+// http, takeOver, theme, unmount. (frame → shell): ready, listen, send, emitAs, meta, end, toast,
+// ask, hostNew, result, store, session, asset, reply, and for a web app http, address. Action names travel prefixed by the
 // shell, so a game can never speak on the party's own channels.
 
 window.NeonArcade = window.NeonArcade || {};
@@ -47,6 +47,11 @@ NeonArcade.inFrame = true;
 			waiting.set(id, resolve);
 			post({ ...msg, id });
 		});
+
+	// For sdk/v1/web-shim.js, which speaks for a web app that knows nothing
+	// of the arcade: its requests and its address go through these.
+	NeonArcade._post = post;
+	NeonArcade._request = request;
 
 	NeonArcade.isBotId = (id) => typeof id === "string" && id.startsWith("bot_");
 
@@ -167,7 +172,8 @@ NeonArcade.inFrame = true;
 				handle?.onPeerLeave?.(m.id, m.info);
 				break;
 			case "answer":
-			case "asset": {
+			case "asset":
+			case "http": {
 				const resolve = waiting.get(m.id);
 				waiting.delete(m.id);
 				resolve?.(m);

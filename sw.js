@@ -28,7 +28,7 @@
 // first, a forgotten bump costs an out-of-date *offline* copy — never a stale
 // app for an online player, which is the failure mode that would be hard to
 // notice.
-const VERSION = "arcade-games-v35";
+const VERSION = "arcade-games-v36";
 
 // The shell: everything needed to open any page and start a game with no
 // network at all. The preview gifs are deliberately absent — they are ~2 MB
@@ -69,6 +69,7 @@ const SHELL = [
 	"./lib/party.js",
 	"./lib/pwa.js",
 	"./lib/bridge.js",
+	"./lib/py-server.js",
 	"./lib/stats.js",
 	"./lib/portal.js",
 	"./lib/account.js",
@@ -81,6 +82,8 @@ const SHELL = [
 	"./lib/propose.js",
 	"./lib/catalog.js",
 	"./sdk/v1/client.js",
+	"./sdk/v1/web-shim.js",
+	"./sdk/v1/arcade_server.py",
 	"./games/connect4/index.html",
 	"./games/connect4/connect4.js",
 	"./games/connect4/game.json",
@@ -155,9 +158,15 @@ self.addEventListener("activate", (event) => {
 	);
 });
 
-/** Assets are big and stable; code is small and must agree with its siblings. */
+/**
+ * Assets are big and stable; code is small and must agree with its siblings.
+ * The Python runtime (sdk/v1/pyodide/, ~15 MB, lib/py-server.js) is not in the
+ * precache — only a host running a web app's server needs it — so it is
+ * cached the first time it is used, and it is versioned, so it never goes
+ * stale under its own name.
+ */
 function isAsset(url) {
-	return /\/assets\/|\.(?:png|jpg|jpeg|gif|svg|webp|ico|woff2?)$/i.test(url.pathname);
+	return /\/assets\/|\/sdk\/v1\/pyodide\/|\.(?:png|jpg|jpeg|gif|svg|webp|ico|woff2?)$/i.test(url.pathname);
 }
 
 /** Put a copy in the cache, ignoring the failures that are none of our business. */

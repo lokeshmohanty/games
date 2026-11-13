@@ -38,3 +38,6 @@ community/
 .env
 .env.*
 *.pem
+
+# The Python runtime for web apps' servers, fetched by scripts/vendor-pyodide.mjs (~15 MB).
+sdk/v1/pyodide/

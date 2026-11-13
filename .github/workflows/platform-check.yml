@@ -13,6 +13,9 @@ on:
       - "scripts/manifest.mjs"
       - "scripts/fetch-community.mjs"
       - "scripts/validate-game.mjs"
+      - "scripts/app-build.mjs"
+      - "scripts/py-deps.py"
+      - "scripts/vendor-pyodide.mjs"
 
 permissions:
   contents: read
@@ -25,6 +28,8 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
+      - name: Fetch Pyodide (web apps' servers)
+        run: node scripts/vendor-pyodide.mjs
       - name: Fetch every pinned repo
         run: node scripts/fetch-community.mjs
       - name: Catalog is up to date

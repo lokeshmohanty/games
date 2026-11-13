@@ -9,8 +9,10 @@
 //
 // For each, the tarball of exactly that commit is unpacked, and only the
 // listed game folders are copied to community/<owner>/<repo>/<path>/ (tests
-// left behind). Nothing in them is built or run here: the pinned commit must
-// already hold runnable static files (docs/sdk.md). Then:
+// left behind). A game folder is static files, copied as they are — unless
+// its manifest has `app`, an existing web app, which scripts/app-build.mjs
+// builds in a throwaway container and lays out (docs/sdk.md, "Web apps").
+// Then:
 //
 //   community/catalog.js   registers the games (party.html loads it)
 //   community/precache.js  their files, for the service worker's offline copy
@@ -38,11 +40,14 @@ import {
 import { tmpdir } from "node:os";
 import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { buildApp } from "./app-build.mjs";
 import { catalogEntries, catalogScript, contributorEntry } from "./catalog-lib.mjs";
+import { COLOUR } from "./manifest.mjs";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const OUT = join(ROOT, "community");
 const MAX_GAME_BYTES = 5 * 1024 * 1024;
+const MAX_WHEEL_BYTES = 5 * 1024 * 1024; // a web app's server/wheels/, counted apart
 const SHA = /^[0-9a-f]{40}$/;
 const NAME = /^[A-Za-z0-9_.-]+$/;
 const GAME_PATH = /^[A-Za-z0-9_.-]+(\/[A-Za-z0-9_.-]+)*$/;
@@ -59,6 +64,20 @@ function walk(dir, base = dir) {
 	return readdirSync(dir, { withFileTypes: true }).flatMap((d) =>
 		d.isDirectory() ? walk(join(dir, d.name), base) : [relative(base, join(dir, d.name))],
 	);
+}
+
+/**
+ * A game that names its own colours rather than the theme's (allowed: Lokesh,
+ * 2026-11-14, "allow his own hard-coded colours") is marked `ownColours` in
+ * its published manifest, so the portal can say it keeps its own look.
+ */
+function markColours(dir) {
+	const own = walk(dir)
+		.filter((f) => /\.(css|html|m?js)$/.test(f) && !f.startsWith("server/"))
+		.some((f) => readFileSync(join(dir, f), "utf8").split("\n").some((l) => COLOUR.test(l.replace(/&#\d+;/g, "")) && !l.includes("theme-exempt")));
+	if (!own) return;
+	const file = join(dir, "game.json");
+	writeFileSync(file, JSON.stringify({ ...JSON.parse(readFileSync(file, "utf8")), ownColours: true }, null, "\t") + "\n");
 }
 
 /** Problems with a registry entry, as sentences. */
@@ -136,17 +155,44 @@ function main() {
 						errors.push(`${where}: ${path}/game.json not found at ${entry.commit.slice(0, 8)}`);
 						continue;
 					}
-					const files = walk(from).filter((f) => !/(^|\/)test-[^/]*\.m?js$/.test(f));
-					const bytes = files.reduce((n, f) => n + statSync(join(from, f)).size, 0);
-					if (bytes > MAX_GAME_BYTES) {
-						errors.push(`${where}: ${path} is ${(bytes / 1048576).toFixed(1)} MB (limit ${MAX_GAME_BYTES / 1048576} MB)`);
+					const to = join(OUT, owner, repo, path);
+					let manifest;
+					try {
+						manifest = JSON.parse(readFileSync(join(from, "game.json"), "utf8"));
+					} catch (err) {
+						errors.push(`${where}: ${path}/game.json: ${err.message}`);
 						continue;
 					}
-					const to = join(OUT, owner, repo, path);
-					for (const f of files) {
-						mkdirSync(dirname(join(to, f)), { recursive: true });
-						cpSync(join(from, f), join(to, f));
+					if (manifest?.app) {
+						try {
+							buildApp({ repo: src, gameDir: from, manifest, to });
+						} catch (err) {
+							errors.push(`${where}: ${path}: ${err.message.split("\n")[0]}`);
+							continue;
+						}
+						const wheels = (f) => f.startsWith("server/wheels/");
+						const built = walk(to);
+						const size = (list) => list.reduce((n, f) => n + statSync(join(to, f)).size, 0);
+						const [bytes, wheelBytes] = [size(built.filter((f) => !wheels(f))), size(built.filter(wheels))];
+						if (bytes > MAX_GAME_BYTES || wheelBytes > MAX_WHEEL_BYTES) {
+							errors.push(
+								`${where}: ${path} built to ${(bytes / 1048576).toFixed(1)} MB + ${(wheelBytes / 1048576).toFixed(1)} MB of Python wheels (limits ${MAX_GAME_BYTES / 1048576} MB each)`,
+							);
+							continue;
+						}
+					} else {
+						const files = walk(from).filter((f) => !/(^|\/)test-[^/]*\.m?js$/.test(f));
+						const bytes = files.reduce((n, f) => n + statSync(join(from, f)).size, 0);
+						if (bytes > MAX_GAME_BYTES) {
+							errors.push(`${where}: ${path} is ${(bytes / 1048576).toFixed(1)} MB (limit ${MAX_GAME_BYTES / 1048576} MB)`);
+							continue;
+						}
+						for (const f of files) {
+							mkdirSync(dirname(join(to, f)), { recursive: true });
+							cpSync(join(from, f), join(to, f));
+						}
 					}
+					markColours(to);
 					manifests.push({ file: join(to, "game.json"), owner });
 				}
 				writeFileSync(join(OUT, owner, repo, "pin.json"), JSON.stringify(entry, null, 2) + "\n");

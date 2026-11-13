@@ -37,6 +37,8 @@ jobs:
           node-version: 22
       - name: Install Playwright (driver only; the runner's Chrome is used)
         run: npm install --no-save playwright@1.62.1
+      - name: Fetch Pyodide (web apps' servers)
+        run: node scripts/vendor-pyodide.mjs
       - name: Judge the submission
         env:
           CHROME: /usr/bin/google-chrome

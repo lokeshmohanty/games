@@ -1,0 +1,17 @@
+{
+	"sdk": 1,
+	"id": "webapp-fixture",
+	"name": "Web app fixture",
+	"blurb": "scripts/test-webapp.mjs: an ordinary web app and its FastAPI server.",
+	"kind": "shared",
+	"seats": { "min": 1, "max": 8 },
+	"bots": false,
+	"entry": "index.html",
+	"license": "MIT",
+	"author": "lokeshmohanty",
+	"repo": "https://github.com/lokeshmohanty/games",
+	"app": {
+		"web": "site",
+		"server": { "python": "api", "asgi": "main:app" }
+	}
+}

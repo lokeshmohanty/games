@@ -22,8 +22,41 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  # Single deploy job since we're just deploying
+  # Outside repos' games (registry/), at their pinned commits, into
+  # community/ with community/catalog.js and precache.js. Fails the deploy on
+  # a bad pin rather than publishing a site without those games. A web app
+  # (game.json "app") is built here, in a throwaway container — so this job
+  # holds no token that can deploy: author code never runs beside one.
+  build-community:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      # The Python runtime web apps' servers run on, served from this site.
+      - name: Fetch Pyodide
+        run: node scripts/vendor-pyodide.mjs
+      - name: Fetch and build community games
+        run: node scripts/fetch-community.mjs
+      - name: Keep what the deploy adds to the site
+        uses: actions/upload-artifact@v4
+        with:
+          name: generated
+          path: |
+            community/
+            sdk/v1/pyodide/
+          include-hidden-files: false
+          retention-days: 1
+
   deploy:
+    needs: build-community
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
@@ -33,15 +66,11 @@ jobs:
         uses: actions/checkout@v4
       - name: Setup Pages
         uses: actions/configure-pages@v5
-      - name: Setup Node
-        uses: actions/setup-node@v4
+      - name: Generated files
+        uses: actions/download-artifact@v4
         with:
-          node-version: 22
-      # Outside repos' games (registry/), at their pinned commits, into
-      # community/ with community/catalog.js and precache.js. Fails the deploy
-      # on a bad pin rather than publishing a site without those games.
-      - name: Fetch community games
-        run: node scripts/fetch-community.mjs
+          name: generated
+          path: .
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
         with:

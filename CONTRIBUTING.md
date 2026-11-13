@@ -9,6 +9,57 @@ at a commit you choose.
 The full reference is [`docs/sdk.md`](docs/sdk.md). This page is the
 workflow.
 
+## Already have a web app? Bring it as it is
+
+A site you already built — React, Vite, plain HTML — and the Python server it
+talks to (FastAPI, Starlette or Flask) run unchanged. Add two files to your
+repository and propose it (step 4):
+
+- a `LICENSE` (see rule 6), and
+- a `game.json` that says how to build it:
+
+```json
+{
+  "sdk": 1, "id": "my-game", "name": "My Game", "blurb": "…",
+  "kind": "shared", "seats": { "min": 1, "max": 8 }, "bots": false,
+  "entry": "index.html", "license": "MIT",
+  "author": "<your-github-user>", "repo": "https://github.com/<you>/<repo>",
+  "app": {
+    "build":  { "dir": "frontend", "run": "npm ci && npm run build", "out": "frontend/dist" },
+    "server": { "python": "backend", "asgi": "main:app" }
+  }
+}
+```
+
+Paths are relative to the folder holding `game.json` (the registry entry may
+list `"."`, the repository itself). Use `"web": "site"` instead of `build`
+for a folder that needs no build, and `"wsgi": "app:app"` for Flask.
+
+What the arcade does for you:
+
+- **builds** your site at the pinned commit, in a throwaway container with no
+  secrets — commit your lock file;
+- **runs your server on the host's phone** (Python in WebAssembly — no server
+  of yours is needed, and none is contacted). Every request your site makes
+  to *any* address — `http://localhost:8000/state` included — goes to it.
+  Dependencies come from `pyproject.toml` or `requirements.txt`; one that
+  cannot run in a browser (a database driver, say) imports as a stub that
+  only fails if it is used;
+- **shares your address**: `?game=<id>` set with `history.pushState` or
+  `location.href` moves every phone in the party there, so a game shared by
+  link is shared across the party;
+- serves `<img src="/x.svg">`, `fetch("/data.json")` and
+  `window.open("/rules.html")` from your built site.
+
+`kind: "shared"` means one screen that every phone runs and anyone may act
+on: no seats, bots or results. When the host leaves, the game ends — the
+server's state left with them. Your server's state lives in memory for the
+length of a game; a database it would use instead is not there.
+
+To try it: build it, then run the dev kit (step 2) in the folder with
+`game.json`. Packages Pyodide does not ship are stubs in the dev kit; the
+arcade's build fetches them.
+
 ## 1. Start from the example
 
 Copy [`sdk/v1/example/tic-tac-toe/`](sdk/v1/example/tic-tac-toe) into your
@@ -55,7 +106,8 @@ and then mounts the game with bots at phone size (390×844) and plays 5 s
 looking for errors and sideways scrolling. The pull-request check runs
 exactly this.
 
-**The rules** (why: [`docs/sdk.md`](docs/sdk.md)):
+**The rules** (why: [`docs/sdk.md`](docs/sdk.md)). Rules 1–3 are for games
+written for the SDK; a web app (above) is held to them by the arcade itself.
 
 1. Each `<script>` is a complete bundle — plain JS needs nothing; with a
    bundler, emit single files (no dynamic `import()`, no chunks).
@@ -67,11 +119,12 @@ exactly this.
 6. An OSI licence that allows redistribution (MIT, Apache-2.0, BSD, ISC,
    MPL-2.0, GPL-3.0, AGPL-3.0, 0BSD, Unlicense) — the arcade serves a copy.
 7. Your own work: no recreations of someone else's game, characters or art.
-8. **Colours come from the theme.** Use the CSS tokens (`var(--ink)`,
-   `var(--accent)`, `var(--p1)`…`var(--p8)` for players…) and, on a canvas,
-   `NeonArcade.palette()` — then redraw on the `neon:theme` event. Players pick
-   a theme (Paper light/dark, Neon); your game follows it. A colour that must
-   not change (a QR code) carries a `theme-exempt` comment saying why.
+8. **Colours: the theme's, if you want them.** Your own colours are
+   allowed; your game then keeps its look whatever theme the player picked,
+   and the check prints a warning, not a failure. To follow the theme, use
+   the CSS tokens (`var(--ink)`, `var(--accent)`, `var(--p1)`…`var(--p8)` for
+   players…) and, on a canvas, `NeonArcade.palette()` — then redraw on the
+   `neon:theme` event. A line that should not count carries `theme-exempt`.
 
 Built files must be **committed**: the arcade never builds or runs your
 tooling, it copies the folder at the pinned commit.
@@ -118,9 +171,10 @@ workflow, on every PR that touches `registry/`):
 - it changes only `registry/<you>/<repo>.json` — your own repos;
 - the entry is well formed and its commit is in your public repo;
 - an update moves your pin forward (never back, never to another branch);
-- every listed game is fetched at that commit and passes `validate-game`
-  (manifest, one bundle per script, no network, theme colours, 5 MB, your
-  `contributor.json`, and a play with bots at phone size).
+- every listed game is fetched (and a web app built) at that commit and
+  passes `validate-game` (manifest, one bundle per script, no network, 5 MB,
+  your `contributor.json`, and a play with bots at phone size — for a web app,
+  its server starting and answering; own colours are a warning).
 
 The result is posted as a comment and as labels — `game-submission`,
 `submission: new` / `update`, and `checks passed` / `changes needed` — so

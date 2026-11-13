@@ -40,7 +40,7 @@ serve-lan:
     python3 -m http.server {{port}}
 
 # Every suite, in the order they get slower.
-test: check-colours community test-stats test-submission test-codec test-hub test-worker-do test-plumbing test-rules test-room test-party test-scan test-pwa test-bots test-devkit test-theme test-portal
+test: check-colours community test-stats test-submission test-codec test-hub test-worker-do test-plumbing test-rules test-room test-party test-scan test-pwa test-bots test-devkit test-webapp test-theme test-portal
 
 # No browser needed — the signalling codec round-trip.
 test-codec:
@@ -181,6 +181,16 @@ community:
 # sdk/v1/dev-server.mjs, loaded with party.html?dev=, played to the end.
 test-devkit:
     node scripts/test-devkit.mjs
+
+# The Python runtime web apps' servers run on (sdk/v1/pyodide/, git-ignored,
+# ~18 MB): fetched once, checked against its pinned hashes.
+pyodide:
+    node scripts/vendor-pyodide.mjs
+
+# An ordinary web app and its FastAPI server, run unchanged by two peers
+# (scripts/fixtures/webapp/): requests, shared address, images, no network.
+test-webapp: pyodide
+    node scripts/test-webapp.mjs
 
 # Everything the platform checks before it lists a game (the registry PR
 # check runs this): `just validate-game path/to/game`, `--static` for no browser.
