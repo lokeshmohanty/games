@@ -11,7 +11,7 @@ import { getFeedback, postFeedback } from "./feedback.js";
 import { HttpError, fail, json, preflight } from "./http.js";
 import { leaderboard } from "./lb.js";
 import { matchesOf, played, publicProfile, ratingsOf, report, summary } from "./match.js";
-import { deleteMe, exportMe, getFavs, getMe, patchMe, putFavs, signOut } from "./me.js";
+import { deleteMe, exportMe, getFavs, getMe, link, patchMe, putFavs, signOut, unlink } from "./me.js";
 import { runSnapshot } from "./snapshot.js";
 import {
 	addFriend,
@@ -79,6 +79,8 @@ export async function api(request, env, { gate = async () => true } = {}) {
 			if (method === "GET") return send(await getFavs(env, await me()));
 			if (method === "PUT") return send(await putFavs(env, await me(), request));
 		}
+		if (a === "me" && b === "link" && c && method === "POST") return send(await link(env, await me(), c, request));
+		if (a === "me" && b === "identities" && c && method === "DELETE") return send(await unlink(env, await me(), c));
 		if (a === "me" && b === "matches" && method === "GET") {
 			const m = await me();
 			return send({ matches: await matchesOf(env, m.id), ratings: await ratingsOf(env, m.id) });

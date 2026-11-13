@@ -17,7 +17,7 @@ const check = (label, ok, detail = "") => {
 
 // ------------------------------------------------------------- fake GitHub
 
-const fake = { discussions: new Map(), comments: [], commits: [], refs: new Map(), trees: new Map(), graphql: 0 };
+const fake = { discussions: new Map(), comments: [], authors: [], commits: [], refs: new Map(), trees: new Map(), graphql: 0, refreshed: 0, ghUser: { id: 42, login: "octo", name: "Octo Cat" } };
 const fakePort = await freePort();
 const FAKE = `http://127.0.0.1:${fakePort}`;
 const server = createServer(async (req, res) => {
@@ -38,10 +38,22 @@ const server = createServer(async (req, res) => {
 	}
 	if (p === "/login/oauth/access_token" || p === "/g/token") {
 		const form = new URLSearchParams(raw);
+		// A GitHub App's user tokens expire and come with a refresh token.
+		if (form.get("grant_type") === "refresh_token") {
+			fake.refreshed++;
+			const who = (form.get("refresh_token") ?? "").replace(/^rt-/, "");
+			return form.get("client_id") === "app-client" ? send(200, { access_token: `ut-${who}`, expires_in: 28800, refresh_token: `rt-${who}` }) : send(400, { error: "bad_client" });
+		}
 		const ok = form.get("code") === (p === "/g/token" ? "g-code" : "gh-code") && form.get("client_secret");
-		return ok ? send(200, { access_token: p === "/g/token" ? "g-tok" : "gh-tok" }) : send(400, { error: "bad_verification_code" });
+		if (!ok) return send(400, { error: "bad_verification_code" });
+		if (p === "/g/token") return send(200, { access_token: "g-tok" });
+		return send(200, { access_token: `ut-${fake.ghUser.login}`, expires_in: 28800, refresh_token: `rt-${fake.ghUser.login}` });
 	}
-	if (p === "/user") return req.headers.authorization === "Bearer gh-tok" ? send(200, { id: 42, login: "octo", name: "Octo Cat", avatar_url: "https://avatars.example/42" }) : send(401, {});
+	if (p === "/user") {
+		return req.headers.authorization === `Bearer ut-${fake.ghUser.login}`
+			? send(200, { ...fake.ghUser, avatar_url: `https://avatars.example/${fake.ghUser.id}` })
+			: send(401, {});
+	}
 	if (p === "/g/userinfo") return req.headers.authorization === "Bearer g-tok" ? send(200, { sub: "g-1", name: "Goo Gle", picture: "https://pics.example/g1" }) : send(401, {});
 	// The GitHub App.
 	if (p === "/repos/lokeshmohanty/games/installation") {
@@ -52,8 +64,13 @@ const server = createServer(async (req, res) => {
 	if (p === "/app/installations/7/access_tokens") return send(201, { token: "inst-token", expires_at: new Date(Date.now() + 3600e3).toISOString() });
 	if (p === "/graphql") {
 		fake.graphql++;
-		if (req.headers.authorization !== "Bearer inst-token") return send(401, { message: "bad token" });
+		const auth = req.headers.authorization ?? "";
+		// The App (inst-token) opens threads and reads; a player's user token
+		// (ut-<login>) comments — as that player.
+		const asUser = auth.startsWith("Bearer ut-") ? auth.slice("Bearer ut-".length) : null;
+		if (auth !== "Bearer inst-token" && !asUser) return send(401, { message: "bad token" });
 		const { query, variables } = JSON.parse(raw);
+		if (asUser && !query.includes("addDiscussionComment")) return send(403, { message: "a user token only comments here" });
 		if (query.includes("discussionCategories")) return send(200, { data: { repository: { id: "R1", discussionCategories: { nodes: [{ id: "C1", name: "Game feedback" }] } } } });
 		if (query.includes("createDiscussion")) {
 			const id = `D${fake.discussions.size + 1}`;
@@ -61,8 +78,10 @@ const server = createServer(async (req, res) => {
 			return send(200, { data: { createDiscussion: { discussion: { id, url: `https://github.com/lokeshmohanty/games/discussions/${id}` } } } });
 		}
 		if (query.includes("addDiscussionComment")) {
-			fake.discussions.get(variables.id).comments.push({ body: variables.body, createdAt: new Date().toISOString() });
+			if (!asUser) return send(403, { message: "comments come from players, not the App" });
+			fake.discussions.get(variables.id).comments.push({ body: variables.body, createdAt: new Date().toISOString(), author: { login: asUser } });
 			fake.comments.push(variables.body);
+			fake.authors.push(asUser);
 			return send(200, { data: { addDiscussionComment: { comment: { url: "https://github.com/c/1" } } } });
 		}
 		if (query.includes("node(id")) {
@@ -109,8 +128,8 @@ const w = await startWrangler({
 	AUTH_TEST: "1",
 	SESSION_KEY: "test-session-key-0123456789",
 	LB_MIN_GAMES: "1",
-	GITHUB_CLIENT_ID: "gh-client",
-	GITHUB_CLIENT_SECRET: "gh-secret",
+	GH_APP_CLIENT_ID: "app-client",
+	GH_APP_CLIENT_SECRET: "app-secret",
 	GITHUB_OAUTH_URL: FAKE,
 	GITHUB_API: FAKE,
 	GOOGLE_CLIENT_ID: "g-client",
@@ -164,7 +183,7 @@ async function walk(url) {
 	return url;
 }
 const tokenOf = (url) => new URL(url).hash.match(/token=([^&]+)/)?.[1] ?? null;
-const testLogin = async (name) => tokenOf(await walk(`${B}/auth/test?name=${encodeURIComponent(name)}&back=${encodeURIComponent(SITE + "/profile.html")}`));
+const testLogin = async (name, extra = "") => tokenOf(await walk(`${B}/auth/test?name=${encodeURIComponent(name)}${extra}&back=${encodeURIComponent(SITE + "/profile.html")}`));
 
 try {
 	console.log("\naccounts: CORS");
@@ -189,6 +208,19 @@ try {
 		const g = tokenOf(await walk(`${B}/auth/google/start?back=${back}`));
 		const gme = await call("GET", "/api/me", { token: g });
 		check("Google: the same flow, a different account", gme.body.name === "Goo Gle" && gme.body.provider === "google" && gme.body.id !== me.body.id, gme.body);
+		// One account, both sign-ins: connect GitHub to the Google account.
+		const linkTo = async (token, provider) => walk((await call("POST", `/api/me/link/${provider}`, { token, body: { back: `${SITE}/profile.html` } })).body.url);
+		let landed = await linkTo(g, "github");
+		check("connecting a GitHub account another arcade account has is refused, and says so", landed.endsWith("#signin=taken&provider=github"), landed);
+		fake.ghUser = { id: 77, login: "goo-gh", name: "Goo on GitHub" };
+		landed = await linkTo(g, "github");
+		check("connecting a new GitHub account to the Google one", landed.endsWith("#connected=github"), landed);
+		const both = await call("GET", "/api/me", { token: g });
+		check("…the account now has both sign-ins, GitHub's login with it", JSON.stringify(both.body.identities.map((i) => [i.provider, i.login])) === JSON.stringify([["google", null], ["github", "goo-gh"]]), both.body.identities);
+		const viaGh = tokenOf(await walk(`${B}/auth/github/start?back=${back}`));
+		check("…and signing in with that GitHub is the same account", (await call("GET", "/api/me", { token: viaGh })).body.id === gme.body.id);
+		check("a connect link without a sign-in is refused", (await call("POST", "/api/me/link/github", { body: { back: SITE } })).status === 401);
+		fake.ghUser = { id: 42, login: "octo", name: "Octo Cat" };
 		const open = await fetch(`${B}/auth/github/start?back=${encodeURIComponent("https://evil.example/")}`, { redirect: "manual" });
 		check("a back page off the arcade is refused (no open redirect)", open.status === 400);
 		const forged = await fetch(`${B}/auth/github/callback?code=gh-code&state=${encodeURIComponent(btoa(JSON.stringify({ back: SITE, provider: "github", exp: Date.now() + 1e6 })) + ".nope")}`, { redirect: "manual" });
@@ -384,22 +416,36 @@ try {
 		check("my groups list is empty again", (await call("GET", "/api/groups", { token: ana })).body.groups.length === 0);
 	}
 
-	console.log("\naccounts: feedback, through the GitHub App");
+	console.log("\naccounts: feedback, from the player's own GitHub account");
 	{
-		let r = await call("POST", "/api/feedback/connect4", { token: ana, body: { text: "Love it @someone — more columns?" } });
-		check("a post goes to GitHub", r.body.posted === true, r.body);
-		check("…signed with a real App JWT", fake.jwtParts === 3);
-		check("…as the player, by name, with the @ unable to ping", /^\*\*from Ana P\*\* · signed in with test\n\nLove it @​someone/.test(fake.comments[0] ?? ""), fake.comments[0]);
-		check("…in a new discussion for the game", fake.discussions.size === 1 && [...fake.discussions.values()][0].title === "Feedback: connect4");
+		let r = await call("POST", "/api/feedback/connect4", { token: ana, body: { text: "no GitHub yet" } });
+		check("signed in without GitHub: refused, and told to connect it", r.status === 403 && r.body.code === "github", r.body);
+		const anaGh = await testLogin("Ana", "&github=ana-gh");
+		check("(Ana connects GitHub: the same account)", (await call("GET", "/api/me", { token: anaGh })).body.id === A);
+		r = await call("POST", "/api/feedback/connect4", { token: ana, body: { text: "Love it @someone — more columns?" } });
+		check("now a post goes to GitHub", r.body.posted === true, r.body);
+		check("…the thread opened by the App, signed with a real App JWT", fake.jwtParts === 3 && fake.discussions.size === 1 && [...fake.discussions.values()][0].title === "Feedback: connect4");
+		check("…the comment posted by Ana's own GitHub account", fake.authors[0] === "ana-gh", fake.authors);
+		check("…as she wrote it, with the @ unable to ping, no byline", fake.comments[0] === "Love it @​someone — more columns?", fake.comments[0]);
+		await testLogin("Bo", "&github=bo-gh&expires=1");
+		const before = fake.refreshed;
 		await call("POST", "/api/feedback/connect4", { token: bo, body: { text: "second" } });
+		check("an expired GitHub token is refreshed on the way", fake.refreshed === before + 1 && fake.authors[1] === "bo-gh", { refreshed: fake.refreshed, authors: fake.authors });
 		check("the next post reuses the discussion", fake.discussions.size === 1);
 		const got = await call("GET", "/api/feedback/connect4");
-		check("reading it back: newest first, by name", got.body.comments[0]?.name === "Bo" && got.body.comments[1]?.text.startsWith("Love it @someone"), got.body);
+		check("reading it back: newest first, by GitHub login", got.body.comments[0]?.login === "bo-gh" && got.body.comments[1]?.name === "ana-gh" && got.body.comments[1]?.text.startsWith("Love it @someone"), got.body);
 		check("posting needs a sign-in", (await call("POST", "/api/feedback/connect4", { body: { text: "x" } })).status === 401);
 		check("empty feedback is refused", (await call("POST", "/api/feedback/connect4", { token: ana, body: { text: " " } })).status === 400);
 		for (let i = 0; i < 4; i++) await call("POST", "/api/feedback/connect4", { token: ana, body: { text: `more ${i}` } });
 		r = await call("POST", "/api/feedback/connect4", { token: ana, body: { text: "one too many" } });
 		check("five posts a day, then a polite 429", r.status === 429, r.body);
+		const ex = await call("GET", "/api/me/export", { token: ana });
+		check("the export lists the sign-ins and that a GitHub token is kept — never the token", ex.body.identities?.some((i) => i.provider === "github" && i.githubTokenKept) && !JSON.stringify(ex.body).includes("ut-ana-gh"), ex.body.identities);
+		check("the last sign-in cannot be disconnected", (await call("DELETE", "/api/me/identities/test", { token: cy })).status === 400);
+		r = await call("DELETE", "/api/me/identities/github", { token: bo });
+		check("disconnecting GitHub keeps the account", r.status === 200 && r.body.identities.every((i) => i.provider !== "github"), r.body);
+		r = await call("POST", "/api/feedback/connect4", { token: bo, body: { text: "after disconnecting" } });
+		check("…and posting needs it again", r.status === 403 && r.body.code === "github", r.body);
 	}
 
 	console.log("\naccounts: the hourly public snapshot");

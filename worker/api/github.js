@@ -104,6 +104,19 @@ export async function graphql(env, query, variables = {}) {
 	return out.data;
 }
 
+/** GraphQL as a player, with their GitHub App user token (vault.js). */
+export async function graphqlAs(env, userToken, query, variables = {}) {
+	const res = await fetch(`${api(env)}/graphql`, {
+		method: "POST",
+		headers: { Authorization: `Bearer ${userToken}`, "Content-Type": "application/json", "User-Agent": "neon-arcade" },
+		body: JSON.stringify({ query, variables }),
+	});
+	const out = await res.json().catch(() => ({}));
+	if (res.status === 401) throw Object.assign(new HttpError(403, "reconnect your GitHub account to post feedback"), { code: "github" });
+	if (!res.ok || out.errors?.length) throw new HttpError(502, `GitHub GraphQL: ${out.errors?.[0]?.message ?? res.status}`);
+	return out.data;
+}
+
 /** For tests: forget the cached installation token. */
 export const _reset = () => {
 	installation = null;

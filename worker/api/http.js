@@ -50,7 +50,9 @@ export function json(env, request, body, { status = 200, open = false, cache = "
 export function fail(env, request, err) {
 	const status = err instanceof HttpError ? err.status : 500;
 	if (status === 500) console.error(err);
-	return json(env, request, { error: status === 500 ? "server error" : err.message }, { status, open: true });
+	// `code` lets a page act on a kind of refusal (e.g. "github": connect it).
+	const body = { error: status === 500 ? "server error" : err.message, ...(err.code ? { code: err.code } : {}) };
+	return json(env, request, body, { status, open: true });
 }
 
 /** The JSON body, at most `max` bytes. */

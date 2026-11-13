@@ -59,6 +59,8 @@ try {
 	await ana.p.locator(".neon-toast", { hasText: "Saved." }).waitFor({ timeout: TIMEOUT });
 	const anaId = await ana.p.evaluate(() => NeonArcade.account.me.id);
 	check("the name is saved on the server", (await ana.p.evaluate(() => NeonArcade.account.api("/api/me"))).name === "Ana Lima");
+	const methods = await ana.p.evaluate(() => [...document.querySelectorAll("[data-method]")].map((r) => `${r.dataset.method}:${r.querySelector("button")?.textContent}`));
+	check("the profile lists its sign-in methods, each to connect", methods.join() === "github:CONNECT,google:CONNECT", methods);
 	check("…and a friend code with a QR is shown", (await ana.p.locator("canvas.qr").count()) === 1 && (await ana.p.locator(".code").first().textContent()).includes(`?u=${anaId}`));
 
 	console.log("\nsocial: the portal and favourites on two devices");
@@ -177,7 +179,7 @@ try {
 	await ana.p.locator('.game-card[data-game="connect4"] .fb').click();
 	const fbOpen = await ana.p.locator("dialog.neon-sheet", { hasText: "Feedback: Connect 4" }).waitFor({ timeout: TIMEOUT }).then(() => true, () => false);
 	check("💬 opens the game's feedback sheet", fbOpen);
-	check("…with a box to post, since you are signed in", (await ana.p.locator("dialog.neon-sheet textarea").count()) === 1);
+	check("…which, without GitHub connected, offers CONNECT GITHUB instead of a box", (await ana.p.locator("dialog.neon-sheet button", { hasText: "CONNECT GITHUB" }).count()) === 1 && (await ana.p.locator("dialog.neon-sheet textarea").count()) === 0);
 	const sheetFits = await ana.p.evaluate(() => {
 		const r = document.querySelector("dialog.neon-sheet").getBoundingClientRect();
 		return r.left >= 16 && r.right <= innerWidth - 16;

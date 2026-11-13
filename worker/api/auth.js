@@ -17,12 +17,25 @@
 // truth — sign-out and account deletion delete it — and its expiry slides
 // forward while it is used.
 //
+// One account, several sign-ins (2026-11-13): each provider user is an
+// identity (D1 `identities`) attached to one account; any of them signs in.
+// A signed-in player connects another with POST /api/me/link/<provider>,
+// which returns a start URL carrying a signed link ticket; its callback
+// attaches the identity (or refuses one another account already has).
+//
+// GitHub goes through the arcade's GitHub App (GH_APP_CLIENT_ID / _SECRET),
+// not an OAuth app: the same sign-in yields a user token that can only do
+// what the App may — Discussions on lokeshmohanty/games — kept encrypted
+// (vault.js) so feedback is posted from the player's own account.
+//
 // For tests only: with AUTH_TEST=1 *and* the request on a loopback host,
-// `GET /auth/test?name=…&back=…` signs in as a made-up account. Every
+// `GET /auth/test?name=…&back=…` signs in as a made-up account (`&github=`
+// a login also connects a made-up GitHub identity with token "ut-<login>"). Every
 // provider URL can be pointed at a fake (GITHUB_OAUTH_URL, GITHUB_API,
 // GOOGLE_AUTH_URL, GOOGLE_TOKEN_URL, GOOGLE_USERINFO_URL).
 
 import { HttpError, allowedOrigin, hmac, now, randomId, same } from "./http.js";
+import { keepTokens } from "./vault.js";
 
 export const SESSION_DAYS = 60;
 const DAY = 86_400_000;
@@ -32,16 +45,16 @@ const PROVIDERS = {
 	github: (env) => ({
 		authorize: `${env.GITHUB_OAUTH_URL ?? "https://github.com"}/login/oauth/authorize`,
 		token: `${env.GITHUB_OAUTH_URL ?? "https://github.com"}/login/oauth/access_token`,
-		scope: "read:user",
-		id: env.GITHUB_CLIENT_ID,
-		secret: env.GITHUB_CLIENT_SECRET,
+		scope: "", // a GitHub App's permissions are its own; scopes do not apply
+		id: env.GH_APP_CLIENT_ID,
+		secret: env.GH_APP_CLIENT_SECRET,
 		async profile(accessToken) {
 			const res = await fetch(`${env.GITHUB_API ?? "https://api.github.com"}/user`, {
 				headers: { Authorization: `Bearer ${accessToken}`, "User-Agent": "neon-arcade", Accept: "application/vnd.github+json" },
 			});
 			if (!res.ok) throw new HttpError(502, `GitHub profile: ${res.status}`);
 			const u = await res.json();
-			return { uid: String(u.id), name: u.name || u.login, avatar: u.avatar_url ?? null };
+			return { uid: String(u.id), name: u.name || u.login, login: u.login, avatar: u.avatar_url ?? null };
 		},
 	}),
 	google: (env) => ({
@@ -97,19 +110,44 @@ const clean = (name) =>
 		.trim()
 		.slice(0, 24) || "Player";
 
-/** Find or make the account for a provider identity; returns its row. */
-export async function upsertAccount(env, provider, { uid, name, avatar }) {
-	const found = await env.DB.prepare("SELECT * FROM accounts WHERE provider = ? AND provider_uid = ?").bind(provider, uid).first();
-	if (found) {
-		// The avatar follows the provider; the name is ours to keep once edited.
-		if (avatar && avatar !== found.avatar) await env.DB.prepare("UPDATE accounts SET avatar = ? WHERE id = ?").bind(avatar, found.id).run();
-		return { ...found, avatar: avatar ?? found.avatar };
+/**
+ * The account for a provider identity — found, made, or (with `linkTo`) the
+ * signed-in account it is being connected to. Refuses an identity that
+ * another account already has. Returns the account row.
+ */
+export async function upsertAccount(env, provider, { uid, name, login = null, avatar }, linkTo = null) {
+	const id = await env.DB.prepare("SELECT * FROM identities WHERE provider = ? AND provider_uid = ?").bind(provider, uid).first();
+	if (id) {
+		if (linkTo && id.account !== linkTo) throw new HttpError(409, `that ${provider} account is already connected to another arcade account`);
+		await env.DB.prepare("UPDATE identities SET login = ?, avatar = ? WHERE provider = ? AND provider_uid = ?").bind(login, avatar, provider, uid).run();
+		const acct = await env.DB.prepare("SELECT * FROM accounts WHERE id = ?").bind(id.account).first();
+		// The avatar follows the sign-in; the name is ours to keep once edited.
+		if (avatar && !acct.avatar) await env.DB.prepare("UPDATE accounts SET avatar = ? WHERE id = ?").bind(avatar, acct.id).run();
+		return { ...acct, avatar: acct.avatar ?? avatar };
 	}
-	const id = randomId(9);
-	await env.DB.prepare("INSERT INTO accounts (id, provider, provider_uid, name, avatar, created) VALUES (?, ?, ?, ?, ?, ?)")
-		.bind(id, provider, uid, clean(name), avatar, now())
-		.run();
-	return env.DB.prepare("SELECT * FROM accounts WHERE id = ?").bind(id).first();
+	if (linkTo) {
+		const acct = await env.DB.prepare("SELECT * FROM accounts WHERE id = ?").bind(linkTo).first();
+		if (!acct) throw new HttpError(404, "that arcade account is gone");
+		await env.DB.prepare("INSERT INTO identities (provider, provider_uid, account, login, avatar, linked) VALUES (?, ?, ?, ?, ?, ?)")
+			.bind(provider, uid, linkTo, login, avatar, now())
+			.run();
+		if (avatar && !acct.avatar) await env.DB.prepare("UPDATE accounts SET avatar = ? WHERE id = ?").bind(avatar, linkTo).run();
+		return acct;
+	}
+	const acctId = randomId(9);
+	await env.DB.batch([
+		env.DB.prepare("INSERT INTO accounts (id, provider, provider_uid, name, avatar, created) VALUES (?, ?, ?, ?, ?, ?)").bind(acctId, provider, uid, clean(name), avatar, now()),
+		env.DB.prepare("INSERT INTO identities (provider, provider_uid, account, login, avatar, linked) VALUES (?, ?, ?, ?, ?, ?)").bind(provider, uid, acctId, login, avatar, now()),
+	]);
+	return env.DB.prepare("SELECT * FROM accounts WHERE id = ?").bind(acctId).first();
+}
+
+/** A start URL that connects `provider` to `account` (POST /api/me/link/…). */
+export async function linkUrl(env, request, account, provider, back) {
+	if (!PROVIDERS[provider]) throw new HttpError(404, "no such sign-in");
+	const ticket = await signState(env, { link: account, provider, exp: now() + STATE_MS });
+	const origin = new URL(request.url).origin;
+	return `${origin}/auth/${provider}/start?${new URLSearchParams({ back: backUrl(env, back), ticket })}`;
 }
 
 /** A new session for `account`; returns the token. */
@@ -162,6 +200,11 @@ export async function auth(request, env, path) {
 		const back = backUrl(env, url.searchParams.get("back") ?? "");
 		const name = clean(url.searchParams.get("name"));
 		const account = await upsertAccount(env, "test", { uid: url.searchParams.get("uid") ?? name, name, avatar: null });
+		const gh = url.searchParams.get("github");
+		if (gh) {
+			await upsertAccount(env, "github", { uid: `gh-${gh}`, name: gh, login: gh, avatar: null }, account.id).catch(() => {});
+			await keepTokens(env, "github", `gh-${gh}`, { access_token: `ut-${gh}`, expires_in: Number(url.searchParams.get("expires") ?? 28800), refresh_token: `rt-${gh}` });
+		}
 		return redirect(`${back}#token=${await newSession(env, account.id)}`);
 	}
 
@@ -174,8 +217,16 @@ export async function auth(request, env, path) {
 
 	if (step === "start") {
 		const back = backUrl(env, url.searchParams.get("back") ?? "");
-		const state = await signState(env, { back, provider, exp: now() + STATE_MS, n: randomId(6) });
-		const q = new URLSearchParams({ client_id: p.id, redirect_uri: callback, scope: p.scope, state, response_type: "code" });
+		// Connecting to a signed-in account: its ticket, signed by linkUrl.
+		let link = null;
+		if (url.searchParams.get("ticket")) {
+			const t = await readState(env, url.searchParams.get("ticket"));
+			if (t.provider !== provider || !t.link) throw new HttpError(400, "that connect link is not for this sign-in");
+			link = t.link;
+		}
+		const state = await signState(env, { back, provider, link, exp: now() + STATE_MS, n: randomId(6) });
+		const q = new URLSearchParams({ client_id: p.id, redirect_uri: callback, state, response_type: "code" });
+		if (p.scope) q.set("scope", p.scope);
 		if (provider === "google") q.set("prompt", "select_account");
 		return redirect(`${p.authorize}?${q}`);
 	}
@@ -197,7 +248,21 @@ export async function auth(request, env, path) {
 	const tok = await res.json().catch(() => ({}));
 	if (!res.ok || !tok.access_token) throw new HttpError(502, `${provider} refused the sign-in (${tok.error ?? res.status})`);
 	const profile = await p.profile(tok.access_token);
-	const account = await upsertAccount(env, provider, profile);
+	let account;
+	try {
+		account = await upsertAccount(env, provider, profile, state.link ?? null);
+	} catch (err) {
+		if (err.status !== 409) throw err;
+		back.hash = `signin=taken&provider=${provider}`;
+		return redirect(back.href);
+	}
+	// GitHub's user token is kept (encrypted) to post feedback as the player;
+	// Google's is not needed past reading the profile, and is not kept.
+	if (provider === "github") await keepTokens(env, "github", profile.uid, tok);
+	if (state.link) {
+		back.hash = `connected=${provider}`;
+		return redirect(back.href);
+	}
 	back.hash = `token=${await newSession(env, account.id)}`;
 	return redirect(back.href);
 }

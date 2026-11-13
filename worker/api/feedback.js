@@ -1,16 +1,20 @@
 // worker/api/feedback.js — feedback on a game, kept in GitHub Discussions.
 //
 //   GET  /api/feedback/<game>   { url, comments: [{ name, text, at }] } (latest 20)
-//   POST /api/feedback/<game>   { text } — signed in; 5 a day; 1–2000 characters
+//   POST /api/feedback/<game>   { text } — signed in with GitHub connected;
+//                               5 a day; 1–2000 characters
 //
 // One discussion per game ("Feedback: <game>") in the category named by
-// GH_FEEDBACK_CATEGORY (default "Game feedback"), made on the first post.
-// Posted by the arcade's GitHub App with the player's name on top (Lokesh,
-// 2026-11-13: works for Google accounts too, and nobody grants the arcade
-// access to their GitHub). Moderation happens on GitHub. An "@" is broken
-// with a zero-width space so a post cannot ping anyone.
+// GH_FEEDBACK_CATEGORY (default "Game feedback"), opened by the arcade's
+// GitHub App on the first post. Each comment is the player's own: posted
+// with their GitHub App user token (Lokesh, 2026-11-13: "the discussions
+// should be from the users account"), so it shows as theirs, "via" the App.
+// A player signed in with Google connects GitHub first (code "github").
+// Moderation happens on GitHub. An "@" is broken with a zero-width space so a
+// post cannot ping anyone.
 
-import { graphql } from "./github.js";
+import { graphql, graphqlAs } from "./github.js";
+import { tokenFor } from "./vault.js";
 import { repoOf } from "./github.js";
 import { GAME_ID, HttpError, body, now } from "./http.js";
 
@@ -73,7 +77,7 @@ export async function getFeedback(env, game) {
 	if (t) {
 		const data = await graphql(
 			env,
-			`query($id: ID!) { node(id: $id) { ... on Discussion { url comments(last: 20) { nodes { body createdAt } } } } }`,
+			`query($id: ID!) { node(id: $id) { ... on Discussion { url comments(last: 20) { nodes { body createdAt author { login } } } } } }`,
 			{ id: t.discussion_id },
 		);
 		const nodes = data.node?.comments?.nodes ?? [];
@@ -81,8 +85,16 @@ export async function getFeedback(env, game) {
 			url: data.node?.url ?? t.url,
 			comments: nodes
 				.map((c) => {
+					// The author is the player's GitHub account; older comments,
+					// posted by the App, carry a "from <name>" line instead.
 					const m = c.body.match(BYLINE);
-					return { name: m ? m[1] : "GitHub", text: c.body.replace(BYLINE, "").replace(/@​/g, "@"), at: Date.parse(c.createdAt) || null };
+					const login = c.author?.login ?? null;
+					return {
+						name: m ? m[1] : (login ?? "GitHub"),
+						login: m ? null : login,
+						text: c.body.replace(BYLINE, "").replace(/@​/g, "@"),
+						at: Date.parse(c.createdAt) || null,
+					};
 				})
 				.reverse(),
 		};
@@ -98,13 +110,15 @@ export async function postFeedback(env, me, game, request) {
 	const day = now() - 86_400_000;
 	const n = await env.DB.prepare("SELECT COUNT(*) AS n FROM feedback_log WHERE account = ? AND at > ?").bind(me.id, day).first();
 	if (n.n >= POSTS_PER_DAY) throw new HttpError(429, `at most ${POSTS_PER_DAY} posts a day — thank you, though`);
+	// Their own GitHub token first: no GitHub connected, no post.
+	const { token } = await tokenFor(env, me.id);
 	const t = await thread(env, game, true);
-	const provider = me.provider === "github" ? "GitHub" : me.provider === "google" ? "Google" : me.provider;
 	const safe = text.replace(/@/g, "@​");
-	const data = await graphql(
+	const data = await graphqlAs(
 		env,
+		token,
 		`mutation($id: ID!, $body: String!) { addDiscussionComment(input: { discussionId: $id, body: $body }) { comment { url } } }`,
-		{ id: t.discussion_id, body: `**from ${me.name.replace(/[*_`[\]]/g, "")}** · signed in with ${provider}\n\n${safe}` },
+		{ id: t.discussion_id, body: safe },
 	);
 	await env.DB.prepare("INSERT INTO feedback_log (account, at) VALUES (?, ?)").bind(me.id, now()).run();
 	await globalThis.caches?.default?.delete(cacheKey(game));
