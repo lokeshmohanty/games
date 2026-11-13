@@ -174,10 +174,10 @@ NeonArcade.registerGame({
 				.uc-name { display: flex; gap: 6px; align-items: center; }
 				.uc-name input { flex: 1; min-width: 0; min-height: 46px; padding: 8px 12px;
 					background: var(--panel); border: 2px solid var(--border); border-radius: 8px;
-					color: #fff; font-size: 16px; font-family: inherit; }
+					color: var(--ink); font-size: 16px; font-family: inherit; }
 				.uc-name input:focus { outline: none; border-color: var(--accent); }
 				.uc-name button { min-width: 46px; min-height: 46px; background: var(--panel);
-					border: 2px solid var(--border); border-radius: 8px; color: #ff6b6b;
+					border: 2px solid var(--border); border-radius: 8px; color: var(--danger);
 					font-size: 1.1rem; cursor: pointer; }
 				.uc-opts { display: flex; flex-wrap: wrap; gap: 10px; justify-content: center;
 					align-items: center; font-size: 0.74rem; color: var(--muted); }
@@ -185,13 +185,13 @@ NeonArcade.registerGame({
 				.uc-step button { min-width: 44px; min-height: 44px; background: var(--panel);
 					border: 2px solid var(--border); border-radius: 8px; color: var(--accent);
 					font-size: 1.1rem; cursor: pointer; }
-				.uc-step b { min-width: 1.5ch; text-align: center; color: #fff; font-weight: normal;
+				.uc-step b { min-width: 1.5ch; text-align: center; color: var(--ink); font-weight: normal;
 					font-size: 1.1rem; }
 				.uc-toggle { min-height: 44px; padding: 8px 14px; background: var(--panel);
 					border: 2px solid var(--border); border-radius: 8px; color: var(--muted);
 					font-size: 0.74rem; letter-spacing: 0.08em; cursor: pointer; }
 				.uc-toggle.on { border-color: var(--accent); color: var(--accent); }
-				.uc-big { font-size: clamp(1.6rem, 8vw, 2.4rem); text-align: center; color: #fff;
+				.uc-big { font-size: clamp(1.6rem, 8vw, 2.4rem); text-align: center; color: var(--ink);
 					line-height: 1.15; }
 				.uc-word { font-size: clamp(2.2rem, 12vw, 3.4rem); color: var(--accent);
 					text-shadow: 0 0 18px var(--accent-glow); text-align: center; line-height: 1.1;
@@ -204,7 +204,7 @@ NeonArcade.registerGame({
 				.uc-list { display: flex; flex-direction: column; gap: 6px; width: 100%; }
 				.uc-row { display: flex; justify-content: space-between; align-items: center;
 					gap: 8px; padding: 10px 12px; min-height: 46px; border-radius: 8px;
-					background: var(--panel); border: 2px solid var(--border); color: #fff;
+					background: var(--panel); border: 2px solid var(--border); color: var(--ink);
 					font-size: 0.9rem; text-align: left; cursor: default; }
 				.uc-row.pick { cursor: pointer; }
 				.uc-row.now { border-color: var(--accent); color: var(--accent); }
@@ -213,7 +213,7 @@ NeonArcade.registerGame({
 				.uc-actions { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; }
 				.uc-actions .neon-btn { min-height: 46px; }
 				.uc-guess { width: 100%; min-height: 46px; padding: 8px 12px; background: var(--panel);
-					border: 2px solid var(--border); border-radius: 8px; color: #fff;
+					border: 2px solid var(--border); border-radius: 8px; color: var(--ink);
 					font-size: 16px; font-family: inherit; }
 			`,
 		});

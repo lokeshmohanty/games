@@ -52,7 +52,7 @@ NeonArcade.registerGame({
         font-size: 0.9rem;
       }
       #ui .stat {
-        background: rgba(0, 0, 0, 0.5);
+        background: color-mix(in oklch, var(--bg) 60%, transparent);
         padding: 4px 12px;
         border-radius: 6px;
         border: 1px solid var(--border);
@@ -64,7 +64,7 @@ NeonArcade.registerGame({
       }
       #alive {
         color: var(--good);
-        text-shadow: 0 0 8px rgba(77, 255, 77, 0.4);
+        text-shadow: 0 0 8px var(--glow);
       }
       #me-color {
         width: 14px;
@@ -77,7 +77,7 @@ NeonArcade.registerGame({
       }
       #gameCanvas {
         border: 2px solid var(--border);
-        box-shadow: 0 0 20px rgba(0, 255, 255, 0.15);
+        box-shadow: 0 0 20px var(--glow);
         touch-action: none;
         max-width: 95vw;
         max-height: 80vh;
@@ -92,7 +92,7 @@ NeonArcade.registerGame({
         text-align: center;
         pointer-events: none;
         z-index: 4;
-        text-shadow: 0 0 10px rgba(255, 255, 255, 0.2);
+        text-shadow: 0 0 10px var(--glow);
       }
     `;
 		root.append(style);
@@ -138,16 +138,6 @@ NeonArcade.registerGame({
 
 
 		// ── Config ──────────────────────────────────────────────
-		const PALETTE = [
-			"#0ff",
-			"#f0f",
-			"#4dff4d",
-			"#ffd24d",
-			"#ff4d4d",
-			"#a0f",
-			"#ff8c00",
-			"#00ffaa",
-		];
 		const POS_INTERVAL = 50; // ms — broadcast position every 50ms (~20Hz)
 		const STATE_INTERVAL = 80; // ms — host broadcasts world state (~12Hz)
 		const SPAWN_INTERVAL_INIT = 1000; // ms — initial enemy spawn rate
@@ -177,7 +167,7 @@ NeonArcade.registerGame({
 
 		// ── State ────────────────────────────────────────────────
 		let room = null;
-		let myColor = "#0ff";
+		let myColor = null; // colorFor(room.selfId), set at start and on a theme change
 		let player = { x: 0, y: 0, alive: true, id: null };
 		let peers = {}; // peerId -> { x, y, color, alive }
 		let enemies = []; // host-authoritative
@@ -192,10 +182,15 @@ NeonArcade.registerGame({
 		let spawnRate = SPAWN_INTERVAL_INIT;
 		let ghostMsgEl = null;
 
+		/**
+		 * A ship's colour: one of the theme's eight player colours, picked from
+		 * its id — so every peer works it out for itself, in its own theme,
+		 * whatever colour string a ship's owner happens to send.
+		 */
 		function colorFor(id) {
 			let h = 0;
 			for (const c of id) h = (h * 31 + c.charCodeAt(0)) >>> 0;
-			return PALETTE[h % PALETTE.length];
+			return NeonArcade.palette().player(h % 8);
 		}
 
 		function resize() {
@@ -405,7 +400,7 @@ NeonArcade.registerGame({
 				for (let i = gems.length - 1; i >= 0; i--) {
 					const g = gems[i];
 					if (Math.hypot(ship.x - g.x, ship.y - g.y) < PLAYER_SIZE / 2 + g.size) {
-						createParticles(g.x, g.y, "#4dff4d");
+						createParticles(g.x, g.y, NeonArcade.palette().good);
 						collectGem(i);
 					}
 				}
@@ -475,7 +470,7 @@ NeonArcade.registerGame({
 					Math.hypot(player.x - g.x, player.y - g.y) <
 					PLAYER_SIZE / 2 + g.size
 				) {
-					createParticles(g.x, g.y, "#4dff4d");
+					createParticles(g.x, g.y, NeonArcade.palette().good);
 					if (room.isHost()) {
 						collectGem(i);
 					} else {
@@ -641,14 +636,16 @@ NeonArcade.registerGame({
 
 		// ── Render ───────────────────────────────────────────────
 		function draw() {
+			const pal = NeonArcade.palette();
+			const blur = pal.glows ? 15 : 0; // a halo is the neon theme's, not paper's
 			// Motion trail fade
-			c2d.fillStyle = "rgba(10, 10, 10, 0.3)";
+			c2d.fillStyle = pal.alpha("bg", 0.3);
 			c2d.fillRect(0, 0, canvas.width, canvas.height);
 
 			// Gems (host-authoritative state, but everyone renders from state)
-			c2d.shadowBlur = 15;
-			c2d.shadowColor = "#4dff4d";
-			c2d.fillStyle = "#4dff4d";
+			c2d.shadowBlur = blur;
+			c2d.shadowColor = pal.good;
+			c2d.fillStyle = pal.good;
 			for (const g of gems) {
 				c2d.beginPath();
 				c2d.arc(g.x, g.y, g.size, 0, Math.PI * 2);
@@ -656,8 +653,8 @@ NeonArcade.registerGame({
 			}
 
 			// Enemies
-			c2d.shadowColor = "#ff4d4d";
-			c2d.fillStyle = "#ff4d4d";
+			c2d.shadowColor = pal.danger;
+			c2d.fillStyle = pal.danger;
 			for (const e of enemies) {
 				c2d.beginPath();
 				c2d.arc(e.x, e.y, e.size, 0, Math.PI * 2);
@@ -668,10 +665,11 @@ NeonArcade.registerGame({
 			for (const [id, p] of Object.entries(peers)) {
 				if (p.x == null) continue;
 				const alpha = p.alive ? 1 : 0.3;
+				const color = colorFor(id);
 				c2d.globalAlpha = alpha;
-				c2d.shadowBlur = 15;
-				c2d.shadowColor = p.color;
-				c2d.fillStyle = p.color;
+				c2d.shadowBlur = blur;
+				c2d.shadowColor = color;
+				c2d.fillStyle = color;
 				c2d.fillRect(
 					p.x - PLAYER_SIZE / 2,
 					p.y - PLAYER_SIZE / 2,
@@ -683,7 +681,7 @@ NeonArcade.registerGame({
 
 			// Self
 			if (player.alive) {
-				c2d.shadowBlur = 15;
+				c2d.shadowBlur = blur;
 				c2d.shadowColor = myColor;
 				c2d.fillStyle = myColor;
 				c2d.fillRect(
@@ -695,7 +693,7 @@ NeonArcade.registerGame({
 			} else {
 				// ghost: dim outline
 				c2d.globalAlpha = 0.3;
-				c2d.shadowBlur = 5;
+				c2d.shadowBlur = pal.glows ? 5 : 0;
 				c2d.shadowColor = myColor;
 				c2d.strokeStyle = myColor;
 				c2d.lineWidth = 1;
@@ -778,6 +776,11 @@ NeonArcade.registerGame({
 		player.id = room.selfId;
 		meColorEl.style.color = myColor;
 		meColorEl.style.background = myColor;
+		// A new theme: our own ship's colour, and the swatch, follow it.
+		addWindowListener("neon:theme", () => {
+			myColor = colorFor(room.selfId);
+			meColorEl.style.color = meColorEl.style.background = myColor;
+		});
 		resize();
 
 		const posAction = room.makeAction("pos");

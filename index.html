@@ -15,13 +15,16 @@
     <meta name="apple-mobile-web-app-title" content="Arcade Games" />
     <!-- The shared theme, for the account sheets and buttons (lib/account-ui.js);
          this page's own rules below take precedence. -->
+    <!-- The theme first: tokens + fonts, and the saved choice before paint. -->
+    <link rel="stylesheet" href="lib/theme.css" />
+    <script src="lib/theme.js"></script>
     <link rel="stylesheet" href="lib/styles.css" />
     <style>
       body {
         margin: 0;
-        background: #0a0a0a;
-        color: #fff;
-        font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+        background: var(--bg);
+        color: var(--ink);
+        font-family: var(--font-body);
         display: flex;
         flex-direction: column;
         align-items: center;
@@ -29,9 +32,10 @@
         min-height: 100vh;
       }
       h1 {
+        font-family: var(--font-display);
         font-size: 3rem;
-        color: #0ff;
-        text-shadow: 0 0 20px #0ff;
+        color: var(--accent);
+        text-shadow: 0 0 20px var(--glow);
         margin-bottom: 10px;
         text-transform: uppercase;
         letter-spacing: 5px;
@@ -48,7 +52,7 @@
       */
       .tagline {
         margin: 0 0 4px;
-        color: #888;
+        color: var(--ink-2);
         font-size: 0.95rem;
         text-align: center;
         max-width: 34em;
@@ -72,16 +76,16 @@
         gap: 16px;
         background: linear-gradient(
           90deg,
-          rgba(255, 0, 255, 0.08),
-          rgba(0, 255, 255, 0.08)
+          color-mix(in oklch, var(--accent-2) 8%, transparent),
+          color-mix(in oklch, var(--accent) 8%, transparent)
         );
-        border: 2px solid #333;
+        border: 2px solid var(--rule);
         border-radius: 15px;
         cursor: pointer;
         transition: border-color 0.3s ease;
       }
       .party-banner:hover {
-        border-color: #f0f;
+        border-color: var(--accent-2);
       }
       .party-banner div {
         flex: 1 1 260px;
@@ -89,17 +93,18 @@
       .party-banner h3 {
         margin: 0 0 6px;
         font-size: 1.3rem;
-        color: #fff;
+        color: var(--ink);
       }
       .party-banner p {
         margin: 0;
-        color: #aaa;
+        color: var(--ink-2);
         font-size: 0.9rem;
         line-height: 1.5;
       }
       .party-banner .play-btn {
         margin: 0;
-        background: #f0f;
+        background: var(--accent-2);
+        color: var(--on-accent-2);
         flex: 0 0 auto;
       }
       /* A <button> brings its own border, font, and cursor; reset them so it
@@ -123,10 +128,10 @@
         margin-bottom: 22px;
       }
       .filter {
-        background: #1a1a1a;
-        border: 2px solid #333;
+        background: var(--surface);
+        border: 2px solid var(--rule);
         border-radius: 999px;
-        color: #aaa;
+        color: var(--ink-2);
         font-family: inherit;
         font-size: 0.72rem;
         letter-spacing: 1.5px;
@@ -137,17 +142,17 @@
         cursor: pointer;
       }
       .filter:hover {
-        border-color: #0ff;
-        color: #0ff;
+        border-color: var(--accent);
+        color: var(--accent);
       }
       .filter[aria-pressed="true"] {
-        background: #0ff;
-        border-color: #0ff;
-        color: #000;
+        background: var(--accent);
+        border-color: var(--accent);
+        color: var(--on-accent);
         font-weight: bold;
       }
       .filter-empty {
-        color: #888;
+        color: var(--ink-2);
         font-size: 0.9rem;
         margin: 0 0 20px;
       }
@@ -162,8 +167,8 @@
         display: none;
       }
       .game-card {
-        background: #1a1a1a;
-        border: 2px solid #333;
+        background: var(--surface);
+        border: 2px solid var(--rule);
         border-radius: 15px;
         overflow: hidden;
         transition: all 0.3s ease;
@@ -172,9 +177,9 @@
         position: relative;
       }
       .game-card:hover {
-        border-color: #0ff;
+        border-color: var(--accent);
         transform: translateY(-10px);
-        box-shadow: 0 0 30px rgba(0, 255, 255, 0.3);
+        box-shadow: 0 0 30px var(--glow);
       }
       .game-card img {
         width: 100%;
@@ -184,15 +189,16 @@
         height: auto;
         object-fit: cover;
         display: block;
-        border-bottom: 2px solid #333;
+        border-bottom: 2px solid var(--rule);
       }
       .game-card h3 {
+        font-family: var(--font-display);
         margin: 20px 0;
         font-size: 1.5rem;
-        color: #fff;
+        color: var(--ink);
       }
       .game-card p {
-        color: #aaa;
+        color: var(--ink-2);
         margin: 0 20px 12px;
         font-size: 0.9rem;
       }
@@ -206,20 +212,21 @@
         and the meta line rendered at the blurb's size and margins.
       */
       .game-card .game-meta {
+        font-family: var(--font-mono);
         margin: 0 20px 18px;
-        color: #666;
+        color: var(--ink-3);
         font-size: 0.78rem;
         letter-spacing: 1px;
         text-transform: uppercase;
       }
       .game-card .game-meta .no-bots {
-        color: #f0f;
+        color: var(--accent-2);
       }
       .play-btn {
         display: inline-block;
         padding: 10px 25px;
-        background: #0ff;
-        color: #000;
+        background: var(--accent);
+        color: var(--on-accent);
         text-decoration: none;
         font-weight: bold;
         border-radius: 5px;
@@ -385,8 +392,8 @@
         margin-bottom: 24px;
       }
       .install-btn {
-        background: #0ff;
-        color: #000;
+        background: var(--accent);
+        color: var(--on-accent);
         border: none;
         border-radius: 999px;
         padding: 10px 22px;
@@ -395,7 +402,7 @@
         font-weight: bold;
         letter-spacing: 2px;
         cursor: pointer;
-        box-shadow: 0 0 18px rgba(0, 255, 255, 0.45);
+        box-shadow: 0 0 18px var(--glow);
       }
       .install-btn:hover {
         transform: scale(1.05);
@@ -406,7 +413,7 @@
       }
       .install-hint {
         margin: 0;
-        color: #888;
+        color: var(--ink-2);
         font-size: 0.85rem;
         text-align: center;
       }
@@ -419,17 +426,17 @@
         right: 8px;
         width: 44px;
         height: 44px;
-        border: 1px solid #333;
+        border: 1px solid var(--rule);
         border-radius: 50%;
-        background: rgba(10, 10, 10, 0.75);
-        color: #ffd24d;
+        background: color-mix(in oklch, var(--bg) 82%, transparent);
+        color: var(--warn);
         font-size: 1.3rem;
         line-height: 1;
         cursor: pointer;
       }
       .game-card .fav[aria-pressed="true"] {
-        border-color: #ffd24d;
-        box-shadow: 0 0 12px rgba(255, 210, 77, 0.45);
+        border-color: var(--warn);
+        box-shadow: 0 0 12px color-mix(in oklch, var(--warn) 40%, transparent);
       }
       /* Shown on a phone too, where the description is not. */
       .game-card p.game-you:not([hidden]),
@@ -437,12 +444,12 @@
         display: block;
       }
       .game-card p.game-you {
-        color: #0ff;
+        color: var(--accent);
         font-size: 0.75rem;
         margin-top: -6px;
       }
       .game-card p.game-by {
-        color: #777;
+        color: var(--ink-3);
         font-size: 0.7rem;
         margin-top: -6px;
       }
@@ -455,7 +462,7 @@
         font-size: 0.8rem;
         letter-spacing: 2px;
         text-transform: uppercase;
-        color: #888;
+        color: var(--ink-2);
         margin: 0 0 8px;
       }
       .recent-list {
@@ -469,9 +476,9 @@
         padding: 10px 14px;
         min-height: 44px;
         box-sizing: border-box;
-        border: 1px solid #0ff;
+        border: 1px solid var(--accent);
         border-radius: 999px;
-        color: #0ff;
+        color: var(--accent);
         text-decoration: none;
         font-size: 0.85rem;
         white-space: nowrap;
@@ -495,10 +502,10 @@
         gap: 6px;
         min-height: 40px;
         padding: 6px 12px;
-        border: 1px solid #333;
+        border: 1px solid var(--rule);
         border-radius: 999px;
-        background: rgba(10, 10, 10, 0.75);
-        color: #aaa;
+        background: color-mix(in oklch, var(--bg) 82%, transparent);
+        color: var(--ink-2);
         font: inherit;
         font-size: 0.75rem;
         letter-spacing: 1px;
@@ -512,8 +519,8 @@
         border-radius: 50%;
       }
       .acct-bar .acct-me {
-        color: #0ff;
-        border-color: #0ff;
+        color: var(--accent);
+        border-color: var(--accent);
         text-transform: none;
         letter-spacing: 0;
         max-width: 45vw;
@@ -527,14 +534,18 @@
         left: 8px;
         width: 44px;
         height: 44px;
-        border: 1px solid #333;
+        border: 1px solid var(--rule);
         border-radius: 50%;
-        background: rgba(10, 10, 10, 0.75);
+        background: color-mix(in oklch, var(--bg) 82%, transparent);
         font-size: 1.1rem;
         cursor: pointer;
       }
+      .game-card p.game-plays,
+      .game-card p.game-you {
+        font-family: var(--font-mono);
+      }
       .game-card p.game-plays {
-        color: #777;
+        color: var(--ink-3);
         font-size: 0.7rem;
         margin-top: -6px;
       }

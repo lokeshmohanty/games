@@ -28,7 +28,7 @@
 // first, a forgotten bump costs an out-of-date *offline* copy — never a stale
 // app for an online player, which is the failure mode that would be hard to
 // notice.
-const VERSION = "arcade-games-v28";
+const VERSION = "arcade-games-v29";
 
 // The shell: everything needed to open any page and start a game with no
 // network at all. The preview gifs are deliberately absent — they are ~2 MB
@@ -51,6 +51,8 @@ const SHELL = [
 	"./neon-survival-mp.html",
 	"./tug-of-war.html",
 	"./manifest.webmanifest",
+	"./lib/theme.css",
+	"./lib/theme.js",
 	"./lib/styles.css",
 	"./lib/qr.js",
 	"./lib/qr-decode.js",
@@ -85,6 +87,12 @@ const SHELL = [
 	"./games/neon-survival-mp/neon-survival-mp.js",
 	"./games/neon-survival-mp/game.json",
 	"./assets/icon.svg",
+	// The three faces (lib/theme.css): ~150 KB, worth it for an offline app
+	// that would otherwise fall back to system fonts with no network.
+	"./assets/fonts/space-grotesk.woff2",
+	"./assets/fonts/nunito.woff2",
+	"./assets/fonts/nunito-italic.woff2",
+	"./assets/fonts/cascadia-code.woff2",
 	// Stands in for a preview gif that will not load — which, offline, is all of
 	// them, since the gifs are not precached.
 	"./assets/placeholder.svg",

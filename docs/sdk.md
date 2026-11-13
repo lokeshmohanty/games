@@ -81,6 +81,21 @@ New with the SDK:
 | `ctx.assets.url(path)` | `Promise<blob: URL>` for a file in the game folder (images, sounds, fonts) |
 | `NeonArcade.sessionStore` | this tab's session storage (`getItem`/`setItem`/`removeItem`), kept by the party page — the frame has none of its own. `lib/secrets.js` keeps commitments here across a reload |
 
+### Colours and type: the theme
+
+Players choose a theme (Paper — the default, following the system's light or
+dark — or Neon). A game never names a colour: CSS uses the tokens from
+`lib/theme.css` (`--bg`, `--surface`, `--surface-2`, `--ink`, `--ink-2`,
+`--ink-3`, `--rule`, `--accent`/`--on-accent`, `--accent-2`/`--on-accent-2`,
+`--good`, `--warn`, `--danger`, `--glow`, players `--p1`…`--p8`), and a canvas
+asks `NeonArcade.palette()` — `{ bg, surface, surface2, ink, ink2, ink3, rule,
+accent, onAccent, accent2, good, warn, danger, player(i), alpha(name, a),
+glows, fonts }` — then redraws on `window`'s `neon:theme` event. A colour that
+travels between players is sent as an index (a seat, a pen), so each peer
+draws it in its own theme. Type: `--font-display`, `--font-body`,
+`--font-mono` (values). `validate-game` and `just check-colours` refuse a
+literal colour unless its line says `theme-exempt` and why.
+
 ### Reporting a result
 
 Call `ctx.reportResult(r)` on **every peer** when a match ends (each one saw

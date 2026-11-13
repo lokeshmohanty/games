@@ -8,6 +8,9 @@
     <meta name="theme-color" content="#0a0a0a" />
     <link rel="icon" href="assets/icon.svg" type="image/svg+xml" />
     <link rel="apple-touch-icon" href="assets/apple-touch-icon.png" />
+    <!-- The theme first: tokens + fonts, and the saved choice before paint. -->
+    <link rel="stylesheet" href="lib/theme.css" />
+    <script src="lib/theme.js"></script>
     <link rel="stylesheet" href="lib/styles.css" />
     <style>
       main {
@@ -27,7 +30,7 @@
         width: 100%;
         min-height: 44px;
         background: var(--panel);
-        color: #fff;
+        color: var(--ink);
         border: 1px solid var(--border);
         border-radius: 8px;
         padding: 8px 10px;
@@ -59,7 +62,7 @@
       }
       .scope[aria-pressed="true"] {
         border-color: var(--accent);
-        color: #000;
+        color: var(--on-accent);
         background: var(--accent);
       }
       table {
@@ -82,6 +85,7 @@
       }
       td.n,
       th.n {
+        font-family: var(--font-mono);
         text-align: right;
         font-variant-numeric: tabular-nums;
       }

@@ -67,6 +67,11 @@ exactly this.
 6. An OSI licence that allows redistribution (MIT, Apache-2.0, BSD, ISC,
    MPL-2.0, GPL-3.0, AGPL-3.0, 0BSD, Unlicense) — the arcade serves a copy.
 7. Your own work: no recreations of someone else's game, characters or art.
+8. **Colours come from the theme.** Use the CSS tokens (`var(--ink)`,
+   `var(--accent)`, `var(--p1)`…`var(--p8)` for players…) and, on a canvas,
+   `NeonArcade.palette()` — then redraw on the `neon:theme` event. Players pick
+   a theme (Paper light/dark, Neon); your game follows it. A colour that must
+   not change (a QR code) carries a `theme-exempt` comment saying why.
 
 Built files must be **committed**: the arcade never builds or runs your
 tooling, it copies the folder at the pinned commit.

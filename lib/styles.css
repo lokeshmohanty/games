@@ -1,18 +1,8 @@
 /* lib/styles.css — shared neon theme for all games.
    Each game links this and adds its own game-specific styles inline. */
 
-:root {
-  --bg: #0a0a0a;
-  --panel: #1a1a1a;
-  --border: #333;
-  --accent: #0ff;
-  --accent-glow: rgba(0, 255, 255, 0.3);
-  --accent2: #f0f;
-  --good: #4dff4d;
-  --danger: #ff4d4d;
-  --muted: #aaa;
-  --font: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
-}
+/* Colours and type are tokens (lib/theme.css, loaded first). Nothing below
+   names a colour, except the QR code's white, which a scanner needs. */
 
 * {
   box-sizing: border-box;
@@ -23,10 +13,17 @@
   display: none !important;
 }
 
+h1,
+h2,
+h3,
+.lobby-title {
+  font-family: var(--font-display);
+}
+
 body {
   margin: 0;
   background: var(--bg);
-  color: #fff;
+  color: var(--ink);
   font-family: var(--font);
   -webkit-tap-highlight-color: transparent;
 }
@@ -45,7 +42,7 @@ body {
   padding: 7px 12px;
   border: 1px solid var(--border);
   border-radius: 999px;
-  background: rgba(10, 10, 10, 0.75);
+  background: color-mix(in oklch, var(--bg) 82%, transparent);
   backdrop-filter: blur(4px);
   color: var(--muted);
   font-family: var(--font);
@@ -63,7 +60,7 @@ body {
 /* Buttons */
 .neon-btn {
   background: var(--accent);
-  color: #000;
+  color: var(--on-accent);
   border: none;
   padding: 12px 24px;
   font-size: 16px;
@@ -80,8 +77,8 @@ body {
   transform: scale(0.95);
 }
 .neon-btn:disabled {
-  background: #444;
-  color: #888;
+  background: var(--surface-2);
+  color: var(--ink-3);
   cursor: not-allowed;
 }
 /* The same pill used as a link (e.g. "ALL GAMES" on the disconnect screen). */
@@ -92,11 +89,11 @@ a.neon-btn {
 }
 .neon-btn--danger {
   background: var(--danger);
-  color: #000;
+  color: var(--on-accent);
 }
 .neon-btn--accent {
-  background: var(--accent2);
-  color: #fff;
+  background: var(--accent-2);
+  color: var(--on-accent-2);
 }
 
 /* Lobby */
@@ -203,11 +200,11 @@ a.neon-btn {
 }
 .share-code {
   width: 100%;
-  background: #0d0d0d;
+  background: var(--surface-2);
   border: 2px solid var(--border);
   border-radius: 8px;
   color: var(--accent);
-  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  font-family: var(--font-mono);
   font-size: 0.72rem;
   line-height: 1.35;
   padding: 10px;
@@ -233,7 +230,7 @@ a.neon-btn {
   border: 2px solid var(--accent);
   border-radius: 12px;
   box-shadow: 0 0 16px var(--accent-glow);
-  background: #000;
+  background: var(--bg);
 }
 
 /* Install offer (lib/pwa.js fills [data-install-slot] when there is one). */
@@ -262,7 +259,8 @@ a.neon-btn {
   width: min(340px, 88vw);
   height: auto;
   image-rendering: pixelated;
-  background: #fff;
+  /* White in every theme: a QR code is read by a camera, not a person. */
+  background: #fff; /* theme-exempt: QR */
   border-radius: 6px;
 }
 /* Overlay (game over / modal) */
@@ -274,7 +272,7 @@ a.neon-btn {
   align-items: center;
   justify-content: center;
   gap: 16px;
-  background: rgba(0, 0, 0, 0.8);
+  background: color-mix(in oklch, var(--bg) 88%, transparent);
   text-align: center;
   padding: 24px;
   z-index: 10;
@@ -338,9 +336,9 @@ canvas {
   is already cyan, and the two sit side by side on the same row.
 */
 .party-tag.is-bot {
-  color: #f0f;
-  border-color: #f0f;
-  box-shadow: 0 0 8px rgba(255, 0, 255, 0.35);
+  color: var(--accent-2);
+  border-color: var(--accent-2);
+  box-shadow: 0 0 8px var(--glow);
 }
 /*
   A held seat: the member's links are down, the reconnect grace is running,
@@ -352,9 +350,9 @@ canvas {
   color: var(--muted);
 }
 .party-tag.is-reconnecting {
-  color: #fc3;
-  border-color: #fc3;
-  box-shadow: 0 0 8px rgba(255, 204, 51, 0.35);
+  color: var(--warn);
+  border-color: var(--warn);
+  box-shadow: 0 0 8px var(--glow);
 }
 /*
   The party code: the one number somebody reads across a room, so it is set
@@ -411,7 +409,7 @@ canvas {
   border: 1px solid var(--border);
   border-radius: 8px;
   background: var(--panel);
-  color: #fff;
+  color: var(--ink);
   cursor: pointer;
 }
 .party-game:hover:not(:disabled) {
@@ -447,10 +445,10 @@ canvas {
   border: none;
   background: transparent;
   max-width: min(26rem, calc(100vw - 32px));
-  color: #fff;
+  color: var(--ink);
 }
 .neon-ask::backdrop {
-  background: rgba(0, 0, 0, 0.7);
+  background: var(--scrim);
   backdrop-filter: blur(2px);
 }
 .neon-ask-box {
@@ -490,9 +488,9 @@ canvas {
   padding: 8px 14px;
   border: 1px solid var(--border);
   border-radius: 999px;
-  background: rgba(10, 10, 10, 0.88);
+  background: color-mix(in oklch, var(--bg) 90%, transparent);
   backdrop-filter: blur(4px);
-  color: #fff;
+  color: var(--ink);
   font-family: var(--font);
   font-size: 0.85rem;
   text-align: center;
@@ -504,7 +502,7 @@ canvas {
 }
 .neon-toast.is-warn {
   border-color: var(--accent2);
-  color: #ffd6ff;
+  color: var(--ink);
 }
 @keyframes neon-toast-in {
   from {
@@ -536,8 +534,8 @@ canvas {
   padding: 8px 14px;
   border: 1px solid var(--accent2);
   border-radius: 12px;
-  background: rgba(10, 10, 10, 0.92);
-  color: #ffd6ff;
+  background: color-mix(in oklch, var(--bg) 94%, transparent);
+  color: var(--ink);
   font-family: var(--font);
   font-size: 0.85rem;
   text-align: center;
@@ -557,9 +555,9 @@ canvas {
   padding: 10px 14px;
   border: 1px solid var(--accent2);
   border-radius: 12px;
-  background: rgba(10, 10, 10, 0.92);
+  background: color-mix(in oklch, var(--bg) 94%, transparent);
   backdrop-filter: blur(4px);
-  color: #fff;
+  color: var(--ink);
   font-family: var(--font);
   font-size: 0.9rem;
   text-align: center;
@@ -595,9 +593,9 @@ canvas {
   padding: 18px 16px;
   border: 1px solid var(--accent);
   border-radius: 12px;
-  background: rgba(10, 10, 10, 0.92);
+  background: color-mix(in oklch, var(--bg) 94%, transparent);
   backdrop-filter: blur(4px);
-  color: #fff;
+  color: var(--ink);
   font-family: var(--font);
   font-size: 1rem;
   text-align: center;
@@ -617,7 +615,7 @@ canvas {
   padding: 7px 14px;
   border: 1px solid var(--accent);
   border-radius: 999px;
-  background: rgba(10, 10, 10, 0.75);
+  background: color-mix(in oklch, var(--bg) 82%, transparent);
   backdrop-filter: blur(4px);
   color: var(--accent);
   font-family: var(--font);
@@ -654,14 +652,14 @@ canvas {
   border: 1px solid var(--accent);
   border-radius: 12px;
   background: var(--panel);
-  color: #fff;
+  color: var(--ink);
   width: min(32rem, calc(100vw - 32px));
   max-height: calc(100dvh - 48px);
   box-shadow: 0 0 24px var(--accent-glow);
   font-family: var(--font);
 }
 .neon-sheet::backdrop {
-  background: rgba(0, 0, 0, 0.7);
+  background: var(--scrim);
   backdrop-filter: blur(2px);
 }
 .neon-sheet-head {
@@ -710,7 +708,7 @@ canvas {
   width: 100%;
   box-sizing: border-box;
   background: var(--bg);
-  color: #fff;
+  color: var(--ink);
   border: 1px solid var(--border);
   border-radius: 8px;
   padding: 10px;
@@ -774,7 +772,7 @@ canvas {
   background: var(--panel);
   box-shadow: 0 0 24px var(--accent-glow);
   font-family: var(--font);
-  color: #fff;
+  color: var(--ink);
 }
 .neon-invite p {
   margin: 0 0 10px;
@@ -783,4 +781,32 @@ canvas {
   display: flex;
   gap: 8px;
   justify-content: flex-end;
+}
+
+/* lib/theme.js picker: a row of themes, then light / dark / auto. */
+.theme-picker {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.theme-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.theme-choice {
+  min-height: 44px;
+  padding: 8px 16px;
+  border: 1px solid var(--rule);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--ink);
+  font-family: var(--font-body);
+  font-size: 0.9rem;
+  cursor: pointer;
+}
+.theme-choice[aria-pressed="true"] {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: var(--on-accent);
 }

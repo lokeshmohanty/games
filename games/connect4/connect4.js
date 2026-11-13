@@ -34,11 +34,11 @@ NeonArcade.registerGame({
 				align-items: center; justify-content: center; gap: 12px; padding: 12px; }
 			#hud { font-size: clamp(0.9rem, 3vw, 1.2rem); color: var(--accent);
 				text-shadow: 0 0 8px var(--accent-glow); text-align: center; min-height: 1.5em; }
-			#hud .you-red { color: #ff4d4d; text-shadow: 0 0 8px rgba(255, 77, 77, 0.5); }
-			#hud .you-yellow { color: #ffd24d; text-shadow: 0 0 8px rgba(255, 210, 77, 0.5); }
+			#hud .you-red { color: var(--p1); text-shadow: 0 0 8px var(--glow); }
+			#hud .you-yellow { color: var(--p2); text-shadow: 0 0 8px var(--glow); }
 			#hud .you-spec { color: var(--muted); }
-			#board { border: 3px solid #2a2a4e; border-radius: 12px;
-				box-shadow: 0 0 30px rgba(0, 100, 255, 0.2); max-width: 95vw; max-height: 70vh; }
+			#board { border: 3px solid var(--rule); border-radius: 12px;
+				box-shadow: 0 0 30px var(--glow); max-width: 95vw; max-height: 70vh; }
 			#overlay p { color: var(--muted); margin: 0; }
 		`;
 		const gameEl = document.createElement("div");
@@ -90,11 +90,13 @@ NeonArcade.registerGame({
 		}
 
 		function draw() {
+			// The theme's colours (lib/theme.css): discs are seats 1 and 2.
+			const pal = NeonArcade.palette();
 			const cell = canvas.width / COLS;
-			c2d.fillStyle = "#1a1a2e";
+			c2d.fillStyle = pal.surface2;
 			c2d.fillRect(0, 0, canvas.width, canvas.height);
 			if (hoverCol >= 0 && hoverCol < COLS && state.winner === null && canPlay()) {
-				c2d.fillStyle = "rgba(0, 255, 255, 0.08)";
+				c2d.fillStyle = pal.alpha("accent", 0.12);
 				c2d.fillRect(hoverCol * cell, 0, cell, canvas.height);
 			}
 			for (let r = 0; r < ROWS; r++) {
@@ -105,11 +107,11 @@ NeonArcade.registerGame({
 					c2d.beginPath();
 					c2d.arc(x, y, cell * 0.4, 0, Math.PI * 2);
 					if (val === 0) {
-						c2d.fillStyle = "#0a0a0a";
+						c2d.fillStyle = pal.bg;
 						c2d.fill();
 					} else {
-						const color = val === RED ? "#ff4d4d" : "#ffd24d";
-						c2d.shadowBlur = 15;
+						const color = pal.player(val === RED ? 0 : 1);
+						c2d.shadowBlur = pal.glows ? 15 : 0;
 						c2d.shadowColor = color;
 						c2d.fillStyle = color;
 						c2d.fill();
@@ -472,6 +474,7 @@ NeonArcade.registerGame({
 		canvas.addEventListener("mouseleave", onLeave);
 		canvas.addEventListener("touchstart", onTouch, { passive: false });
 		window.addEventListener("resize", resize);
+		window.addEventListener("neon:theme", draw);
 
 		// ------------------------------------------------------- networking
 
@@ -563,6 +566,7 @@ NeonArcade.registerGame({
 				canvas.removeEventListener("mouseleave", onLeave);
 				canvas.removeEventListener("touchstart", onTouch);
 				window.removeEventListener("resize", resize);
+				window.removeEventListener("neon:theme", draw);
 				stateAction.onMessage = null;
 				moveAction.onMessage = null;
 				root.replaceChildren();

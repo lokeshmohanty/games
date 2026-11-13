@@ -1,0 +1,192 @@
+/* lib/theme.css — every colour and typeface in the arcade, as tokens.
+ *
+ * Nothing else in the arcade names a colour: pages, the party screen, the
+ * SDK's helpers and every game (canvases too, through NeonArcade.palette())
+ * read these. A theme is one block that rebinds all of them; lib/theme.js
+ * picks the block (html[data-theme][data-mode]) and remembers the choice.
+ *
+ *   paper  the default — lokeshmohanty.github.io's palette: warm paper in
+ *          light mode, cool slate in dark. Follows the system unless a mode
+ *          is chosen. (Lokesh, 2026-11-13)
+ *   neon   the arcade's original look: black, cyan, magenta, glow.
+ *
+ * Tokens are named for their role, never their hue (the ui skill's rule):
+ *
+ *   --bg, --surface, --surface-2   the page, a panel on it, a field in a panel
+ *   --ink, --ink-2, --ink-3        text, secondary text, labels and furniture
+ *   --rule                         borders and separators
+ *   --accent / --on-accent         the interaction colour, and text on it
+ *   --accent-2 / --on-accent-2     the call to action (PLAY, START, JOIN)
+ *   --good, --warn, --danger       meaning only: done, waiting, wrong/destructive
+ *   --glow                         the neon halo (transparent on paper)
+ *   --scrim                        behind a dialog
+ *   --p1 … --p8                    player colours, in seat order
+ *
+ * Type, three roles (the ui skill): --font-display (titles), --font-body
+ * (text), --font-mono (values: counts, codes, ratings, tags). Self-hosted in
+ * assets/fonts (SIL OFL 1.1, see LICENSES.txt), latin subset.
+ */
+
+@font-face {
+  font-family: "Space Grotesk Variable";
+  font-style: normal;
+  font-display: swap;
+  font-weight: 300 700;
+  src: url("../assets/fonts/space-grotesk.woff2") format("woff2-variations");
+}
+@font-face {
+  font-family: "Nunito Variable";
+  font-style: normal;
+  font-display: swap;
+  font-weight: 200 1000;
+  src: url("../assets/fonts/nunito.woff2") format("woff2-variations");
+}
+@font-face {
+  font-family: "Nunito Variable";
+  font-style: italic;
+  font-display: swap;
+  font-weight: 200 1000;
+  src: url("../assets/fonts/nunito-italic.woff2") format("woff2-variations");
+}
+@font-face {
+  font-family: "Cascadia Code Variable";
+  font-style: normal;
+  font-display: swap;
+  font-weight: 200 700;
+  src: url("../assets/fonts/cascadia-code.woff2") format("woff2-variations");
+}
+
+:root {
+  --font-display: "Space Grotesk Variable", ui-sans-serif, system-ui, sans-serif;
+  --font-body: "Nunito Variable", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: "Cascadia Code Variable", ui-monospace, "SFMono-Regular", Menlo, monospace;
+
+  /* The names the arcade grew up with, kept so nothing breaks; new code uses
+     the role names above. */
+  --font: var(--font-body);
+  --panel: var(--surface);
+  --border: var(--rule);
+  --muted: var(--ink-2);
+  --accent2: var(--accent-2);
+  --accent-glow: var(--glow);
+}
+
+/* ---------------------------------------------------------------- paper */
+
+:root,
+:root[data-theme="paper"][data-mode="light"] {
+  --bg: oklch(0.986 0.003 90);
+  --surface: oklch(0.965 0.004 90);
+  --surface-2: oklch(0.935 0.005 90);
+  --ink: oklch(0.22 0.012 260);
+  --ink-2: oklch(0.45 0.014 260);
+  --ink-3: oklch(0.58 0.012 260);
+  --rule: oklch(0.88 0.006 260);
+  --accent: oklch(0.52 0.14 250);
+  --on-accent: oklch(0.986 0.003 90);
+  --accent-2: oklch(0.47 0.16 285);
+  --on-accent-2: oklch(0.986 0.003 90);
+  --good: oklch(0.52 0.13 155);
+  --warn: oklch(0.62 0.14 70);
+  --danger: oklch(0.53 0.19 27);
+  --glow: transparent;
+  --scrim: oklch(0.22 0.012 260 / 0.45);
+  --p1: oklch(0.58 0.2 27);
+  --p2: oklch(0.74 0.15 85);
+  --p3: oklch(0.55 0.14 245);
+  --p4: oklch(0.55 0.18 330);
+  --p5: oklch(0.58 0.15 150);
+  --p6: oklch(0.66 0.16 55);
+  --p7: oklch(0.5 0.16 290);
+  --p8: oklch(0.56 0.1 200);
+  color-scheme: light;
+}
+
+:root[data-theme="paper"][data-mode="dark"] {
+  --bg: oklch(0.19 0.012 260);
+  --surface: oklch(0.23 0.012 260);
+  --surface-2: oklch(0.27 0.012 260);
+  --ink: oklch(0.92 0.008 260);
+  --ink-2: oklch(0.72 0.012 260);
+  --ink-3: oklch(0.6 0.012 260);
+  --rule: oklch(0.33 0.012 260);
+  --accent: oklch(0.75 0.12 250);
+  --on-accent: oklch(0.19 0.012 260);
+  --accent-2: oklch(0.76 0.12 290);
+  --on-accent-2: oklch(0.19 0.012 260);
+  --good: oklch(0.76 0.14 155);
+  --warn: oklch(0.8 0.13 80);
+  --danger: oklch(0.7 0.17 27);
+  --glow: transparent;
+  --scrim: oklch(0.1 0.01 260 / 0.65);
+  --p1: oklch(0.7 0.18 27);
+  --p2: oklch(0.85 0.15 90);
+  --p3: oklch(0.72 0.13 245);
+  --p4: oklch(0.72 0.17 330);
+  --p5: oklch(0.76 0.15 150);
+  --p6: oklch(0.78 0.15 60);
+  --p7: oklch(0.7 0.15 290);
+  --p8: oklch(0.76 0.1 200);
+  color-scheme: dark;
+}
+
+/* No script (or before it runs): paper, following the system. */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme]) {
+    --bg: oklch(0.19 0.012 260);
+    --surface: oklch(0.23 0.012 260);
+    --surface-2: oklch(0.27 0.012 260);
+    --ink: oklch(0.92 0.008 260);
+    --ink-2: oklch(0.72 0.012 260);
+    --ink-3: oklch(0.6 0.012 260);
+    --rule: oklch(0.33 0.012 260);
+    --accent: oklch(0.75 0.12 250);
+    --on-accent: oklch(0.19 0.012 260);
+    --accent-2: oklch(0.76 0.12 290);
+    --on-accent-2: oklch(0.19 0.012 260);
+    --good: oklch(0.76 0.14 155);
+    --warn: oklch(0.8 0.13 80);
+    --danger: oklch(0.7 0.17 27);
+    --glow: transparent;
+    --scrim: oklch(0.1 0.01 260 / 0.65);
+    --p1: oklch(0.7 0.18 27);
+    --p2: oklch(0.85 0.15 90);
+    --p3: oklch(0.72 0.13 245);
+    --p4: oklch(0.72 0.17 330);
+    --p5: oklch(0.76 0.15 150);
+    --p6: oklch(0.78 0.15 60);
+    --p7: oklch(0.7 0.15 290);
+    --p8: oklch(0.76 0.1 200);
+    color-scheme: dark;
+  }
+}
+
+/* ----------------------------------------------------------------- neon */
+
+:root[data-theme="neon"] {
+  --bg: #0a0a0a;
+  --surface: #1a1a1a;
+  --surface-2: #242424;
+  --ink: #ffffff;
+  --ink-2: #aaaaaa;
+  --ink-3: #777777;
+  --rule: #333333;
+  --accent: #00ffff;
+  --on-accent: #000000;
+  --accent-2: #ff00ff;
+  --on-accent-2: #ffffff;
+  --good: #4dff4d;
+  --warn: #ffd24d;
+  --danger: #ff4d4d;
+  --glow: rgba(0, 255, 255, 0.3);
+  --scrim: rgba(0, 0, 0, 0.7);
+  --p1: #ff4d4d;
+  --p2: #ffd24d;
+  --p3: #00ffff;
+  --p4: #ff00ff;
+  --p5: #4dff4d;
+  --p6: #ff9f1a;
+  --p7: #9f7aff;
+  --p8: #ffffff;
+  color-scheme: dark;
+}

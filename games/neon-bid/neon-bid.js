@@ -31,10 +31,10 @@
 
 (() => {
 	const COLOURS = [
-		{ key: "cyan", name: "Cyan", hex: "#00f0ff" },
-		{ key: "magenta", name: "Magenta", hex: "#ff3df2" },
-		{ key: "lime", name: "Lime", hex: "#8dff3d" },
-		{ key: "amber", name: "Amber", hex: "#ffb020" },
+		{ key: "cyan", name: "Cyan", hex: "var(--p3)" },
+		{ key: "magenta", name: "Magenta", hex: "var(--p4)" },
+		{ key: "lime", name: "Lime", hex: "var(--p5)" },
+		{ key: "amber", name: "Amber", hex: "var(--p2)" },
 	];
 	const PER_COLOUR = 3;
 	const LOTS = COLOURS.length * PER_COLOUR;
@@ -240,7 +240,8 @@ NeonArcade.registerGame({
 
 		// Seat colours, for the winner's dot on a sold gem. Chosen to sit apart
 		// from the four gem colours so a dot never reads as a gem.
-		const SEAT_HEX = ["#ffffff", "#ff6b6b", "#9d7bff", "#6bb8ff", "#ffc89a", "#8affc8", "#ff9ad5", "#e6e65c"];
+		// Seat colours are the theme's (lib/theme.css --p1…--p8).
+		const SEAT_HEX = Array.from({ length: 8 }, (_, i) => `var(--p${i + 1})`);
 		const CHIPS = [0, 5, 10, 25];
 
 		const secrets = NeonArcade.makeSecrets(room, { onError: (e) => setNotice(e.reason) });
@@ -262,7 +263,7 @@ NeonArcade.registerGame({
 				/* clip-path rather than a rotated square: a rotated box is wider than
 				   its layout slot, and twelve of them overflowed a 390px phone. */
 				.nb-gem { width: 100%; aspect-ratio: 5 / 6; background: linear-gradient(160deg,
-					#fff 0%, var(--gem) 38%, color-mix(in srgb, var(--gem) 55%, #000) 100%);
+					color-mix(in oklch, var(--gem) 25%, white) 0%, var(--gem) 38%, color-mix(in oklch, var(--gem) 55%, black) 100%);
 					clip-path: polygon(50% 0, 100% 35%, 50% 100%, 0 35%); }
 				.nb-dot { width: 7px; height: 7px; border-radius: 50%; background: transparent; }
 				@keyframes nb-pulse { 50% { filter: drop-shadow(0 0 10px var(--gem)) brightness(1.25); } }
@@ -288,25 +289,25 @@ NeonArcade.registerGame({
 				.nb-big .nb-glow { animation: nb-pulse 1.4s ease-in-out infinite; }
 				.nb-lot .txt { display: flex; flex-direction: column; gap: 2px; }
 				.nb-lot .lotno { font-size: 0.7rem; letter-spacing: 0.14em; color: var(--muted); }
-				.nb-lot .name { font-size: 1.3rem; color: #fff; }
+				.nb-lot .name { font-size: 1.3rem; color: var(--ink); }
 				.nb-worth { font-size: 0.95rem; color: var(--accent); text-shadow: 0 0 8px var(--accent-glow); }
 				.nb-worth small { display: block; font-size: 0.72rem; color: var(--muted); text-shadow: none; }
 
 				.nb-panel { width: 100%; display: flex; flex-direction: column; align-items: center; gap: 8px; }
 				.nb-wallet { font-size: 0.85rem; color: var(--muted); }
-				.nb-wallet b { color: #fff; font-size: 1.1rem; font-variant-numeric: tabular-nums; }
+				.nb-wallet b { color: var(--ink); font-size: 1.1rem; font-variant-numeric: tabular-nums; }
 				.nb-step { display: flex; align-items: center; gap: 10px; }
 				.nb-step button, .nb-chips button { min-width: 50px; min-height: 46px; font-size: 1.1rem;
 					background: var(--panel); border: 2px solid var(--border); border-radius: 8px;
 					color: var(--accent); cursor: pointer; touch-action: manipulation; }
 				.nb-step button:disabled, .nb-chips button:disabled { opacity: 0.35; cursor: default; }
-				.nb-step output { min-width: 3ch; text-align: center; font-size: 2rem; color: #fff;
+				.nb-step output { min-width: 3ch; text-align: center; font-size: 2rem; color: var(--ink);
 					font-variant-numeric: tabular-nums; }
 				.nb-chips { display: flex; gap: 8px; }
 				.nb-chips button.sel { border-color: var(--accent); }
 				.nb-go { min-height: 52px; min-width: 220px; font-size: 16px; }
 
-				.nb-banner { font-size: 0.95rem; text-align: center; color: #fff; min-height: 1.3em; }
+				.nb-banner { font-size: 0.95rem; text-align: center; color: var(--ink); min-height: 1.3em; }
 				.nb-banner small { display: block; font-size: 0.72rem; color: var(--muted); }
 				.nb-cards { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; width: 100%;
 					perspective: 600px; }
@@ -314,10 +315,10 @@ NeonArcade.registerGame({
 					border: 1px solid var(--border); border-radius: 8px; background: var(--panel);
 					font-size: 0.68rem; color: var(--muted); animation: nb-flip 0.45s ease-out both; }
 				.nb-card .who { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-				.nb-card .amt { font-size: 1.35rem; color: #fff; font-variant-numeric: tabular-nums; }
+				.nb-card .amt { font-size: 1.35rem; color: var(--ink); font-variant-numeric: tabular-nums; }
 				.nb-card.win { border-color: var(--accent); box-shadow: 0 0 12px var(--accent-glow); }
 				.nb-card.win .amt { color: var(--accent); }
-				.nb-card.tie { border-color: #ff9f45; }
+				.nb-card.tie { border-color: var(--warn); }
 				.nb-card.bad { border-color: var(--danger); }
 				.nb-card .pays { color: var(--accent); }
 				@keyframes nb-flip { from { transform: rotateY(90deg); opacity: 0; } to { transform: none; opacity: 1; } }
@@ -328,9 +329,9 @@ NeonArcade.registerGame({
 				.nb-table td { padding: 5px 4px; border-top: 1px solid var(--border); font-variant-numeric: tabular-nums; }
 				.nb-table td.who { max-width: 90px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 				.nb-table tr.win td { color: var(--accent); }
-				.nb-table td.pts { font-size: 1rem; color: #fff; }
+				.nb-table td.pts { font-size: 1rem; color: var(--ink); }
 				.nb-table tr.win td.pts { color: var(--accent); }
-				.nb-notice { font-size: 0.7rem; color: #ff9f45; min-height: 1em; text-align: center; }
+				.nb-notice { font-size: 0.7rem; color: var(--warn); min-height: 1em; text-align: center; }
 			`,
 		});
 

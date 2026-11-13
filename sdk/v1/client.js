@@ -22,11 +22,13 @@
 //   ctx.assets.url(path)   a blob: URL for a file shipped with the game
 //
 // Protocol (shell → frame): init, party, msg, join, leave, answer, asset,
-// takeOver, unmount. (frame → shell): ready, listen, send, emitAs, meta, end, toast,
+// takeOver, theme, unmount. (frame → shell): ready, listen, send, emitAs, meta, end, toast,
 // ask, hostNew, result, store, session, asset, reply. Action names travel prefixed by the
 // shell, so a game can never speak on the party's own channels.
 
 window.NeonArcade = window.NeonArcade || {};
+// Read by lib/theme.js, inlined next: in a frame the page picks the theme.
+NeonArcade.inFrame = true;
 
 (() => {
 	let port = null;
@@ -141,6 +143,8 @@ window.NeonArcade = window.NeonArcade || {};
 			case "init":
 				state = m.state;
 				session = { ...(m.state.session ?? {}) };
+				// The page's theme as it is now, before the game draws anything.
+				if (m.state.theme) NeonArcade.theme?._adopt(m.state.theme);
 				mount();
 				break;
 			case "party":
@@ -151,6 +155,10 @@ window.NeonArcade = window.NeonArcade || {};
 				break;
 			case "msg":
 				actions.get(m.a)?.onMessage?.(m.d, { peerId: m.from });
+				break;
+			case "theme":
+				// The page's theme changed: retint, and let canvases repaint.
+				NeonArcade.theme?._adopt(m);
 				break;
 			case "join":
 				handle?.onPeerJoin?.(m.id, m.info);

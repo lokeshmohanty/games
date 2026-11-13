@@ -109,6 +109,13 @@ function checkStatic(dir) {
 		const net = NETWORK.filter(([re]) => re.test(text)).map(([, what]) => what);
 		check(`${name} does not use the network`, !net.length, `found ${net.join(", ")} — ship files in the folder and use ctx.assets.url()`);
 	}
+	// The arcade's theme (lib/theme.css): colours come from its tokens or
+	// NeonArcade.palette(), so the game follows the player's theme.
+	const COLOUR = /#[0-9a-fA-F]{3,8}\b|\b(?:rgba?|hsla?|oklch|oklab|lab|lch)\(\s*\d/;
+	for (const [name, text] of [...code, [m.entry, html]]) {
+		const lines = text.split("\n").filter((l) => COLOUR.test(l.replace(/&#\d+;/g, "")) && !l.includes("theme-exempt"));
+		check(`${name} takes its colours from the theme`, !lines.length, `e.g. "${lines[0]?.trim().slice(0, 60)}" — use var(--…) or NeonArcade.palette()`);
+	}
 	const remote = [...html.matchAll(/\b(?:src|href)\s*=\s*["'](https?:)?\/\//gi)];
 	check("the entry page names no remote URL", !remote.length);
 
