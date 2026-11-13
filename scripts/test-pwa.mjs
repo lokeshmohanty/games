@@ -450,7 +450,7 @@ for (const [p, marker, expect, what] of [
 	let detail = "";
 	const played = await (async () => {
 		await page.goto(`${BASE}/connect4.html`, { waitUntil: "domcontentloaded" });
-		await page.locator("button", { hasText: "PLAY A BOT" }).first().click({ timeout: 8000 });
+		await page.locator("button", { hasText: "PLAY WITH BOTS" }).first().click({ timeout: 8000 });
 		await page.locator("button", { hasText: "START GAME" }).first().click({ timeout: 8000 });
 		const frame = await gameFrame(page, 10_000);
 		return frame.waitForFunction(() => window.__game.handle.debug().started, null, { timeout: 8000 }).then(() => true);

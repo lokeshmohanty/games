@@ -1170,13 +1170,14 @@ try {
 		const h = await person("gp-host");
 		const g = await person("gp-guest");
 		await h.goto(PAGES + "connect4.html");
+		await h.locator("button", { hasText: "PLAY WITH FRIENDS" }).click({ timeout: TIMEOUT });
 		const quick = await h.locator(".party-code-digits").waitFor({ timeout: TIMEOUT }).then(() => true, () => false);
 		const head = await h.evaluate(() => ({
 			title: document.querySelector(".lobby-title")?.textContent,
 			buttons: [...document.querySelectorAll("#party button")].map((b) => b.textContent),
 			url: location.pathname.split("/").pop() + location.search,
 		}));
-		check("connect4.html opens a party with a code, Connect 4 up front", quick && head.title === "CONNECT 4" && head.buttons.includes("INVITE A FRIEND") && head.buttons.includes("PLAY A BOT"), JSON.stringify(head));
+		check("connect4.html opens a party with a code, Connect 4 up front", quick && head.title === "CONNECT 4" && head.buttons.includes("INVITE A FRIEND") && head.buttons.includes("ADD BOT"), JSON.stringify(head));
 		check("…and leaves no `fresh` in the URL to break a reload", head.url === "party.html?game=connect4", head.url);
 		const t = await token(h);
 		check("(the friend joins by its code)", await joinByCode(g, t.code));

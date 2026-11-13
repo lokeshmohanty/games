@@ -2035,6 +2035,7 @@ try {
 	// classic invite, and no code that nobody could use.
 	const plain = await context.newPage();
 	await plain.goto(PAGE("connect4.html", "?rs=http://localhost:1"));
+	await plain.locator("button", { hasText: "PLAY WITH FRIENDS" }).click({ timeout: TIMEOUT });
 	await plain.locator("button", { hasText: "INVITE A FRIEND" }).waitFor({ timeout: TIMEOUT });
 	check("a game page still offers the classic invite", true);
 	check("…and shows no party code without the room server", (await plain.locator(".party-code-digits").count()) === 0);

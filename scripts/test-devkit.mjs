@@ -77,7 +77,7 @@ check("…and serves nothing outside its folder", !escape || escape.status !== 2
 
 console.log("\ndevkit: the game in the real party");
 await page.goto(link);
-await page.locator("button", { hasText: "PLAY A BOT" }).first().click({ timeout: TIMEOUT });
+await page.locator("button", { hasText: "PLAY WITH BOTS" }).first().click({ timeout: TIMEOUT });
 await page.locator("button", { hasText: "START GAME" }).first().click({ timeout: TIMEOUT });
 const frame = await gameFrame(page, TIMEOUT);
 check("the dev game mounts in a sandboxed frame", (await page.locator("iframe.game-frame[sandbox='allow-scripts']").count()) === 1);

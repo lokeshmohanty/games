@@ -67,7 +67,7 @@ try {
 
 	console.log("\ntheme: a game's frame follows the page");
 	await p.goto(site.url("connect4.html"));
-	await p.locator("button", { hasText: /PLAY A BOT|PLAY WITH BOTS/ }).first().click();
+	await p.locator("button", { hasText: "PLAY WITH BOTS" }).first().click();
 	await p.locator("button", { hasText: "START GAME" }).first().click();
 	const f = await gameFrame(p, TIMEOUT);
 	a = await f.evaluate(() => ({ ...document.documentElement.dataset }));

@@ -176,7 +176,7 @@ async function checkBrowser(games) {
 			if (m.kind === "local") {
 				await page.locator("#party button", { hasText: "START" }).first().click({ timeout: TIMEOUT });
 			} else {
-				const solo = page.locator("button", { hasText: /PLAY A BOT|PLAY ALONE/ }).first();
+				const solo = page.locator("button", { hasText: /PLAY WITH BOTS|SINGLE PLAYER/ }).first();
 				if (!m.bots || !(await solo.count())) {
 					check("needs people: nothing to start alone (skipped the play check)", true);
 					continue;

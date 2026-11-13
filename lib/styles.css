@@ -810,3 +810,31 @@ canvas {
   background: var(--accent);
   color: var(--on-accent);
 }
+
+/* A game page's first choice (party.js quickBlock): two big buttons, one
+   above the other on a phone. */
+.party-choice {
+  flex-direction: column;
+  align-items: stretch;
+  width: min(100%, 22rem);
+  margin: 0 auto;
+}
+.party-choice .neon-btn {
+  min-height: 56px;
+  font-size: 1.05rem;
+  letter-spacing: 1px;
+}
+.party-switch {
+  display: block;
+  margin: 10px auto 0;
+  min-height: 44px;
+  padding: 0 12px;
+  border: none;
+  background: none;
+  color: var(--accent);
+  font: inherit;
+  font-size: 0.9rem;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  cursor: pointer;
+}

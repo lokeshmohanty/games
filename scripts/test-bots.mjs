@@ -92,13 +92,15 @@ const debug = async (page) => (await gameScope(page, TIMEOUT)).evaluate(() => wi
  * match the game's own ending: played once, against bots only, and won
  * exactly when `iWon`. A result travels game → frame → bridge → party.js.
  */
-async function resultReached(page, game, iWon) {
+async function resultReached(page, game, how) {
+	// how: "won" | "lost" | "drawn" (everyone level), or a boolean for won/lost.
+	if (typeof how === "boolean") how = how ? "won" : "lost";
 	const rec = await page
 		.waitForFunction((id) => JSON.parse(localStorage.getItem("neon.stats") ?? "{}")[id]?.played >= 1, game, { timeout: 5000 })
 		.then(() => page.evaluate((id) => JSON.parse(localStorage.getItem("neon.stats"))[id], game))
 		.catch(() => null);
 	check(`${game}: its result reached this device's stats, once, against bots`, rec?.played === 1 && rec.vsBots === 1, JSON.stringify(rec));
-	check(`${game}: …as a ${iWon ? "win" : "loss"}, as the game itself ended`, rec && rec.won === (iWon ? 1 : 0), JSON.stringify(rec));
+	check(`${game}: …${how}, as the game itself ended`, rec && rec[how] === 1, JSON.stringify(rec));
 }
 const selfOf = (page) => page.evaluate(() => window.__party.room.selfId);
 /** The running game's scope — its frame for a framed game (gameScope). */
@@ -256,7 +258,7 @@ try {
 	// to *before* the bidding, and that lifting them audits clean.
 
 	console.log("\nbots: liar's dice commits every cup before a bid");
-	await startSolo(page, "liars-dice.html", "PLAY A BOT");
+	await startSolo(page, "liars-dice.html", "PLAY WITH BOTS");
 	G = await gameScope(page, TIMEOUT);
 	await readyToClick(page);
 	await sleep(1200);
@@ -343,7 +345,7 @@ try {
 
 	console.log("\nbots: neon bid plays twelve sealed lots at a full table");
 	await page.goto(url("neon-bid.html"));
-	await page.locator("button", { hasText: "PLAY A BOT" }).first().click();
+	await page.locator("button", { hasText: "PLAY WITH BOTS" }).first().click();
 	for (let i = 0; i < 6; i++) await page.locator("button", { hasText: "ADD BOT" }).first().click();
 	await page.locator("button", { hasText: "START GAME" }).first().click();
 	await page.waitForFunction(() => window.__game?.handle, null, { timeout: TIMEOUT });
@@ -445,7 +447,8 @@ try {
 	check("the end table lists all eight", lay.rows === 8, `${lay.rows}`);
 	check("and fits the phone", lay.bottom <= 844 && lay.docWidth <= lay.winWidth, JSON.stringify({ bottom: lay.bottom, w: lay.docWidth }));
 	check("the winners are the top of the table", nb.over.winners.includes(nb.over.rows[0].id));
-	await resultReached(page, "neon-bid", nb.over.winners.includes(await selfOf(page)));
+	const meNb = await selfOf(page);
+	await resultReached(page, "neon-bid", nb.over.winners.length === nb.over.rows.length ? "drawn" : nb.over.winners.includes(meNb) ? "won" : "lost");
 
 	// ------------------------------------------------------------ battleship
 	//
@@ -457,7 +460,7 @@ try {
 	// decoration.
 
 	console.log("\nbots: battleship commits, fires and audits");
-	await startSolo(page, "battleship.html", "PLAY A BOT");
+	await startSolo(page, "battleship.html", "PLAY WITH BOTS");
 	G = await gameScope(page, TIMEOUT);
 	await readyToClick(page);
 
@@ -566,7 +569,7 @@ try {
 
 	console.log("\nbots: light cycles runs a whole round on a phone");
 	await page.goto(url("light-cycles.html"));
-	await page.locator("button", { hasText: "PLAY ALONE" }).first().click();
+	await page.locator("button", { hasText: "SINGLE PLAYER" }).first().click();
 	for (let i = 0; i < 3; i++) {
 		await page.locator("button", { hasText: "ADD BOT" }).first().click();
 	}
@@ -620,12 +623,22 @@ try {
 	console.log("\nbots: connect 4 plays a real opponent");
 	// The game page is a party shortcut; its quick start must suit a phone.
 	await page.goto(url("connect4.html"));
-	await page.locator("button", { hasText: "PLAY A BOT" }).first().click();
+	// First the choice, and nothing else: no code, no roster (Lokesh, 2026-11-13).
+	await page.locator("button", { hasText: "PLAY WITH FRIENDS" }).first().waitFor({ timeout: TIMEOUT });
+	const choice = await page.evaluate(() => ({
+		buttons: [...document.querySelectorAll("#party button")].map((b) => b.textContent),
+		code: !!document.querySelector(".party-code-digits"),
+		roster: !!document.querySelector(".party-member"),
+	}));
+	check("a game page opens on two choices: PLAY WITH BOTS, PLAY WITH FRIENDS", choice.buttons.join() === "PLAY WITH BOTS,PLAY WITH FRIENDS", choice.buttons.join());
+	check("…with no party code or roster until friends are chosen", !choice.code && !choice.roster, JSON.stringify(choice));
+	await page.locator("button", { hasText: "PLAY WITH BOTS" }).first().click();
 	await page.locator("button", { hasText: "START GAME" }).first().waitFor({ timeout: TIMEOUT });
+	check("playing the bots shows no party code either", (await page.locator(".party-code-digits").count()) === 0);
 	const quickFit = await page.evaluate(() => {
 		const btns = [...document.querySelectorAll(".party-quick button")].map((b) => b.getBoundingClientRect());
 		return {
-			labels: [...document.querySelectorAll(".party-quick button")].map((b) => b.textContent),
+			labels: [...document.querySelectorAll(".party-quick .lobby-row button")].map((b) => b.textContent),
 			left: Math.min(...btns.map((b) => b.left)),
 			right: Math.max(...btns.map((b) => b.right)),
 			bottom: Math.max(...btns.map((b) => b.bottom)),
@@ -633,7 +646,7 @@ try {
 			doc: document.documentElement.scrollWidth,
 		};
 	});
-	check("the quick start offers ADD BOT, REMOVE BOT, INVITE A FRIEND, START GAME", quickFit.labels.join() === "ADD BOT,REMOVE BOT,INVITE A FRIEND,START GAME", quickFit.labels.join());
+	check("with bots: ADD BOT, REMOVE BOT, START GAME", quickFit.labels.join() === "ADD BOT,REMOVE BOT,START GAME", quickFit.labels.join());
 	check("…all on the phone's screen, 44px tall, no sideways scroll", quickFit.left >= 0 && quickFit.right <= 390 && quickFit.bottom <= 844 && quickFit.minH >= 44 && quickFit.doc <= 390, JSON.stringify(quickFit));
 	await page.locator("button", { hasText: "START GAME" }).first().click();
 	await page.waitForFunction(() => window.__game?.handle, null, { timeout: TIMEOUT });
@@ -743,7 +756,7 @@ try {
 	// ---------------------------------------------------------- tug of war
 
 	console.log("\nbots: tug of war pulls its own weight");
-	await startSolo(page, "tug-of-war.html", "PLAY A BOT");
+	await startSolo(page, "tug-of-war.html", "PLAY WITH BOTS");
 	G = await gameScope(page, TIMEOUT);
 	await readyToClick(page);
 
@@ -782,7 +795,7 @@ try {
 	// ------------------------------------------------------ neon survival
 
 	console.log("\nbots: neon survival runs for one player, and for one plus bots");
-	await startSolo(page, "neon-survival-mp.html", "PLAY ALONE");
+	await startSolo(page, "neon-survival-mp.html", "SINGLE PLAYER");
 	G = await gameScope(page, TIMEOUT);
 	await sleep(600);
 	let solo = await G.evaluate(() => ({
@@ -795,7 +808,7 @@ try {
 
 	// Now the same page with company.
 	await page.goto(url("neon-survival-mp.html"));
-	await page.locator("button", { hasText: "PLAY ALONE" }).first().click();
+	await page.locator("button", { hasText: "SINGLE PLAYER" }).first().click();
 	const addBot = page.locator("button", { hasText: "ADD BOT" }).first();
 	await addBot.click();
 	await addBot.click();
@@ -826,8 +839,8 @@ try {
 
 	console.log("\nbots: draw & guess says it needs people");
 	await page.goto(url("draw-guess.html"));
-	await page.locator("button", { hasText: "INVITE A FRIEND" }).first().waitFor();
-	const solos = await page.locator("button", { hasText: /PLAY A BOT|PLAY ALONE/ }).count();
+	await page.locator("button", { hasText: "PLAY WITH FRIENDS" }).first().waitFor();
+	const solos = await page.locator("button", { hasText: /PLAY WITH BOTS|SINGLE PLAYER/ }).count();
 	check("no bot option is offered for a game a bot cannot play", solos === 0);
 
 	// ------------------------------------- a game-page reply that failed
@@ -873,6 +886,7 @@ try {
 			});
 		}
 		await inviter.goto(url("draw-guess.html"));
+		await inviter.locator("button", { hasText: "PLAY WITH FRIENDS" }).first().click();
 		await inviter.locator("button", { hasText: "INVITE A FRIEND" }).first().click();
 		const inviteBox = inviter.locator("textarea.share-code").first();
 		await inviteBox.waitFor({ timeout: TIMEOUT });
@@ -979,6 +993,7 @@ try {
 			});
 		}
 		await hostP.goto(url("connect4.html"));
+		await hostP.locator("button", { hasText: "PLAY WITH FRIENDS" }).first().click();
 		await hostP.locator("button", { hasText: "INVITE A FRIEND" }).first().click();
 		const box = hostP.locator("textarea.share-code").first();
 		await box.waitFor({ timeout: TIMEOUT });
@@ -1033,7 +1048,7 @@ try {
 	console.log("\nleaving: one person against the bots is never asked");
 	{
 		const lone = await context.newPage();
-		await startSolo(lone, "connect4.html", "PLAY A BOT");
+		await startSolo(lone, "connect4.html", "PLAY WITH BOTS");
 		await Promise.all([lone.waitForURL(/index\.html/, { timeout: TIMEOUT }), lone.locator("a.portal-link").click()]);
 		check("← All games from a bots-only game goes straight to the portal", (await lone.locator("dialog.neon-ask").count()) === 0);
 		await lone.close();
