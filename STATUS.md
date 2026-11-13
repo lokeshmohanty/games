@@ -55,9 +55,10 @@ ff2ca98d): one account connects Google + GitHub; GitHub sign-in is the GitHub
 App (client Iv23…); its user token kept AES-GCM encrypted; feedback requires
 GitHub and posts as the player's own comment. The one live Google account was
 copied into `identities`. Old OAuth app secrets (GITHUB_CLIENT_ID/SECRET)
-still set — delete them and the OAuth app once GitHub sign-in is seen working.
-Still to see live: a GitHub sign-in/connect, a feedback post under the
-player's own GitHub, a ranked game between two real accounts, the first
+still set — delete them and the OAuth app (GitHub sign-in now verified).
+Seen live 2026-11-13: GitHub connected to the Google account, and feedback
+posted as the player's own comment (undercover thread, author lokeshmohanty).
+Still to see live: a ranked game between two real accounts, the first
 `stats` snapshot commit; real-phone check (sandbox wake lock / audio /
 fullscreen; dev kit from Safari).
 
