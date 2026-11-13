@@ -55,14 +55,15 @@ jobs:
           head=$(gh api "repos/$REPO/pulls/$pr" --jq .head.sha)
           [ "$head" = "$HEAD_SHA" ] || { echo "PR #$pr has moved on ($head); a newer run reports"; exit 0; }
 
-          for l in "game-submission:0e8a16:A game submitted to the arcade (registry/)" \
-                   "submission: new:1d76db:Registers a new games repo" \
-                   "submission: update:5319e7:Moves a pin to a newer commit" \
-                   "submission: removal:b60205:Removes a games repo" \
-                   "submission: mixed:fbca04:Several kinds of change at once" \
-                   "checks passed:2ea44f:The submission check passed" \
-                   "changes needed:d93f0b:The submission check found problems"; do
-            IFS=: read -r name color desc <<< "$l"
+          # "|" between fields: label names themselves contain ":".
+          for l in "game-submission|0e8a16|A game submitted to the arcade (registry/)" \
+                   "submission: new|1d76db|Registers a new games repo" \
+                   "submission: update|5319e7|Moves a pin to a newer commit" \
+                   "submission: removal|b60205|Removes a games repo" \
+                   "submission: mixed|fbca04|Several kinds of change at once" \
+                   "checks passed|2ea44f|The submission check passed" \
+                   "changes needed|d93f0b|The submission check found problems"; do
+            IFS='|' read -r name color desc <<< "$l"
             gh label create "$name" --color "$color" --description "$desc" --repo "$REPO" --force >/dev/null
           done
 
