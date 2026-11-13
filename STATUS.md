@@ -34,8 +34,8 @@ Audit backlog (2026-11-12), owner to pick — highest first:
       BOT / INVITE A FRIEND / START GAME) then an ordinary party — code, rejoin,
       PARTY, END GAME, turn banner. `mountLobby` / `mountGamePage` /
       `goJoinCode` removed. test-worker 13, test-bots (ported, kept off the
-      deployed server), test-room (scripts/room-harness.html). Preview gifs not
-      re-recorded (the recorder is ported; new clips would show the PARTY pill).
+      deployed server), test-room (scripts/room-harness.html). Preview gifs
+      re-recorded through the party shell (b99b69f).
 - [x] A crown change hands the running game over (`takeOver()` per game,
       `rounds.adopt()`); the old host's seat is held; hidden-info games resume
       at a clean point; Battleship still ends (Lokesh, 2026-11-13; test-worker
