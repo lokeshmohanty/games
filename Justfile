@@ -217,3 +217,8 @@ test-theme:
 # add-your-game guide (CONTRIBUTING.md rendered), at 390x844.
 test-portal:
     node scripts/test-portal.mjs
+
+# GitHub's page for proposing a repo's games (new) or a newer commit (pinned
+# and moved), filled in as far as GitHub allows: `just propose owner/repo`.
+propose repo *games:
+    node scripts/propose.mjs {{repo}} {{games}}

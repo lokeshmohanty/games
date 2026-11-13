@@ -60,11 +60,59 @@
       .muted {
         color: var(--ink-2);
       }
+      .propose {
+        border: 1px solid var(--rule);
+        border-radius: 12px;
+        background: var(--surface);
+        padding: 14px 16px;
+        margin: 8px 0 20px;
+      }
+      .propose h2 {
+        margin: 0 0 6px;
+      }
+      .propose-row {
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+      }
+      .propose-row input {
+        flex: 1 1 12rem;
+        min-width: 0;
+        min-height: 44px;
+        box-sizing: border-box;
+        padding: 8px 12px;
+        border: 1px solid var(--rule);
+        border-radius: 8px;
+        background: var(--bg);
+        color: var(--ink);
+        font-family: var(--font-mono);
+        font-size: 16px;
+      }
+      [data-propose-out] .neon-btn {
+        display: inline-flex;
+        text-decoration: none;
+      }
     </style>
   </head>
   <body>
     <nav class="site-nav" data-nav data-page="contribute"></nav>
-    <main data-guide><p class="muted">Loading the guide…</p></main>
+    <main>
+      <!-- lib/propose.js: GitHub's own page, filled in. The pull request is
+           yours to open; once it is merged the site deploys itself. -->
+      <section class="propose">
+        <h2>Propose your games</h2>
+        <p class="muted">
+          Your public repo, <code>owner/name</code>. This opens GitHub's page for the registry
+          file, filled in — commit it there and GitHub offers the pull request.
+        </p>
+        <form class="propose-row" data-propose>
+          <input type="text" data-repo placeholder="your-github/your-games" aria-label="Your games repository, owner/name" autocomplete="off" spellcheck="false" />
+          <button class="neon-btn neon-btn--accent" type="submit">PROPOSE</button>
+        </form>
+        <div data-propose-out></div>
+      </section>
+      <div data-guide><p class="muted">Loading the guide…</p></div>
+    </main>
 
     <script src="lib/pwa.js"></script>
     <script src="lib/stats.js"></script>
@@ -72,7 +120,36 @@
     <script src="lib/account-ui.js"></script>
     <script src="lib/nav.js"></script>
     <script src="lib/markdown.js"></script>
+    <script src="lib/catalog.js"></script>
+    <script src="community/catalog.js"></script>
+    <script src="lib/propose.js"></script>
     <script>
+      // Propose: new repo → the filled "new file" page; pinned and moved →
+      // the pin's edit page and the commit to paste.
+      document.querySelector("[data-propose]").addEventListener("submit", async (e) => {
+        e.preventDefault();
+        const out = document.querySelector("[data-propose-out]");
+        const repo = document.querySelector("[data-repo]").value;
+        out.textContent = "Asking GitHub…";
+        try {
+          const clean = repo.trim().replace(/^https:\/\/github\.com\//, "").replace(/\.git$|\/$/g, "");
+          const p = await NeonArcade.propose.plan(clean, NeonArcade.propose.pinnedOf(clean));
+          out.replaceChildren();
+          const note = (t) => Object.assign(document.createElement("p"), { className: "muted", textContent: t });
+          const link = (t, href) => Object.assign(document.createElement("a"), { className: "neon-btn neon-btn--accent", textContent: t, href, target: "_blank", rel: "noopener" });
+          if (p.kind === "current") return out.append(note(`${p.repo} is already listed at its latest commit (${p.at.slice(0, 7)}).`));
+          if (p.kind === "update") {
+            const sha = Object.assign(document.createElement("pre"), { textContent: p.to });
+            out.append(note(`${p.repo} is listed at ${p.from.slice(0, 7)}; its head is ${p.to.slice(0, 7)}. Set "commit" to:`), sha, link("OPEN THE PIN ON GITHUB ↗", p.url));
+            return;
+          }
+          const pre = Object.assign(document.createElement("pre"), { textContent: p.text });
+          out.append(note(`registry/${p.repo}.json — ${p.games.length} game${p.games.length === 1 ? "" : "s"} at ${p.to.slice(0, 7)}:`), pre, link("OPEN ON GITHUB ↗", p.url));
+        } catch (err) {
+          out.textContent = err.message;
+        }
+      });
+
       // The guide is CONTRIBUTING.md itself (one source), drawn here.
       fetch("CONTRIBUTING.md")
         .then((r) => (r.ok ? r.text() : Promise.reject(new Error(r.status))))

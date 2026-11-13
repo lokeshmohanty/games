@@ -97,7 +97,11 @@ pin bump.
 
 ## 4. Open a pull request
 
-Push your repository, then add one file here:
+On the [Add your game](contribute.html) page, type your repository
+(`owner/name`) under **Propose your games**: it opens GitHub's page for your
+registry file, filled in with your latest commit and every folder holding a
+`game.json`. Commit it there and GitHub offers the pull request. (From a
+checkout: `just propose owner/name`.) The file it makes:
 
 ```json
 // registry/<your-github-user>/<your-repo>.json
@@ -109,15 +113,13 @@ Push your repository, then add one file here:
 ```
 
 The check fetches that commit, validates every listed game and plays each in
-a headless browser. Once merged, the next deploy lists your games as
-`<your-github-user>/<id>`.
+a headless browser. Once a maintainer merges it, the site deploys by itself
+and lists your games as `<your-github-user>/<id>`.
 
-**Updates come by themselves.** Every 30 minutes a workflow
-(`registry-bump.yml`) looks at your repo's default branch; when it has moved,
-it opens a pull request bumping your `commit`, runs the same checks, and
-puts the result in the PR. A maintainer reads the diff and merges it (owners
-in `registry/trusted.txt` are merged automatically when the checks pass).
-You never edit the pin by hand after the first PR.
+**To update**, push to your repo, then press **Check for updates** on your
+card on the [Contributors](contributors.html) page (or run `just propose`
+again): it opens your pin's edit page and gives you the new commit to paste.
+The pull request is yours to open; nothing opens one for you.
 
 ## Review and removal
 

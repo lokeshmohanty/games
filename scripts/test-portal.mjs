@@ -112,6 +112,37 @@ try {
 		NeonArcade.markdown.render('<img src=x onerror=alert(1)> [x](javascript:alert(1)) **b** `<b>`\n\n```\n<script>\n```'),
 	);
 	check("the renderer lets no HTML or javascript: link through", !/<img|<script|javascript:/i.test(unsafe) && /<strong>b<\/strong>/.test(unsafe), unsafe);
+	console.log("\nportal: proposing games (GitHub's own page, filled in)");
+	// GitHub's API, played here: a new repo with two games, and arcade-games
+	// moved past its pin.
+	const NEW = "ada/minis";
+	const HEAD = "b".repeat(40);
+	await ctx.route("https://api.github.com/**", (route) => {
+		const u = new URL(route.request().url());
+		const json = (o) => route.fulfill({ status: 200, contentType: "application/json", headers: { "Access-Control-Allow-Origin": "*" }, body: JSON.stringify(o) });
+		if (u.pathname.endsWith("/commits/HEAD")) return json({ sha: HEAD });
+		if (u.pathname.includes("/git/trees/")) return json({ tree: [{ type: "blob", path: "chess/game.json" }, { type: "blob", path: "go/game.json" }, { type: "blob", path: "README.md" }] });
+		return route.fulfill({ status: 404, body: "{}" });
+	});
+	await p.goto(site.url("contribute.html"));
+	await p.locator("[data-repo]").fill(NEW);
+	await p.locator("[data-propose] button").click();
+	const open = p.locator("[data-propose-out] a", { hasText: "OPEN ON GITHUB" });
+	await open.waitFor({ timeout: TIMEOUT });
+	const href = new URL(await open.getAttribute("href"));
+	const value = href.searchParams.get("value") ?? "";
+	check("a new repo opens GitHub's new-file page in the arcade's registry", href.origin + href.pathname === "https://github.com/lokeshmohanty/games/new/main" && href.searchParams.get("filename") === `registry/${NEW}.json`, href.href);
+	check("…filled in: the repo, its head commit, every folder with a game.json", value.includes(`"https://github.com/${NEW}"`) && value.includes(HEAD) && value.includes('["chess", "go"]'), value);
+	await p.locator("[data-repo]").fill("https://github.com/lokeshmohanty/arcade-games");
+	await p.locator("[data-propose] button").click();
+	const pin = p.locator("[data-propose-out] a", { hasText: "OPEN THE PIN" });
+	await pin.waitFor({ timeout: TIMEOUT });
+	check("a pinned repo that moved opens its pin's edit page, with the commit to paste", (await pin.getAttribute("href")) === "https://github.com/lokeshmohanty/games/edit/main/registry/lokeshmohanty/arcade-games.json" && (await p.locator("[data-propose-out] pre").textContent()) === HEAD);
+	await p.goto(site.url("contributors.html"));
+	await p.locator(".person-update button").first().click();
+	const upd = p.locator(".person-update-out a", { hasText: "Propose update" });
+	check("Contributors: CHECK FOR UPDATES offers the same for a moved repo", await upd.waitFor({ timeout: TIMEOUT }).then(() => true, () => false));
+	check("…nobody's pull request is opened for them: every link is GitHub's own page", /github\.com\/lokeshmohanty\/games\/edit\//.test(await upd.getAttribute("href")));
 } catch (err) {
 	check(`unexpected: ${err.message.split("\n")[0]}`, false);
 } finally {

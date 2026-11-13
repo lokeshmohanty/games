@@ -153,7 +153,7 @@ function main() {
 				// The owner's card for the Contributors page, from the same commit.
 				try {
 					const card = join(src, "contributor.json");
-					contributors.push(contributorEntry(owner, entry.repo, existsSync(card) ? JSON.parse(readFileSync(card, "utf8")) : null));
+					contributors.push(contributorEntry(owner, entry.repo, existsSync(card) ? JSON.parse(readFileSync(card, "utf8")) : null, entry.commit));
 				} catch (err) {
 					errors.push(`${where}: ${err.message}`);
 				}

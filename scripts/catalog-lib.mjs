@@ -63,12 +63,21 @@ export function catalogEntries(files, root) {
  * A contributor's card from their repo's contributor.json (optional): the
  * login is the repo owner's, the rest is theirs to say. Throws when invalid.
  */
-export function contributorEntry(login, repo, data) {
+export function contributorEntry(login, repo, data, commit = null) {
 	if (data) {
 		const problems = validateContributor(data);
 		if (problems.length) throw new Error(`contributor.json for ${login}: ${problems.join("; ")}`);
 	}
-	return { login, repos: [repo], name: data?.name ?? null, bio: data?.bio ?? null, location: data?.location ?? null, links: data?.links ?? [] };
+	return {
+		login,
+		repos: [repo],
+		// The pinned commit of each listed repo, for "Propose update" (lib/propose.js).
+		pins: commit ? { [repo]: commit } : {},
+		name: data?.name ?? null,
+		bio: data?.bio ?? null,
+		location: data?.location ?? null,
+		links: data?.links ?? [],
+	};
 }
 
 /** The classic script that registers `games` (appending to CATALOG). */

@@ -209,19 +209,19 @@ runtime from a checkout of this repo (`NEON_PLATFORM`, default `../../games/`).
 `just test` runs `community` first; the browser suites play those games
 through it.
 
-## Pins move by pull request (2026-11-13)
+## Pins move by the contributor's pull request (2026-11-13)
 
-Lokesh: "don't add my arcade-games directly, do it the proper way (send a
-PR, merge and then auto update using a GitHub action)". Nobody edits a pin
-on main. `.github/workflows/registry-bump.yml` (every 30 min, on demand, or
-a `registry-bump` repository_dispatch) asks the GitHub API for each
-registered repo's default-branch head (`scripts/registry-bump.mjs`); for a
-moved repo it pushes `registry/bump-<owner>-<repo>`, runs fetch-community +
-validate-game on that commit, and opens or refreshes the PR with the
-output. Owners in `registry/trusted.txt` get a passing PR squash-merged and
-`deploy.yml` started by name (a GITHUB_TOKEN merge starts no workflow by
-itself); everyone else's waits for review. The first registration of a repo
-is still a contributor's own PR, checked by `registry-check.yml`.
+Lokesh: the pull request is the contributor's to open — "add a button/command
+to open the create PR page (pre-filled)" — and "once merged, it should auto
+deploy" (deploy.yml already runs on every push to main). No workflow opens
+or merges pins. `just propose owner/repo` (`scripts/propose.mjs`) and the
+browser twin `lib/propose.js` (contribute.html's form, Contributors' "Check
+for updates") ask the GitHub API for the repo's head: a new repo gets GitHub's
+`/new/main?filename=registry/<owner>/<repo>.json&value=…` page filled in
+(head commit, every folder with a game.json); a pinned repo that moved gets
+its pin's edit page and the commit to paste (GitHub cannot pre-fill an edit).
+The pins' commits ride in the catalog (`CONTRIBUTORS[].pins`). The PR is
+checked by `registry-check.yml`.
 
 ## The dev kit (built 2026-11-13)
 
