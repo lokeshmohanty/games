@@ -92,11 +92,20 @@
         display: inline-flex;
         text-decoration: none;
       }
+      .propose-steps {
+        margin: 12px 0 0;
+        padding-left: 1.3em;
+        color: var(--ink);
+      }
+      .propose {
+        margin-top: 28px;
+      }
     </style>
   </head>
   <body>
     <nav class="site-nav" data-nav data-page="contribute"></nav>
     <main>
+      <div data-guide><p class="muted">Loading the guide…</p></div>
       <!-- lib/propose.js: GitHub's own page, filled in. The pull request is
            yours to open; once it is merged the site deploys itself. -->
       <section class="propose">
@@ -111,7 +120,6 @@
         </form>
         <div data-propose-out></div>
       </section>
-      <div data-guide><p class="muted">Loading the guide…</p></div>
     </main>
 
     <script src="lib/pwa.js"></script>
@@ -139,8 +147,24 @@
           const link = (t, href) => Object.assign(document.createElement("a"), { className: "neon-btn neon-btn--accent", textContent: t, href, target: "_blank", rel: "noopener" });
           if (p.kind === "current") return out.append(note(`${p.repo} is already listed at its latest commit (${p.at.slice(0, 7)}).`));
           if (p.kind === "update") {
+            // GitHub can fill a new file but not an edit: copy the commit on
+            // the same tap that opens the pin, and say where to paste it.
             const sha = Object.assign(document.createElement("pre"), { textContent: p.to });
-            out.append(note(`${p.repo} is listed at ${p.from.slice(0, 7)}; its head is ${p.to.slice(0, 7)}. Set "commit" to:`), sha, link("OPEN THE PIN ON GITHUB ↗", p.url));
+            const go = link("COPY THE COMMIT & OPEN THE PIN ↗", p.url);
+            go.addEventListener("click", () => {
+              navigator.clipboard?.writeText(p.to).then(
+                () => NeonArcade.toast?.("New commit copied.", "good"),
+                () => {},
+              );
+            });
+            const steps = document.createElement("ol");
+            steps.className = "propose-steps";
+            for (const t of [
+              `In the "commit" line, select the old commit ${p.from.slice(0, 7)}… (the 40 characters between the quotes).`,
+              "Paste — the new commit is on your clipboard.",
+              "Commit changes → \"Create a new branch… and start a pull request\" → Propose changes.",
+            ]) steps.append(Object.assign(document.createElement("li"), { textContent: t }));
+            out.append(note(`${p.repo} is listed at ${p.from.slice(0, 7)}; its newest commit is ${p.to.slice(0, 7)}.`), go, steps, note("The new commit, if the copy did not work:"), sha);
             return;
           }
           const pre = Object.assign(document.createElement("pre"), { textContent: p.text });

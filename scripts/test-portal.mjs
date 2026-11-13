@@ -173,6 +173,12 @@ try {
 		return route.fulfill({ status: 404, body: "{}" });
 	});
 	await p.goto(site.url("contribute.html"));
+	await p.locator("[data-guide] h1").waitFor({ timeout: TIMEOUT });
+	check("Propose your games sits at the bottom, after the guide", await p.evaluate(() => {
+		const guide = document.querySelector("[data-guide]");
+		const form = document.querySelector(".propose");
+		return !!(guide.compareDocumentPosition(form) & Node.DOCUMENT_POSITION_FOLLOWING);
+	}));
 	await p.locator("[data-repo]").fill(NEW);
 	await p.locator("[data-propose] button").click();
 	const open = p.locator("[data-propose-out] a", { hasText: "OPEN ON GITHUB" });
@@ -183,12 +189,17 @@ try {
 	check("…filled in: the repo, its head commit, every folder with a game.json", value.includes(`"https://github.com/${NEW}"`) && value.includes(HEAD) && value.includes('["chess", "go"]'), value);
 	await p.locator("[data-repo]").fill("https://github.com/lokeshmohanty/arcade-games");
 	await p.locator("[data-propose] button").click();
-	const pin = p.locator("[data-propose-out] a", { hasText: "OPEN THE PIN" });
+	const pin = p.locator("[data-propose-out] a", { hasText: "COPY THE COMMIT & OPEN THE PIN" });
 	await pin.waitFor({ timeout: TIMEOUT });
 	check("a pinned repo that moved opens its pin's edit page, with the commit to paste", (await pin.getAttribute("href")) === "https://github.com/lokeshmohanty/games/edit/main/registry/lokeshmohanty/arcade-games.json" && (await p.locator("[data-propose-out] pre").textContent()) === HEAD);
+	await ctx.grantPermissions(["clipboard-read", "clipboard-write"], { origin: site.base });
+	const [tab] = await Promise.all([ctx.waitForEvent("page"), pin.click()]);
+	await tab.close();
+	check("…and one tap copies the new commit as it opens the page", (await p.evaluate(() => navigator.clipboard.readText())) === HEAD);
+	check("…with the three steps to paste it", (await p.locator(".propose-steps li").count()) === 3);
 	await p.goto(site.url("contributors.html"));
 	await p.locator(".person-update button").first().click();
-	const upd = p.locator(".person-update-out a", { hasText: "Propose update" });
+	const upd = p.locator(".person-update-out a", { hasText: "Copy the commit" });
 	check("Contributors: CHECK FOR UPDATES offers the same for a moved repo", await upd.waitFor({ timeout: TIMEOUT }).then(() => true, () => false));
 	check("…nobody's pull request is opened for them: every link is GitHub's own page", /github\.com\/lokeshmohanty\/games\/edit\//.test(await upd.getAttribute("href")));
 } catch (err) {

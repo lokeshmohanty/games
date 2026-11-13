@@ -129,8 +129,11 @@ it is checked again. Once a maintainer merges it, the site deploys by itself
 and lists your games as `<your-github-user>/<id>`.
 
 **To update**, push to your repo, then press **Check for updates** on your
-card on the [Contributors](contributors.html) page (or run `just propose`
-again): it opens your pin's edit page and gives you the new commit to paste.
+card on the [Contributors](contributors.html) page (or use Propose your games
+again, or `just propose`). One tap copies your new commit and opens your
+pin's edit page: select the old commit in the `"commit"` line, paste, then
+*Commit changes → Create a new branch… and start a pull request*. (GitHub can
+fill in a new file but not an edit, so this one paste is the only typing.)
 The pull request is yours to open; nothing opens one for you.
 
 ## Review and removal
