@@ -28,7 +28,7 @@
 // first, a forgotten bump costs an out-of-date *offline* copy — never a stale
 // app for an online player, which is the failure mode that would be hard to
 // notice.
-const VERSION = "arcade-games-v20";
+const VERSION = "arcade-games-v21";
 
 // The shell: everything needed to open any page and start a game with no
 // network at all. The preview gifs are deliberately absent — they are ~2 MB
@@ -62,7 +62,12 @@ const SHELL = [
 	"./lib/lobby.js",
 	"./lib/party.js",
 	"./lib/pwa.js",
-	"./games/connect4.js",
+	"./lib/bridge.js",
+	"./lib/catalog.js",
+	"./sdk/v1/client.js",
+	"./games/connect4/index.html",
+	"./games/connect4/connect4.js",
+	"./games/connect4/game.json",
 	"./games/onitama.js",
 	"./games/light-cycles.js",
 	"./games/battleship.js",

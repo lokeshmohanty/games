@@ -159,8 +159,16 @@ check-precache:
         ...fs.readdirSync(".").filter((f) => f.endsWith(".html")), \
         ...fs.readdirSync("lib").filter((f) => /\.(js|css)$/.test(f)).map((f) => "lib/" + f), \
         ...fs.readdirSync("games").filter((f) => f.endsWith(".js")).map((f) => "games/" + f), \
+        ...fs.readdirSync("games", { withFileTypes: true }).filter((d) => d.isDirectory()).flatMap((d) => \
+          fs.readdirSync("games/" + d.name).filter((f) => /\.(html|js|css|json)$/.test(f) && !f.startsWith("test-")).map((f) => `games/${d.name}/${f}`)), \
+        ...fs.readdirSync("sdk/v1").filter((f) => f.endsWith(".js")).map((f) => "sdk/v1/" + f), \
       ]; \
       const missing = onDisk.filter((f) => !listed.has(f)); \
       if (missing.length) { console.error("not precached by sw.js:\n  " + missing.join("\n  ")); process.exit(1); } \
       console.log(`all ${onDisk.length} pages and modules are in the sw.js precache`); \
     '
+
+# Gather every game.json into lib/catalog.js (generated; committed so the
+# site needs no build step). `just catalog --check` fails if it is stale.
+catalog *args:
+    node scripts/build-catalog.mjs {{args}}

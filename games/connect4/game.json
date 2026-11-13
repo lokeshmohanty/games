@@ -1,0 +1,16 @@
+{
+  "sdk": 1,
+  "id": "connect4",
+  "name": "CONNECT 4",
+  "blurb": "Drop discs, get four in a row. One against one.",
+  "entry": "index.html",
+  "shape": "teams",
+  "seats": { "min": 2, "max": 2 },
+  "bots": true,
+  "kind": "duel",
+  "tags": ["alone", "party", "quick"],
+  "preview": "../../assets/connect4.gif",
+  "license": "MIT",
+  "author": "lokeshmohanty",
+  "repo": "https://github.com/lokeshmohanty/games"
+}

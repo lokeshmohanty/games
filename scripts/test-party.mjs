@@ -18,11 +18,13 @@ import { existsSync, globSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join, resolve as resolvePath } from "node:path";
 import { fileURLToPath } from "node:url";
+import { serve, gameFrame } from "./serve.mjs";
 
 const require = createRequire(import.meta.url);
 const ROOT = resolvePath(dirname(fileURLToPath(import.meta.url)), "..");
 const PW_CACHE = join(homedir(), ".cache", "game-previews");
-const PARTY = "file://" + join(ROOT, "party.html");
+const SITE = await serve(8733);
+const PARTY = SITE.url("party.html");
 const TIMEOUT = 40_000;
 
 function chromePath() {
@@ -228,10 +230,12 @@ try {
 		[p2, "p2"],
 		[p3, "spectator"],
 	]) {
-		await page.locator("#board").waitFor({ timeout: TIMEOUT });
-		check(`${tag} mounted Connect 4`, await page.locator("#board").isVisible());
+		// Connect 4 runs framed (lib/bridge.js): its DOM is in the frame.
+		const g = await gameFrame(page, TIMEOUT);
+		await g.locator("#board").waitFor({ timeout: TIMEOUT });
+		check(`${tag} mounted Connect 4`, await g.locator("#board").isVisible());
 	}
-	const spectatorHud = await p3.locator("#hud").textContent();
+	const spectatorHud = await (await gameFrame(p3, TIMEOUT)).locator("#hud").textContent();
 	check("spectator is seated as one", /SPECTATOR/.test(spectatorHud ?? ""), spectatorHud ?? "");
 
 	console.log("\nparty: switching games without reconnecting");
@@ -250,7 +254,7 @@ try {
 	check("nobody reconnected across the switch", idsBefore === idsAfter, `${idsBefore} -> ${idsAfter}`);
 	check(
 		"the old game left nothing behind",
-		await host.evaluate(() => document.querySelectorAll("#board").length === 0),
+		await host.evaluate(() => document.querySelectorAll("#board, .game-frame").length === 0),
 	);
 
 	// Draw & Guess is the game `lib/rounds.js` was generalised *from*, and it
@@ -522,20 +526,23 @@ try {
 
 	await host.evaluate(() => window.__party.room.setGame("connect4"));
 	for (const page of [host, p2, p3]) await page.waitForFunction(() => window.__party.game === "connect4" && window.__party.handle, null, { timeout: TIMEOUT });
-	const away4 = await host.evaluate(() => {
-		const d = window.__party.handle.debug();
-		return { toMove: d.turn === 1 ? d.red : d.yellow, host: window.__party.room.selfId };
+	const hostC4 = await gameFrame(host, TIMEOUT);
+	// A framed game mounts after the frame loads, not inside setGame.
+	await hostC4.waitForFunction(() => window.__game.handle.debug().started, null, { timeout: TIMEOUT });
+	const away4 = await hostC4.evaluate(() => {
+		const d = window.__game.handle.debug();
+		return { toMove: d.turn === 1 ? d.red : d.yellow, host: window.__game.ctx.room.selfId };
 	});
 	if (away4.toMove === away4.host) {
-		const box = await host.locator("#board").boundingBox();
-		await host.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
-		await host.waitForFunction((h) => {
-			const d = window.__party.handle.debug();
+		await host.bringToFront(); // see the note at the new host's move below
+		await hostC4.locator("#board").click();
+		await hostC4.waitForFunction((h) => {
+			const d = window.__game.handle.debug();
 			return (d.turn === 1 ? d.red : d.yellow) !== h;
 		}, away4.host, { timeout: TIMEOUT });
 	}
-	const moverId = await host.evaluate(() => {
-		const d = window.__party.handle.debug();
+	const moverId = await hostC4.evaluate(() => {
+		const d = window.__game.handle.debug();
 		return d.turn === 1 ? d.red : d.yellow;
 	});
 	let mover = null;
@@ -543,9 +550,9 @@ try {
 	check("(a guest is to move in Connect 4)", !!mover);
 	if (mover) {
 		await setHidden(mover, true);
-		check("a turn game waiting on a player who left the app says so", await shown(host, ".turn-wait", /Waiting for .+ switched away \(0:\d\d\)/));
+		check("a turn game waiting on a player who left the app says so", await shown(hostC4, ".turn-wait", /Waiting for .+ switched away \(0:\d\d\)/));
 		await setHidden(mover, false);
-		check("…and the banner goes when they are back", await host.locator(".turn-wait").first().waitFor({ state: "hidden", timeout: 6000 }).then(() => true, () => false));
+		check("…and the banner goes when they are back", await hostC4.locator(".turn-wait").first().waitFor({ state: "hidden", timeout: 6000 }).then(() => true, () => false));
 	}
 	await host.evaluate(() => window.__party.room.setGame(null));
 
@@ -760,11 +767,15 @@ try {
 		for (const m of r.getMembers()) if (m.id !== r.selfId && m.id !== id) r.setTeam(m.id, "spectator");
 		r.setGame("connect4");
 	}, keptBot);
-	await p2.waitForFunction(() => window.__party.handle?.debug?.().started, null, { timeout: TIMEOUT });
-	const c4box = await p2.locator("#board").boundingBox();
-	await p2.mouse.click(c4box.x + c4box.width / 2, c4box.y + c4box.height / 2);
-	const botAnswered = await p2
-		.waitForFunction(() => window.__party.handle.debug().board.flat().filter(Boolean).length === 2, null, { timeout: TIMEOUT })
+	const p2C4 = await gameFrame(p2, TIMEOUT);
+	await p2C4.waitForFunction(() => window.__game.handle?.debug?.().started, null, { timeout: TIMEOUT });
+	// A sandboxed frame is its own process, and Chromium routes a click into
+	// it from the last frame the page drew: a background page has drawn none
+	// since the game mounted, and the click lands on the <iframe> instead.
+	await p2.bringToFront();
+	await p2C4.locator("#board").click();
+	const botAnswered = await p2C4
+		.waitForFunction(() => window.__game.handle.debug().board.flat().filter(Boolean).length === 2, null, { timeout: TIMEOUT })
 		.then(() => true, () => false);
 	check("…which the new host plays", botAnswered);
 	await p2.evaluate((id) => {

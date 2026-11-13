@@ -11,7 +11,21 @@ session pay for it.*
 act → record → clear the item. This is the single inbox — do not create a
 separate `TODO.md`.*
 
-## Leaving and presence (2026-11-12) — built, uncommitted
+## Platform rework (2026-11-13) — branch `platform`, do not merge unconfirmed
+
+Plan: `~/.claude/plans/1-a-b-2-generic-whistle.md`; design: docs/sdk.md.
+Done: six games imported with history into `../arcade-games` branch
+`import` (local only, not pushed); sandbox spikes (isolation, latency,
+offline → srcdoc + inlined scripts); `lib/bridge.js` + `sdk/v1/client.js`
++ `lib/catalog.js` (generated); Connect 4 framed in `games/connect4/`.
+Green: every `just test` suite (party ×3, bots, pwa ×4 incl. a framed game
+offline). Next: frame neon-bid, undercover, neon-survival(-mp); port the six
+in arcade-games; registry + fetch + `validate-game` + dev kit + PR check;
+portal from the catalog; then Phases 1–6 (stats → accounts → …).
+Not yet: real-phone check of wake lock / audio / fullscreen in the sandbox;
+framed games no longer open from `file://` (fetch can't read it) — ask Lokesh.
+
+## Leaving and presence (2026-11-12) — committed (e55a33c…c6a9856)
 
 Every exit asks (in-page `<dialog>`, not `confirm()`), back/swipe-back trapped,
 `beforeunload` with others present, toasts for join/leave/lost/back/crown —

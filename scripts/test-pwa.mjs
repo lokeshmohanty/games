@@ -24,6 +24,7 @@ import { existsSync, globSync, mkdtempSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { dirname, join, resolve as resolvePath } from "node:path";
 import { fileURLToPath } from "node:url";
+import { gameFrame } from "./serve.mjs";
 
 const require = createRequire(import.meta.url);
 const ROOT = resolvePath(dirname(fileURLToPath(import.meta.url)), "..");
@@ -426,6 +427,23 @@ for (const [p, marker, expect, what] of [
 		detail = err.message.split("\n")[0];
 	}
 	check(`${what} loads offline`, ok, detail);
+}
+
+// A framed game is fetched and inlined by the shell (lib/bridge.js), through
+// the worker: offline it must still come up and play, not just list itself.
+{
+	let detail = "";
+	const played = await (async () => {
+		await page.goto(`${BASE}/connect4.html`, { waitUntil: "domcontentloaded" });
+		await page.locator("button", { hasText: "PLAY A BOT" }).first().click({ timeout: 8000 });
+		await page.locator("button", { hasText: "START GAME" }).first().click({ timeout: 8000 });
+		const frame = await gameFrame(page, 10_000);
+		return frame.waitForFunction(() => window.__game.handle.debug().started, null, { timeout: 8000 }).then(() => true);
+	})().catch((err) => {
+		detail = err.message.split("\n")[0];
+		return false;
+	});
+	check("a framed game (Connect 4) starts offline", played, detail);
 }
 
 // Loading is not the same as working: the scripts have to be there too.

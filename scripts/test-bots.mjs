@@ -26,11 +26,13 @@ import { existsSync, globSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join, resolve as resolvePath } from "node:path";
 import { fileURLToPath } from "node:url";
+import { serve, gameScope } from "./serve.mjs";
 
 const require = createRequire(import.meta.url);
 const ROOT = resolvePath(dirname(fileURLToPath(import.meta.url)), "..");
 const PW_CACHE = join(homedir(), ".cache", "game-previews");
-const url = (p) => "file://" + join(ROOT, p);
+const SITE = await serve(8734);
+const url = SITE.url;
 const TIMEOUT = 30_000;
 
 function chromePath() {
@@ -80,9 +82,10 @@ async function startSolo(page, file, button) {
 	await page.locator("button", { hasText: button }).first().click();
 	await page.locator("button", { hasText: "START GAME" }).first().click();
 	await page.waitForFunction(() => window.__game?.handle, null, { timeout: TIMEOUT });
+	await gameScope(page, TIMEOUT); // a framed game: wait for its own mount too
 }
 
-const debug = (page) => page.evaluate(() => window.__game.handle.debug());
+const debug = async (page) => (await gameScope(page, TIMEOUT)).evaluate(() => window.__game.handle.debug());
 
 const { chromium } = loadPlaywright();
 const browser = await chromium.launch({
@@ -666,6 +669,9 @@ try {
 	check("…all on the phone's screen, 44px tall, no sideways scroll", quickFit.left >= 0 && quickFit.right <= 390 && quickFit.bottom <= 844 && quickFit.minH >= 44 && quickFit.doc <= 390, JSON.stringify(quickFit));
 	await page.locator("button", { hasText: "START GAME" }).first().click();
 	await page.waitForFunction(() => window.__game?.handle, null, { timeout: TIMEOUT });
+	const c4 = await gameScope(page, TIMEOUT);
+	await c4.waitForFunction(() => window.__game.handle.debug().started, null, { timeout: TIMEOUT });
+	await page.bringToFront(); // clicks into a sandboxed frame route by the page's last drawn frame
 
 	let state = await debug(page);
 	check("a bot took the second seat", state.red !== null && state.yellow !== null);
@@ -674,13 +680,13 @@ try {
 
 	/** Drop a disc in `col` by clicking the board where a player would. */
 	async function drop(col) {
-		const box = await page.locator("#board").boundingBox();
+		const box = await c4.locator("#board").boundingBox();
 		await page.mouse.click(box.x + (box.width / 7) * (col + 0.5), box.y + box.height / 2);
 	}
 
 	/** Wait until it is our turn again, i.e. the bot has answered. */
 	async function botReplies(discsBefore) {
-		return await page
+		return await c4
 			.waitForFunction(
 				(n) => {
 					const s = window.__game.handle.debug();
@@ -744,7 +750,7 @@ try {
 	check("the bot never leaves an immediate win on the board", neverLeftAWin, leftOpen);
 
 	// And it plays the game out rather than stalling somewhere in the middle.
-	const finished = await page
+	const finished = await c4
 		.waitForFunction(
 			() => {
 				const s = window.__game.handle.debug();
@@ -998,6 +1004,7 @@ try {
 		if (midGame) {
 			await hostP.locator("button", { hasText: "START GAME" }).first().click();
 			await guestP.waitForFunction(() => window.__game?.handle, null, { timeout: TIMEOUT });
+			await (await gameScope(guestP, TIMEOUT)).waitForFunction(() => window.__game.handle.debug().started, null, { timeout: TIMEOUT });
 		}
 		await hostP.close();
 		const msg = midGame ? "You are the host now — CONNECT 4 goes on." : "You are the host now.";
@@ -1007,19 +1014,28 @@ try {
 			.then(() => true)
 			.catch(() => false);
 		check(`${midGame ? "mid-game" : "before START"}: the guest is told (${msg})`, told);
-		const after = await guestP
+		let after = await guestP
 			.waitForFunction(
 				(mid) => {
 					const g = window.__game;
 					if (!g.room.isHost()) return false;
 					if (!mid) return g.game === null && !document.getElementById("party").hidden;
-					const d = g.handle?.debug?.();
-					return g.game === "connect4" && d?.winner === (d.yellow === g.room.selfId ? 2 : 1);
+					return g.game === "connect4";
 				},
 				midGame,
 				{ timeout: TIMEOUT },
 			)
 			.then(() => true, () => false);
+		// Connect 4 is framed: its board is read inside the frame.
+		if (after && midGame) {
+			after = await (await gameScope(guestP, TIMEOUT))
+				.waitForFunction(() => {
+					const { handle, ctx } = window.__game;
+					const d = handle.debug();
+					return ctx.room.isHost() && d.winner === (d.yellow === ctx.room.selfId ? 2 : 1);
+				}, null, { timeout: TIMEOUT })
+				.then(() => true, () => false);
+		}
 		check(
 			midGame ? "…holds the game, and wins it: the other side left for good" : "…and holds the party, back on its screen",
 			after,
