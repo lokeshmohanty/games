@@ -23,7 +23,7 @@
 //
 // Protocol (shell → frame): init, party, msg, join, leave, answer, asset,
 // takeOver, unmount. (frame → shell): ready, listen, send, emitAs, meta, end, toast,
-// ask, hostNew, result, store, asset, reply. Action names travel prefixed by the
+// ask, hostNew, result, store, session, asset, reply. Action names travel prefixed by the
 // shell, so a game can never speak on the party's own channels.
 
 window.NeonArcade = window.NeonArcade || {};
@@ -88,6 +88,22 @@ window.NeonArcade = window.NeonArcade || {};
 		return btn;
 	};
 
+	// This tab's session storage, kept by the party page (the frame has none:
+	// it is sandboxed). What lib/secrets.js keeps across a reload lives here.
+	// Read from the copy sent in init; writes go back to the shell.
+	let session = {};
+	NeonArcade.sessionStore = {
+		getItem: (k) => (Object.hasOwn(session, k) ? session[k] : null),
+		setItem(k, v) {
+			session[k] = String(v);
+			post({ t: "session", key: String(k), value: String(v) });
+		},
+		removeItem(k) {
+			delete session[k];
+			post({ t: "session", key: String(k), value: null });
+		},
+	};
+
 	function mount() {
 		const game = NeonArcade.listGames?.()[0];
 		if (!game) throw new Error("no game registered — call NeonArcade.registerGame");
@@ -124,6 +140,7 @@ window.NeonArcade = window.NeonArcade || {};
 		switch (m?.t) {
 			case "init":
 				state = m.state;
+				session = { ...(m.state.session ?? {}) };
 				mount();
 				break;
 			case "party":

@@ -62,11 +62,47 @@ import { createServer } from "node:net";
 import { homedir, tmpdir } from "node:os";
 import { dirname, join, resolve as resolvePath } from "node:path";
 import { fileURLToPath } from "node:url";
+import { gameFrame, readyToClick, serve } from "./serve.mjs";
 
 const require = createRequire(import.meta.url);
 const ROOT = resolvePath(dirname(fileURLToPath(import.meta.url)), "..");
 const PW_CACHE = join(homedir(), ".cache", "game-previews");
-const PARTY = `file://${join(ROOT, "party.html")}`;
+// Served, not file://: framed games are fetched and inlined by the shell.
+const SITE = await serve(8738);
+const PARTY = SITE.url("party.html");
+// The games that come from lokeshmohanty/arcade-games (registry/) carry
+// their owner in their id.
+const COMMUNITY = ["battleship", "draw-guess", "liars-dice", "light-cycles", "tug-of-war"];
+const gid = (g) => (COMMUNITY.includes(g) ? `lokeshmohanty/${g}` : g);
+/** The page's game frame, once its game is up (scripts/serve.mjs). */
+const inGame = (page) => gameFrame(page, TIMEOUT);
+/** The page's game frame right now, or null — for polling. */
+async function frameNow(page) {
+	for (const f of page.frames()) {
+		if (f === page.mainFrame()) continue;
+		try {
+			if (await f.evaluate(() => !!window.__game?.handle)) return f;
+		} catch {}
+	}
+	return null;
+}
+/** The running game's debug() on `page`, or null. */
+async function gameDebug(page) {
+	const f = await frameNow(page);
+	return f ? f.evaluate(() => window.__game.handle?.debug?.() ?? null).catch(() => null) : null;
+}
+/** `game` is the party's game on `page`, and up in its frame. */
+const gameMounted = (page, game) =>
+	page
+		.waitForFunction((id) => window.__party?.game === id, gid(game), { timeout: TIMEOUT })
+		.then(() => inGame(page))
+		.then((f) => f.waitForFunction(() => !!window.__game.handle, null, { timeout: TIMEOUT }))
+		.then(() => true, () => false);
+/**
+ * Press a button in a game frame. Not a mouse click: a sandboxed frame is its
+ * own process, and on a background page a raw click lands on the <iframe>.
+ */
+const tap = (locator) => locator.evaluate((b) => b.click());
 const TIMEOUT = 40_000;
 // room-join's JOIN_ANSWER_MS (30s) plus the reconnect's own dial and margin.
 const NO_ANSWER_WAIT = 50_000;
@@ -818,11 +854,8 @@ try {
 			const r = window.__party.room;
 			return { host: r.selfId, guest: r.getMembers().find((m) => m.id !== r.selfId).id };
 		});
-		const mountedOn = (page, game) =>
-			page
-				.waitForFunction((id) => window.__party?.game === id && !!window.__party.handle?.debug, game, { timeout: TIMEOUT })
-				.then(() => true, () => false);
-		const dbg = (page) => page.evaluate(() => window.__party.handle?.debug?.() ?? null);
+		const mountedOn = gameMounted;
+		const dbg = gameDebug;
 		/** Poll `test(hostDebug, guestDebug)` until it holds; the last pair either way. */
 		async function until(test, ms = 15_000) {
 			const end = Date.now() + ms;
@@ -841,7 +874,7 @@ try {
 				r.setTeam(ids.host, teams.host);
 				r.setTeam(ids.guest, teams.guest);
 				r.setGame(id);
-			}, { id: game, teams, ids });
+			}, { id: gid(game), teams, ids });
 			return (await mountedOn(h, game)) && (await mountedOn(g, game));
 		}
 		async function reloadGuest(label, game) {
@@ -857,12 +890,12 @@ try {
 		// Battleship: both fleets committed, the guest fires and reloads at
 		// once, so the host's shot lands while the guest is away.
 		check("battleship: both mount it", await play("battleship"));
-		for (const p of [h, g]) await p.locator("button", { hasText: "COMMIT FLEET" }).click();
+		for (const p of [h, g]) await tap((await inGame(p)).locator("button", { hasText: "COMMIT FLEET" }));
 		let r = await until((a, b) => a.phase === "fire" && b.phase === "fire");
 		check("battleship: both fleets committed", r.ok, show(r));
-		const fire = (page) =>
-			page.evaluate(() => {
-				const d = window.__party.handle.debug();
+		const fire = async (page) =>
+			(await inGame(page)).evaluate(() => {
+				const d = window.__game.handle.debug();
 				const at = window.NeonArcade.battleshipRules.botTarget(d.theirBoard);
 				document.querySelector(`.bs-grid .bs-cell[data-r="${at[0]}"][data-c="${at[1]}"]:not([disabled])`)?.click();
 			});
@@ -904,7 +937,7 @@ try {
 			const d = await dbg(h);
 			if (!d || d.lastCall) break;
 			const page = d.turn === ids.host ? h : g;
-			bids += await page.evaluate((n) => {
+			bids += await (await inGame(page)).evaluate((n) => {
 				const btns = [...document.querySelectorAll(".ld-actions button")];
 				const liar = btns.find((b) => b.textContent.includes("LIAR"));
 				const bid = btns.find((b) => b.textContent.startsWith("BID"));
@@ -923,14 +956,14 @@ try {
 		check("neon bid: both mount it", await play("neon-bid"));
 		r = await until((a, b) => a.phase === "bid" && b.phase === "bid");
 		check("neon bid: the first lot is open", r.ok, show(r));
-		await g.locator(".nb-chips button", { hasText: /^5$/ }).click();
-		await g.locator(".nb-go").click();
+		await tap((await inGame(g)).locator(".nb-chips button", { hasText: /^5$/ }));
+		await tap((await inGame(g)).locator(".nb-go"));
 		r = await until((a) => a.submitted.includes(ids.guest));
 		check("neon bid: the guest's bid is sealed", r.ok, show(r));
 		await reloadGuest("neon bid", "neon-bid");
 		r = await until((a, b) => b.committed && b.myBid === 5);
 		check("neon bid: the guest has its sealed bid back", r.ok, show(r));
-		await h.locator(".nb-go").click();
+		await tap((await inGame(h)).locator(".nb-go"));
 		r = await until((a) => a.results.length === 1);
 		check("neon bid: the lot settles", r.ok, show(r));
 		const lot = r.last?.[0].results[0];
@@ -951,7 +984,8 @@ try {
 		r = await until((a) => a.phase === "drawing" && !!a.drawerId, 20_000);
 		check("draw & guess: somebody is drawing", r.ok, show(r));
 		const drawer = r.last?.[0].drawerId === ids.host ? h : g;
-		const box = await drawer.locator("canvas").first().boundingBox();
+		await readyToClick(drawer);
+		const box = await (await inGame(drawer)).locator("canvas").first().boundingBox();
 		await drawer.mouse.move(box.x + 30, box.y + 30);
 		await drawer.mouse.down();
 		for (let i = 1; i <= 12; i++) {
@@ -995,26 +1029,25 @@ try {
 				const r = window.__party.room;
 				for (const [id, team] of Object.entries(teams)) r.setTeam(id, team);
 				r.setGame(game);
-			}, { game, teams });
-		const mountedOn = (page, game) =>
-			page
-				.waitForFunction((id) => window.__party?.game === id && !!window.__party.handle, game, { timeout: TIMEOUT })
-				.then(() => true, () => false);
-		const dbg = (page) => page.evaluate(() => window.__party.handle?.debug?.() ?? null);
-		const bar = (page) => page.locator(".turn-wait:not([hidden])");
+			}, { game: gid(game), teams });
+		const mountedOn = gameMounted;
+		const dbg = gameDebug;
+		// The turn-wait banner is the game's (lib/games.js), so it is in the frame.
+		const bar = async (page) => (await inGame(page)).locator(".turn-wait:not([hidden])");
 		const barText = async (page, re) => {
 			try {
-				await bar(page).locator("p", { hasText: re }).waitFor({ timeout: 15_000 });
+				await (await bar(page)).locator("p", { hasText: re }).waitFor({ timeout: 15_000 });
 				return true;
 			} catch {
 				return false;
 			}
 		};
 		const drop = async (col) => {
-			const box = await h.locator("#board").boundingBox();
+			await readyToClick(h);
+			const box = await (await inGame(h)).locator("#board").boundingBox();
 			await h.mouse.click(box.x + (box.width / 7) * (col + 0.5), box.y + box.height / 2);
 		};
-		const turnIs = (n) => h.waitForFunction((n) => window.__party.handle.debug().turn === n, n, { timeout: TIMEOUT }).then(() => true, () => false);
+		const turnIs = async (n) => (await inGame(h)).waitForFunction((n) => window.__game.handle.debug().turn === n, n, { timeout: TIMEOUT }).then(() => true, () => false);
 
 		await setUp("connect4", { [ids.host]: "A", [ids.guest]: "B", [ids.watch]: "spectator" });
 		check("connect 4: all three mount it", (await mountedOn(h, "connect4")) && (await mountedOn(a, "connect4")) && (await mountedOn(w, "connect4")));
@@ -1028,26 +1061,26 @@ try {
 		check("connect 4: the host is told who it waits for, with a countdown", counting[0]);
 		check("connect 4: and so is everyone else", counting[1]);
 		check("connect 4: after the wait the host decides", await barText(h, /hasn't come back\.$/));
-		const buttons = await h.locator(".turn-wait button").allTextContents();
+		const buttons = await (await inGame(h)).locator(".turn-wait button").allTextContents();
 		check("connect 4: WAIT, SKIP TURN, END GAME", buttons.join() === "WAIT,SKIP TURN,END GAME", buttons.join());
 		check("connect 4: the others are told the host decides", await barText(w, /hasn't come back — .+ decides\./));
-		const fit = await h.evaluate(() => {
+		const fit = await (await inGame(h)).evaluate(() => {
 			const r = document.querySelector(".turn-wait").getBoundingClientRect();
 			const btns = [...document.querySelectorAll(".turn-wait button")].map((b) => b.getBoundingClientRect().height);
 			return { left: r.left, right: r.right, bottom: r.bottom, minBtn: Math.min(...btns), doc: document.documentElement.scrollWidth };
 		});
 		check("connect 4: the banner fits the phone, buttons clear 44px", fit.left >= 0 && fit.right <= 390 && fit.bottom <= 844 && fit.minBtn >= 44 && fit.doc <= 390, JSON.stringify(fit));
-		await h.locator(".turn-wait button", { hasText: "WAIT" }).click();
+		await tap((await inGame(h)).locator(".turn-wait button", { hasText: "WAIT" }));
 		const again = await Promise.all([h, w].map((p) => barText(p, /(reconnecting|switched away) \(0:0\d\)/)));
 		check("connect 4: WAIT starts the countdown again", again[0]);
 		check("connect 4: for everyone", again[1]);
 		await barText(h, /hasn't come back\.$/);
-		await h.locator(".turn-wait button", { hasText: "SKIP TURN" }).click();
+		await tap((await inGame(h)).locator(".turn-wait button", { hasText: "SKIP TURN" }));
 		check("connect 4: SKIP TURN gives the move back", await turnIs(1));
-		check("connect 4: and the banner goes", await bar(h).waitFor({ state: "detached", timeout: 3000 }).then(() => true, () => h.locator(".turn-wait").isHidden()));
+		check("connect 4: and the banner goes", await (await bar(h)).waitFor({ state: "detached", timeout: 3000 }).then(() => true, async () => (await inGame(h)).locator(".turn-wait").isHidden()));
 		await drop(4);
 		check("connect 4: waiting on the guest again", (await turnIs(2)) && (await barText(h, /hasn't come back\.$/)));
-		await h.locator(".turn-wait button", { hasText: "END GAME" }).click();
+		await tap((await inGame(h)).locator(".turn-wait button", { hasText: "END GAME" }));
 		const asked = await nextDialog(h, true);
 		check("connect 4: END GAME asks first", /End the game for everyone/.test(asked), asked);
 		const ended = await Promise.all([h, w].map((p) => p.waitForFunction(() => window.__party.game === null, null, { timeout: TIMEOUT }).then(() => true, () => false)));
@@ -1056,21 +1089,21 @@ try {
 		// SKIP TURN in the other turn game, against the seat still held.
 		const skipOnce = async (label) => {
 			check(`${label}: the host is asked about the lost player`, await barText(h, /hasn't come back\.$/));
-			await h.locator(".turn-wait button", { hasText: "SKIP TURN" }).click();
+			await tap((await inGame(h)).locator(".turn-wait button", { hasText: "SKIP TURN" }));
 		};
 		let d;
 		await setUp("liars-dice", { [ids.host]: "A", [ids.guest]: "B", [ids.watch]: "spectator" });
 		check("liar's dice: the host mounts it", await mountedOn(h, "liars-dice"));
 		// The roll waits out its 12 s deadline for the cup that never comes.
-		await h.waitForFunction(() => window.__party.handle.debug().phase === "bid", null, { timeout: TIMEOUT });
+		await (await inGame(h)).waitForFunction(() => window.__game.handle.debug().phase === "bid", null, { timeout: TIMEOUT });
 		d = await dbg(h);
 		if (d.turn === ids.host) {
-			await h.locator(".ld-actions button", { hasText: /^BID/ }).click();
-			await h.waitForFunction((g) => window.__party.handle.debug().turn === g, ids.guest, { timeout: TIMEOUT });
+			await tap((await inGame(h)).locator(".ld-actions button", { hasText: /^BID/ }));
+			await (await inGame(h)).waitForFunction((g) => window.__game.handle.debug().turn === g, ids.guest, { timeout: TIMEOUT });
 		}
 		await skipOnce("liar's dice");
-		const back = await h
-			.waitForFunction((me) => window.__party.handle.debug().turn === me, ids.host, { timeout: TIMEOUT })
+		const back = await (await inGame(h))
+			.waitForFunction((me) => window.__game.handle.debug().turn === me, ids.host, { timeout: TIMEOUT })
 			.then(() => true, () => false);
 		check("liar's dice: SKIP TURN passes the bidding on", back);
 		await h.evaluate(() => window.__party.room.setGame(null));
@@ -1149,18 +1182,15 @@ try {
 		check("(the friend joins by its code)", await joinByCode(g, t.code));
 		await h.locator("button", { hasText: "INVITE A FRIEND" }).first().waitFor({ timeout: TIMEOUT });
 		await h.locator("button", { hasText: "START GAME" }).first().click();
-		const mounted = (p) =>
-			p.waitForFunction(() => window.__party?.game === "connect4" && !!window.__party.handle, null, { timeout: TIMEOUT }).then(() => true, () => false);
+		const mounted = (p) => gameMounted(p, "connect4");
 		check("START GAME seats them and starts Connect 4 for both", (await mounted(h)) && (await mounted(g)));
-		const seats = await h.evaluate(() => {
-			const d = window.__party.handle.debug();
-			return { red: d.red, yellow: d.yellow, me: window.__party.room.selfId };
-		});
+		const d13 = await gameDebug(h);
+		const seats = { red: d13?.red, yellow: d13?.yellow, me: await h.evaluate(() => window.__party.room.selfId) };
 		const gId = await g.evaluate(() => window.__party.room.selfId);
 		check("…host red, friend yellow", seats.red === seats.me && seats.yellow === gId, JSON.stringify(seats));
 		await g.reload();
 		check("the friend's reload rejoins the party", await waitInParty(g));
-		check("…and the game, in the same seat", (await mounted(g)) && (await g.evaluate(() => window.__party.handle.debug().yellow)) === gId);
+		check("…and the game, in the same seat", (await mounted(g)) && (await gameDebug(g))?.yellow === gId);
 
 		// A fresh visit to another game page moves on: the old seat goes at once.
 		await g.goto(PAGES + "battleship.html");
@@ -1177,9 +1207,8 @@ try {
 	// whose bots' fleets left with the host, ends it with a word.
 	console.log("\nworker: the host goes mid-game and the heir carries it on");
 	{
-		const dbgOf = (p) => p.evaluate(() => window.__party.handle?.debug?.() ?? null);
-		const mountedOn = (p, game) =>
-			p.waitForFunction((id) => window.__party?.game === id && !!window.__party.handle, game, { timeout: TIMEOUT }).then(() => true, () => false);
+		const dbgOf = gameDebug;
+		const mountedOn = gameMounted;
 		async function trio(game, teamsOf) {
 			const [h, a, b] = [await person(`ho-${game}-h`), await person(`ho-${game}-a`), await person(`ho-${game}-b`)];
 			for (const p of [h, a, b]) {
@@ -1196,7 +1225,7 @@ try {
 				const r = window.__party.room;
 				for (const [m, team] of Object.entries(teams)) r.setTeam(m, team);
 				r.setGame(game);
-			}, { game, teams: teamsOf(ids) });
+			}, { game: gid(game), teams: teamsOf(ids) });
 			const up = joined && (await mountedOn(h, game)) && (await mountedOn(a, game)) && (await mountedOn(b, game));
 			return { h, a, b, ids, up };
 		}
@@ -1206,7 +1235,7 @@ try {
 			await t.h.close();
 			check(`${label}: the heir takes it over, and says so`, await kept);
 			check(`${label}: …and the others are told`, await told);
-			check(`${label}: …still playing it`, (await t.b.evaluate(() => window.__party.game)) === game && (await t.a.evaluate(() => window.__party.room.isHost())));
+			check(`${label}: …still playing it`, (await t.b.evaluate(() => window.__party.game)) === gid(game) && (await t.a.evaluate(() => window.__party.room.isHost())));
 		};
 		const done = async (t) => {
 			for (const p of [t.a, t.b]) await p.context().close();
@@ -1221,24 +1250,26 @@ try {
 		// Connect 4: the host moves, goes; the heir answers and the board holds.
 		let t = await trio("connect4", oneVsOne);
 		check("connect 4: (three in, the game up)", t.up);
-		const box = await t.h.locator("#board").boundingBox();
+		await readyToClick(t.h);
+		const box = await (await inGame(t.h)).locator("#board").boundingBox();
 		await t.h.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
-		await t.a.waitForFunction(() => window.__party.handle.debug().turn === 2, null, { timeout: TIMEOUT });
+		await (await inGame(t.a)).waitForFunction(() => window.__game.handle.debug().turn === 2, null, { timeout: TIMEOUT });
 		await goes(t, "connect4", "connect 4");
-		const abox = await t.a.locator("#board").boundingBox();
+		await readyToClick(t.a);
+		const abox = await (await inGame(t.a)).locator("#board").boundingBox();
 		await t.a.mouse.click(abox.x + abox.width / 3, abox.y + abox.height / 2);
-		const both = await t.b
-			.waitForFunction(() => window.__party.handle.debug().board.flat().filter(Boolean).length === 2, null, { timeout: TIMEOUT })
+		const both = await (await inGame(t.b))
+			.waitForFunction(() => window.__game.handle.debug().board.flat().filter(Boolean).length === 2, null, { timeout: TIMEOUT })
 			.then(() => true, () => false);
 		check("connect 4: the heir's move lands on top of the host's", both);
-		check("connect 4: …and the departed host's turn waits for them, as for anyone lost", await t.a.locator(".turn-wait:not([hidden])").first().waitFor({ timeout: 15_000 }).then(() => true, () => false));
+		check("connect 4: …and the departed host's turn waits for them, as for anyone lost", await (await inGame(t.a)).locator(".turn-wait:not([hidden])").first().waitFor({ timeout: 15_000 }).then(() => true, () => false));
 		await done(t);
 
 		// Light cycles: the round restarts under the heir, wins carried.
 		t = await trio("light-cycles", everyone);
 		check("light cycles: (three in, the game up)", t.up);
 		await goes(t, "light-cycles", "light cycles");
-		const racing = await t.b.waitForFunction(() => window.__party.handle.debug().racing, null, { timeout: 20_000 }).then(() => true, () => false);
+		const racing = await (await inGame(t.b)).waitForFunction(() => window.__game.handle.debug().racing, null, { timeout: 20_000 }).then(() => true, () => false);
 		check("light cycles: a new round races under the heir", racing);
 		await done(t);
 
@@ -1248,8 +1279,9 @@ try {
 		await goes(t, "neon-survival-mp", "neon survival");
 		// After the heir's 3-2-1 (the old host was out of the app, as a closed
 		// tab is), the swarm spawns and moves again for everyone.
-		const swarm = () => t.b.evaluate(() => JSON.stringify(window.enemies?.map((e) => [Math.round(e.x), Math.round(e.y)]) ?? []));
-		await t.b.waitForFunction(() => (window.enemies?.length ?? 0) > 0, null, { timeout: 15_000 }).catch(() => {});
+		const nsFrame = await inGame(t.b);
+		const swarm = () => nsFrame.evaluate(() => JSON.stringify(window.enemies?.map((e) => [Math.round(e.x), Math.round(e.y)]) ?? []));
+		await nsFrame.waitForFunction(() => (window.enemies?.length ?? 0) > 0, null, { timeout: 15_000 }).catch(() => {});
 		const e0 = await swarm();
 		await t.b.waitForTimeout(1000);
 		const e1 = await swarm();
@@ -1259,11 +1291,11 @@ try {
 		// Draw & guess: the clock goes on under the heir.
 		t = await trio("draw-guess", everyone);
 		check("draw & guess: (three in, the game up)", t.up);
-		await t.b.waitForFunction(() => ["choosing", "drawing"].includes(window.__party.handle.debug().phase), null, { timeout: TIMEOUT });
+		await (await inGame(t.b)).waitForFunction(() => ["choosing", "drawing"].includes(window.__game.handle.debug().phase), null, { timeout: TIMEOUT });
 		await goes(t, "draw-guess", "draw & guess");
-		const drawing = await t.a
+		const drawing = await (await inGame(t.a))
 			.waitForFunction(() => {
-				const d = window.__party.handle.debug();
+				const d = window.__game.handle.debug();
 				return d.phase === "drawing" && !!d.word;
 			}, null, { timeout: 20_000 })
 			.then(() => true, () => false);
@@ -1273,11 +1305,11 @@ try {
 		// Liar's dice: the round is rolled again, everyone keeping their dice.
 		t = await trio("liars-dice", everyone);
 		check("liar's dice: (three in, the game up)", t.up);
-		await t.b.waitForFunction(() => window.__party.handle.debug().phase === "bid", null, { timeout: TIMEOUT });
+		await (await inGame(t.b)).waitForFunction(() => window.__game.handle.debug().phase === "bid", null, { timeout: TIMEOUT });
 		await goes(t, "liars-dice", "liar's dice");
-		const rerolled = await t.b
+		const rerolled = await (await inGame(t.b))
 			.waitForFunction(() => {
-				const d = window.__party.handle.debug();
+				const d = window.__game.handle.debug();
 				return d.phase === "bid" && d.committed && d.myDice === 5;
 			}, null, { timeout: 25_000 })
 			.then(() => true, () => false);
@@ -1287,12 +1319,12 @@ try {
 		// Neon bid: the lot under way opens again; nothing settled is lost.
 		t = await trio("neon-bid", everyone);
 		check("neon bid: (three in, the game up)", t.up);
-		await t.b.waitForFunction(() => window.__party.handle.debug().phase === "bid", null, { timeout: TIMEOUT });
-		await t.b.locator(".nb-go").click();
+		await (await inGame(t.b)).waitForFunction(() => window.__game.handle.debug().phase === "bid", null, { timeout: TIMEOUT });
+		await tap((await inGame(t.b)).locator(".nb-go"));
 		await goes(t, "neon-bid", "neon bid");
-		const reopened = await t.b
+		const reopened = await (await inGame(t.b))
 			.waitForFunction(() => {
-				const d = window.__party.handle.debug();
+				const d = window.__game.handle.debug();
 				return d.phase === "bid" && d.lot === 0 && !d.committed && d.players.every((p) => p.credits === 100);
 			}, null, { timeout: 20_000 })
 			.then(() => true, () => false);

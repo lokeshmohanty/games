@@ -14,6 +14,7 @@ questions about this project from this folder alone.
 - [Hidden information](#hidden-information) — sealed private state, and commit-reveal
 - [Rounds and phases](#rounds-and-phases) — the shared clock for timed and simultaneous-turn games
 - [Adding a game](#adding-a-game) — the module contract
+- [Accounts and the social layer](accounts.md) — sign-in, ranked matches, leaderboards, friends, invites, groups, feedback, the public snapshot; what is stored; the one-time setup
 - [The game SDK](sdk.md) — framed games: sandbox, bridge protocol, manifest, rules for outside authors (branch `platform`)
 - [Installing it](#installing-it) — the PWA: manifest, icons, service worker, offline
 - [Testing across real networks](network-testing.md) — the NAT lab: symmetric NAT, network switches, lossy links, a blocked room server

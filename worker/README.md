@@ -119,3 +119,16 @@ Check it with `just test-live https://neon-arcade-room.lokeshmohanty.workers.dev
     and real browsers; skips with a message if wrangler cannot start.
   Real hibernation on Cloudflare is unverified until the first deploy; see
   `docs/room-server.md` → Honest gaps.
+
+
+## The account API (2026-11-13)
+
+The same Worker serves `/api/*`, `/auth/*` and `/live` (worker/api/, design
+and one-time setup in docs/accounts.md): a D1 database `arcade`, the
+`UserLive` Durable Object, an hourly cron for the public snapshot, and
+secrets `SESSION_KEY`, `GITHUB_CLIENT_ID/SECRET`, `GOOGLE_CLIENT_ID/SECRET`,
+`GH_APP_ID`, `GH_APP_KEY`. Without the D1 binding those routes answer 503 and
+the room server works as before. Locally: `just test-accounts`,
+`just test-social` (scripts/wrangler.mjs applies the migrations to a
+throwaway local D1). Backup: D1 Time Travel, or
+`wrangler d1 export arcade --remote --output arcade.sql`.

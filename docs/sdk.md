@@ -79,6 +79,7 @@ New with the SDK:
 | `ctx.reportResult(r)` | the outcome, for stats and leaderboards — below |
 | `ctx.storage.get(key)` / `.set(key, value)` | per game, per device; 64 KB of JSON |
 | `ctx.assets.url(path)` | `Promise<blob: URL>` for a file in the game folder (images, sounds, fonts) |
+| `NeonArcade.sessionStore` | this tab's session storage (`getItem`/`setItem`/`removeItem`), kept by the party page — the frame has none of its own. `lib/secrets.js` keeps commitments here across a reload |
 
 ### Reporting a result
 
@@ -124,6 +125,7 @@ Shell → frame: `init {state}` · `party {state, roster}` · `msg {a, d, from}`
 `takeOver {id}` · `unmount`. Frame → shell: `ready` · `listen {a}` ·
 `send {a, d, to}` · `emitAs {bot, a, d, to}` · `meta {patch}` · `end` ·
 `toast` · `ask {id,…}` · `hostNew` · `result {r}` · `store {key, value}` ·
+`session {key, value}` ·
 `asset {id, path}` · `reply {id, ok}`.
 
 - Game channels travel as `g:<name>` on the wire, so a game cannot speak on

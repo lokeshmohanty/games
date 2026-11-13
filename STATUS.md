@@ -11,6 +11,24 @@ session pay for it.*
 act → record → clear the item. This is the single inbox — do not create a
 separate `TODO.md`.*
 
+## Phases 1–6 (2026-11-13) — branch `platform-2`, not merged, not deployed
+
+Built and green locally: stats/favourites/recents + portal from catalogs
+(Phase 1); accounts, ranked matches, leaderboards, hourly GitHub snapshot,
+feedback, friends + presence + invites, groups (worker/api/, D1, UserLive;
+lib/account*.js, profile.html, leaderboard.html) — docs/accounts.md.
+test-worker converted to frames: it caught that sandboxed games lost
+`secrets.keep` across a reload (no sessionStorage in the frame) — **live on
+main since b597fb6**; fixed here (NeonArcade.sessionStore via the bridge).
+Green 2026-11-13: every `just test` suite + test-accounts (100) + test-social
++ test-worker. arcade-games: branch `platform-2` (titles, reportResult),
+registry pinned to its local commit — push + re-pin before merging.
+Waiting on Lokesh: confirm push/merge; the one-time setup in docs/accounts.md
+(D1, SESSION_KEY, GitHub + Google OAuth, GitHub App, Discussions category,
+`wrangler deploy`). Until D1 exists the room server cannot be redeployed.
+Not yet: real-phone check (sandbox wake lock / audio / fullscreen; dev kit
+from Safari); a real OAuth sign-in on each provider after setup.
+
 ## Platform rework (2026-11-13) — merged to main on Lokesh's confirmation
 
 Plan: `~/.claude/plans/1-a-b-2-generic-whistle.md`; design: docs/sdk.md;
