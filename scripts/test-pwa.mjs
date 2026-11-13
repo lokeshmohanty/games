@@ -187,7 +187,6 @@ console.log("\npwa: every page is part of the app");
 for (const p of [
 	"party.html",
 	"connect4.html",
-	"onitama.html",
 	"light-cycles.html",
 	"draw-guess.html",
 	"neon-survival.html",
@@ -334,7 +333,7 @@ check("A CROWD finds the party games",
 	filters.results.party.names.includes("Undercover") && filters.results.party.names.includes("Draw & Guess"),
 	filters.results.party.names.join(", "));
 check("TWO finds only the head-to-head games",
-	filters.results.duel.names.every((n) => ["Battleship", "Onitama", "Connect 4"].includes(n)),
+	filters.results.duel.names.every((n) => ["Battleship", "Connect 4"].includes(n)),
 	filters.results.duel.names.join(", "));
 check("exactly one chip is pressed at a time",
 	Object.values(filters.results).every((r) => r.pressed.length === 1),

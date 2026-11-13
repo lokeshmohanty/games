@@ -124,12 +124,6 @@ try {
 	// The bot with something to prove: it is the only one here that has to be
 	// *right* rather than merely busy.
 
-	// ------------------------------------------------------------- onitama
-	//
-	// The deep one. Two things are being checked that no other game here needs:
-	// that a five-by-five board plus three card racks actually fit on a phone,
-	// and that the bot answers with a legal move rather than sitting on its
-	// turn — a search that times out badly would look exactly like a hang.
 
 	// ------------------------------------------------------------- undercover
 	//
@@ -604,63 +598,6 @@ try {
 	check("somebody scored, or everybody crashed",
 		lc.winner === null || lc.riders.some((r) => r.wins === 1),
 		JSON.stringify({ winner: lc.winner, wins: lc.riders.map((r) => r.wins) }));
-
-	console.log("\nbots: onitama fits a phone and answers its turn");
-	await startSolo(page, "onitama.html", "PLAY A BOT");
-	G = await gameScope(page, TIMEOUT);
-	await readyToClick(page);
-
-	let oni = await debug(page);
-	check("a bot took the other seat", oni.red !== null && oni.blue !== null);
-	check("the bot is the seat that is not us", (oni.mySide === 0 ? oni.blue : oni.red)?.startsWith("bot_"));
-	check("ten pieces, two masters", oni.pieces === 10 && oni.masters === 2, `${oni.pieces}/${oni.masters}`);
-	check("five cards are in play", new Set([...oni.hands[0], ...oni.hands[1], oni.side]).size === 5);
-
-	// Mobile-first is a rule here, so it is asserted rather than eyeballed.
-	const layout = await G.evaluate(() => {
-		const board = document.querySelector(".oni-board");
-		const cards = [...document.querySelectorAll(".oni-card")];
-		const rect = board.getBoundingClientRect();
-		const stage = document.querySelector(".g-stage").getBoundingClientRect();
-		return {
-			docWidth: document.documentElement.scrollWidth,
-			winWidth: window.innerWidth,
-			board: { w: Math.round(rect.width), h: Math.round(rect.height), top: Math.round(rect.top), bottom: Math.round(rect.bottom) },
-			stageBottom: Math.round(stage.bottom),
-			cardCount: cards.length,
-			minCard: Math.min(...cards.map((c) => Math.round(c.getBoundingClientRect().height))),
-			lowestCard: Math.round(Math.max(...cards.map((c) => c.getBoundingClientRect().bottom))),
-		};
-	});
-	check("the page does not scroll sideways at 390px", layout.docWidth <= layout.winWidth, `${layout.docWidth} > ${layout.winWidth}`);
-	check("the board is square", Math.abs(layout.board.w - layout.board.h) <= 1, JSON.stringify(layout.board));
-	check("the board fits the width", layout.board.w <= 390, `${layout.board.w}px`);
-	check("all five card slots are on screen", layout.cardCount === 5, `${layout.cardCount}`);
-	check("nothing is pushed off the bottom", layout.lowestCard <= 844, `${layout.lowestCard}px`);
-	check("card tap targets clear 44px", layout.minCard >= 44, `${layout.minCard}px`);
-
-	// Play one move and let the bot answer. Driving it through the page's own
-	// state rather than clicking the canvas: the click maths is the view's
-	// problem, and this is a test of the bot taking its turn.
-	const answered = await G.evaluate(async () => {
-		const g = window.__game.handle;
-		const R = window.NeonArcade.onitamaRules;
-		const before = g.debug();
-		if (before.turn !== before.mySide) return { waited: true };
-		return { waited: false, turn: before.turn };
-	});
-	await G.waitForFunction(
-		() => {
-			const d = window.__game.handle.debug();
-			return d.turn === d.mySide && d.winner === null;
-		},
-		null,
-		{ timeout: TIMEOUT },
-	);
-	oni = await debug(page);
-	check("play reaches us with a legal move available", oni.legal > 0, `${oni.legal}`);
-	check("no card went missing while the bot moved", new Set([...oni.hands[0], ...oni.hands[1], oni.side]).size === 5);
-	check("the bot did not answer instantly with nonsense", oni.pieces >= 8 && oni.masters === 2, `${oni.pieces}/${oni.masters}`);
 
 	console.log("\nbots: connect 4 plays a real opponent");
 	// The game page is a party shortcut; its quick start must suit a phone.

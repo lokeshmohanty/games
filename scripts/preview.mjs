@@ -417,64 +417,6 @@ const GAMES = {
 		},
 	},
 
-	onitama: {
-		file: "onitama.html",
-		peers: 2,
-		seconds: 14,
-		async play([a, b], seconds) {
-			// The move is *chosen* in the page, because the rules already live
-			// there and re-deriving "which card, which piece, which square" in the
-			// recorder would be a second implementation to keep in step. What the
-			// recorder does is the part a person does: tap the card, tap the piece,
-			// tap the square.
-			const pickAndPoint = (page) =>
-				page.evaluate(() => {
-					const g = window.__game.handle.debug();
-					if (!g.started || g.winner !== null || g.turn !== g.mySide) return null;
-					const R = window.NeonArcade.onitamaRules;
-					const moves = R.legalMoves({ board: g.board, hands: g.hands, side: g.side, turn: g.turn }, g.mySide);
-					if (!moves.length) return null;
-					// Take a capture when there is one, so the clip has something
-					// happening in it rather than five students shuffling forward.
-					const mv = moves.find((m) => g.board[m.to[0]][m.to[1]]) ?? moves[Math.floor(Math.random() * moves.length)];
-					const canvas = document.querySelector(".oni-board");
-					const rect = canvas.getBoundingClientRect();
-					const cell = rect.width / 5;
-					const flip = g.mySide === 1;
-					const at = ([r, c]) => {
-						const sr = flip ? 4 - r : r;
-						const sc = flip ? 4 - c : c;
-						return { x: rect.left + (sc + 0.5) * cell, y: rect.top + (sr + 0.5) * cell };
-					};
-					return { card: R.CARDS[mv.card].name, from: at(mv.from), to: at(mv.to) };
-				});
-
-			// Eight exchanges is enough to show the card cycling twice over, which
-			// is the mechanic worth seeing. More than that and the gif is over the
-			// portal's ~1MB budget for no extra idea.
-			const per = Math.max(700, (seconds * 1000) / 16);
-			for (let turn = 0; turn < 8; turn++) {
-				let acted = false;
-				for (const page of [a, b]) {
-					const plan = await pickAndPoint(page);
-					if (!plan) continue;
-					acted = true;
-					// The rack nearest the player is the last one on the page.
-					await page.locator(".oni-rack").last().locator("button", { hasText: plan.card }).first().click();
-					await sleep(200);
-					await page.mouse.click(plan.from.x, plan.from.y);
-					await sleep(260);
-					await page.mouse.click(plan.to.x, plan.to.y);
-					await sleep(per / 2);
-				}
-				if (!acted) await sleep(400);
-				const over = await a.evaluate(() => window.__game.handle.debug().winner !== null);
-				if (over) break;
-			}
-			await sleep(900);
-		},
-	},
-
 	connect4: {
 		file: "connect4.html",
 		peers: 2,

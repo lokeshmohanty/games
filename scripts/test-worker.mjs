@@ -32,10 +32,9 @@
  *  10. a guest who reloads mid-game comes back to the same game — the
  *      position, the canvas, and its own committed fleet, cup or bid, so
  *      the audit at the end does not call it a cheat (Battleship, Liar's
- *      Dice, Neon Bid, Onitama, Light Cycles, Draw & Guess).
+ *      Dice, Neon Bid, Light Cycles, Draw & Guess).
  *  11. a turn game whose player to move lost connection says so, then
- *      the host decides (WAIT / SKIP TURN / END GAME); Onitama ends when
- *      a side leaves.
+ *      the host decides (WAIT / SKIP TURN / END GAME).
  *  12. moving on (the portal's START A PARTY, a code link) hands the old
  *      seat back — unless another tab holds it live — a code link to your
  *      own party reconnects the seat, and going offline says so.
@@ -938,31 +937,6 @@ try {
 		check("neon bid: the guest's bid was opened and counted, not a cheat", r.ok && !lot.problems?.[ids.guest], JSON.stringify(lot));
 		await stop();
 
-		// Onitama: one move by whoever the side card says starts, through the
-		// board itself, then the guest reloads; the position must come back.
-		check("onitama: both mount it", await play("onitama"));
-		r = await until((a, b) => a.started && b.started && a.mySide !== null && b.mySide !== null);
-		check("onitama: both are seated", r.ok, show(r));
-		const mover = r.last[0].turn === r.last[0].mySide ? h : g;
-		const d0 = await dbg(mover);
-		const mv = await mover.evaluate(() => {
-			const d = window.__party.handle.debug();
-			return window.NeonArcade.onitamaRules.legalMoves({ board: d.board, hands: d.hands, side: d.side, turn: d.turn }, d.mySide)[0];
-		});
-		await mover.locator(".oni-card:not(.theirs):not(.side)").nth(d0.hands[d0.mySide].indexOf(mv.card)).click();
-		const board = await mover.locator(".oni-board").boundingBox();
-		const cell = board.width / 5;
-		for (const [row, col] of [mv.from, mv.to]) {
-			const [sr, sc] = d0.mySide === 1 ? [4 - row, 4 - col] : [row, col];
-			await mover.mouse.click(board.x + (sc + 0.5) * cell, board.y + (sr + 0.5) * cell);
-		}
-		r = await until((a) => a.turn !== d0.turn);
-		check("onitama: the move is played", r.ok, show(r));
-		await reloadGuest("onitama", "onitama");
-		r = await until((a, b) => b.turn === a.turn && JSON.stringify(a.board) === JSON.stringify(b.board) && JSON.stringify(a.hands) === JSON.stringify(b.hands));
-		check("onitama: the guest sees the position, not a new deal", r.ok, show(r));
-		await stop();
-
 		// Light cycles: mid-race, the walls so far must come back with the guest.
 		check("light cycles: both mount it", await play("light-cycles"));
 		r = await until((a) => a.racing && a.walls > 12);
@@ -1000,7 +974,7 @@ try {
 	// ------------------ 11. a turn game waiting on a player who lost connection
 	// The seat is held RECONNECTING for minutes; the game says who it waits
 	// for, and after the wait (3 s here, 30 s for real) the host decides:
-	// WAIT, SKIP TURN or END GAME. Onitama ends when a side leaves for good.
+	// WAIT, SKIP TURN or END GAME.
 	console.log("\nworker: a turn game waits on a lost player, then the host decides");
 	{
 		const h = await person("tw-host");
@@ -1079,36 +1053,12 @@ try {
 		const ended = await Promise.all([h, w].map((p) => p.waitForFunction(() => window.__party.game === null, null, { timeout: TIMEOUT }).then(() => true, () => false)));
 		check("connect 4: and everyone is back on the party screen", ended.every(Boolean));
 
-		// SKIP TURN in the other two turn games, against the seat still held.
+		// SKIP TURN in the other turn game, against the seat still held.
 		const skipOnce = async (label) => {
 			check(`${label}: the host is asked about the lost player`, await barText(h, /hasn't come back\.$/));
 			await h.locator(".turn-wait button", { hasText: "SKIP TURN" }).click();
 		};
-		await setUp("onitama", { [ids.host]: "A", [ids.guest]: "B", [ids.watch]: "spectator" });
-		check("onitama: the host mounts it", await mountedOn(h, "onitama"));
-		await h.waitForFunction(() => window.__party.handle.debug().started, null, { timeout: TIMEOUT });
-		let d = await dbg(h);
-		if (d.turn === d.mySide) {
-			const mv = await h.evaluate(() => {
-				const d = window.__party.handle.debug();
-				return window.NeonArcade.onitamaRules.legalMoves({ board: d.board, hands: d.hands, side: d.side, turn: d.turn }, d.mySide)[0];
-			});
-			await h.locator(".oni-card:not(.theirs):not(.side)").nth(d.hands[d.mySide].indexOf(mv.card)).click();
-			const box = await h.locator(".oni-board").boundingBox();
-			for (const [row, col] of [mv.from, mv.to]) {
-				const [sr, sc] = d.mySide === 1 ? [4 - row, 4 - col] : [row, col];
-				await h.mouse.click(box.x + (sc + 0.5) * (box.width / 5), box.y + (sr + 0.5) * (box.width / 5));
-			}
-			await h.waitForFunction((t) => window.__party.handle.debug().turn !== t, d.turn, { timeout: TIMEOUT });
-		}
-		d = await dbg(h);
-		await skipOnce("onitama");
-		const passed = await h
-			.waitForFunction((t) => window.__party.handle.debug().turn !== t, d.turn, { timeout: TIMEOUT })
-			.then(() => true, () => false);
-		check("onitama: SKIP TURN passes a card for them and gives the move back", passed && (await dbg(h)).winner === null);
-		await h.evaluate(() => window.__party.room.setGame(null));
-
+		let d;
 		await setUp("liars-dice", { [ids.host]: "A", [ids.guest]: "B", [ids.watch]: "spectator" });
 		check("liar's dice: the host mounts it", await mountedOn(h, "liars-dice"));
 		// The roll waits out its 12 s deadline for the cup that never comes.
@@ -1125,20 +1075,6 @@ try {
 		check("liar's dice: SKIP TURN passes the bidding on", back);
 		await h.evaluate(() => window.__party.room.setGame(null));
 
-		// Onitama: the watcher plays the host and leaves on purpose mid-game.
-		await setUp("onitama", { [ids.host]: "A", [ids.guest]: "spectator", [ids.watch]: "B" });
-		check("onitama: both mount it", (await mountedOn(h, "onitama")) && (await mountedOn(w, "onitama")));
-		await w.evaluate(() => window.__party.room.leave());
-		const won = await h
-			.waitForFunction(() => {
-				const d = window.__party.handle.debug();
-				return d.winner === d.mySide && d.by === "left";
-			}, null, { timeout: TIMEOUT })
-			.then(() => true, () => false);
-		check("onitama: a side that leaves loses — the host wins", won, JSON.stringify(await dbg(h)).slice(0, 200));
-		const hud = await h.locator(".g-hud").textContent().catch(() => "");
-		check("onitama: and says why", /You win — .+ left\./.test(hud ?? ""), hud);
-		await h.evaluate(() => window.__party.room.setGame(null));
 		for (const p of [h, w]) await p.context().close();
 		await a.context().close().catch(() => {});
 	}
@@ -1227,10 +1163,10 @@ try {
 		check("…and the game, in the same seat", (await mounted(g)) && (await g.evaluate(() => window.__party.handle.debug().yellow)) === gId);
 
 		// A fresh visit to another game page moves on: the old seat goes at once.
-		await g.goto(PAGES + "onitama.html");
+		await g.goto(PAGES + "battleship.html");
 		const gone = await h.waitForFunction((id) => !window.__party.room.getMember(id), gId, { timeout: 10_000 }).then(() => true, () => false);
 		check("opening another game page gives the old seat back", gone);
-		const title = await g.locator(".lobby-title", { hasText: "TIGER" }).or(g.locator(".lobby-title", { hasText: "ONITAMA" })).first().waitFor({ timeout: TIMEOUT }).then(() => true, () => false);
+		const title = await g.locator(".lobby-title", { hasText: "BATTLESHIP" }).first().waitFor({ timeout: TIMEOUT }).then(() => true, () => false);
 		check("…and opens a new party for that game", title);
 		for (const p of [h, g]) await p.context().close();
 	}
@@ -1296,15 +1232,6 @@ try {
 			.then(() => true, () => false);
 		check("connect 4: the heir's move lands on top of the host's", both);
 		check("connect 4: …and the departed host's turn waits for them, as for anyone lost", await t.a.locator(".turn-wait:not([hidden])").first().waitFor({ timeout: 15_000 }).then(() => true, () => false));
-		await done(t);
-
-		// Onitama: one move, the host goes, the position stands.
-		t = await trio("onitama", oneVsOne);
-		check("onitama: (three in, the game up)", t.up);
-		const before = JSON.stringify((await dbgOf(t.b))?.board);
-		await goes(t, "onitama", "onitama");
-		const oni = await dbgOf(t.a);
-		check("onitama: the heir holds the same position, the game unfinished", JSON.stringify(oni?.board) === before && oni.winner === null, JSON.stringify(oni).slice(0, 160));
 		await done(t);
 
 		// Light cycles: the round restarts under the heir, wins carried.

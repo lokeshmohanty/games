@@ -248,7 +248,6 @@ node scripts/test-bots.mjs     # every game playable by one person: the bots
 node scripts/test-plumbing.mjs # sealed private channels, commit-reveal and the
                                # round clock, over real routing on a fake
                                # transport
-node scripts/test-onitama.mjs       # Onitama's rules and search, no document
 node scripts/test-light-cycles.mjs  # the arena simulation and the rider bot
 node scripts/test-battleship.mjs    # fleets, sinking, and the reveal audit —
                                     # tested by breaking it four ways

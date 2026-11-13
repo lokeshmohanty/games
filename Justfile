@@ -136,7 +136,7 @@ test-pwa:
 test-bots:
     node scripts/test-bots.mjs
 
-# Record a portal preview gif: `just preview onitama`, or `just preview all`.
+# Record a portal preview gif: `just preview connect4`, or `just preview all`.
 preview game:
     scripts/make-preview.sh {{game}}
 

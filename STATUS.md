@@ -11,24 +11,20 @@ session pay for it.*
 act → record → clear the item. This is the single inbox — do not create a
 separate `TODO.md`.*
 
-## Platform rework (2026-11-13) — branch `platform`, do not merge unconfirmed
+## Platform rework (2026-11-13) — merged to main on Lokesh's confirmation
 
-Plan: `~/.claude/plans/1-a-b-2-generic-whistle.md`; design: docs/sdk.md.
-Done: bridge + SDK client; all ten games framed — four in `games/<id>/`,
-six from `../arcade-games` (branch `import`, local only, not pushed) via
-`registry/lokeshmohanty/arcade-games.json` + `just community`. sw.js v24
-(community precache via importScripts; offline query-less page match).
-Green 2026-11-13: every `just test` suite. Fixed on the way: a 1-in-100
-flake in test-plumbing (random digest contained "B2").
-Also built: dev kit (`?dev=` + sdk/v1/dev-server.mjs, test-devkit), SDK
-example game (sdk/v1/example/tic-tac-toe), `just validate-game` (all 11
-pass), PR check workflow (registry-check.yml), deploy.yml fetches community
-games, CONTRIBUTING.md. Green 2026-11-13: full `just test` incl. devkit.
-Next: portal from the catalogs; push/merge on Lokesh's confirmation; then
-Phases 1–6 (stats → accounts → …).
-Not yet: test-worker (wrangler) not re-run since the move — it plays
-neon-bid/neon-survival by id; real-phone check of wake lock / audio /
-fullscreen in the sandbox. `file://` no longer opens games (accepted).
+Plan: `~/.claude/plans/1-a-b-2-generic-whistle.md`; design: docs/sdk.md;
+author workflow: CONTRIBUTING.md. All games framed: four in `games/<id>/`,
+five from `lokeshmohanty/arcade-games` (pushed, main 24eeffe) via
+`registry/lokeshmohanty/arcade-games.json`. Onitama removed everywhere
+(Lokesh: "leave onitama out" — a recreation of a published game); a local
+branch `backup/import-with-onitama` in ../arcade-games keeps the old import.
+Dev kit, example game, `validate-game`, PR check, deploy fetch step built.
+Green 2026-11-13: full `just test` incl. devkit; validate-game on all games.
+Next: portal cards from the catalogs; then Phases 1–6 (stats → accounts → …).
+Not yet: test-worker (wrangler) still drives games in-page — needs the
+frame rewrite test-party got; real-phone check of wake lock / audio /
+fullscreen in the sandbox; dev kit from Safari / Chrome LNA prompt.
 
 ## Leaving and presence (2026-11-12) — committed (e55a33c…c6a9856)
 

@@ -395,7 +395,6 @@ node scripts/test-bots.mjs     # every game playable by one person, and no peer
                                # opening a connection to a bot
 node scripts/test-plumbing.mjs # sealed channels, commitments and the round
                                # clock, over real routing and a fake transport
-node scripts/test-onitama.mjs  # Onitama's rules and search, with no document
 node scripts/test-light-cycles.mjs  # the arena simulation and the rider bot
 node scripts/test-battleship.mjs    # fleets, sinking, and the reveal audit —
                                     # tested by breaking it four ways

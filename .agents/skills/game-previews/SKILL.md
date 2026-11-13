@@ -23,7 +23,7 @@ That is the whole job: it plays the game, records it, converts it, and writes
 `assets/<game>.gif` in place. `index.html` already points at that path, so a
 successful run needs **no HTML edit**.
 
-Games: `onitama`, `light-cycles`, `connect4`, `draw-guess`, `neon-survival-mp`,
+Games: `light-cycles`, `connect4`, `draw-guess`, `neon-survival-mp`,
 `tug-of-war`. `scripts/preview.mjs --list` is the authority.
 
 ## What it does
@@ -82,10 +82,10 @@ if it is motion-heavy.
 - **Games built on `lib/ui.js` have no `#game` element**, they have `.g-stage`. The
   harness waits for `#game, .g-stage`; waiting for the old selector alone was a silent
   20-second stall per recording, hidden behind a `.catch(() => {})`.
-- **Onitama's scenario picks its move inside the page**, via
-  `NeonArcade.onitamaRules.legalMoves`, and then clicks card → piece → square like a
-  person. Re-deriving legality in the recorder would be a second implementation of the
-  rules to keep in step.
+- **A scenario picks its move inside the page** when the rules already live there
+  (the old Onitama scenario, removed with the game 2026-11-13, used the game's own
+  `legalMoves`), then clicks like a person. Re-deriving legality in the recorder would
+  be a second implementation of the rules to keep in step.
 - **Connect 4** stops early once someone wins, holding the win overlay ~1.4s.
 - The P2P games no longer need any signaling service: the handshake is passed directly
   between the two pages. STUN is still contacted for candidate discovery, but two pages

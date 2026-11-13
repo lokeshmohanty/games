@@ -147,7 +147,7 @@ One file per **repository** — a repo may hold several games:
 {
   "repo": "https://github.com/<owner>/<repo>",
   "commit": "<full 40-character sha>",
-  "games": ["battleship", "onitama"]
+  "games": ["battleship", "draw-guess"]
 }
 ```
 
@@ -165,7 +165,8 @@ state and URLs (`party.html?game=lokeshmohanty%2Fbattleship`). The old pages
 (`battleship.html` …) redirect there.
 
 **`lokeshmohanty/arcade-games`** holds battleship, draw-guess, liars-dice,
-light-cycles, onitama and tug-of-war, registered exactly like an outsider's
+light-cycles and tug-of-war (Onitama left out
+2026-11-13: a recreation of a published game), registered exactly like an outsider's
 repo (branch `import`, not yet pushed). Its rules tests load the platform
 runtime from a checkout of this repo (`NEON_PLATFORM`, default `../../games/`).
 `just test` runs `community` first; the browser suites play those games

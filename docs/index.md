@@ -39,7 +39,6 @@ questions about this project from this folder alone.
 | Test installability and offline | `node scripts/test-pwa.mjs` — checks the manifest and icons, asserts the portal's layout at 390x844, asks **Chrome itself** whether anything blocks installing, then cuts the network and loads the pages |
 | Test that every game is playable alone | `node scripts/test-bots.mjs` — starts each game with bots and no second browser, checks the bots actually play (Connect 4 is never left an open win), and checks no peer opens a connection to one |
 | Test the private-state and round layers | `node scripts/test-plumbing.mjs` — real `Room` routing over a fake transport: a sealed message is unreadable by the peer relaying it, a tampered one is refused, commitments verify, phases advance |
-| Test Onitama's rules and bot | `node scripts/test-onitama.mjs` — card orientation as a property, both victory conditions from both sides, and the bot measured against random play |
 | Test Battleship's rules and audit | `node scripts/test-battleship.mjs` — fleets, sinking, and the audit tested by *breaking* it four ways |
 | Test Undercover | `node scripts/test-undercover.mjs` — the deal, the win conditions, and the table sizes that survive a wrong vote |
 | Test Liar's Dice | `node scripts/test-liars-dice.mjs` — wilds, the bid ladder, the at-least rule, and the reveal race that once accused an honest player |
@@ -179,13 +178,13 @@ page navigation** — nobody reconnects and nobody re-scans.
   screen up over it (the game keeps running underneath): BACK TO GAME for
   everyone, END GAME (asked first) for the host. Picking another game from
   there asks too, since it ends the one running.
-- **A turn game waiting on a lost player** (Connect 4, Onitama, Liar's Dice)
+- **A turn game waiting on a lost player** (Connect 4, Liar's Dice)
   says so: "Waiting for X — reconnecting (0:30)" for everyone. After 30 s the
-  host decides — WAIT (another 30 s, for everyone), SKIP TURN (Onitama hands a
-  card over, as a stuck player would) or END GAME (asked first). Lokesh chose
+  host decides — WAIT (another 30 s, for everyone), SKIP TURN (the game's own rule
+  for passing a turn) or END GAME (asked first). Lokesh chose
   "host decides" over a bot taking the seat. The seat itself is still held for
   the full grace; a player who leaves for good is handled by each game
-  (Onitama: the side that stays wins). The collecting games (Battleship, Neon
+  (Connect 4: the side that stays wins). The collecting games (Battleship, Neon
   Bid, Draw & Guess) never stall — their phases have deadlines.
 - **Leaving the app** (another app, a locked phone). The screen is kept on while
   a game runs (Screen Wake Lock), since a phone that dims suspends the page. A
@@ -657,8 +656,7 @@ the favicon via `<link rel="icon">`.
   The relay path *does* now run in anger: `test-nat.mjs` scenario 4 puts two
   peers behind symmetric NATs, which cannot link, and their messages arrive
   through the third.
-- Bot *strength* is now measured for three. Onitama's bot wins 20 of
-  20 against random play; Neon Bid's wins every one of 2,000 games against a
+- Bot *strength* is now measured for two. Neon Bid's wins every one of 2,000 games against a
   random bidder and against one that spends evenly (`test-neon-bid.mjs`, which
   prints the rates); Light Cycles' wins 30 of 30 against a rider that only
   avoids crashing, and a per-tick budget assertion keeps the search inside its
@@ -732,7 +730,7 @@ the favicon via `<link rel="icon">`.
   calls the game's `takeOver()` and carries on from what it was sent; the old
   host's seat is held like any lost player's (the turn banner covers a turn
   of theirs), and an old host whose tab survived the blip remounts as a guest.
-  What is lost is whatever lived only on the old host, so: Connect 4, Onitama
+  What is lost is whatever lived only on the old host, so: Connect 4
   and Tug of War (its rope's momentum aside) continue where they were; Light
   Cycles restarts the round, wins kept; Neon Survival takes the bots' ships
   over from where they were last seen; Draw & Guess goes on if the new host
@@ -762,14 +760,8 @@ the favicon via `<link rel="icon">`.
   relaying player could read it. That is the honest level of protection for a
   party game whose worst case is a spoiled round, but it is a choice, not an
   oversight.
-- Onitama's card *movesets* are the published ones, but the first-player stamp
-  on each card is ours — an even 8/8 split that keeps the mechanic without
-  claiming to reproduce the physical deck. Marked `VERIFY` in the source.
-- A genuinely stuck Onitama position — no legal move, so a card is passed — was
-  never found: 375,000 random small placements against every card pair, plus an
-  exhaustive sweep of the back two rows and one 3x3 corner against all 120
-  pairs, produced none. The rule is implemented faithfully; the branch is
-  almost certainly unreachable and its test fixture is built by hand.
+- Onitama was removed 2026-11-13 (Lokesh): it recreated a published board
+  game, which the platform's own rules (CONTRIBUTING.md) do not allow.
 - The Firefox install hints are reasoned from the platform, not observed.
   Firefox's *multiplayer* is verified (2026-11-12): `just test-pair
   --browser=firefox` on production, Firefox↔Chrome and Firefox↔Firefox
