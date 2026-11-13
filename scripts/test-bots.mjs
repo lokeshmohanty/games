@@ -86,6 +86,21 @@ async function startSolo(page, file, button) {
 }
 
 const debug = async (page) => (await gameScope(page, TIMEOUT)).evaluate(() => window.__game.handle.debug());
+
+/**
+ * What this device's stats (lib/stats.js) hold for `game`, and whether they
+ * match the game's own ending: played once, against bots only, and won
+ * exactly when `iWon`. A result travels game → frame → bridge → party.js.
+ */
+async function resultReached(page, game, iWon) {
+	const rec = await page
+		.waitForFunction((id) => JSON.parse(localStorage.getItem("neon.stats") ?? "{}")[id]?.played >= 1, game, { timeout: 5000 })
+		.then(() => page.evaluate((id) => JSON.parse(localStorage.getItem("neon.stats"))[id], game))
+		.catch(() => null);
+	check(`${game}: its result reached this device's stats, once, against bots`, rec?.played === 1 && rec.vsBots === 1, JSON.stringify(rec));
+	check(`${game}: …as a ${iWon ? "win" : "loss"}, as the game itself ended`, rec && rec.won === (iWon ? 1 : 0), JSON.stringify(rec));
+}
+const selfOf = (page) => page.evaluate(() => window.__party.room.selfId);
 /** The running game's scope — its frame for a framed game (gameScope). */
 let G = null;
 
@@ -430,6 +445,7 @@ try {
 	check("the end table lists all eight", lay.rows === 8, `${lay.rows}`);
 	check("and fits the phone", lay.bottom <= 844 && lay.docWidth <= lay.winWidth, JSON.stringify({ bottom: lay.bottom, w: lay.docWidth }));
 	check("the winners are the top of the table", nb.over.winners.includes(nb.over.rows[0].id));
+	await resultReached(page, "neon-bid", nb.over.winners.includes(await selfOf(page)));
 
 	// ------------------------------------------------------------ battleship
 	//
@@ -512,6 +528,7 @@ try {
 	check("both fleets were revealed", bs.fleetsRevealed === 2, `${bs.fleetsRevealed}`);
 	check("and both audited clean", Object.values(bs.audits).every((a) => a === null), JSON.stringify(bs.audits));
 	check("the phase leaves the firing state", bs.phase === "over", bs.phase);
+	if (bs.over?.winner !== undefined) await resultReached(page, "lokeshmohanty/battleship", bs.over.winner === (await selfOf(page)));
 
 	// The claim, tested by breaking it: a fleet that does not match the answers
 	// given must fail the audit. This is done against the real helper rather
@@ -598,6 +615,7 @@ try {
 	check("somebody scored, or everybody crashed",
 		lc.winner === null || lc.riders.some((r) => r.wins === 1),
 		JSON.stringify({ winner: lc.winner, wins: lc.riders.map((r) => r.wins) }));
+	await resultReached(page, "lokeshmohanty/light-cycles", lc.winner === (await selfOf(page)));
 
 	console.log("\nbots: connect 4 plays a real opponent");
 	// The game page is a party shortcut; its quick start must suit a phone.
