@@ -49,13 +49,17 @@ Green 2026-11-13: every `just test` suite + test-accounts (100) + test-social
 + test-worker. arcade-games: branch `platform-2` (titles, reportResult),
 registry pinned to its local commit — push + re-pin before merging.
 Setup done 2026-11-13: D1 `arcade` (APAC), all secrets, OAuth apps, GitHub
-App, Worker deployed; live API/redirects/room server verified. Still to see
-live: a real sign-in per provider, a ranked game between two real accounts,
-a feedback post, the first `stats` snapshot commit. Old note: the one-time setup in docs/accounts.md
-(D1, SESSION_KEY, GitHub + Google OAuth, GitHub App, Discussions category,
-`wrangler deploy`). Until D1 exists the room server cannot be redeployed.
-Not yet: real-phone check (sandbox wake lock / audio / fullscreen; dev kit
-from Safari); a real OAuth sign-in on each provider after setup.
+App, Worker deployed; live API/redirects/room server verified.
+Identities live 2026-11-13 (main 16c0777, D1 migration 0002 applied, Worker
+ff2ca98d): one account connects Google + GitHub; GitHub sign-in is the GitHub
+App (client Iv23…); its user token kept AES-GCM encrypted; feedback requires
+GitHub and posts as the player's own comment. The one live Google account was
+copied into `identities`. Old OAuth app secrets (GITHUB_CLIENT_ID/SECRET)
+still set — delete them and the OAuth app once GitHub sign-in is seen working.
+Still to see live: a GitHub sign-in/connect, a feedback post under the
+player's own GitHub, a ranked game between two real accounts, the first
+`stats` snapshot commit; real-phone check (sandbox wake lock / audio /
+fullscreen; dev kit from Safari).
 
 ## Platform rework (2026-11-13) — merged to main on Lokesh's confirmation
 
