@@ -712,6 +712,36 @@ try {
 	// a release — presents the pass its seat came with, so the routing
 	// Worker never charges it against the address's dial budget. Hosting
 	// dials /room/new and never names a code.
+	console.log("\nroom: the network coming back redials at once");
+	// A redial backs off to one try per 30 s; the browser's `online` event
+	// is news worth more than the timer, so it goes now.
+	const online = await page.evaluate(async () => {
+		const mock = window.__neonRoomMock;
+		const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+		localStorage.removeItem("neon.room");
+		const host = await NeonArcade.hostRoom({ name: "Host" });
+		localStorage.removeItem("neon.room");
+		const g = await NeonArcade.joinRoom(host.code, { name: "G" });
+		const attached = () => !!mock.rooms.get(host.code)?.get(g.room.selfId)?.socket;
+		mock.down = true;
+		mock.drop(g.room.selfId);
+		await wait(3500); // tries at ~1 s and ~3 s fail; the next waits ~4 s
+		mock.down = false;
+		const stillOut = !attached();
+		const t0 = Date.now();
+		dispatchEvent(new Event("online"));
+		let ms = null;
+		for (let i = 0; i < 40 && ms === null; i++) {
+			await wait(50);
+			if (attached()) ms = Date.now() - t0;
+		}
+		g.room.leave();
+		host.room.leave();
+		return { stillOut, ms };
+	});
+	check("(the outage kept the guest off the room server)", online.stillOut);
+	check("`online` redials straight away, not at the next backoff step", online.ms !== null && online.ms < 1000, JSON.stringify(online));
+
 	console.log("\nroom: hosts never name a code; every re-dial carries the pass");
 	const passes = await page.evaluate(async () => {
 		const mock = window.__neonRoomMock;

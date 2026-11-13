@@ -142,6 +142,9 @@ silent about a held seat coming back). Treat it as "send this player
 everything": every game's `onPeerJoin` is a full state push, and a second one
 for a newcomer is harmless.
 
+A party page that goes **offline** (`navigator.onLine` false) shows a strip
+saying so, and "Back online." when it returns (lobby.js).
+
 A **turn game** calls `NeonArcade.turnWait(ctx, { turn, skip })` once at mount
 (and `dispose()` at unmount): `turn()` is the member id to move or null,
 `skip(id)` the game's own rule for passing a turn. When the player to move is

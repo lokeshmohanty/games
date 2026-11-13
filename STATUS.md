@@ -52,8 +52,18 @@ Audit backlog (2026-11-12), owner to pick — highest first:
       a real phone; headless Chrome grants it.
 - [x] Bots stay when the crown moves (`_vacateCrown` no longer drops them; the
       new host plays them next game) (2026-11-13, test-plumbing, test-party).
-- [ ] Portal START A PARTY / code join skip `releaseRejoin` (old seat held 5 min;
-      can steal another tab's token). No `online` redial, no offline banner.
+- [x] Moving on from a held seat (portal START A PARTY, code link, invite)
+      releases it first (`busy` → "open in another tab"); a code link to your
+      own party reconnects; a release is announced `released:true` and the mesh
+      drops the seat at once; `online` redials at once; offline strip
+      (2026-11-13, test-worker 12, test-room). **Needs a worker deploy** for
+      `released:true` — the deployed worker still holds such seats 5 min.
+- NAT lab scenario 11 is **flaky run alone** (`--only=11`): "cone host
+  reload: full mesh back (the carrier pair too) in < 6s" takes ~15.5 s in
+  most isolated runs, on the committed code too (3/5) — passes inside the
+  full lab. The full run of 2026-11-13 failed once on "…on the first try, no
+  swap" with `pair: null` (stats unread; the reload took 0.3 s). Neither
+  touches the new release/online paths (instrumented). Not investigated.
 - [ ] Perf: party `render()` rebuilds the whole screen (and QR) on every roster
       event, even hidden behind a game, and eats a name being typed; Link send
       queue unbounded; invites cancelled never close their PeerConnection.

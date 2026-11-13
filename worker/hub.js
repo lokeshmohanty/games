@@ -319,12 +319,12 @@ export function makeHub(adapter, { now = Date.now, limiter = makeLimiter({ now }
 	 * reattaches, the newcomer is the one told to offer, so neither side
 	 * waits for a notice that went to nobody.
 	 */
-	const announce = (room, member) => {
+	const announce = (room, member, extra = null) => {
 		const others = [...room.members.values()]
 			.filter((m) => m.socket && m.id !== member.id)
 			.sort((a, b) => a.joinedAt - b.joinedAt || (a.id < b.id ? -1 : 1));
 		if (!others.length) return;
-		const notice = { t: "peer", id: member.id, connected: !!member.socket, offering: others[0].id };
+		const notice = { t: "peer", id: member.id, connected: !!member.socket, offering: others[0].id, ...extra };
 		for (const m of others) adapter.send(m.socket, notice);
 	};
 
@@ -354,7 +354,12 @@ export function makeHub(adapter, { now = Date.now, limiter = makeLimiter({ now }
 	const forget = (room, member) => {
 		room.members.delete(member.id);
 		touch(room);
-		announce(room, member);
+		// `released`: the owner gave the seat back — only they can, it takes
+		// their secret — so the others may drop it at once instead of holding
+		// it RECONNECTING for the grace. Matters when no `__gone` of theirs is
+		// coming: a browser that starts a new party long after its old tab
+		// closed (room-join's releaseRejoin).
+		announce(room, member, { released: true });
 		if (!room.members.size) rooms.delete(room.code);
 	};
 

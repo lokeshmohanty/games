@@ -525,6 +525,25 @@ canvas {
   }
 }
 
+/* No network (lobby.js): a strip under the top band, above the game. */
+.neon-offline {
+  position: fixed;
+  top: calc(env(safe-area-inset-top) + 52px);
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 55;
+  width: min(358px, calc(100vw - 32px));
+  box-sizing: border-box;
+  padding: 8px 14px;
+  border: 1px solid var(--accent2);
+  border-radius: 12px;
+  background: rgba(10, 10, 10, 0.92);
+  color: #ffd6ff;
+  font-family: var(--font);
+  font-size: 0.85rem;
+  text-align: center;
+}
+
 /* A turn game waiting on a player who lost connection (games.js turnWait).
    Bottom of the screen, over the game's own controls — nothing there can be
    played while it shows, since it is not your turn. */

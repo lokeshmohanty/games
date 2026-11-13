@@ -36,6 +36,9 @@
  *  11. a turn game whose player to move lost connection says so, then
  *      the host decides (WAIT / SKIP TURN / END GAME); Onitama ends when
  *      a side leaves.
+ *  12. moving on (the portal's START A PARTY, a code link) hands the old
+ *      seat back — unless another tab holds it live — a code link to your
+ *      own party reconnects the seat, and going offline says so.
  *
  * Wrangler comes from $WRANGLER (a command line), else `wrangler` on PATH,
  * else `nix shell nixpkgs#wrangler` (npx wrangler cannot link workerd on
@@ -1134,6 +1137,56 @@ try {
 		await h.evaluate(() => window.__party.room.setGame(null));
 		for (const p of [h, w]) await p.context().close();
 		await a.context().close().catch(() => {});
+	}
+	// ----------- 12. moving on from a party, and losing the network
+	// The portal's START A PARTY and a code link used to start over without
+	// handing back the seat this browser still held: the old party kept it
+	// RECONNECTING for the grace, and the new token overwrote one another
+	// tab might be using live.
+	console.log("\nworker: moving on gives the old seat back; offline says so");
+	{
+		const h = await person("mv-host");
+		const g = await person("mv-guest");
+		const t = await host(h);
+		check("(the guest joins by code)", await joinByCode(g, t.code));
+		const gId = await g.evaluate(() => window.__party.room.selfId);
+		await g.goto(PARTY + "?fresh=1"); // the portal's START A PARTY
+		const dropped = await h
+			.waitForFunction((id) => !window.__party.room.getMember(id), gId, { timeout: 10_000 })
+			.then(() => true, () => false);
+		check("START A PARTY from the portal hands the old seat back at once", dropped);
+		const t2 = await g.locator(".party-code-digits").waitFor({ timeout: TIMEOUT }).then(() => token(g), () => null);
+		check("…and hosts a new party", !!t2?.code && t2.code !== t.code, JSON.stringify(t2));
+
+		// A code link to the party you already sit in is a way back to that seat.
+		const k = await person("mv-keep");
+		check("(another guest joins by code)", await joinByCode(k, t.code));
+		const kId = await k.evaluate(() => window.__party.room.selfId);
+		await k.goto("about:blank");
+		await k.goto(`${PARTY}#c=${t.code}`);
+		check("a code link to your own party reconnects the same seat", (await waitInParty(k)) && (await k.evaluate(() => window.__party.room.selfId)) === kId);
+		check("…with no second copy of you in it", await h.waitForFunction(() => window.__party.room.getMembers().length === 2, null, { timeout: TIMEOUT }).then(() => true, () => false));
+
+		// Another tab of the same browser holds that seat live: a new party here
+		// would steal its token, so this tab says where the party is instead.
+		const tab2 = await k.context().newPage();
+		await tab2.goto(PARTY + "?fresh=1");
+		const told = await tab2.locator("text=This party is open in another tab.").first().waitFor({ timeout: TIMEOUT }).then(() => true, () => false);
+		check("START A PARTY in a second tab does not take the first tab's seat", told && (await inParty(k)));
+		await tab2.close();
+
+		// No network.
+		await k.context().setOffline(true);
+		check("offline: the party says so", await k.locator(".neon-offline").waitFor({ timeout: 5000 }).then(() => true, () => false));
+		const fits = await k.evaluate(() => {
+			const r = document.querySelector(".neon-offline").getBoundingClientRect();
+			return r.left >= 0 && r.right <= innerWidth && document.documentElement.scrollWidth <= innerWidth;
+		});
+		check("…on one strip that fits the phone", fits);
+		await k.context().setOffline(false);
+		const back = await k.locator(".neon-offline").waitFor({ state: "detached", timeout: 5000 }).then(() => true, () => false);
+		check("…and that it is back online", back && (await k.locator(".neon-toast", { hasText: "Back online." }).count()) === 1);
+		for (const p of [h, g, k]) await p.context().close();
 	}
 } catch (err) {
 	console.log(`  FAIL ${err.stack ?? err}`);

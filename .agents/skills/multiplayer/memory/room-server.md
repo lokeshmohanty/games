@@ -290,3 +290,13 @@ same UI paths run, and no game or test notices its absence.
 - `scripts/test-worker-do.mjs` — the DO shell through simulated evictions.
 - `scripts/test-room.mjs` — the client against the in-page mock.
 - `scripts/test-worker.mjs` — the client against real `wrangler dev`.
+
+**`released:true` (2026-11-13):** the one membership fact the server may
+state, because only the owner can cause it (leave/release take the secret).
+net.js `serverReleased` drops the seat unless a live link says they are here.
+Needed because a browser moving on from a long-closed tab has no `__gone` to
+send. The party boot releases a held token before `?fresh=1` / `#c=` / `#i=`
+(busy → "open in another tab"); `#c=` to the token's own code reconnects.
+Deploy-dependent: until the worker is redeployed, production still holds
+such seats for the grace. Test trap: "This party is open in another tab."
+renders twice (sub + status) — a strict locator needs `.first()`.

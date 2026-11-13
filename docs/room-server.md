@@ -89,7 +89,7 @@ whitelist is exactly `offer`, `answer`, `full`.
 | `{"t":"room","code":"123456","pass":"<mac>","exp":<ms>}` | reply to `host`: the code the server drew, and the host's member pass (`pass`/`exp` absent when the deployment has no `ROOM_PASS_KEY`) |
 | `{"t":"joined","pass":"<mac>","exp":<ms>}` | reply to a successful `join` (first or rejoin), with a fresh member pass — the code and claim were good; it does **not** mean anyone is there to answer |
 | `{"t":"released"}` / `{"t":"busy"}` | reply to `release`: the claim is gone / the seat is live on another socket (another tab), nothing changed |
-| `{"t":"peer","id":"...","connected":true\|false,"offering":"<memberId>"}` | a member arrived, came back, dropped their socket, or released their seat (`connected:false`) |
+| `{"t":"peer","id":"...","connected":true\|false,"offering":"<memberId>"[,"released":true]}` | a member arrived, came back, dropped their socket, or released their seat (`connected:false`, with `released:true` — 2026-11-13) |
 | `{"t":"offer","from":"...","sdp":"..."}` | a relayed offer |
 | `{"t":"answer","from":"...","sdp":"..."}` | a relayed answer |
 | `{"t":"full","from":"..."}` | the offerer says the party has no seat for you |
@@ -119,7 +119,13 @@ Two deliberate shapes:
 - **There is no `gone` from the server.** A dropped socket or a released seat
   is `connected:false`; a reconnect flips it back to `true`. The 5-minute seat
   grace is a party-record concept enforced in `net.js` — the server never
-  decides membership, it only reports socket state.
+  decides membership, it only reports socket state. **One exception, made by
+  the owner:** a seat given back (`leave` or `release`, both need the claim's
+  secret) is announced with `released:true`, and `net.js` (`serverReleased`)
+  drops it at once unless a live link says the member is there. Without it a
+  browser that started a new party long after its old tab closed left that
+  seat RECONNECTING for the whole grace — nobody was left to send `__gone`.
+  Additive: an older worker never sends it, an older client ignores it.
 
 ### Rules the server enforces (`worker/hub.js`)
 
@@ -429,7 +435,17 @@ gathering on both ends (4 s each), then the connect. A first join calls
 screen offers RETRY beside START A NEW PARTY and says the party may have
 ended. START A NEW PARTY calls `NeonArcade.releaseRejoin()` — a `release`
 with the token's claim, then drop the token — so the old party does not hold
-a seat for a browser that moved on.
+a seat for a browser that moved on. **So does every other way of moving on**
+(2026-11-13): the party page's boot releases a held token before the
+portal's START A PARTY (`?fresh=1`) or a code link (`#c=`) — `busy` shows
+"open in another tab" instead, as below — and a classic invite (`#i=`)
+releases it once the invite has linked (so a failed invite costs nothing). A
+code link to the token's own party reconnects that seat instead.
+
+**The network coming back redials at once** (2026-11-13). A redial backs off
+to one try per 30 s; the browser's `online` event cuts a pending backoff
+short (test-room). While the device says it is offline, the party shows a
+strip saying so (lobby.js; test-worker 12).
 
 **START A NEW PARTY never takes another tab's live seat** (2026-11-11).
 `releaseRejoin` used to dial `join` with the claim and then `leave`. Tabs of
