@@ -498,8 +498,10 @@ try {
 	check("the screen is kept on while a game runs", !wake.api || wake.awake, JSON.stringify(wake));
 	await setHidden(host, true);
 	check("the host leaves the app: the others see the game paused, and why", await shown(p2, ".host-pause", /Paused — .+ left the app/));
-	// The roster is under the game, so attached rather than visible.
-	check("…and AWAY by the host's name on the roster", await p2.locator(".party-tag.is-away").first().waitFor({ state: "attached", timeout: 5000 }).then(() => true, () => false));
+	// The roster under a game is not redrawn; PARTY pulls it up, current.
+	await p2.locator(".party-pill").click();
+	check("…and AWAY by the host's name on the roster", await p2.locator(".party-tag.is-away").first().waitFor({ timeout: 5000 }).then(() => true, () => false));
+	await p2.locator("button", { hasText: "BACK TO GAME" }).click();
 	const tug = () => host.evaluate(() => window.__party.handle.debug());
 	const before = await tug();
 	for (let i = 0; i < 4; i++) await p2.locator("#tug-tap").dispatchEvent("pointerdown");
@@ -514,7 +516,9 @@ try {
 	await host.waitForTimeout(600);
 	const after = await tug();
 	check("…with pulls counted again", after.pulls.A + after.pulls.B > during.pulls.A + during.pulls.B, JSON.stringify(after.pulls));
+	await p2.locator(".party-pill").click();
 	check("…and AWAY gone", await p2.locator(".party-tag.is-away").first().waitFor({ state: "detached", timeout: 5000 }).then(() => true, () => false));
+	await p2.locator("button", { hasText: "BACK TO GAME" }).click();
 
 	await host.evaluate(() => window.__party.room.setGame("connect4"));
 	for (const page of [host, p2, p3]) await page.waitForFunction(() => window.__party.game === "connect4" && window.__party.handle, null, { timeout: TIMEOUT });
@@ -544,6 +548,68 @@ try {
 		check("…and the banner goes when they are back", await host.locator(".turn-wait").first().waitFor({ state: "hidden", timeout: 6000 }).then(() => true, () => false));
 	}
 	await host.evaluate(() => window.__party.room.setGame(null));
+
+	console.log("\nparty: the party screen does not churn");
+	// Behind a running game nobody sees the party screen, so a roster event
+	// must not rebuild it; and a name being typed survives a rebuild.
+	await host.evaluate(() => window.__party.room.setGame("tug-of-war"));
+	await p2.locator("#tug-canvas").waitFor({ timeout: TIMEOUT });
+	await p2.evaluate(() => (window.__row = document.querySelector("#party .party-member")));
+	await p3.evaluate(() => window.__party.room.setMeta({ mood: "busy" }));
+	await p2.waitForFunction(() => window.__party.room.getMembers().some((m) => m.mood === "busy"), null, { timeout: TIMEOUT });
+	check("behind a game, a roster change does not rebuild the party screen", await p2.evaluate(() => window.__row.isConnected));
+	await p2.locator(".party-pill").click();
+	check("…and it is drawn fresh when pulled up", await p2.evaluate(() => !window.__row.isConnected && !!document.querySelector("#party .party-member")));
+	await p2.locator("button", { hasText: "BACK TO GAME" }).click();
+	await host.evaluate(() => window.__party.room.setGame(null));
+	await p2.waitForFunction(() => window.__party.game === null, null, { timeout: TIMEOUT });
+	const nameBox = p2.locator("input.lobby-input").first();
+	const before2 = await nameBox.inputValue();
+	await nameBox.click();
+	await nameBox.press("End");
+	await nameBox.type("zz");
+	await p3.evaluate(() => window.__party.room.setMeta({ mood: "idle" }));
+	await p2.waitForFunction(() => window.__party.room.getMembers().some((m) => m.mood === "idle"), null, { timeout: TIMEOUT });
+	const kept = await p2.evaluate(() => ({ value: document.activeElement?.value, focused: document.activeElement?.dataset?.partyName !== undefined }));
+	check("a name being typed survives a roster change", kept.focused && kept.value === before2 + "zz", JSON.stringify(kept));
+	await nameBox.press("Escape");
+	await nameBox.fill(before2);
+	await p2.locator("h1, .lobby-status").first().click().catch(() => {});
+
+	// ADD PLAYER makes an invite and its PeerConnection; CANCEL closes it.
+	const pendingNow = () => host.evaluate(() => window.__party.room.pending.size);
+	const pending0 = await pendingNow();
+	await host.locator("button", { hasText: "ADD PLAYER" }).click();
+	await host.locator("button", { hasText: "CANCEL" }).waitFor({ timeout: TIMEOUT });
+	const pending1 = await pendingNow();
+	await host.locator("button", { hasText: "CANCEL" }).click();
+	const pending2 = await pendingNow();
+	check("CANCEL withdraws the invite and closes its connection", pending1 === pending0 + 1 && pending2 === pending0, `${pending0} → ${pending1} → ${pending2}`);
+
+	console.log("\nparty: a link that cannot keep up is closed, not queued forever");
+	// A channel stuck full: everything after it waits in our own queue. Past
+	// 8 MB the link is dropped; the pair then go through the third member.
+	const p3Id = await p3.evaluate(() => window.__party.room.selfId);
+	const stuck = await p2.evaluate(async (peer) => {
+		const room = window.__party.room;
+		const link = room.links.get(peer);
+		if (!link) return { error: "no link" };
+		Object.defineProperty(link.dc, "bufferedAmount", { get: () => 1 << 30, configurable: true });
+		const big = "x".repeat(1 << 20);
+		for (let i = 0; i < 10; i++) link.post(big);
+		await new Promise((r) => setTimeout(r, 50));
+		return { dropped: room.links.get(peer) !== link, queued: link.queued };
+	}, p3Id);
+	check("an overflowing link is dropped and its queue freed", stuck.dropped && stuck.queued === 0, JSON.stringify(stuck));
+	// As for any dropped direct link, the pair carry on through the third
+	// member (net.js: relay-only is a legitimate steady state).
+	await p3.evaluate(() => {
+		window.__heard = 0;
+		window.__party.room.makeAction("t$q").onMessage = () => window.__heard++;
+	});
+	await p2.evaluate((peer) => window.__party.room.makeAction("t$q").send({}, { target: peer }), p3Id);
+	const heard = await p3.waitForFunction(() => window.__heard > 0, null, { timeout: 8000 }).then(() => true, () => false);
+	check("…and messages still reach them, through the third member", heard);
 
 	console.log("\nparty: every way out asks, and everyone is told");
 	// A fourth player, so the three above stay for the succession below.

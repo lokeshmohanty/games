@@ -64,9 +64,12 @@ Audit backlog (2026-11-12), owner to pick — highest first:
   full lab. The full run of 2026-11-13 failed once on "…on the first try, no
   swap" with `pair: null` (stats unread; the reload took 0.3 s). Neither
   touches the new release/online paths (instrumented). Not investigated.
-- [ ] Perf: party `render()` rebuilds the whole screen (and QR) on every roster
-      event, even hidden behind a game, and eats a name being typed; Link send
-      queue unbounded; invites cancelled never close their PeerConnection.
+- [x] Perf: party `render()` skipped while hidden behind a game (drawn on
+      PARTY / game end), keeps a name being typed, QR encoded once; invites
+      withdrawn on CANCEL / replace / close (`invite.withdraw()`); Link queue
+      capped at 8 MB past the channel buffer — the link is dropped and the
+      pair relay (2026-11-13, test-party). Game pages' lobby invites not
+      changed.
 
 ## Neon Bid (2026-11-12) — shipped in 25c76f2
 

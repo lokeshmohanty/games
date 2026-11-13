@@ -300,3 +300,11 @@ send. The party boot releases a held token before `?fresh=1` / `#c=` / `#i=`
 Deploy-dependent: until the worker is redeployed, production still holds
 such seats for the grace. Test trap: "This party is open in another tab."
 renders twice (sub + status) — a strict locator needs `.first()`.
+
+**Perf pass (2026-11-13):** party `render()` returns early while hidden
+behind a game — so anything that tests the roster mid-game must pull it up
+with PARTY first (the AWAY check had to). A Link more than 8 MB behind is
+dropped (`overflowed` ignores further posts); with three members the pair
+then relay, by design — net.js does not re-link a dropped direct link between
+present members (relay-only is a "legitimate steady state"). With two
+members and no room server there is no path at all.
