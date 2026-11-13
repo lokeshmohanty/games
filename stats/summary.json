@@ -1,17 +1,20 @@
 {
- "at": "2026-11-13T18:07:16.360Z",
+ "at": "2026-11-13T19:07:16.432Z",
  "games": {
   "neon-survival-mp": {
-   "played": 2
+   "played": 4
   },
   "lokeshmohanty/tug-of-war": {
-   "played": 4
+   "played": 6
   },
   "undercover": {
    "played": 1
   },
   "connect4": {
    "played": 2
+  },
+  "lokeshmohanty/sudoku": {
+   "played": 1
   }
  }
 }
