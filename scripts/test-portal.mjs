@@ -53,6 +53,54 @@ try {
 		return (await shown()).every((t) => ["Battleship", "Connect 4"].includes(t));
 	})());
 
+	console.log("\nportal: a card's two ways to play");
+	await p.goto(site.url("index.html"));
+	await p.waitForSelector(".game-card");
+	const cardInfo = await p.evaluate(() =>
+		Object.fromEntries(
+			[...document.querySelectorAll(".game-card")].map((c) => [c.dataset.game, [...c.querySelectorAll(".card-play")].map((a) => a.textContent)]),
+		),
+	);
+	check("no PLAY NOW on any card", (await p.locator(".game-card .play-btn").count()) === 0);
+	check("a bots game offers PLAY WITH BOTS and PLAY WITH FRIENDS", cardInfo.connect4?.join() === "PLAY WITH BOTS,PLAY WITH FRIENDS", cardInfo.connect4);
+	check("…a people-only game only PLAY WITH FRIENDS", cardInfo["lokeshmohanty/draw-guess"]?.join() === "PLAY WITH FRIENDS", cardInfo["lokeshmohanty/draw-guess"]);
+	check("…a one-device game just PLAY", cardInfo.undercover?.join() === "PLAY", cardInfo.undercover);
+	const c4card = p.locator('.game-card[data-game="connect4"]');
+	const visible = () => c4card.locator(".card-actions").evaluate((a) => getComputedStyle(a).opacity === "1");
+	check("hidden until wanted", !(await visible()));
+	await c4card.hover();
+	await p.waitForTimeout(250);
+	check("a mouse hovering shows them", await visible());
+	await p.mouse.move(1, 1);
+	await p.keyboard.press("Tab");
+	await c4card.focus();
+	await p.waitForTimeout(250);
+	check("…and so does keyboard focus", await visible());
+	await c4card.locator(".card-play", { hasText: "PLAY WITH BOTS" }).click();
+	await p.locator("button", { hasText: "START GAME" }).first().waitFor({ timeout: TIMEOUT });
+	check("PLAY WITH BOTS lands with the bots seated: no second choice", (await p.locator(".party-choice").count()) === 0 && (await p.evaluate(() => window.__party.room.getMembers().some((m) => m.id.startsWith("bot_")))));
+	check("…and the address forgets the mode, for a reload", !new URL(p.url()).searchParams.has("mode"), p.url());
+	await p.goto(site.url("index.html"));
+	await p.waitForSelector(".game-card");
+	await p.locator('.game-card[data-game="connect4"]').hover();
+	await p.locator('.game-card[data-game="connect4"] .card-play', { hasText: "PLAY WITH FRIENDS" }).click();
+	await p.locator("button", { hasText: "INVITE A FRIEND" }).first().waitFor({ timeout: TIMEOUT });
+	check("PLAY WITH FRIENDS lands on the friends view (invite, and the code when there is a server)", (await p.locator(".party-choice").count()) === 0);
+	// A phone: no hover, so the first tap opens the choices and nothing else.
+	const touch = await browser.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
+	const tp = await touch.newPage();
+	await tp.goto(site.url("index.html"));
+	await tp.waitForSelector(".game-card");
+	const tcard = tp.locator('.game-card[data-game="connect4"]');
+	await tcard.locator("h3").tap();
+	await tp.waitForTimeout(250);
+	check("on a phone a tap opens a card's choices, without leaving the page", (await tcard.evaluate((c) => c.classList.contains("is-open"))) && tp.url().endsWith("index.html"));
+	const fits = await tcard.locator(".card-play").evaluateAll((as) => as.map((a) => a.getBoundingClientRect()).map((r) => ({ h: Math.round(r.height), right: Math.round(r.right) })));
+	check("…two buttons, 44px tall, inside the phone", fits.length === 2 && fits.every((f) => f.h >= 44 && f.right <= 390), fits);
+	await tp.locator('.game-card[data-game="lokeshmohanty/tug-of-war"] h3').tap();
+	check("…and opening another card closes the first", !(await tcard.evaluate((c) => c.classList.contains("is-open"))));
+	await touch.close();
+
 	console.log("\nportal: the bar and tabs on every page");
 	for (const [page, tab] of [
 		["index.html", "Games"],

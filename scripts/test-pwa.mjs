@@ -227,7 +227,7 @@ const portal = await page.evaluate(() => {
 		scroll: doc.scrollWidth,
 		client: doc.clientWidth,
 		cards: cards.length,
-		links: cards.map((c) => c.querySelector("a.play-btn")?.getAttribute("href")),
+		links: cards.flatMap((c) => [...c.querySelectorAll("a.card-play")].map((a) => a.getAttribute("href"))),
 		sections: document.querySelectorAll("h2.section-title").length,
 		title: document.querySelector("h1")?.textContent.trim(),
 		// The slot must reserve its own room: it is filled after layout, and a
