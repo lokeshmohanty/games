@@ -40,7 +40,7 @@ serve-lan:
     python3 -m http.server {{port}}
 
 # Every suite, in the order they get slower.
-test: test-codec test-hub test-worker-do test-plumbing test-rules test-room test-party test-scan test-pwa test-bots
+test: community test-codec test-hub test-worker-do test-plumbing test-rules test-room test-party test-scan test-pwa test-bots
 
 # No browser needed — the signalling codec round-trip.
 test-codec:
@@ -117,10 +117,8 @@ test-room:
 
 # The games whose rules are testable without a document.
 test-rules:
-    node scripts/test-onitama.mjs
-    node scripts/test-light-cycles.mjs
-    node scripts/test-battleship.mjs
     node scripts/test-neon-bid.mjs
+    node scripts/test-undercover.mjs
 
 # Three real browser peers: recruiting, teams, game switching, succession.
 test-party:
@@ -172,3 +170,9 @@ check-precache:
 # site needs no build step). `just catalog --check` fails if it is stale.
 catalog *args:
     node scripts/build-catalog.mjs {{args}}
+
+# Fetch every registered outside repo at its pinned commit into community/
+# (git-ignored) and write community/catalog.js + precache.js. A clone at
+# ../<repo> that has the pinned commit is used instead of GitHub.
+community:
+    node scripts/fetch-community.mjs

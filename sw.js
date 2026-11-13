@@ -28,7 +28,7 @@
 // first, a forgotten bump costs an out-of-date *offline* copy — never a stale
 // app for an online player, which is the failure mode that would be hard to
 // notice.
-const VERSION = "arcade-games-v23";
+const VERSION = "arcade-games-v24";
 
 // The shell: everything needed to open any page and start a game with no
 // network at all. The preview gifs are deliberately absent — they are ~2 MB
@@ -68,21 +68,15 @@ const SHELL = [
 	"./games/connect4/index.html",
 	"./games/connect4/connect4.js",
 	"./games/connect4/game.json",
-	"./games/onitama.js",
-	"./games/light-cycles.js",
-	"./games/battleship.js",
 	"./games/undercover/index.html",
 	"./games/undercover/undercover.js",
 	"./games/undercover/game.json",
-	"./games/liars-dice.js",
 	"./games/neon-bid/index.html",
 	"./games/neon-bid/neon-bid.js",
 	"./games/neon-bid/game.json",
-	"./games/draw-guess.js",
 	"./games/neon-survival-mp/index.html",
 	"./games/neon-survival-mp/neon-survival-mp.js",
 	"./games/neon-survival-mp/game.json",
-	"./games/tug-of-war.js",
 	"./assets/icon.svg",
 	// Stands in for a preview gif that will not load — which, offline, is all of
 	// them, since the gifs are not precached.
@@ -92,6 +86,16 @@ const SHELL = [
 	"./assets/icon-maskable-512.png",
 	"./assets/apple-touch-icon.png",
 ];
+
+// Outside repos' games (registry/), fetched at deploy with their file list.
+// Absent in a checkout that has not run `just community`: the shell alone.
+try {
+	importScripts("./community/precache.js");
+} catch {
+	self.COMMUNITY_SHELL = [];
+}
+SHELL.push(...(self.COMMUNITY_SHELL ?? []));
+
 
 // How long to wait for the network before falling back to the cached copy. The
 // request is left running either way, so a slow connection still refreshes the

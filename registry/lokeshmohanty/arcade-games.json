@@ -1,0 +1,5 @@
+{
+  "repo": "https://github.com/lokeshmohanty/arcade-games",
+  "commit": "eeeac0176468bc91abd20f4ba8e54a467e888a38",
+  "games": ["battleship", "draw-guess", "liars-dice", "light-cycles", "onitama", "tug-of-war"]
+}

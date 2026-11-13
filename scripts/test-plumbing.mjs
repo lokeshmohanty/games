@@ -182,7 +182,9 @@ console.log("\ncommit and reveal");
 
 	const fleet = { ships: [{ at: "B2", dir: "h" }], name: "red" };
 	const c = await s.commit(fleet);
-	check("a commitment hides the value", !JSON.stringify(c.digest).includes("B2"));
+	// Not `includes("B2")`: a random base64 digest contains that by chance
+	// about one run in a hundred. What must not be in it is the value itself.
+	check("a commitment hides the value", !String(c.digest).includes("ships") && !String(c.digest).includes(JSON.stringify(fleet)));
 	check("an honest reveal verifies", await s.verify(c));
 
 	const lied = { ...c, value: { ships: [{ at: "C3", dir: "h" }], name: "red" } };

@@ -14,16 +14,18 @@ separate `TODO.md`.*
 ## Platform rework (2026-11-13) — branch `platform`, do not merge unconfirmed
 
 Plan: `~/.claude/plans/1-a-b-2-generic-whistle.md`; design: docs/sdk.md.
-Done: six games imported with history into `../arcade-games` branch
-`import` (local only, not pushed); sandbox spikes (isolation, latency,
-offline → srcdoc + inlined scripts); `lib/bridge.js` + `sdk/v1/client.js`
-+ `lib/catalog.js` (generated); Connect 4 framed in `games/connect4/`.
-Green: every `just test` suite (party ×3, bots, pwa ×4 incl. a framed game
-offline). Next: frame neon-bid, undercover, neon-survival(-mp); port the six
-in arcade-games; registry + fetch + `validate-game` + dev kit + PR check;
-portal from the catalog; then Phases 1–6 (stats → accounts → …).
-Not yet: real-phone check of wake lock / audio / fullscreen in the sandbox;
-framed games no longer open from `file://` — accepted by Lokesh 2026-11-13.
+Done: bridge + SDK client; all ten games framed — four in `games/<id>/`,
+six from `../arcade-games` (branch `import`, local only, not pushed) via
+`registry/lokeshmohanty/arcade-games.json` + `just community`. sw.js v24
+(community precache via importScripts; offline query-less page match).
+Green 2026-11-13: every `just test` suite. Fixed on the way: a 1-in-100
+flake in test-plumbing (random digest contained "B2").
+Next: dev kit (`?dev=` + CORS dev server), `validate-game` + PR check,
+Actions deploy, portal from the catalogs, arcade-games README/tests runner;
+then Phases 1–6 (stats → accounts → …).
+Not yet: test-worker (wrangler) not re-run since the move — it plays
+neon-bid/neon-survival by id; real-phone check of wake lock / audio /
+fullscreen in the sandbox. `file://` no longer opens games (accepted).
 
 ## Leaving and presence (2026-11-12) — committed (e55a33c…c6a9856)
 

@@ -41,12 +41,9 @@
       is this line and nothing else — the switcher lists whatever registered.
     -->
     <script src="lib/catalog.js"></script>
-    <script src="games/onitama.js"></script>
-    <script src="games/light-cycles.js"></script>
-    <script src="games/battleship.js"></script>
-    <script src="games/liars-dice.js"></script>
-    <script src="games/draw-guess.js"></script>
-    <script src="games/tug-of-war.js"></script>
+    <!-- Outside repos' games, pinned in registry/ and fetched at deploy
+         (scripts/fetch-community.mjs). Absent until fetched: nothing breaks. -->
+    <script src="community/catalog.js"></script>
 
     <script>
       // Exposed so the tests can inspect the live room and game. `__game` is

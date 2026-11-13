@@ -273,15 +273,19 @@ try {
 		await dg.waitFor({ timeout: TIMEOUT });
 		await dg.click();
 
+		// Draw & Guess runs framed (lokeshmohanty/arcade-games): its DOM is
+		// read in each page's game frame.
+		const F = new Map();
 		for (const page of [host, p2, p3]) {
-			await page.locator("#dg-canvas, #draw-canvas, canvas").first().waitFor({ timeout: TIMEOUT });
+			F.set(page, await gameFrame(page, TIMEOUT));
+			await F.get(page).locator("#dg-canvas, #draw-canvas, canvas").first().waitFor({ timeout: TIMEOUT });
 		}
 
 		// The drawer's chat box is disabled; that is how the roles are told
 		// apart, and it only settles once the drawing phase is really open.
 		const guesser = await Promise.race(
 			[host, p2, p3].map(async (page) => {
-				await page.waitForFunction(
+				await F.get(page).waitForFunction(
 					() => document.querySelector("#chat-input")?.disabled === false,
 					null,
 					{ timeout: TIMEOUT },
@@ -291,7 +295,7 @@ try {
 		);
 		check("the drawing phase opened", true);
 
-		const phaseOf = (page) => page.evaluate(() => document.querySelector("#hud .timer")?.textContent ?? "");
+		const phaseOf = (page) => F.get(page).evaluate(() => document.querySelector("#hud .timer")?.textContent ?? "");
 		const clocks = await Promise.all([host, p2, p3].map(phaseOf));
 		// Every peer counts down for itself off the duration the host sent, so
 		// they should agree to within a second rather than drift.
@@ -305,10 +309,10 @@ try {
 		// the masked hint, and the host is not necessarily drawing.
 		const pages = [host, p2, p3];
 		const disabled = await Promise.all(
-			pages.map((page) => page.evaluate(() => document.querySelector("#chat-input")?.disabled === true)),
+			pages.map((page) => F.get(page).evaluate(() => document.querySelector("#chat-input")?.disabled === true)),
 		);
 		const drawer = pages[disabled.indexOf(true)] ?? host;
-		const word = await drawer.evaluate(() => {
+		const word = await F.get(drawer).evaluate(() => {
 			const el = document.querySelector("#word-display");
 			return el ? el.textContent.trim() : "";
 		});
@@ -316,14 +320,15 @@ try {
 		if (secret && !secret.includes("_")) {
 			const before = Date.now();
 			for (const page of [host, p2, p3]) {
-				const enabled = await page.evaluate(() => document.querySelector("#chat-input")?.disabled === false);
+				const enabled = await F.get(page).evaluate(() => document.querySelector("#chat-input")?.disabled === false);
 				if (!enabled) continue;
-				await page.fill("#chat-input", secret);
-				await page.click("#chat-send");
+				await readyToClick(page);
+				await F.get(page).fill("#chat-input", secret);
+				await F.get(page).click("#chat-send");
 			}
 			// Sixty seconds is the drawing deadline; anything near it means the
 			// early exit did not fire.
-			await guesser.waitForFunction(
+			await F.get(guesser).waitForFunction(
 				() => /GAME OVER|^\s*$/.test(document.querySelector("#word-display")?.textContent ?? "")
 					|| document.querySelector("#chat-input")?.disabled === true,
 				null,
@@ -338,7 +343,7 @@ try {
 		await host.evaluate(() => window.__party.room.setGame(null));
 		await host.locator(".party-game").first().waitFor({ timeout: TIMEOUT });
 		check("Draw & Guess tore itself down",
-			(await host.locator("#chat-input").count()) === 0);
+			(await host.locator(".game-frame").count()) === 0);
 	}
 
 	// Tug of War is the only game with more than one player per side, so this
@@ -358,11 +363,14 @@ try {
 			[p2, "p2"],
 			[p3, "p3"],
 		]) {
-			await page.locator("#tug-canvas").waitFor({ timeout: TIMEOUT });
-			check(`${tag} mounted Tug of War`, await page.locator("#tug-canvas").isVisible());
+			const g = await gameFrame(page, TIMEOUT);
+			await g.locator("#tug-canvas").waitFor({ timeout: TIMEOUT });
+			check(`${tag} mounted Tug of War`, await g.locator("#tug-canvas").isVisible());
 		}
+		// Tug of War runs framed (lokeshmohanty/arcade-games).
+		const [hostT, p2T, p3T] = await Promise.all([host, p2, p3].map((page) => gameFrame(page, TIMEOUT)));
 
-		const rosterA = await p2.locator("#tug-roster-a").textContent();
+		const rosterA = await p2T.locator("#tug-roster-a").textContent();
 		check(
 			"a team renders every member, not just the first",
 			(rosterA ?? "").split(",").length === 2,
@@ -370,21 +378,21 @@ try {
 		);
 		// p2 is alone on Team B and the only one pulling, so it should win — which
 		// only happens if its taps reached the host and the host's result came back.
-		const label = await p2.locator("#tug-tap").textContent();
+		const label = await p2T.locator("#tug-tap").textContent();
 		check("a player is told which side they pull for", /TEAM B/.test(label ?? ""), label ?? "");
 		check(
 			"a spectator-free roster leaves nobody idle",
-			(await host.locator("#tug-tap").textContent())?.includes("TEAM A"),
+			(await hostT.locator("#tug-tap").textContent())?.includes("TEAM A"),
 		);
 
-		await p2.evaluate(async () => {
+		await p2T.evaluate(async () => {
 			const btn = document.querySelector("#tug-tap");
 			for (let i = 0; i < 140; i++) {
 				btn.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, cancelable: true }));
 				await new Promise((r) => setTimeout(r, 70));
 			}
 		});
-		const won = await p2
+		const won = await p2T
 			.waitForFunction(
 				() => document.querySelector("#tug-overlay")?.hidden === false,
 				null,
@@ -396,9 +404,9 @@ try {
 		// The same outcome, told from each player's own side: the winner is on
 		// Team B, the two on Team A both lost.
 		const verdicts = {
-			p2: await p2.locator("#tug-overlay h1").textContent(),
-			host: await host.locator("#tug-overlay h1").textContent(),
-			p3: await p3.locator("#tug-overlay h1").textContent(),
+			p2: await p2T.locator("#tug-overlay h1").textContent(),
+			host: await hostT.locator("#tug-overlay h1").textContent(),
+			p3: await p3T.locator("#tug-overlay h1").textContent(),
 		};
 		check(
 			"every player is told the result from their own side",
@@ -413,7 +421,7 @@ try {
 		await host.locator(".party-member").first().waitFor({ timeout: TIMEOUT });
 		check(
 			"Tug of War tore itself down",
-			await host.evaluate(() => document.querySelectorAll("#tug-canvas").length === 0),
+			await host.evaluate(() => document.querySelectorAll(".game-frame").length === 0),
 		);
 	}
 
@@ -437,8 +445,8 @@ try {
 
 	console.log("\nparty: back to the party from a running game");
 	// Nothing used to lead from a running game back to the party screen.
-	await host.evaluate(() => window.__party.room.setGame("tug-of-war"));
-	for (const page of [host, p2, p3]) await page.locator("#tug-canvas").waitFor({ timeout: TIMEOUT });
+	await host.evaluate(() => window.__party.room.setGame("lokeshmohanty/tug-of-war"));
+	for (const page of [host, p2, p3]) await (await gameFrame(page, TIMEOUT)).locator("#tug-canvas").waitFor({ timeout: TIMEOUT });
 	const pill = await p2.evaluate(() => {
 		const p = document.querySelector(".party-pill");
 		const r = p && !p.hidden ? p.getBoundingClientRect() : null;
@@ -456,12 +464,12 @@ try {
 		game: window.__party.game,
 		buttons: [...document.querySelectorAll("#party button")].map((b) => b.textContent),
 	}));
-	check("PARTY pulls the party screen up over the game", peek.shown && peek.game === "tug-of-war", JSON.stringify(peek));
+	check("PARTY pulls the party screen up over the game", peek.shown && peek.game === "lokeshmohanty/tug-of-war", JSON.stringify(peek));
 	check("…with BACK TO GAME, and no END GAME for a guest", peek.buttons.includes("BACK TO GAME") && !peek.buttons.includes("END GAME"));
 	await p2.locator("button", { hasText: "BACK TO GAME" }).click();
 	check(
 		"BACK TO GAME puts it away, the game still running",
-		await p2.evaluate(() => document.getElementById("party").hidden && window.__party.game === "tug-of-war"),
+		await p2.evaluate(() => document.getElementById("party").hidden && window.__party.game === "lokeshmohanty/tug-of-war"),
 	);
 
 	await host.locator(".party-pill").click();
@@ -469,7 +477,7 @@ try {
 	await host.locator("button", { hasText: "END GAME" }).click();
 	endQ = await endQ;
 	check("END GAME asks first", /End Tug of War for everyone/i.test(endQ), endQ);
-	check("…and KEEP PLAYING keeps it", await host.evaluate(() => window.__party.game === "tug-of-war"));
+	check("…and KEEP PLAYING keeps it", await host.evaluate(() => window.__party.game === "lokeshmohanty/tug-of-war"));
 	endQ = nextDialog(host, true);
 	await host.locator("button", { hasText: "END GAME" }).click();
 	await endQ;
@@ -488,37 +496,44 @@ try {
 	// Another app or a locked phone, faked the way a page sees it: `hidden`
 	// and the event. The host's simulation pauses for everyone and says why;
 	// anyone away shows AWAY; a turn game waiting on them says so.
+	// The page and every frame in it, as a real tab switch hides them all: a
+	// framed game watches its own document's visibility.
 	const setHidden = (page, hidden) =>
-		page.evaluate((h) => {
-			Object.defineProperty(document, "hidden", { value: h, configurable: true });
-			Object.defineProperty(document, "visibilityState", { value: h ? "hidden" : "visible", configurable: true });
-			document.dispatchEvent(new Event("visibilitychange"));
-		}, hidden);
+		Promise.all(
+			page.frames().map((f) =>
+				f.evaluate((h) => {
+					Object.defineProperty(document, "hidden", { value: h, configurable: true });
+					Object.defineProperty(document, "visibilityState", { value: h ? "hidden" : "visible", configurable: true });
+					document.dispatchEvent(new Event("visibilitychange"));
+				}, hidden),
+			),
+		);
 	const shown = (page, sel, re, ms = 8000) =>
 		page.locator(`${sel}:not([hidden])`, { hasText: re }).first().waitFor({ timeout: ms }).then(() => true, () => false);
-	await host.evaluate(() => window.__party.room.setGame("tug-of-war"));
-	for (const page of [host, p2, p3]) await page.locator("#tug-canvas").waitFor({ timeout: TIMEOUT });
+	await host.evaluate(() => window.__party.room.setGame("lokeshmohanty/tug-of-war"));
+	for (const page of [host, p2, p3]) await (await gameFrame(page, TIMEOUT)).locator("#tug-canvas").waitFor({ timeout: TIMEOUT });
 	const wake = await host
 		.waitForFunction(() => !navigator.wakeLock || window.NeonArcade.awake(), null, { timeout: 3000 })
 		.then(() => host.evaluate(() => ({ api: !!navigator.wakeLock, awake: window.NeonArcade.awake() })), () => ({ api: true, awake: false }));
 	check("the screen is kept on while a game runs", !wake.api || wake.awake, JSON.stringify(wake));
 	await setHidden(host, true);
-	check("the host leaves the app: the others see the game paused, and why", await shown(p2, ".host-pause", /Paused — .+ left the app/));
+	const [hostT2, p2T2] = [await gameFrame(host, TIMEOUT), await gameFrame(p2, TIMEOUT)];
+	check("the host leaves the app: the others see the game paused, and why", await shown(p2T2, ".host-pause", /Paused — .+ left the app/));
 	// The roster under a game is not redrawn; PARTY pulls it up, current.
 	await p2.locator(".party-pill").click();
 	check("…and AWAY by the host's name on the roster", await p2.locator(".party-tag.is-away").first().waitFor({ timeout: 5000 }).then(() => true, () => false));
 	await p2.locator("button", { hasText: "BACK TO GAME" }).click();
-	const tug = () => host.evaluate(() => window.__party.handle.debug());
+	const tug = () => hostT2.evaluate(() => window.__game.handle.debug());
 	const before = await tug();
-	for (let i = 0; i < 4; i++) await p2.locator("#tug-tap").dispatchEvent("pointerdown");
+	for (let i = 0; i < 4; i++) await p2T2.locator("#tug-tap").dispatchEvent("pointerdown");
 	await host.waitForTimeout(600);
 	const during = await tug();
 	check("…and pulls meanwhile are refused, not saved up", during.pulls.A + during.pulls.B === before.pulls.A + before.pulls.B, JSON.stringify([before.pulls, during.pulls]));
 	await setHidden(host, false);
-	check("back: everyone counts down together", (await shown(p2, ".host-pause", /Resuming in [1-3]/)) && (await shown(host, ".host-pause", /Resuming in [1-3]/)));
-	const resumed = await p2.locator(".host-pause").waitFor({ state: "hidden", timeout: 6000 }).then(() => true, () => false);
+	check("back: everyone counts down together", (await shown(p2T2, ".host-pause", /Resuming in [1-3]/)) && (await shown(hostT2, ".host-pause", /Resuming in [1-3]/)));
+	const resumed = await p2T2.locator(".host-pause").waitFor({ state: "hidden", timeout: 6000 }).then(() => true, () => false);
 	check("…and play resumes", resumed);
-	for (let i = 0; i < 4; i++) await p2.locator("#tug-tap").dispatchEvent("pointerdown");
+	for (let i = 0; i < 4; i++) await p2T2.locator("#tug-tap").dispatchEvent("pointerdown");
 	await host.waitForTimeout(600);
 	const after = await tug();
 	check("…with pulls counted again", after.pulls.A + after.pulls.B > during.pulls.A + during.pulls.B, JSON.stringify(after.pulls));
@@ -561,8 +576,8 @@ try {
 	console.log("\nparty: the party screen does not churn");
 	// Behind a running game nobody sees the party screen, so a roster event
 	// must not rebuild it; and a name being typed survives a rebuild.
-	await host.evaluate(() => window.__party.room.setGame("tug-of-war"));
-	await p2.locator("#tug-canvas").waitFor({ timeout: TIMEOUT });
+	await host.evaluate(() => window.__party.room.setGame("lokeshmohanty/tug-of-war"));
+	await (await gameFrame(p2, TIMEOUT)).locator("#tug-canvas").waitFor({ timeout: TIMEOUT });
 	await p2.evaluate(() => (window.__row = document.querySelector("#party .party-member")));
 	await p3.evaluate(() => window.__party.room.setMeta({ mood: "busy" }));
 	await p2.waitForFunction(() => window.__party.room.getMembers().some((m) => m.mood === "busy"), null, { timeout: TIMEOUT });
@@ -707,8 +722,8 @@ try {
 	// Mid-game: the heir takes the game over from what everyone was sent, and
 	// says so. With a bot, which must stay for the next host to play.
 	const keptBot = await host.evaluate(() => window.__party.room.addBot("B"));
-	await host.evaluate(() => window.__party.room.setGame("tug-of-war"));
-	for (const page of [host, p2, p3]) await page.locator("#tug-canvas").waitFor({ timeout: TIMEOUT });
+	await host.evaluate(() => window.__party.room.setGame("lokeshmohanty/tug-of-war"));
+	for (const page of [host, p2, p3]) await (await gameFrame(page, TIMEOUT)).locator("#tug-canvas").waitFor({ timeout: TIMEOUT });
 	const hostName = await host.evaluate(() => window.__party.room.self().name);
 	const p2Name = await p2.evaluate(() => window.__party.room.self().name);
 	const told = Promise.all([
@@ -722,16 +737,18 @@ try {
 	const [heirTold, restTold, dropTold, keptTold, restKept] = await told;
 	check("a game the host was running goes on under the heir, who is told", keptTold);
 	check("…and so is everyone else", restKept);
-	const pullsNow = () => p2.evaluate(() => window.__party.handle.debug().pulls);
+	// The heir's frame is the same one: a kept game is not remounted.
+	const [p2H, p3H] = [await gameFrame(p2, TIMEOUT), await gameFrame(p3, TIMEOUT)];
+	const pullsNow = () => p2H.evaluate(() => window.__game.handle.debug().pulls);
 	const p0 = await pullsNow();
-	for (let i = 0; i < 4; i++) await p3.locator("#tug-tap").dispatchEvent("pointerdown");
-	const pulled = await p2
+	for (let i = 0; i < 4; i++) await p3H.locator("#tug-tap").dispatchEvent("pointerdown");
+	const pulled = await p2H
 		.waitForFunction((n) => {
-			const d = window.__party.handle.debug().pulls;
+			const d = window.__game.handle.debug().pulls;
 			return d.A + d.B > n;
 		}, p0.A + p0.B, { timeout: 8000 })
 		.then(() => true, () => false);
-	check("…and the new host referees it: a pull lands", pulled && (await p3.evaluate(() => window.__party.game)) === "tug-of-war");
+	check("…and the new host referees it: a pull lands", pulled && (await p3.evaluate(() => window.__party.game)) === "lokeshmohanty/tug-of-war");
 	await p2.evaluate(() => window.__party.room.setGame(null));
 	await p3.waitForFunction(() => window.__party.game === null && !document.getElementById("party").hidden, null, { timeout: TIMEOUT });
 	check("the heir is told the crown is theirs", heirTold);

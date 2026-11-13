@@ -2,9 +2,10 @@
 
 *Started 2026-11-13 on branch `platform`. Plan of record:
 `~/.claude/plans/1-a-b-2-generic-whistle.md`. Status: the bridge, the frame
-loader and the catalog are built and tested with Connect 4; the registry of
-outside repos, the dev kit, `validate-game` and the PR check are not built
-yet (marked **planned** below).*
+loader, the catalogs and the registry are built; all ten games run framed
+(four here, six from `lokeshmohanty/arcade-games`). The dev kit,
+`validate-game`, the PR check and the Actions deploy are not built yet
+(**planned** below).*
 
 ## What changed, and why
 
@@ -137,13 +138,43 @@ Shell → frame: `init {state}` · `party {state, roster}` · `msg {a, d, from}`
   on a background page that has not drawn since the frame mounted lands on
   the `<iframe>` element instead.
 
+## Outside repos: the registry (built 2026-11-13)
+
+One file per **repository** — a repo may hold several games:
+
+```json
+// registry/<owner>/<repo>.json
+{
+  "repo": "https://github.com/<owner>/<repo>",
+  "commit": "<full 40-character sha>",
+  "games": ["battleship", "onitama"]
+}
+```
+
+`just community` (`scripts/fetch-community.mjs`) unpacks exactly that commit
+— GitHub's tarball, or `git archive` from a clone at `../<repo>` that has the
+commit (`NEON_LOCAL_REPOS=owner/repo=path` names another) — and copies only
+the listed folders, minus `test-*.mjs`, into `community/<owner>/<repo>/`
+(git-ignored). It refuses a bad pin, a missing `game.json`, an invalid
+manifest, a duplicate id or a game over 5 MB. Nothing is built or run. It
+writes `community/catalog.js` (party.html loads it after `lib/catalog.js`)
+and `community/precache.js` (sw.js `importScripts` it; gifs left out).
+
+Community ids are `<owner>/<id>` — `lokeshmohanty/battleship` — in party
+state and URLs (`party.html?game=lokeshmohanty%2Fbattleship`). The old pages
+(`battleship.html` …) redirect there.
+
+**`lokeshmohanty/arcade-games`** holds battleship, draw-guess, liars-dice,
+light-cycles, onitama and tug-of-war, registered exactly like an outsider's
+repo (branch `import`, not yet pushed). Its rules tests load the platform
+runtime from a checkout of this repo (`NEON_PLATFORM`, default `../../games/`).
+`just test` runs `community` first; the browser suites play those games
+through it.
+
 ## Planned (not built yet)
 
-- **Registry of outside repos:** `registry/<owner>/<repo>.json =
-  {repo, commit, games: [paths]}` — one file per repository, which may hold
-  several games; fetched at the pinned commit into `community/` at deploy.
-- **Dev kit:** `party.html?dev=http://localhost:PORT/` (loopback only).
+- **Dev kit:** `party.html?dev=http://localhost:PORT/` (loopback only) plus
+  a CORS-enabled local server for authors.
 - **`just validate-game <path>`** and the matching PR check.
-- **Moved games:** battleship, draw-guess, liars-dice, light-cycles, onitama
-  and tug-of-war live in `lokeshmohanty/arcade-games` (branch `import`, not
-  yet pushed) and come back through the registry.
+- **Deploy:** GitHub Pages from an Actions build that runs `just community`.
+- **Portal** generated from the catalogs.

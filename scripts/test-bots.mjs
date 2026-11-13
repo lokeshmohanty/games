@@ -26,7 +26,7 @@ import { existsSync, globSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join, resolve as resolvePath } from "node:path";
 import { fileURLToPath } from "node:url";
-import { serve, gameScope } from "./serve.mjs";
+import { serve, gameScope, readyToClick } from "./serve.mjs";
 
 const require = createRequire(import.meta.url);
 const ROOT = resolvePath(dirname(fileURLToPath(import.meta.url)), "..");
@@ -248,6 +248,8 @@ try {
 
 	console.log("\nbots: liar's dice commits every cup before a bid");
 	await startSolo(page, "liars-dice.html", "PLAY A BOT");
+	G = await gameScope(page, TIMEOUT);
+	await readyToClick(page);
 	await sleep(1200);
 
 	let ld = await debug(page);
@@ -258,7 +260,7 @@ try {
 	check("the bidding is open", ld.phase === "bid", ld.phase);
 	check("ten dice on the table", ld.totalDice === 10, `${ld.totalDice}`);
 
-	const dice = await page.evaluate(() => {
+	const dice = await G.evaluate(() => {
 		const btns = [...document.querySelectorAll(".ld-faces button")];
 		const acts = [...document.querySelectorAll(".ld-actions button")];
 		const steps = [...document.querySelectorAll(".ld-count button")];
@@ -292,7 +294,7 @@ try {
 	for (let i = 0; i < 120; i++) {
 		const d = await debug(page);
 		if (d.lastCall || d.over) break;
-		myBids += await page.evaluate((bidsSoFar) => {
+		myBids += await G.evaluate((bidsSoFar) => {
 			const btns = [...document.querySelectorAll(".ld-actions button")];
 			const bid = btns.find((b) => b.textContent.startsWith("BID"));
 			const liar = btns.find((b) => b.textContent.includes("LIAR"));
@@ -446,6 +448,8 @@ try {
 
 	console.log("\nbots: battleship commits, fires and audits");
 	await startSolo(page, "battleship.html", "PLAY A BOT");
+	G = await gameScope(page, TIMEOUT);
+	await readyToClick(page);
 
 	let bs = await debug(page);
 	check("it opens on placement", bs.phase === "place", bs.phase);
@@ -453,7 +457,7 @@ try {
 	check("nothing is committed yet", !bs.committed && bs.digests === 0);
 
 	// Mobile-first, asserted: placement is one board and it should own the screen.
-	const place = await page.evaluate(() => {
+	const place = await G.evaluate(() => {
 		const grids = [...document.querySelectorAll(".bs-grid")].filter((g) => g.offsetParent);
 		const box = grids[0]?.getBoundingClientRect();
 		const cell = grids[0]?.querySelector(".bs-cell")?.getBoundingClientRect();
@@ -475,13 +479,13 @@ try {
 	check("its squares are big enough to tap", place.cell >= 30, `${place.cell}px`);
 	check("every control clears 44px", place.minBtn >= 44, `${place.minBtn}px`);
 
-	await page.locator("button", { hasText: "COMMIT FLEET" }).click();
-	await page.waitForFunction(() => window.__game.handle.debug().phase === "fire", null, { timeout: TIMEOUT });
+	await G.locator("button", { hasText: "COMMIT FLEET" }).click();
+	await G.waitForFunction(() => window.__game.handle.debug().phase === "fire", null, { timeout: TIMEOUT });
 	bs = await debug(page);
 	check("both fleets are committed before a shot is fired", bs.digests === 2, `${bs.digests}`);
 	check("no shot has been fired yet", bs.shotsAtMe === 0 && bs.shotsAtThem === 0);
 
-	const battle = await page.evaluate(() => ({
+	const battle = await G.evaluate(() => ({
 		visibleGrids: [...document.querySelectorAll(".bs-grid")].filter((g) => g.offsetParent).length,
 		bottom: Math.round(Math.max(...[...document.querySelectorAll(".bs-grid")]
 			.filter((g) => g.offsetParent).map((g) => g.getBoundingClientRect().bottom))),
@@ -496,7 +500,7 @@ try {
 		const d = await debug(page);
 		if (d.over) break;
 		if (d.phase === "fire") {
-			await page.evaluate(() => {
+			await G.evaluate(() => {
 				const d = window.__game.handle.debug();
 				const at = window.NeonArcade.battleshipRules.botTarget(d.theirBoard);
 				if (!at) return;
@@ -519,7 +523,7 @@ try {
 	// given must fail the audit. This is done against the real helper rather
 	// than a mock, because the digest and the answer-replay are two separate
 	// checks and only both together make the game honest.
-	const caught = await page.evaluate(async () => {
+	const caught = await G.evaluate(async () => {
 		const R = window.NeonArcade.battleshipRules;
 		const honestFleet = R.randomFleet();
 		const hits = new Set();
@@ -557,6 +561,8 @@ try {
 	}
 	await page.locator("button", { hasText: "START GAME" }).first().click();
 	await page.waitForFunction(() => window.__game?.handle, null, { timeout: TIMEOUT });
+	G = await gameScope(page, TIMEOUT);
+	await readyToClick(page);
 
 	let lc = await debug(page);
 	check("four riders took the arena", lc.riders.length === 4, `${lc.riders.length}`);
@@ -567,13 +573,13 @@ try {
 	// wall before they have found their thumbs.
 	check("a round opens with a countdown, not a race", lc.countdown > 0 && !lc.racing, JSON.stringify({ c: lc.countdown, r: lc.racing }));
 
-	await page.waitForFunction(() => window.__game.handle.debug().racing, null, { timeout: TIMEOUT });
+	await G.waitForFunction(() => window.__game.handle.debug().racing, null, { timeout: TIMEOUT });
 	const wallsAtStart = (await debug(page)).walls;
 	await sleep(1500);
 	lc = await debug(page);
 	check("walls are being laid down", lc.walls > wallsAtStart, `${wallsAtStart} -> ${lc.walls}`);
 
-	const arena = await page.evaluate(() => {
+	const arena = await G.evaluate(() => {
 		const box = document.querySelector(".lc-arena").getBoundingClientRect();
 		const zones = [...document.querySelectorAll(".lc-zone")].map((z) => Math.round(z.getBoundingClientRect().width));
 		return {
@@ -591,7 +597,7 @@ try {
 	check("both steering halves are wide enough to hit", arena.zones.length === 2 && Math.min(...arena.zones) >= 100, JSON.stringify(arena.zones));
 
 	// The round must reach a result on its own.
-	await page.waitForFunction(() => window.__game.handle.debug().racing === false, null, { timeout: 60_000 });
+	await G.waitForFunction(() => window.__game.handle.debug().racing === false, null, { timeout: 60_000 });
 	lc = await debug(page);
 	check("the round ends by itself", lc.racing === false);
 	check("at most one rider is left standing", lc.riders.filter((r) => r.alive).length <= 1, `${lc.riders.filter((r) => r.alive).length}`);
@@ -601,6 +607,8 @@ try {
 
 	console.log("\nbots: onitama fits a phone and answers its turn");
 	await startSolo(page, "onitama.html", "PLAY A BOT");
+	G = await gameScope(page, TIMEOUT);
+	await readyToClick(page);
 
 	let oni = await debug(page);
 	check("a bot took the other seat", oni.red !== null && oni.blue !== null);
@@ -609,7 +617,7 @@ try {
 	check("five cards are in play", new Set([...oni.hands[0], ...oni.hands[1], oni.side]).size === 5);
 
 	// Mobile-first is a rule here, so it is asserted rather than eyeballed.
-	const layout = await page.evaluate(() => {
+	const layout = await G.evaluate(() => {
 		const board = document.querySelector(".oni-board");
 		const cards = [...document.querySelectorAll(".oni-card")];
 		const rect = board.getBoundingClientRect();
@@ -634,14 +642,14 @@ try {
 	// Play one move and let the bot answer. Driving it through the page's own
 	// state rather than clicking the canvas: the click maths is the view's
 	// problem, and this is a test of the bot taking its turn.
-	const answered = await page.evaluate(async () => {
+	const answered = await G.evaluate(async () => {
 		const g = window.__game.handle;
 		const R = window.NeonArcade.onitamaRules;
 		const before = g.debug();
 		if (before.turn !== before.mySide) return { waited: true };
 		return { waited: false, turn: before.turn };
 	});
-	await page.waitForFunction(
+	await G.waitForFunction(
 		() => {
 			const d = window.__game.handle.debug();
 			return d.turn === d.mySide && d.winner === null;
@@ -781,6 +789,8 @@ try {
 
 	console.log("\nbots: tug of war pulls its own weight");
 	await startSolo(page, "tug-of-war.html", "PLAY A BOT");
+	G = await gameScope(page, TIMEOUT);
+	await readyToClick(page);
 
 	// Never touch the button: whatever happens is entirely the bot's doing.
 	await sleep(1200);
@@ -791,7 +801,7 @@ try {
 
 	// ~9s unopposed by the game's impulse tuning; the margin is for a slow CI
 	// frame rate, not for a bot that might or might not get there.
-	const botWon = await page
+	const botWon = await G
 		.waitForFunction(() => window.__game.handle.debug().winner === "B", null, {
 			timeout: 20_000,
 		})

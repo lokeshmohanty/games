@@ -30,3 +30,6 @@ CLAUDE.md
 
 # wrangler dev secrets (ROOM_PASS_KEY; worker/README.md): local only, never committed
 .dev.vars*
+
+# Generated at deploy by scripts/fetch-community.mjs
+community/

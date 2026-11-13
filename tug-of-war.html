@@ -15,7 +15,7 @@
       link, which the party joins instead of starting fresh.
     -->
     <link rel="canonical" href="party.html?game=tug-of-war" />
-    <meta http-equiv="refresh" content="0; url=party.html?game=tug-of-war&amp;fresh=1" />
+    <meta http-equiv="refresh" content="0; url=party.html?game=lokeshmohanty%2Ftug-of-war&amp;fresh=1" />
     <link rel="manifest" href="manifest.webmanifest" />
     <meta name="theme-color" content="#0a0a0a" />
     <link rel="icon" href="assets/icon.svg" type="image/svg+xml" />
@@ -31,14 +31,14 @@
       <h1 class="lobby-title">TUG OF WAR</h1>
       <p class="lobby-sub">Opening the game…</p>
       <div class="lobby-row">
-        <a class="neon-btn neon-btn--accent" href="party.html?game=tug-of-war&amp;fresh=1">PLAY TUG OF WAR</a>
+        <a class="neon-btn neon-btn--accent" href="party.html?game=lokeshmohanty%2Ftug-of-war&amp;fresh=1">PLAY TUG OF WAR</a>
         <a class="neon-btn" href="index.html">ALL GAMES</a>
       </div>
     </div>
     <script src="lib/pwa.js"></script>
     <script>
       const q = new URLSearchParams(location.search);
-      q.set("game", "tug-of-war");
+      q.set("game", "lokeshmohanty/tug-of-war");
       // A fresh visit starts a new party; a carried link joins one.
       if (!location.hash) q.set("fresh", "1");
       location.replace("party.html?" + q + location.hash);

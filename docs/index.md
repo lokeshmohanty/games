@@ -293,7 +293,7 @@ Where the brains live:
 | Game | Brain | Where |
 |---|---|---|
 | Connect 4 | minimax + alpha-beta, 5 plies, centre-first move ordering | `games/connect4/connect4.js` |
-| Tug of War | a tap rate (~9/s) with jitter, one timer for all bots | `games/tug-of-war.js` |
+| Tug of War | a tap rate (~9/s) with jitter, one timer for all bots | `arcade-games: tug-of-war/tug-of-war.js` |
 | Neon Survival | steering: inverse-square flee from enemies, drift to gems, wall push-off, speed-capped | `games/neon-survival-mp/neon-survival-mp.js` |
 | Neon Bid | marginal points (plus a share of the rainbow) + half the leader's gain, scaled by credits per lot it can expect to win, ±15% noise | `games/neon-bid/neon-bid.js` (`NeonArcade.neonBidRules.botBid`) |
 | Draw & Guess | none — `bots: false` in its registration | — |
@@ -378,7 +378,7 @@ silently sending in the clear. A game with a secret should refuse to deal on
 
 ### The worked example: Battleship
 
-`games/battleship.js` is what this was built for, and it shows the pattern in
+`arcade-games: battleship/battleship.js` is what this was built for, and it shows the pattern in
 full. Nobody holds anybody else's fleet — not even the host. Each player commits
 to a fleet before a shot is fired, answers hit-or-miss for their *own* board
 during play, and opens the commitment at the end.
@@ -588,7 +588,7 @@ code, and JSX needs a compiler that emits ESM, which browsers refuse over
 workflow uploads the repo with `path: '.'`, and `scripts/preview.mjs` drives the
 game HTML directly. `lib/ui.js` is what that analysis recommended instead.
 
-`games/tug-of-war.js` was written specifically to test that contract, and is
+`arcade-games: tug-of-war/tug-of-war.js` was written specifically to test that contract, and is
 worth reading first when adding a game: it is the only one with more than one
 player per side, so it is where `seats("A")` is read as a group rather than as
 `seats("A")[0]`. Adding it needed no change to anything in `lib/` — one file,
