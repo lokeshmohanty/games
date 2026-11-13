@@ -382,6 +382,19 @@ NeonArcade.registerGame({
 			draw();
 			updateHud();
 			if (state.winner === null) return runBot();
+			// Every peer reports what it saw; the platform counts it once.
+			// A seat empties when its player leaves for good (rosterChanged).
+			const places = (...slots) => slots.map((s) => s.filter(Boolean)).filter((s) => s.length);
+			ctx.reportResult?.({
+				kind: "duel",
+				match: state.match ?? 1,
+				ranking:
+					state.winner === 0
+						? places([state.red, state.yellow])
+						: state.winner === RED
+							? places([state.red], [state.yellow])
+							: places([state.yellow], [state.red]),
+			});
 			const mine = myColor();
 			const msg =
 				state.winner === 0 ? "DRAW" : state.winner === mine ? "YOU WIN!" : "YOU LOSE";
@@ -397,6 +410,7 @@ NeonArcade.registerGame({
 
 		function rematch() {
 			state = {
+				match: (state.match ?? 1) + 1,
 				board: emptyBoard(),
 				turn: RED,
 				winner: null,

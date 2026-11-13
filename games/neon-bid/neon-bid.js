@@ -361,7 +361,27 @@ NeonArcade.registerGame({
 		let game = null; // public: { order, lot, players, results } — see newGame
 		let digests = {}; // id -> digest for the lot being bid; published once collected
 		let opened = {}; // host only: id -> { lot, bid, nonce } for this lot
-		let over = null; // { rows, winners }
+		let over = null; // { rows, winners, match }
+		let matchNo = 0; // host: games started in this run
+		let reportedOver = null;
+
+		/** Tell the platform how it ended — places by points, then credits. */
+		function reportOver() {
+			if (!over || reportedOver === over) return;
+			reportedOver = over;
+			const places = [];
+			for (const r of over.rows) {
+				const last = places.at(-1);
+				if (last && last.points === r.points && last.credits === r.credits) last.ids.push(r.id);
+				else places.push({ points: r.points, credits: r.credits, ids: [r.id] });
+			}
+			ctx.reportResult?.({
+				kind: "ffa",
+				match: over.match ?? 1,
+				ranking: places.map((p) => p.ids),
+				scores: Object.fromEntries(over.rows.map((r) => [r.id, r.points])),
+			});
+		}
 		let myCommit = null; // { lot, bid, commit }
 		let committing = false;
 		let botCommits = {}; // host only: botId -> { lot, bid, commit }
@@ -442,9 +462,10 @@ NeonArcade.registerGame({
 			},
 			onFinish: () => {
 				if (!ctx.isHost || !game) return;
-				over = R.standings(game.players);
+				over = { ...R.standings(game.players), match: matchNo };
 				phase = "over";
 				pushState();
+				reportOver();
 			},
 		});
 
@@ -596,7 +617,10 @@ NeonArcade.registerGame({
 			game = msg.game;
 			digests = msg.digests ?? {};
 			over = msg.over ?? null;
-			if (over) phase = "over";
+			if (over) {
+				phase = "over";
+				if (reportedOver?.match !== over.match) reportOver();
+			}
 			// The digests can land after the phase did (see restoreBid): open now.
 			if (!myCommit && phase === "open") {
 				restoreBid(rounds.state());
@@ -873,6 +897,7 @@ NeonArcade.registerGame({
 		async function startGame() {
 			if (!ctx.isHost) return;
 			game = R.newGame(ctx.players());
+			matchNo++;
 			over = null;
 			digests = {};
 			opened = {};

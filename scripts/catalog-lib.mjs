@@ -32,8 +32,12 @@ export function catalogEntries(files, root) {
 			id: owner ? `${owner}/${m.id}` : m.id,
 			name: m.name,
 			blurb: m.blurb ?? "",
+			// The portal's card: a title in ordinary case and a longer pitch.
+			title: m.title ?? m.name,
+			description: m.description ?? m.blurb ?? "",
 			shape: m.shape ?? "free",
 			seats: m.seats,
+			players: m.players ?? null,
 			bots: m.bots !== false,
 			local: m.kind === "local",
 			kind: m.kind,
@@ -63,9 +67,10 @@ export function catalogScript(games, { file, source }) {
 
 window.NeonArcade = window.NeonArcade || {};
 NeonArcade.CATALOG = (NeonArcade.CATALOG || []).concat(${JSON.stringify(games, null, "\t")});
+// The party registers them; the portal only reads CATALOG to draw its cards.
 for (const g of ${JSON.stringify(games.map((g) => g.id))}) {
 	const def = NeonArcade.CATALOG.find((c) => c.id === g);
-	NeonArcade.registerFramedGame({ ...def, base: new URL(def.path, document.baseURI).href });
+	NeonArcade.registerFramedGame?.({ ...def, base: new URL(def.path, document.baseURI).href });
 }
 `;
 }

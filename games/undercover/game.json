@@ -2,12 +2,18 @@
   "sdk": 1,
   "id": "undercover",
   "name": "UNDERCOVER",
+  "title": "Undercover",
   "blurb": "One word, one impostor, one phone passed round the table.",
+  "description": "Everyone gets a secret word — except the impostors, who get one that is nearly right. Describe it, argue, vote. Played on one phone passed round the table, so there is nothing to connect.",
   "entry": "index.html",
   "shape": "free",
   "seats": {
     "min": 1,
     "max": 8
+  },
+  "players": {
+    "min": 3,
+    "max": 12
   },
   "bots": false,
   "kind": "local",

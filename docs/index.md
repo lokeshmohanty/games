@@ -62,7 +62,13 @@ before changing either subsystem:
 ## The portal
 
 `index.html` is `start_url`, so it is the first thing an installed app shows.
-Two things about it are asserted rather than eyeballed, in `test-pwa.mjs`.
+**Since 2026-11-13 its cards are drawn, not written** (`lib/portal.js`): one
+per game in `NeonArcade.CATALOG` — this repo's manifests and every pinned
+outside repo's — so a merged registry PR appears with no edit here. Each card
+has a ☆ (favourites, `lib/stats.js`), your own record on this device, and for a
+community game its author; a ★ FAVOURITES chip and a Recently played row sit
+above the grid. Two things about it are asserted rather than eyeballed, in
+`test-pwa.mjs`.
 
 **Nine games have to fit a phone.** They did not: a `minmax(300px, 1fr)` column
 at 80% width is a single column on a 390px screen, and a 200px image plus a

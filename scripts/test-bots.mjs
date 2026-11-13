@@ -746,6 +746,21 @@ try {
 		.catch(() => false);
 	check("an unopposed bot wins the round", botWon);
 
+	// The result reaches this device's stats (lib/stats.js) through the frame,
+	// once, and the portal says so (lib/portal.js).
+	const tugId = "lokeshmohanty/tug-of-war";
+	const mine = await page
+		.waitForFunction((id) => JSON.parse(localStorage.getItem("neon.stats") ?? "{}")[id]?.lost === 1, tugId, { timeout: 5000 })
+		.then(() => page.evaluate(() => ({ stats: JSON.parse(localStorage.getItem("neon.stats")), recent: JSON.parse(localStorage.getItem("neon.recent")) })))
+		.catch(() => page.evaluate(() => ({ stats: localStorage.getItem("neon.stats"), recent: localStorage.getItem("neon.recent") })));
+	check("the lost round is in this device's stats, counted once", mine.stats?.[tugId]?.lost === 1 && mine.stats?.[tugId]?.played === 1, JSON.stringify(mine.stats?.[tugId] ?? mine.stats));
+	check("…against a bot", mine.stats?.[tugId]?.vsBots === 1);
+	check("…and it is the most recent game", mine.recent?.[0] === tugId, JSON.stringify(mine.recent));
+	await page.goto(url("index.html"));
+	const portalSays = await page.locator(`.game-card[data-game="${tugId}"] .game-you`).textContent({ timeout: TIMEOUT }).catch(() => "");
+	check("the portal shows it on the game's card", /0 won of 1/.test(portalSays), portalSays);
+	check("…and under Recently played", (await page.locator("[data-recent] .recent-game").first().textContent().catch(() => "")) === "Tug of War");
+
 	// ------------------------------------------------------ neon survival
 
 	console.log("\nbots: neon survival runs for one player, and for one plus bots");

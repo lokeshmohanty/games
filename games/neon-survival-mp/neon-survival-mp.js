@@ -597,7 +597,9 @@ NeonArcade.registerGame({
 			removeGhostMsg();
 		}
 
+		let runs = 0; // runs started in this mount: a PLAY AGAIN counts up
 		function startGame() {
+			runs++;
 			resetGame();
 			gameActive = true;
 			hideOverlay();
@@ -611,6 +613,14 @@ NeonArcade.registerGame({
 
 		function gameOver() {
 			gameActive = false;
+			// Co-op: everyone playing shares the run and its score.
+			const players = ctx.players();
+			ctx.reportResult?.({
+				kind: "coop",
+				match: runs,
+				ranking: [players],
+				scores: Object.fromEntries(players.map((id) => [id, score])),
+			});
 			if (room && room.isHost()) {
 				showOverlay(
 					"GAME OVER",

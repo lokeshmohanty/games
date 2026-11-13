@@ -2,7 +2,9 @@
   "sdk": 1,
   "id": "neon-bid",
   "name": "NEON BID",
+  "title": "Neon Bid",
   "blurb": "Twelve gems, 100 credits, sealed bids. The winner pays the second-highest bid.",
+  "description": "Twelve gems, a hundred credits, every bid sealed. The winner pays the second-highest bid, so bid what a gem is really worth to you — sets and a rainbow score.",
   "entry": "index.html",
   "shape": "free",
   "seats": {

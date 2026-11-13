@@ -285,10 +285,25 @@
           white-space: nowrap;
         }
 
+        .games-grid,
+        .recent {
+          width: 94%;
+        }
         .games-grid {
           grid-template-columns: repeat(2, 1fr);
           gap: 12px;
-          width: 94%;
+        }
+        .game-card .fav {
+          width: 36px;
+          height: 36px;
+          font-size: 1.05rem;
+          top: 4px;
+          right: 4px;
+        }
+        .game-card p.game-you,
+        .game-card p.game-by {
+          margin: -2px 6px 6px;
+          font-size: 0.62rem;
         }
         .game-card {
           border-radius: 10px;
@@ -367,6 +382,72 @@
         font-size: 0.85rem;
         text-align: center;
       }
+
+      /* lib/portal.js: the favourite star, your own record, the author of a
+         community game, and the recently-played row. */
+      .game-card .fav {
+        position: absolute;
+        top: 8px;
+        right: 8px;
+        width: 44px;
+        height: 44px;
+        border: 1px solid #333;
+        border-radius: 50%;
+        background: rgba(10, 10, 10, 0.75);
+        color: #ffd24d;
+        font-size: 1.3rem;
+        line-height: 1;
+        cursor: pointer;
+      }
+      .game-card .fav[aria-pressed="true"] {
+        border-color: #ffd24d;
+        box-shadow: 0 0 12px rgba(255, 210, 77, 0.45);
+      }
+      /* Shown on a phone too, where the description is not. */
+      .game-card p.game-you:not([hidden]),
+      .game-card p.game-by {
+        display: block;
+      }
+      .game-card p.game-you {
+        color: #0ff;
+        font-size: 0.75rem;
+        margin-top: -6px;
+      }
+      .game-card p.game-by {
+        color: #777;
+        font-size: 0.7rem;
+        margin-top: -6px;
+      }
+      .recent {
+        width: 80%;
+        max-width: 1200px;
+        margin-bottom: 18px;
+      }
+      .recent h2 {
+        font-size: 0.8rem;
+        letter-spacing: 2px;
+        text-transform: uppercase;
+        color: #888;
+        margin: 0 0 8px;
+      }
+      .recent-list {
+        display: flex;
+        gap: 8px;
+        overflow-x: auto;
+        padding-bottom: 4px;
+      }
+      .recent-game {
+        flex: none;
+        padding: 10px 14px;
+        min-height: 44px;
+        box-sizing: border-box;
+        border: 1px solid #0ff;
+        border-radius: 999px;
+        color: #0ff;
+        text-decoration: none;
+        font-size: 0.85rem;
+        white-space: nowrap;
+      }
     </style>
   </head>
   <body>
@@ -410,247 +491,23 @@
       <button class="filter" type="button" data-filter="one-phone" aria-pressed="false">One phone</button>
       <button class="filter" type="button" data-filter="strategy" aria-pressed="false">Strategy</button>
       <button class="filter" type="button" data-filter="quick" aria-pressed="false">Quick</button>
+      <button class="filter" type="button" data-filter="favs" aria-pressed="false">★ Favourites</button>
     </div>
     <p class="filter-empty" hidden>Nothing matches that yet.</p>
 
-    <div class="games-grid">
-      <div
-        class="game-card"
-        data-tags="alone party quick"
-        onclick="window.location.href = 'neon-survival-mp.html'"
-      >
-        <img
-          src="assets/neon-survival-mp.gif"
-          alt="Neon Survival Preview"
-          onerror="
-            this.onerror = null;
-            this.src = 'assets/placeholder.svg'
-          "
-        />
-        <h3>Neon Survival</h3>
-        <p>
-          Dodge the red, collect the green. Survive alone, or keep each other
-          alive as the swarm closes in.
-        </p>
-        <p class="game-meta">1–8 players · bots</p>
-        <a href="neon-survival-mp.html" class="play-btn">PLAY NOW</a>
-      </div>
-      <div
-        class="game-card"
-        data-tags="alone party quick"
-        onclick="window.location.href = 'light-cycles.html'"
-      >
-        <img
-          src="assets/light-cycles.gif"
-          alt="Light Cycles Preview"
-          onerror="
-            this.onerror = null;
-            this.src = 'assets/placeholder.svg'
-          "
-        />
-        <h3>Light Cycles</h3>
-        <p>
-          Ride, leave a wall behind you, and do not touch one. Tap left or right
-          to turn. Up to eight at once, and the bots fill space rather than
-          wander.
-        </p>
-        <p class="game-meta">1-8 players · bots</p>
-        <a href="light-cycles.html" class="play-btn">PLAY NOW</a>
-      </div>
-      <div
-        class="game-card"
-        data-tags="alone party"
-        onclick="window.location.href = 'liars-dice.html'"
-      >
-        <img
-          src="assets/liars-dice.gif"
-          alt="Liar's Dice Preview"
-          onerror="
-            this.onerror = null;
-            this.src = 'assets/placeholder.svg'
-          "
-        />
-        <h3>Liar's Dice</h3>
-        <p>
-          Bid on dice you cannot see. Ones are wild. Nobody deals — you roll
-          your own and commit to them, so the cups can be trusted when they
-          come up.
-        </p>
-        <p class="game-meta">2-6 players &middot; bots</p>
-        <a href="liars-dice.html" class="play-btn">PLAY NOW</a>
-      </div>
-      <div
-        class="game-card"
-        data-tags="alone party strategy"
-        onclick="window.location.href = 'neon-bid.html'"
-      >
-        <img
-          src="assets/neon-bid.gif"
-          alt="Neon Bid Preview"
-          onerror="
-            this.onerror = null;
-            this.src = 'assets/placeholder.svg'
-          "
-        />
-        <h3>Neon Bid</h3>
-        <p>
-          Twelve gems, a hundred credits, every bid sealed. The winner pays the
-          second-highest bid, so bid what a gem is really worth to you — sets
-          and a rainbow score.
-        </p>
-        <p class="game-meta">2-8 players &middot; bots</p>
-        <a href="neon-bid.html" class="play-btn">PLAY NOW</a>
-      </div>
-      <div
-        class="game-card"
-        data-tags="party one-phone"
-        onclick="window.location.href = 'undercover.html'"
-      >
-        <img
-          src="assets/undercover.gif"
-          alt="Undercover Preview"
-          onerror="
-            this.onerror = null;
-            this.src = 'assets/placeholder.svg'
-          "
-        />
-        <h3>Undercover</h3>
-        <p>
-          Everyone gets a secret word — except the impostors, who get one that
-          is nearly right. Describe it, argue, vote. Played on one phone passed
-          round the table, so there is nothing to connect.
-        </p>
-        <p class="game-meta">3-12 players &middot; one device</p>
-        <a href="undercover.html" class="play-btn">PLAY NOW</a>
-      </div>
-      <div
-        class="game-card"
-        data-tags="alone duel strategy"
-        onclick="window.location.href = 'battleship.html'"
-      >
-        <img
-          src="assets/battleship.gif"
-          alt="Battleship Preview"
-          onerror="
-            this.onerror = null;
-            this.src = 'assets/placeholder.svg'
-          "
-        />
-        <h3>Battleship</h3>
-        <p>
-          Nobody holds your fleet — not even the host. You commit to it, answer
-          your own hits, and both players fire at once. Lie about a hit and the
-          reveal catches you.
-        </p>
-        <p class="game-meta">2 players · bots</p>
-        <a href="battleship.html" class="play-btn">PLAY NOW</a>
-      </div>
-      <div
-        class="game-card"
-        data-tags="alone duel strategy"
-        onclick="window.location.href = 'connect4.html'"
-      >
-        <img
-          src="assets/connect4.gif"
-          alt="Connect 4 Preview"
-          onerror="
-            this.onerror = null;
-            this.src = 'assets/placeholder.svg'
-          "
-        />
-        <h3>Connect 4</h3>
-        <p>
-          Drop your discs, line up four in a row. The bot searches five moves
-          ahead, so it will punish a lazy one.
-        </p>
-        <p class="game-meta">2 players · bots</p>
-        <a href="connect4.html" class="play-btn">PLAY NOW</a>
-      </div>
-      <div
-        class="game-card"
-        data-tags="alone party quick"
-        onclick="window.location.href = 'tug-of-war.html'"
-      >
-        <img
-          src="assets/tug-of-war.gif"
-          alt="Tug of War Preview"
-          onerror="
-            this.onerror = null;
-            this.src = 'assets/placeholder.svg'
-          "
-        />
-        <h3>Tug of War</h3>
-        <p>
-          Tap to pull. Two teams, any sizes — drag the knot past your line
-          before they drag it past theirs.
-        </p>
-        <p class="game-meta">2–8 players · bots</p>
-        <a href="tug-of-war.html" class="play-btn">PLAY NOW</a>
-      </div>
-      <div
-        class="game-card"
-        data-tags="party"
-        onclick="window.location.href = 'draw-guess.html'"
-      >
-        <img
-          src="assets/draw-guess.gif"
-          alt="Draw &amp; Guess Preview"
-          onerror="
-            this.onerror = null;
-            this.src = 'assets/placeholder.svg'
-          "
-        />
-        <h3>Draw &amp; Guess</h3>
-        <p>
-          One player draws, the rest race to guess the word. Real-time canvas
-          and chat.
-        </p>
-        <p class="game-meta">
-          2–8 players · <span class="no-bots">people only</span>
-        </p>
-        <a href="draw-guess.html" class="play-btn">PLAY NOW</a>
-      </div>
+    <div class="recent" data-recent hidden>
+      <h2>Recently played</h2>
+      <div class="recent-list"></div>
     </div>
-    <script>
-      // Filtering, in the only way this repo does anything: plain DOM, no
-      // build step, and it works with the page opened off the filesystem.
-      //
-      // One filter at a time rather than a set of toggles. With nine games a
-      // multi-select is a lot of state to explain for a list you can already
-      // see all of, and "All" is one tap away.
-      (() => {
-        const chips = [...document.querySelectorAll(".filter")];
-        const cards = [...document.querySelectorAll(".game-card")];
-        const empty = document.querySelector(".filter-empty");
 
-        function apply(want) {
-          let shown = 0;
-          for (const card of cards) {
-            const tags = (card.dataset.tags || "").split(/\s+/);
-            const match = want === "all" || tags.includes(want);
-            card.hidden = !match;
-            if (match) shown++;
-          }
-          for (const chip of chips) {
-            chip.setAttribute("aria-pressed", String(chip.dataset.filter === want));
-          }
-          // A filter that matches nothing should say so rather than leaving a
-          // blank page that looks broken.
-          if (empty) empty.hidden = shown > 0;
-        }
-
-        for (const chip of chips) {
-          chip.addEventListener("click", () => apply(chip.dataset.filter));
-        }
-      })();
-    </script>
+    <!-- Drawn by lib/portal.js from every game's manifest (lib/catalog.js,
+         community/catalog.js): a registered game needs no edit here. -->
+    <div class="games-grid"></div>
     <script>
       // Join a party by its six-digit code. Lives on the portal because the
       // code is the one piece of party plumbing a newcomer meets before they
       // have a party page open. The prompt is deliberately plain: it works
-      // with the page opened off the filesystem and inside the PWA shell.
-      // Six digits to party.html#c=, which joins it. Written here rather
-      // than loaded: the portal stays free of lib/ apart from pwa.js.
+      // inside the PWA shell. Six digits to party.html#c=, which joins it.
       function joinWithCode(event) {
         event.stopPropagation();
         const raw = prompt("Enter the 6-digit party code");
@@ -661,6 +518,11 @@
       }
     </script>
 
+    <!-- The cards: every game's manifest, this device's stats, the drawing. -->
+    <script src="lib/stats.js"></script>
+    <script src="lib/catalog.js"></script>
+    <script src="community/catalog.js"></script>
+    <script src="lib/portal.js"></script>
     <script src="lib/pwa.js"></script>
   </body>
 </html>

@@ -16,6 +16,10 @@ export function validateManifest(m) {
 	if (!ID.test(m.id ?? "")) p.push('"id" must be 2–32 of a-z, 0-9, -');
 	if (typeof m.name !== "string" || !m.name || m.name.length > 40) p.push('"name" must be 1–40 characters');
 	if (m.blurb != null && (typeof m.blurb !== "string" || m.blurb.length > 140)) p.push('"blurb" must be at most 140 characters');
+	if (m.title != null && (typeof m.title !== "string" || !m.title || m.title.length > 40)) p.push('"title" must be 1–40 characters');
+	if (m.description != null && (typeof m.description !== "string" || m.description.length > 300)) {
+		p.push('"description" must be at most 300 characters');
+	}
 	if (typeof m.entry !== "string" || !/^[\w./-]+\.html$/.test(m.entry) || m.entry.includes("..")) {
 		p.push('"entry" must be an .html path inside the game folder');
 	}
@@ -24,6 +28,9 @@ export function validateManifest(m) {
 	const s = m.seats;
 	if (!s || !Number.isInteger(s.min) || !Number.isInteger(s.max) || s.min < 1 || s.max < s.min || s.max > 16) {
 		p.push('"seats" must be { min, max } with 1 ≤ min ≤ max ≤ 16');
+	}
+	if (m.players != null && (!Number.isInteger(m.players.min) || !Number.isInteger(m.players.max) || m.players.min < 1 || m.players.max < m.players.min)) {
+		p.push('"players" (people at the table, for a local game) must be { min, max }');
 	}
 	if (!LICENSES.includes(m.license)) p.push(`"license" must be one of ${LICENSES.join(", ")}`);
 	if (typeof m.author !== "string" || !m.author) p.push('"author" is required (GitHub user)');

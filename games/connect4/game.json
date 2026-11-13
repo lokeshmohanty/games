@@ -2,7 +2,9 @@
   "sdk": 1,
   "id": "connect4",
   "name": "CONNECT 4",
+  "title": "Connect 4",
   "blurb": "Drop discs, get four in a row. One against one.",
+  "description": "Drop your discs, line up four in a row. The bot searches five moves ahead, so it will punish a lazy one.",
   "entry": "index.html",
   "shape": "teams",
   "seats": {

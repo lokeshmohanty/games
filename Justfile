@@ -40,7 +40,7 @@ serve-lan:
     python3 -m http.server {{port}}
 
 # Every suite, in the order they get slower.
-test: community test-codec test-hub test-worker-do test-plumbing test-rules test-room test-party test-scan test-pwa test-bots test-devkit
+test: community test-stats test-codec test-hub test-worker-do test-plumbing test-rules test-room test-party test-scan test-pwa test-bots test-devkit
 
 # No browser needed — the signalling codec round-trip.
 test-codec:
@@ -186,3 +186,7 @@ test-devkit:
 # check runs this): `just validate-game path/to/game`, `--static` for no browser.
 validate-game *args:
     node scripts/validate-game.mjs {{args}}
+
+# lib/stats.js with no browser: outcomes per kind, counting once, rematches.
+test-stats:
+    node scripts/test-stats.mjs

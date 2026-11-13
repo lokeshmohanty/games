@@ -239,6 +239,7 @@ NeonArcade.registerGame({
 		let round = 1;
 		let lastOut = null; // the player just voted out
 		let done = null; // "civilians" | "spies" | "blank"
+		let deals = 0; // games finished in this mount
 		let picked = null; // who the table has tapped, before it is confirmed
 
 		const alive = () => (deal ? deal.players.filter((p) => !p.out) : []);
@@ -528,6 +529,10 @@ NeonArcade.registerGame({
 			if (done) {
 				actions.append(button("SEE THE RESULT", () => {
 					phase = "over";
+					// One phone, typed-in names: it counts as a game played here,
+					// never as anyone's win (lib/stats.js "local").
+					deals++;
+					ctx.reportResult?.({ kind: "local", match: deals, ranking: [[ctx.room.selfId]] });
 					render();
 				}, { accent: true }));
 			} else {

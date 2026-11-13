@@ -76,9 +76,29 @@ New with the SDK:
 
 | | |
 |---|---|
-| `ctx.reportResult(r)` | the outcome, for stats/leaderboards (shape: Phase 1 of the plan) |
+| `ctx.reportResult(r)` | the outcome, for stats and leaderboards — below |
 | `ctx.storage.get(key)` / `.set(key, value)` | per game, per device; 64 KB of JSON |
 | `ctx.assets.url(path)` | `Promise<blob: URL>` for a file in the game folder (images, sounds, fonts) |
+
+### Reporting a result
+
+Call `ctx.reportResult(r)` on **every peer** when a match ends (each one saw
+it); the platform counts it once per run, `match` and ranking.
+
+```js
+ctx.reportResult({
+  kind: "duel",            // "duel" | "ffa" | "teams" | "coop" | "local"
+  match: 3,                // which match of this run: count up on a rematch
+  ranking: [["a"], ["b"]], // places; ranking[0] won; a slot of several = tie/team
+  scores: { a: 12, b: 7 }, // optional
+});
+```
+
+A draw is everyone in one slot; co-op is one slot (played, with scores);
+`local` (one phone) counts as played. Leave out seats that emptied. The
+optional manifest fields `title` and `description` (≤ 300) are the portal
+card's; `players: { min, max }` is the people at the table for a `local`
+game.
 
 The returned handle keeps its old hooks: `unmount`, `onRoster`,
 `onPeerJoin(id, info)`, `onPeerLeave(id, info)`, `takeOver()` (the crown
@@ -209,6 +229,5 @@ workflow is [`CONTRIBUTING.md`](../CONTRIBUTING.md).
 
 ## Planned (not built yet)
 
-- **Portal** generated from the catalogs (cards for community games).
 - Phases 1–6 of the plan: `ctx.reportResult` → stats, accounts,
   leaderboards, feedback, friends, groups.
