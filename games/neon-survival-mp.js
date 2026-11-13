@@ -726,6 +726,12 @@ NeonArcade.registerGame({
 		// ── Main loop ────────────────────────────────────────────
 		function loop(time) {
 			if (!gameActive) return;
+			// Host out of the app: the swarm is frozen, so nobody may die on it.
+			if (pause.paused()) {
+				draw();
+				requestAnimationFrame(loop);
+				return;
+			}
 
 			if (room && room.isHost()) {
 				updateHost(time);
@@ -813,6 +819,15 @@ NeonArcade.registerGame({
 		/** Everyone on a team is in the run; spectators just watch. */
 		const isPlaying = (id) => ctx.seatOf(id) !== null;
 
+		// The swarm is simulated on the host; with the host out of the app it
+		// stops, and everyone is told why. A spawn clock restarted on the way
+		// back, or the first frame would make up for the whole pause.
+		const pause = NeonArcade.hostPause(ctx, {
+			onChange: (paused) => {
+				if (!paused) lastSpawn = performance.now();
+			},
+		});
+
 		// Formerly onStart.
 		gameEl.hidden = false;
 		resize();
@@ -852,6 +867,7 @@ NeonArcade.registerGame({
 				// The animation loop bails as soon as this is false, so clearing it
 				// is what actually stops the game; the RAF id is never held anywhere.
 				gameActive = false;
+				pause.dispose();
 				for (const [type, fn, opts] of windowListeners) {
 					window.removeEventListener(type, fn, opts);
 				}

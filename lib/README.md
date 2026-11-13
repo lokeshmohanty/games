@@ -148,6 +148,14 @@ A **turn game** calls `NeonArcade.turnWait(ctx, { turn, skip })` once at mount
 RECONNECTING everyone sees "Waiting for X — reconnecting (m:ss)"; after 30 s
 (`NeonArcade.turnWaitMs` for tests) the host chooses WAIT / SKIP TURN /
 END GAME (the last only where `ctx.canEnd`). Nothing happens on its own.
+A player whose page is hidden publishes `away` on their member record
+(lobby.js), and the banner treats them the same ("switched away").
+
+A game **the host simulates** (Tug of War, Neon Survival) calls
+`NeonArcade.hostPause(ctx, { onChange })` and checks `paused()` in its loop and
+input: while the host is out of the app everyone sees "Paused — X left the
+app", then "Resuming in 3" once it is back. `NeonArcade.keepAwake(on)` holds
+the Screen Wake Lock; both shells hold it while a game is mounted.
 
 `shape` tells the party screen how to read team assignments: `teams` is Team A
 against Team B, `coop` puts everyone on one side, `free` ignores teams. Whatever

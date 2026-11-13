@@ -186,6 +186,13 @@ page navigation** — nobody reconnects and nobody re-scans.
   the full grace; a player who leaves for good is handled by each game
   (Onitama: the side that stays wins). The collecting games (Battleship, Neon
   Bid, Draw & Guess) never stall — their phases have deadlines.
+- **Leaving the app** (another app, a locked phone). The screen is kept on while
+  a game runs (Screen Wake Lock), since a phone that dims suspends the page. A
+  hidden page publishes `away`: the roster says AWAY and a turn game's banner
+  says "switched away". A host out of the app stops its simulation anyway — a
+  hidden page gets no frames — so Tug of War and Neon Survival pause for
+  everyone and say why, refuse pulls meanwhile (they used to land all at once
+  on return), and resume after a 3-2-1. Lokesh's choices, 2026-11-13.
 
 ### When the host goes
 

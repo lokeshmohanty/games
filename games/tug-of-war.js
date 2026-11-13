@@ -212,7 +212,8 @@ NeonArcade.registerGame({
 		 */
 		function applyPull(team) {
 			const size = ctx.seats(team).length;
-			if (!size || state.winner !== null) return;
+			// Paused: a pull now would land all at once when play resumes.
+			if (!size || state.winner !== null || pause.paused()) return;
 			vel += (team === "A" ? -IMPULSE : IMPULSE) / size;
 			state.pulls[team]++;
 			flash[team] = 1;
@@ -231,7 +232,7 @@ NeonArcade.registerGame({
 			now + BOT_TAP_MS + (Math.random() * 2 - 1) * BOT_JITTER_MS;
 
 		function botTick() {
-			if (!room.isHost() || state.winner !== null) return;
+			if (!room.isHost() || state.winner !== null || pause.paused()) return;
 			const now = performance.now();
 			const live = new Set();
 			for (const team of ["A", "B"]) {
@@ -252,7 +253,7 @@ NeonArcade.registerGame({
 		}
 
 		function step() {
-			if (room.isHost() && state.winner === null) {
+			if (room.isHost() && state.winner === null && !pause.paused()) {
 				state.pos = Math.max(-1, Math.min(1, state.pos + vel));
 				vel *= DAMPING;
 				if (Math.abs(state.pos) >= WIN_AT) {
@@ -454,6 +455,14 @@ NeonArcade.registerGame({
 			broadcast();
 		}
 
+		// The host out of the app freezes the rope for everyone: say so, refuse
+		// pulls meanwhile, and restart the bots' clocks on the way back.
+		const pause = NeonArcade.hostPause(ctx, {
+			onChange: (paused) => {
+				if (!paused) botDue.clear();
+			},
+		});
+
 		// -- boot ---------------------------------------------------------------
 
 		renderRosters();
@@ -487,6 +496,7 @@ NeonArcade.registerGame({
 				// unless they are stopped here, and would then fight — and network
 				// with — whatever game is mounted next.
 				running = false;
+				pause.dispose();
 				cancelAnimationFrame(raf);
 				clearInterval(stateTimer);
 				clearInterval(botTimer);

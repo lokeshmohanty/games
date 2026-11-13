@@ -354,6 +354,10 @@ canvas {
   and their return is automatic. Amber rather than the host's cyan or a bot's
   magenta — it is a state to wait out, not a role.
 */
+.party-tag.is-away {
+  border-color: var(--muted);
+  color: var(--muted);
+}
 .party-tag.is-reconnecting {
   color: #fc3;
   border-color: #fc3;
@@ -558,6 +562,30 @@ canvas {
   min-height: 44px;
   padding: 8px 6px;
   font-size: 0.78rem;
+}
+
+/* A host-simulated game paused while its host is out of the app (games.js
+   hostPause). Centred over the board, which cannot be played meanwhile. */
+.host-pause {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 45;
+  width: min(300px, calc(100vw - 32px));
+  box-sizing: border-box;
+  padding: 18px 16px;
+  border: 1px solid var(--accent);
+  border-radius: 12px;
+  background: rgba(10, 10, 10, 0.92);
+  backdrop-filter: blur(4px);
+  color: #fff;
+  font-family: var(--font);
+  font-size: 1rem;
+  text-align: center;
+}
+.host-pause p {
+  margin: 0;
 }
 
 /* PARTY, mid-game (party.js): the way back to the party screen while a game

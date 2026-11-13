@@ -181,10 +181,13 @@ console.log("\nthe bot");
 
 	// A sinking accounts for its ship, so the bot must go back to hunting
 	// rather than keep worrying at a wreck.
+	// A fixed rng: hunting picks a random lattice square, which ~1% of the time
+	// happened to sit next to the wreck and failed this. A bot still probing
+	// the wreck picks a neighbour whatever the rng says.
 	const afterSink = botTarget([
 		{ at: [3, 7], hit: true, sunk: null },
 		{ at: [4, 7], hit: true, sunk: "patrol" },
-	]);
+	], () => 0);
 	check("once a ship is sunk it stops probing it",
 		!(Math.abs(afterSink[0] - 4) + Math.abs(afterSink[1] - 7) === 1 && afterSink[1] === 7),
 		JSON.stringify(afterSink));

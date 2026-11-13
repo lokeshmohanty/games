@@ -1040,8 +1040,10 @@ try {
 		await drop(3);
 		check("connect 4: the host moves, the guest is to play", await turnIs(2));
 		await a.close();
-		// Both at once: the countdown is only three seconds long here.
-		const counting = await Promise.all([h, w].map((p) => barText(p, /Waiting for .+ reconnecting \(0:0\d\)/)));
+		// Both at once: the countdown is only three seconds long here. A closed
+		// tab is hidden first, so it may read "switched away" before the seat
+		// is marked RECONNECTING.
+		const counting = await Promise.all([h, w].map((p) => barText(p, /Waiting for .+ (reconnecting|switched away) \(0:0\d\)/)));
 		check("connect 4: the host is told who it waits for, with a countdown", counting[0]);
 		check("connect 4: and so is everyone else", counting[1]);
 		check("connect 4: after the wait the host decides", await barText(h, /hasn't come back\.$/));
@@ -1055,7 +1057,7 @@ try {
 		});
 		check("connect 4: the banner fits the phone, buttons clear 44px", fit.left >= 0 && fit.right <= 390 && fit.bottom <= 844 && fit.minBtn >= 44 && fit.doc <= 390, JSON.stringify(fit));
 		await h.locator(".turn-wait button", { hasText: "WAIT" }).click();
-		const again = await Promise.all([h, w].map((p) => barText(p, /reconnecting \(0:0\d\)/)));
+		const again = await Promise.all([h, w].map((p) => barText(p, /(reconnecting|switched away) \(0:0\d\)/)));
 		check("connect 4: WAIT starts the countdown again", again[0]);
 		check("connect 4: for everyone", again[1]);
 		await barText(h, /hasn't come back\.$/);

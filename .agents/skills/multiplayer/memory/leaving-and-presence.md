@@ -49,3 +49,13 @@ seat. `NeonArcade.turnWait` (games.js); test-worker 11. Test traps: a
 member's team survives across games, so a closed guest still on team B takes
 the next game's B seat; with the 3 s test wait, check every page's countdown
 at once or it has already run out.
+
+**Leaving the app (Lokesh, 2026-11-13):** wake lock while a game runs; a
+hidden page publishes `away` (roster AWAY + turn banner, no toasts); host-
+simulated games pause for all with "Paused — X left the app" and resume after
+a 3-2-1 (`NeonArcade.hostPause`). Traps: games.js is loaded by the Node rules
+tests — any top-level `document` use must be optional; a closed tab is hidden
+before it is RECONNECTING, so the banner may say "switched away" first; the
+roster under a running game is attached but not visible (Playwright waits
+default to visible); `hostPause`'s draw must record the edge before starting
+the countdown, which draws again (it recursed forever once).

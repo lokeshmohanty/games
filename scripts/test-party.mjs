@@ -478,6 +478,73 @@ try {
 	check("END GAME brings everyone back to the party screen", backAll.every(Boolean), JSON.stringify(backAll));
 	check("…and PARTY is gone with the game", (await p2.locator(".party-pill:not([hidden])").count()) === 0);
 
+	console.log("\nparty: a player who leaves the app");
+	// Another app or a locked phone, faked the way a page sees it: `hidden`
+	// and the event. The host's simulation pauses for everyone and says why;
+	// anyone away shows AWAY; a turn game waiting on them says so.
+	const setHidden = (page, hidden) =>
+		page.evaluate((h) => {
+			Object.defineProperty(document, "hidden", { value: h, configurable: true });
+			Object.defineProperty(document, "visibilityState", { value: h ? "hidden" : "visible", configurable: true });
+			document.dispatchEvent(new Event("visibilitychange"));
+		}, hidden);
+	const shown = (page, sel, re, ms = 8000) =>
+		page.locator(`${sel}:not([hidden])`, { hasText: re }).first().waitFor({ timeout: ms }).then(() => true, () => false);
+	await host.evaluate(() => window.__party.room.setGame("tug-of-war"));
+	for (const page of [host, p2, p3]) await page.locator("#tug-canvas").waitFor({ timeout: TIMEOUT });
+	const wake = await host
+		.waitForFunction(() => !navigator.wakeLock || window.NeonArcade.awake(), null, { timeout: 3000 })
+		.then(() => host.evaluate(() => ({ api: !!navigator.wakeLock, awake: window.NeonArcade.awake() })), () => ({ api: true, awake: false }));
+	check("the screen is kept on while a game runs", !wake.api || wake.awake, JSON.stringify(wake));
+	await setHidden(host, true);
+	check("the host leaves the app: the others see the game paused, and why", await shown(p2, ".host-pause", /Paused — .+ left the app/));
+	// The roster is under the game, so attached rather than visible.
+	check("…and AWAY by the host's name on the roster", await p2.locator(".party-tag.is-away").first().waitFor({ state: "attached", timeout: 5000 }).then(() => true, () => false));
+	const tug = () => host.evaluate(() => window.__party.handle.debug());
+	const before = await tug();
+	for (let i = 0; i < 4; i++) await p2.locator("#tug-tap").dispatchEvent("pointerdown");
+	await host.waitForTimeout(600);
+	const during = await tug();
+	check("…and pulls meanwhile are refused, not saved up", during.pulls.A + during.pulls.B === before.pulls.A + before.pulls.B, JSON.stringify([before.pulls, during.pulls]));
+	await setHidden(host, false);
+	check("back: everyone counts down together", (await shown(p2, ".host-pause", /Resuming in [1-3]/)) && (await shown(host, ".host-pause", /Resuming in [1-3]/)));
+	const resumed = await p2.locator(".host-pause").waitFor({ state: "hidden", timeout: 6000 }).then(() => true, () => false);
+	check("…and play resumes", resumed);
+	for (let i = 0; i < 4; i++) await p2.locator("#tug-tap").dispatchEvent("pointerdown");
+	await host.waitForTimeout(600);
+	const after = await tug();
+	check("…with pulls counted again", after.pulls.A + after.pulls.B > during.pulls.A + during.pulls.B, JSON.stringify(after.pulls));
+	check("…and AWAY gone", await p2.locator(".party-tag.is-away").first().waitFor({ state: "detached", timeout: 5000 }).then(() => true, () => false));
+
+	await host.evaluate(() => window.__party.room.setGame("connect4"));
+	for (const page of [host, p2, p3]) await page.waitForFunction(() => window.__party.game === "connect4" && window.__party.handle, null, { timeout: TIMEOUT });
+	const away4 = await host.evaluate(() => {
+		const d = window.__party.handle.debug();
+		return { toMove: d.turn === 1 ? d.red : d.yellow, host: window.__party.room.selfId };
+	});
+	if (away4.toMove === away4.host) {
+		const box = await host.locator("#board").boundingBox();
+		await host.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
+		await host.waitForFunction((h) => {
+			const d = window.__party.handle.debug();
+			return (d.turn === 1 ? d.red : d.yellow) !== h;
+		}, away4.host, { timeout: TIMEOUT });
+	}
+	const moverId = await host.evaluate(() => {
+		const d = window.__party.handle.debug();
+		return d.turn === 1 ? d.red : d.yellow;
+	});
+	let mover = null;
+	for (const page of [p2, p3]) if ((await page.evaluate(() => window.__party.room.selfId)) === moverId) mover = page;
+	check("(a guest is to move in Connect 4)", !!mover);
+	if (mover) {
+		await setHidden(mover, true);
+		check("a turn game waiting on a player who left the app says so", await shown(host, ".turn-wait", /Waiting for .+ switched away \(0:\d\d\)/));
+		await setHidden(mover, false);
+		check("…and the banner goes when they are back", await host.locator(".turn-wait").first().waitFor({ state: "hidden", timeout: 6000 }).then(() => true, () => false));
+	}
+	await host.evaluate(() => window.__party.room.setGame(null));
+
 	console.log("\nparty: every way out asks, and everyone is told");
 	// A fourth player, so the three above stay for the succession below.
 	const p4 = await context.newPage();

@@ -44,8 +44,12 @@ Audit backlog (2026-11-12), owner to pick — highest first:
       (0:30)", then the host decides WAIT / SKIP TURN / END GAME (Lokesh: host
       decides, 30 s). `NeonArcade.turnWait`, in Connect 4, Onitama, Liar's Dice.
       Onitama: a side that leaves loses (2026-11-13, test-worker 11).
-- [ ] No wake lock / visibilitychange: screen sleep drops players; host's rAF
-      sims (tug-of-war, neon-survival) freeze when its tab is hidden.
+- [x] Wake lock while a game runs (`NeonArcade.keepAwake`); `away` published
+      on the member record when the page is hidden (roster AWAY, turn banner
+      "switched away"); Tug of War / Neon Survival pause for everyone while
+      the host is out of the app, "Resuming in 3" on return
+      (`NeonArcade.hostPause`) (2026-11-13, test-party). Wake lock not tried on
+      a real phone; headless Chrome grants it.
 - [ ] Host blip drops its bots for good (`_vacateCrown`); onPeerLeave fires
       before the crown moves.
 - [ ] Portal START A PARTY / code join skip `releaseRejoin` (old seat held 5 min;
