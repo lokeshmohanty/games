@@ -10,6 +10,8 @@ bindings = [
 	{ name = "ROOM", class_name = "RoomSignal" },
 	# One per client IP: the guess limit that spans every room (index.js).
 	{ name = "GATE", class_name = "IpGate" },
+	# One per signed-in account: its open pages, for presence and invites (api/live.js).
+	{ name = "LIVE", class_name = "UserLive" },
 ]
 
 [[migrations]]
@@ -19,3 +21,20 @@ new_sqlite_classes = ["RoomSignal"]
 [[migrations]]
 tag = "v2"
 new_sqlite_classes = ["IpGate"]
+
+[[migrations]]
+tag = "v3"
+new_sqlite_classes = ["UserLive"]
+
+# Accounts, results, friends, groups (worker/api/, docs/accounts.md). Create it
+# once with `wrangler d1 create arcade --location apac`, put its id here, then
+# `wrangler d1 migrations apply arcade --remote`.
+[[d1_databases]]
+binding = "DB"
+database_name = "arcade"
+database_id = "00000000-0000-0000-0000-000000000000"
+migrations_dir = "migrations"
+
+# The hourly public snapshot to GitHub (api/snapshot.js), at :07.
+[triggers]
+crons = ["7 * * * *"]

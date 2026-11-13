@@ -43,7 +43,10 @@
 // RPC, so scripts/test-worker-do.mjs can drive both classes in plain Node with
 // a fake `state`.
 
+import { api, scheduledSnapshot } from "./api/index.js";
+export { UserLive } from "./api/live.js";
 import {
+	API_WRITES,
 	DIAL_FAILS,
 	HOST_ROOMS,
 	HOST_SITE_ROOMS,
@@ -72,6 +75,11 @@ export default {
 	 * else about the request — the upgrade above all — passes through as
 	 * it arrived.
 	 */
+	/** The hourly public snapshot (wrangler.toml [triggers]). */
+	async scheduled(_event, env, ctx) {
+		ctx.waitUntil(scheduledSnapshot(env));
+	},
+
 	async fetch(request, env) {
 		const path = new URL(request.url).pathname;
 		// The client's reachability probe, answered right here. It used to
@@ -83,6 +91,12 @@ export default {
 			return new Response(null, {
 				status: 204,
 				headers: { "Access-Control-Allow-Origin": "*", "Cache-Control": "no-store" },
+			});
+		}
+		// Accounts, results and the social layer (worker/api/, docs/accounts.md).
+		if (path.startsWith("/api/") || path.startsWith("/auth/") || path === "/live") {
+			return api(request, env, {
+				gate: () => gateCall(env, "api", ip(request)).then((r) => r.ok !== false, () => false),
 			});
 		}
 		if (path === "/room/new") return hostNew(request, env);
@@ -620,6 +634,7 @@ export class IpGate {
 				dial: await load("dial", DIAL_FAILS),
 				host: await load("host", HOST_ROOMS),
 				site: await load("site", HOST_SITE_ROOMS),
+				api: await load("api", API_WRITES),
 			};
 		})();
 		return this.ready;
@@ -628,7 +643,7 @@ export class IpGate {
 	async fetch(request) {
 		const op = new URL(request.url).pathname;
 		const ip = await request.text();
-		const { entry, dial, host, site } = await this.limiters();
+		const { entry, dial, host, site, api } = await this.limiters();
 		// Synchronous between the await above and the write below, so two
 		// rooms charging at once cannot both spend the last attempt.
 		let ok = true;
@@ -638,6 +653,7 @@ export class IpGate {
 		else if (op === "/undial") dial.refund(ip);
 		else if (op === "/host") ok = host.charge(ip);
 		else if (op === "/site") ok = site.charge(ip);
+		else if (op === "/api") ok = api.charge(ip);
 		else return new Response("not found", { status: 404 });
 		await this.save(ip);
 		return Response.json({ ok });
@@ -648,7 +664,8 @@ export class IpGate {
 			(await this.state.storage.get("entry")) ??
 			(await this.state.storage.get("dial")) ??
 			(await this.state.storage.get("host")) ??
-			(await this.state.storage.get("site"));
+			(await this.state.storage.get("site")) ??
+			(await this.state.storage.get("api"));
 		if (stored) await this.save(stored.ip);
 	}
 
@@ -656,7 +673,7 @@ export class IpGate {
 	async save(ip) {
 		const limiters = await this.limiters();
 		let until = Infinity;
-		for (const key of ["entry", "dial", "host", "site"]) {
+		for (const key of ["entry", "dial", "host", "site", "api"]) {
 			const entry = limiters[key].entries.get(ip);
 			const expires = limiters[key].expires(ip);
 			if (!entry || !expires) await this.state.storage.delete(key);

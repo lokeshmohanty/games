@@ -190,3 +190,9 @@ validate-game *args:
 # lib/stats.js with no browser: outcomes per kind, counting once, rematches.
 test-stats:
     node scripts/test-stats.mjs
+
+# The account API (worker/api/) under wrangler dev with a throwaway local D1,
+# against a fake GitHub and Google. Not part of `test`: it needs wrangler
+# (`nix shell nixpkgs#wrangler` on NixOS), and skips with a message without it.
+test-accounts:
+    node scripts/test-accounts.mjs

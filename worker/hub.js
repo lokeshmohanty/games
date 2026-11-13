@@ -74,6 +74,11 @@ export const HOST_ROOMS = 30;
 // LANs is not refused, and a /48 can hold at most this many codes per
 // window (a reservation that never hosts lapses after RESERVE_MS).
 export const HOST_SITE_ROOMS = 4 * HOST_ROOMS;
+
+// Writes to the account API (/api: reports, favourites, friends, groups,
+// feedback, played counts) per address per window. Generous for people —
+// a game ends every minute or so — and a ceiling for a script.
+export const API_WRITES = 120;
 // How long a code drawn for `/room/new` is held for a socket that has not
 // said `host` (15 seconds). The client says `host` the moment its socket
 // opens; a socket that stays silent is holding a code nobody can use, and
