@@ -328,7 +328,15 @@ try {
 		check("…public, cacheable for a minute", lb.headers.get("access-control-allow-origin") && /max-age=60/.test(lb.headers.get("cache-control") ?? ""));
 		const nb = await call("GET", "/api/lb/neon-bid");
 		check("free-for-all: by wins", nb.body.rows.filter((r) => r.wins === 1).length === 2 && nb.body.rows.at(-1).wins === 0, nb.body.rows);
+		const mine = await call("GET", "/api/lb/connect4?me=1", { token: ana });
+		const listed = mine.body.rows.find((r) => r.id === A);
+		check("?me=1: where you stand, the same as your row", mine.body.me?.id === A && mine.body.me.rank === listed?.rank, mine.body.me);
+		check("…and not publicly cached", !/public/.test(mine.headers.get("cache-control") ?? ""), mine.headers.get("cache-control"));
+		check("…needs a sign-in", (await call("GET", "/api/lb/connect4?me=1")).status === 401);
+		check("…null when you have no ranked game of it", (await call("GET", "/api/lb/connect4?me=1", { token: cy })).body.me === null);
 		await call("PATCH", "/api/me", { token: bo, body: { hidePublic: true } });
+		const hidden = await call("GET", "/api/lb/connect4?me=1", { token: bo });
+		check("…hidden from public boards: no rank, and says why", hidden.body.me?.rank === null && hidden.body.me.hidden === true, hidden.body.me);
 		lb = await call("GET", "/api/lb/connect4");
 		check("hide me from public leaderboards: gone from the global board", !lb.body.rows.some((r) => r.id === Bo), lb.body.rows);
 		check("…and the public profile is gone", (await call("GET", `/api/u/${Bo}`)).status === 404);

@@ -54,9 +54,10 @@ export async function api(request, env, { gate = async () => true } = {}) {
 		if (method === "GET" && a === "lb" && b) {
 			const game = seg.slice(1).join("/");
 			const scope = url.searchParams.get("scope") ?? "global";
-			const who = scope === "global" ? null : await me();
+			// ?me=1 on the global board: add where you stand (personal, so not cached).
+			const who = scope === "global" && !url.searchParams.has("me") ? null : await me();
 			const lb = await leaderboard(env, who, game, scope);
-			return scope === "global" ? open(lb, "public, max-age=60") : send(lb);
+			return who ? send(lb) : open(lb, "public, max-age=60");
 		}
 		if (method === "GET" && a === "u" && b) return open(await publicProfile(env, b), "public, max-age=60");
 		if (method === "GET" && a === "feedback" && b) return open(await getFeedback(env, seg.slice(1).join("/")));

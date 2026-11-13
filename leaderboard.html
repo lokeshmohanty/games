@@ -14,9 +14,13 @@
     <link rel="stylesheet" href="lib/styles.css" />
     <style>
       main {
+        /* Medals, from the theme's player colours: no literals (check-colours). */
+        --gold: var(--p2);
+        --silver: var(--ink-3);
+        --bronze: var(--p6);
         max-width: 40rem;
         margin: 0 auto;
-        padding: 16px 16px 48px;
+        padding: 16px 16px 24px;
       }
       h1 {
         color: var(--accent);
@@ -26,35 +30,59 @@
         text-transform: uppercase;
         margin: 0 0 14px;
       }
-      select {
-        width: 100%;
-        min-height: 44px;
-        background: var(--panel);
-        color: var(--ink);
-        border: 1px solid var(--border);
-        border-radius: 8px;
-        padding: 8px 10px;
-        font: inherit;
-        margin-bottom: 10px;
-      }
-      .scopes {
+      .strip {
         display: flex;
-        gap: 6px;
+        gap: 8px;
         overflow-x: auto;
-        padding-bottom: 4px;
-        margin-bottom: 12px;
+        margin: 0 -16px 10px;
+        padding: 2px 16px 4px;
         scrollbar-width: none;
       }
-      .scopes::-webkit-scrollbar {
+      .strip::-webkit-scrollbar {
         display: none;
       }
-      .scope {
+      /* The game: a card with what it ranks by. */
+      .pick {
         flex: none;
-        min-height: 40px;
+        display: grid;
+        gap: 2px;
+        min-height: 44px;
         padding: 8px 14px;
         border: 1px solid var(--border);
-        border-radius: 999px;
+        border-radius: 12px;
         background: var(--panel);
+        color: var(--ink);
+        font: inherit;
+        text-align: left;
+        cursor: pointer;
+      }
+      .pick b {
+        font-family: var(--font-display);
+        font-size: 0.95rem;
+        font-weight: 600;
+      }
+      .pick small {
+        color: var(--ink-3);
+        font-size: 0.7rem;
+        letter-spacing: 1px;
+        text-transform: uppercase;
+      }
+      .pick[aria-pressed="true"] {
+        border-color: var(--accent);
+        background: color-mix(in oklab, var(--accent) 12%, var(--panel));
+        box-shadow: 0 0 12px var(--accent-glow);
+      }
+      .pick[aria-pressed="true"] b {
+        color: var(--accent);
+      }
+      /* Whose board: everyone, friends, a group. */
+      .scope {
+        flex: none;
+        min-height: 36px;
+        padding: 6px 14px;
+        border: 1px solid var(--border);
+        border-radius: 999px;
+        background: transparent;
         color: var(--muted);
         font: inherit;
         font-size: 0.8rem;
@@ -65,39 +93,275 @@
         color: var(--on-accent);
         background: var(--accent);
       }
-      table {
-        width: 100%;
-        border-collapse: collapse;
-        font-size: 0.9rem;
-      }
-      th,
-      td {
-        text-align: left;
-        padding: 9px 4px;
-        border-top: 1px solid var(--border);
-      }
-      th {
-        color: var(--muted);
-        font-weight: normal;
-        font-size: 0.75rem;
-        text-transform: uppercase;
-        letter-spacing: 1px;
-      }
-      td.n,
-      th.n {
-        font-family: var(--font-mono);
-        text-align: right;
-        font-variant-numeric: tabular-nums;
-      }
-      td a {
-        color: inherit;
-      }
-      tr.me td {
-        color: var(--accent);
-      }
       .muted {
         color: var(--muted);
         font-size: 0.85rem;
+      }
+      .note {
+        font-size: 0.78rem;
+        margin: 2px 0 14px;
+      }
+      .empty {
+        text-align: center;
+        padding: 28px 8px;
+        border: 1px dashed var(--border);
+        border-radius: 12px;
+      }
+      .empty .neon-btn {
+        display: inline-block;
+        margin-top: 8px;
+        text-decoration: none;
+      }
+
+      /* A face: the avatar over the initials, which show when it will not load. */
+      .face {
+        --size: 36px;
+        position: relative;
+        flex: none;
+        display: grid;
+        place-items: center;
+        width: var(--size);
+        height: var(--size);
+        border-radius: 50%;
+        background: var(--face, var(--p3));
+        color: var(--bg);
+        font-family: var(--font-display);
+        font-weight: 700;
+        font-size: calc(var(--size) * 0.38);
+        overflow: hidden;
+      }
+      .face img {
+        position: absolute;
+        inset: 0;
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+      }
+      .score {
+        font-family: var(--font-mono);
+        font-variant-numeric: tabular-nums;
+        font-weight: 700;
+      }
+
+      /* The top three. In order in the list; second, first, third on screen. */
+      .podium {
+        list-style: none;
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        align-items: end;
+        gap: 8px;
+        margin: 8px 0 14px;
+        padding: 0;
+      }
+      .podium li {
+        min-width: 0;
+      }
+      .podium li:nth-child(1) {
+        grid-column: 2;
+        grid-row: 1;
+        --medal: var(--gold);
+        --plinth: 64px;
+      }
+      .podium li:nth-child(2) {
+        grid-column: 1;
+        grid-row: 1;
+        --medal: var(--silver);
+        --plinth: 44px;
+      }
+      .podium li:nth-child(3) {
+        grid-column: 3;
+        grid-row: 1;
+        --medal: var(--bronze);
+        --plinth: 30px;
+      }
+      .spot {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 2px;
+        color: inherit;
+        text-decoration: none;
+        text-align: center;
+      }
+      .spot .face {
+        --size: 52px;
+        box-shadow:
+          0 0 0 3px var(--bg),
+          0 0 0 5px var(--medal);
+        margin-bottom: 8px;
+      }
+      .podium li:nth-child(1) .face {
+        --size: 68px;
+      }
+      .spot .name {
+        max-width: 100%;
+        font-weight: 600;
+        font-size: 0.85rem;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .spot .score {
+        font-size: 1.15rem;
+      }
+      .spot .sub {
+        color: var(--ink-3);
+        font-size: 0.7rem;
+      }
+      .plinth {
+        align-self: stretch;
+        display: grid;
+        place-items: center;
+        height: var(--plinth);
+        margin-top: 6px;
+        border-radius: 10px 10px 0 0;
+        border-top: 3px solid var(--medal);
+        background: color-mix(in oklab, var(--medal) 18%, var(--panel));
+        color: var(--medal);
+        font-family: var(--font-display);
+        font-weight: 700;
+        font-size: 1.3rem;
+      }
+      .spot.me .name {
+        color: var(--accent);
+      }
+
+      /* Everyone after. */
+      .rows {
+        list-style: none;
+        margin: 0;
+        padding: 0;
+      }
+      .head {
+        display: flex;
+        justify-content: space-between;
+        padding: 0 10px 6px;
+        color: var(--ink-3);
+        font-size: 0.7rem;
+        letter-spacing: 1px;
+        text-transform: uppercase;
+      }
+      .entry {
+        display: grid;
+        grid-template-columns: 2rem auto minmax(0, 1fr) auto;
+        align-items: center;
+        gap: 10px;
+        min-height: 56px;
+        padding: 8px 10px;
+        border-top: 1px solid var(--border);
+        color: inherit;
+        text-decoration: none;
+      }
+      .rows li:last-child .entry {
+        border-bottom: 1px solid var(--border);
+      }
+      .entry:hover {
+        background: var(--surface);
+      }
+      .entry .rank {
+        color: var(--ink-3);
+        font-family: var(--font-mono);
+        font-variant-numeric: tabular-nums;
+        text-align: right;
+      }
+      .entry .who {
+        min-width: 0;
+      }
+      .entry .name {
+        font-weight: 600;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .entry .sub {
+        color: var(--ink-2);
+        font-size: 0.75rem;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .entry .score {
+        font-size: 1.05rem;
+        text-align: right;
+      }
+      .entry.me {
+        border-radius: 10px;
+        border-color: transparent;
+        background: color-mix(in oklab, var(--accent) 12%, transparent);
+        box-shadow: inset 3px 0 0 var(--accent);
+      }
+      .entry.me .rank,
+      .entry.me .name {
+        color: var(--accent);
+      }
+      .tag {
+        margin-left: 6px;
+        padding: 1px 6px;
+        border-radius: 999px;
+        background: var(--accent);
+        color: var(--on-accent);
+        font-size: 0.6rem;
+        font-weight: 700;
+        letter-spacing: 1px;
+        vertical-align: 2px;
+      }
+
+      /* Where you stand, kept in view while your own row is not. */
+      .you {
+        position: sticky;
+        bottom: calc(10px + env(safe-area-inset-bottom));
+        margin-top: 14px;
+        transition:
+          opacity 0.2s,
+          transform 0.2s;
+      }
+      .you[data-away="false"] {
+        opacity: 0;
+        transform: translateY(8px);
+        visibility: hidden;
+      }
+      .you .entry {
+        border: 1px solid var(--accent);
+        border-radius: 12px;
+        background: color-mix(in oklab, var(--accent) 10%, var(--panel));
+        box-shadow:
+          0 6px 20px var(--scrim),
+          0 0 14px var(--accent-glow);
+      }
+      .you .entry:not(.ask) {
+        grid-template-columns: auto auto minmax(0, 1fr) auto;
+      }
+      .you .entry.ask {
+        grid-template-columns: minmax(0, 1fr) auto;
+      }
+      .you .neon-btn {
+        padding: 8px 14px;
+        font-size: 0.8rem;
+      }
+
+      /* Loading: the board's shape, before its numbers. */
+      .ghost .face,
+      .ghost .bar {
+        background: var(--surface-2);
+        animation: pulse 1.2s ease-in-out infinite;
+      }
+      .ghost .bar {
+        height: 0.8em;
+        border-radius: 4px;
+      }
+      @keyframes pulse {
+        50% {
+          opacity: 0.45;
+        }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        .ghost .face,
+        .ghost .bar {
+          animation: none;
+        }
+        .you {
+          transition: none;
+        }
       }
     </style>
   </head>
@@ -105,10 +369,11 @@
     <nav class="site-nav" data-nav data-page="leaderboard"></nav>
     <main>
       <h1>Leaderboards</h1>
-      <select data-game aria-label="Game"></select>
-      <div class="scopes" data-scopes role="group" aria-label="Whose board"></div>
-      <p class="muted" data-note></p>
-      <div data-board></div>
+      <div class="strip" data-games role="group" aria-label="Game"></div>
+      <div class="strip" data-scopes role="group" aria-label="Whose board"></div>
+      <p class="muted note" data-note></p>
+      <div data-board aria-live="polite"></div>
+      <div class="you" data-you data-away="false"></div>
     </main>
     <script src="lib/pwa.js"></script>
     <script src="lib/stats.js"></script>

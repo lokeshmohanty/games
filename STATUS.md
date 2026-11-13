@@ -11,6 +11,18 @@ session pay for it.*
 act → record → clear the item. This is the single inbox — do not create a
 separate `TODO.md`.*
 
+## Leaderboard UI; Undercover starts easy (2026-11-14) — pushed to main
+
+leaderboard.html + lib/leaderboard.js: game cards (with what each ranks by),
+podium for the top 3, avatar rows, win %, skeleton while loading, a sticky
+"you" bar (sign-in ask when signed out). worker/api/lb.js: boards carry `me`
+(rank past the top 100, or `need`/`hidden`); global takes `&me=1`, uncached.
+test-accounts + test-social green; past-100 rank checked against a JS sort.
+**Worker needs a deploy** for `me`; without it the bar just doesn't show.
+Undercover: a new phone starts on the 9 everyday topics (`simple: true` in
+words.js) at EASY; EVERYDAY button on WORDS; names, undercovers and blank are
+saved per device like the words (`players`). test-undercover + test-bots green.
+
 ## Undercover topics, no-repeat deal, scores (2026-11-13) — committed on main, not pushed
 
 `games/undercover/words.js`: 754 pairs in 14 topics × easy/hard; WORDS screen

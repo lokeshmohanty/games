@@ -55,6 +55,48 @@ async function fromRatings(env, game, kind, { only = null, includeHidden = false
 	return rows.map(row);
 }
 
+/**
+ * Where `me` stands on a `fromRatings` board even past its LIMIT: their row
+ * with `rank` (players ahead of them by the board's order, plus one), or
+ * `rank: null` with why — `need` more games, or `hidden` from public boards.
+ * null when they have no ranked game of this one.
+ */
+async function standing(env, game, kind, me, rows, { only = null, includeHidden = false, min = 1 }) {
+	const listed = rows.find((r) => r.id === me.id);
+	if (listed) return listed;
+	const mine = await env.DB.prepare(
+		"SELECT r.account, r.elo, r.games, r.wins, r.best, a.name, a.avatar, a.hide_public FROM ratings r JOIN accounts a ON a.id = r.account WHERE r.game = ? AND r.account = ?",
+	)
+		.bind(game, me.id)
+		.first();
+	if (!mine) return null;
+	if (mine.games < min) return { ...row(mine, 0), rank: null, need: min - mine.games };
+	if (mine.hide_public && !includeHidden) return { ...row(mine, 0), rank: null, hidden: true };
+	// "Ahead" in the same order as order(kind); a tie on every key is not ahead.
+	const k = kind ?? "ffa";
+	const [ahead, aheadArgs] =
+		k === "duel"
+			? ["r.elo > ? OR (r.elo = ? AND r.games > ?)", [mine.elo, mine.elo, mine.games]]
+			: k === "coop"
+				? ["COALESCE(r.best, -1e18) > ? OR (COALESCE(r.best, -1e18) = ? AND r.games > ?)", [mine.best ?? -1e18, mine.best ?? -1e18, mine.games]]
+				: // wins, then win rate (cross-multiplied, so integers), then games
+					[
+						"r.wins > ? OR (r.wins = ? AND r.wins * ? > ? * r.games) OR (r.wins = ? AND r.wins * ? = ? * r.games AND r.games > ?)",
+						[mine.wins, mine.wins, mine.games, mine.wins, mine.wins, mine.games, mine.wins, mine.games],
+					];
+	const where = ["r.game = ?", "r.games >= ?", `(${ahead})`];
+	const args = [game, min, ...aheadArgs];
+	if (!includeHidden) where.push("a.hide_public = 0");
+	if (only) {
+		where.push(`r.account IN (${only.map(() => "?").join(",")})`);
+		args.push(...only);
+	}
+	const n = await env.DB.prepare(`SELECT COUNT(*) AS n FROM ratings r JOIN accounts a ON a.id = r.account WHERE ${where.join(" AND ")}`)
+		.bind(...args)
+		.first();
+	return row(mine, n?.n ?? 0);
+}
+
 /** A group: replay the matches played only among its members. */
 async function forGroup(env, game, kind, members) {
 	if (!members.length) return [];
@@ -99,24 +141,33 @@ async function forGroup(env, game, kind, members) {
 		.map((r, i) => row({ ...r, name: names.get(r.account).name, avatar: names.get(r.account).avatar }, i));
 }
 
+/**
+ * A board. With `me` (signed in), it also carries `me`: where they stand on
+ * it, even below the rows shown (standing()). The global board without `me`
+ * is the same for everyone, so it is the one that is cached.
+ */
 export async function leaderboard(env, me, game, scope = "global") {
 	if (!GAME_ID.test(game)) throw new HttpError(400, "unknown game");
 	const kind = await kindOf(env, game);
 	if (scope === "global") {
 		const min = Number(env.LB_MIN_GAMES ?? MIN_GAMES);
-		return { game, kind, scope, min, rows: await fromRatings(env, game, kind, { min }) };
+		const rows = await fromRatings(env, game, kind, { min });
+		if (!me) return { game, kind, scope, min, rows };
+		return { game, kind, scope, min, rows, me: await standing(env, game, kind, me, rows, { min }) };
 	}
 	if (!me) throw new HttpError(401, "sign in to see your friends' and groups' boards");
 	if (scope === "friends") {
 		const only = [me.id, ...(await friendIds(env, me.id))];
-		return { game, kind, scope, rows: await fromRatings(env, game, kind, { only, includeHidden: true }) };
+		const rows = await fromRatings(env, game, kind, { only, includeHidden: true });
+		return { game, kind, scope, rows, me: await standing(env, game, kind, me, rows, { only, includeHidden: true }) };
 	}
 	const grp = scope.startsWith("group:") ? scope.slice(6) : null;
 	if (!grp) throw new HttpError(400, "scope is global, friends or group:<id>");
 	const members = (await all(env.DB.prepare("SELECT account FROM group_members WHERE grp = ?").bind(grp))).map((r) => r.account);
 	if (!members.includes(me.id)) throw new HttpError(403, "you are not in that group");
 	const g = await env.DB.prepare("SELECT name FROM groups WHERE id = ?").bind(grp).first();
-	return { game, kind, scope, group: { id: grp, name: g?.name }, rows: await forGroup(env, game, kind, members) };
+	const rows = await forGroup(env, game, kind, members);
+	return { game, kind, scope, group: { id: grp, name: g?.name }, rows, me: rows.find((r) => r.id === me.id) ?? null };
 }
 
 /** The top of every game, for the public snapshot (snapshot.js). */

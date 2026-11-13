@@ -80,7 +80,7 @@ address per 5-minute window (IpGate `api`).
 | `GET/PUT /api/me/favs`, `GET /api/me/matches` | signed in | |
 | `POST /api/stats/played`, `GET /api/stats/summary` | anyone | counts |
 | `POST /api/match/report` | signed in | ranked results |
-| `GET /api/lb/<game>?scope=global\|friends\|group:<id>` | global: anyone | |
+| `GET /api/lb/<game>?scope=global\|friends\|group:<id>` | global: anyone (`&me=1`: signed in) | signed in, also `me`: your row and rank even past the top 100, or `rank: null` with `need` (more games) or `hidden`; null with no ranked game. Global without `me=1` is the one cached publicly |
 | `GET /api/u/<id>` | anyone | public profile (404 when hidden) |
 | `GET /api/friends`, `POST/DELETE /api/friends/<id>`, `POST /api/friends/<id>/invite` | signed in | |
 | `GET/POST /api/groups`, `POST /api/groups/join`, `GET/DELETE /api/groups/<id>`, `DELETE /api/groups/<id>/members/<acct>` | signed in | |

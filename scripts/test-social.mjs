@@ -152,9 +152,9 @@ try {
 
 	console.log("\nsocial: the leaderboards page");
 	await ana.p.goto(page("leaderboard.html", "&game=connect4&scope=global"));
-	await ana.p.locator("tbody tr").first().waitFor({ timeout: TIMEOUT });
-	check("the global board lists the ranked players", (await ana.p.locator("tbody tr").count()) === 2);
-	check("…you highlighted", (await ana.p.locator("tr.me").textContent()).includes("Ana Lima"));
+	await ana.p.locator("[data-board] [data-player]").first().waitFor({ timeout: TIMEOUT });
+	check("the global board lists the ranked players", (await ana.p.locator("[data-board] [data-player]").count()) === 2);
+	check("…you highlighted", (await ana.p.locator("[data-board] [data-player].me").textContent()).includes("Ana Lima"));
 	check("…a Friends tab", (await ana.p.locator(".scope", { hasText: "Friends" }).count()) === 1);
 	check("…and it fits the phone", await noSideScroll(ana.p));
 
@@ -170,8 +170,8 @@ try {
 	const gid = await ana.p.locator("[data-group]").getAttribute("data-group");
 	await ana.p.goto(page("leaderboard.html", `&game=connect4&scope=${encodeURIComponent(`group:${gid}`)}`));
 	check("the group has its own tab on the leaderboards", (await ana.p.locator('.scope[aria-pressed="true"]').textContent({ timeout: TIMEOUT })) === "Lunch table");
-	await ana.p.locator("tbody tr").first().waitFor({ timeout: TIMEOUT }).catch(() => {});
-	const groupRows = await ana.p.locator("tbody tr").count();
+	await ana.p.locator("[data-board] [data-player]").first().waitFor({ timeout: TIMEOUT }).catch(() => {});
+	const groupRows = await ana.p.locator("[data-board] [data-player]").count();
 	check("…which counts the game they played together", groupRows === 2, groupRows);
 
 	console.log("\nsocial: feedback");
