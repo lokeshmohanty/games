@@ -265,12 +265,12 @@
           font-size: 1.9rem;
           letter-spacing: 3px;
           text-indent: 3px;
-          margin: 18px 0 6px;
+          margin: 6px 0 4px;
         }
+        /* The tabs and the two-choice game pages say it now; on a phone the
+           lines are worth more as games. */
         .tagline {
-          font-size: 0.78rem;
-          max-width: 92%;
-          margin-bottom: 2px;
+          display: none;
         }
         .party-banner {
           width: 94%;
@@ -296,8 +296,15 @@
         }
 
         .games-grid,
-        .recent {
+        .recent,
+        .search {
           width: 94%;
+        }
+        .search {
+          margin-bottom: 8px;
+        }
+        .search input {
+          font-size: 16px; /* below 16px iOS zooms the page on focus */
         }
         .games-grid {
           grid-template-columns: repeat(2, 1fr);
@@ -356,7 +363,7 @@
            eight chips wrapped to three rows, which pushed the games down. */
         .filters {
           gap: 6px;
-          margin-bottom: 14px;
+          margin-bottom: 10px;
           flex-wrap: nowrap;
           justify-content: flex-start;
           overflow-x: auto;
@@ -369,10 +376,6 @@
         }
         .filter {
           flex: none;
-        }
-        .acct-bar {
-          padding-top: 6px;
-          min-height: 40px;
         }
         .filter {
           font-size: 0.66rem;
@@ -484,50 +487,7 @@
         white-space: nowrap;
       }
 
-      /* lib/portal.js: the account bar, play counts, the feedback button. */
-      .acct-bar {
-        align-self: stretch;
-        display: flex;
-        justify-content: flex-end;
-        align-items: center;
-        gap: 8px;
-        padding: 10px 16px 0;
-        min-height: 44px;
-        box-sizing: border-box;
-      }
-      .acct-bar a,
-      .acct-bar button {
-        display: inline-flex;
-        align-items: center;
-        gap: 6px;
-        min-height: 40px;
-        padding: 6px 12px;
-        border: 1px solid var(--rule);
-        border-radius: 999px;
-        background: color-mix(in oklch, var(--bg) 82%, transparent);
-        color: var(--ink-2);
-        font: inherit;
-        font-size: 0.75rem;
-        letter-spacing: 1px;
-        text-transform: uppercase;
-        text-decoration: none;
-        cursor: pointer;
-      }
-      .acct-bar img {
-        width: 24px;
-        height: 24px;
-        border-radius: 50%;
-      }
-      .acct-bar .acct-me {
-        color: var(--accent);
-        border-color: var(--accent);
-        text-transform: none;
-        letter-spacing: 0;
-        max-width: 45vw;
-        overflow: hidden;
-        white-space: nowrap;
-        text-overflow: ellipsis;
-      }
+      /* lib/portal.js: play counts, the feedback button. */
       .game-card .fb {
         position: absolute;
         top: 8px;
@@ -549,11 +509,36 @@
         font-size: 0.7rem;
         margin-top: -6px;
       }
+
+      .search {
+        width: 80%;
+        max-width: 1200px;
+        margin: 0 auto 12px;
+      }
+      .search input {
+        width: 100%;
+        box-sizing: border-box;
+        min-height: 44px;
+        padding: 10px 14px;
+        border: 1px solid var(--rule);
+        border-radius: 999px;
+        background: var(--surface);
+        color: var(--ink);
+        font-family: var(--font-body);
+        font-size: 0.95rem;
+      }
+      .search input::placeholder {
+        color: var(--ink-3);
+      }
+      .search input:focus {
+        outline: 2px solid var(--accent);
+        outline-offset: 1px;
+      }
     </style>
   </head>
   <body>
-    <!-- Filled by lib/portal.js: LEADERBOARDS, and SIGN IN or your name. -->
-    <nav class="acct-bar" data-account aria-label="Account"></nav>
+    <!-- lib/nav.js: GitHub, Add your game | theme, account; and the tabs. -->
+    <nav class="site-nav" data-nav data-page="games"></nav>
     <h1>Arcade Games</h1>
     <p class="tagline">
       Every game is multiplayer. Play the bots on this device, or send an invite
@@ -586,6 +571,17 @@
       how somebody with a particular evening in mind finds the right one: on
       their own, against one other person, or with a room full.
     -->
+    <!-- lib/portal.js parseQuery: words, or author: type: tag: players: from: -->
+    <div class="search">
+      <input
+        type="search"
+        data-search
+        placeholder="Search — or author:name  type:duel  tag:quick  players:4"
+        aria-label="Search games by name, author, type, tag or players"
+        autocomplete="off"
+        spellcheck="false"
+      />
+    </div>
     <div class="filters" role="group" aria-label="Filter games">
       <button class="filter" type="button" data-filter="all" aria-pressed="true">All</button>
       <button class="filter" type="button" data-filter="alone" aria-pressed="false">On your own</button>
@@ -628,6 +624,7 @@
     <script src="lib/catalog.js"></script>
     <script src="community/catalog.js"></script>
     <script src="lib/portal.js"></script>
+    <script src="lib/nav.js"></script>
     <script src="lib/pwa.js"></script>
   </body>
 </html>

@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <title>Add your game · Arcade Games</title>
+    <link rel="manifest" href="manifest.webmanifest" />
+    <meta name="theme-color" content="#0a0a0a" />
+    <link rel="icon" href="assets/icon.svg" type="image/svg+xml" />
+    <link rel="apple-touch-icon" href="assets/apple-touch-icon.png" />
+    <!-- The theme first: tokens + fonts, and the saved choice before paint. -->
+    <link rel="stylesheet" href="lib/theme.css" />
+    <script src="lib/theme.js"></script>
+    <link rel="stylesheet" href="lib/styles.css" />
+    <style>
+      main {
+        max-width: 42rem;
+        margin: 0 auto;
+        padding: 16px 16px 56px;
+        line-height: 1.6;
+      }
+      main h1 {
+        color: var(--accent);
+        font-size: 1.7rem;
+        margin: 8px 0 12px;
+      }
+      main h2 {
+        font-size: 1.15rem;
+        margin: 28px 0 8px;
+        color: var(--ink);
+      }
+      main p,
+      main li {
+        color: var(--ink);
+      }
+      main a {
+        color: var(--accent);
+      }
+      main code {
+        font-family: var(--font-mono);
+        font-size: 0.88em;
+        background: var(--surface-2);
+        border-radius: 4px;
+        padding: 1px 5px;
+        overflow-wrap: anywhere;
+      }
+      main pre {
+        background: var(--surface);
+        border: 1px solid var(--rule);
+        border-radius: 8px;
+        padding: 12px 14px;
+        overflow-x: auto;
+        font-size: 0.85rem;
+        line-height: 1.5;
+      }
+      main pre code {
+        background: none;
+        padding: 0;
+      }
+      .muted {
+        color: var(--ink-2);
+      }
+    </style>
+  </head>
+  <body>
+    <nav class="site-nav" data-nav data-page="contribute"></nav>
+    <main data-guide><p class="muted">Loading the guide…</p></main>
+
+    <script src="lib/pwa.js"></script>
+    <script src="lib/stats.js"></script>
+    <script src="lib/account.js"></script>
+    <script src="lib/account-ui.js"></script>
+    <script src="lib/nav.js"></script>
+    <script src="lib/markdown.js"></script>
+    <script>
+      // The guide is CONTRIBUTING.md itself (one source), drawn here.
+      fetch("CONTRIBUTING.md")
+        .then((r) => (r.ok ? r.text() : Promise.reject(new Error(r.status))))
+        .then((md) => {
+          document.querySelector("[data-guide]").innerHTML = NeonArcade.markdown.render(md, {
+            base: "https://github.com/lokeshmohanty/games/blob/main/",
+          });
+        })
+        .catch(() => {
+          document.querySelector("[data-guide]").innerHTML =
+            '<p>The guide could not be loaded. It is <a href="https://github.com/lokeshmohanty/games/blob/main/CONTRIBUTING.md">CONTRIBUTING.md on GitHub</a>.</p>';
+        });
+    </script>
+  </body>
+</html>

@@ -1,0 +1,129 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <title>Contributors · Arcade Games</title>
+    <link rel="manifest" href="manifest.webmanifest" />
+    <meta name="theme-color" content="#0a0a0a" />
+    <link rel="icon" href="assets/icon.svg" type="image/svg+xml" />
+    <link rel="apple-touch-icon" href="assets/apple-touch-icon.png" />
+    <!-- The theme first: tokens + fonts, and the saved choice before paint. -->
+    <link rel="stylesheet" href="lib/theme.css" />
+    <script src="lib/theme.js"></script>
+    <link rel="stylesheet" href="lib/styles.css" />
+    <style>
+      main {
+        max-width: 42rem;
+        margin: 0 auto;
+        padding: 16px 16px 56px;
+      }
+      main > h1 {
+        color: var(--accent);
+        font-size: 1.6rem;
+        margin: 8px 0 4px;
+      }
+      .muted {
+        color: var(--ink-2);
+        font-size: 0.9rem;
+        margin: 0 0 16px;
+      }
+      .muted a {
+        color: var(--accent);
+      }
+      .person {
+        border: 1px solid var(--rule);
+        border-radius: 12px;
+        background: var(--surface);
+        padding: 14px 16px;
+        margin-bottom: 12px;
+      }
+      .person-head {
+        display: flex;
+        gap: 12px;
+        align-items: center;
+      }
+      .person-avatar {
+        width: 56px;
+        height: 56px;
+        flex: none;
+        border-radius: 50%;
+        border: 2px solid var(--accent);
+        background: var(--surface-2);
+      }
+      .person-initial {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-family: var(--font-display);
+        font-size: 1.4rem;
+        color: var(--accent);
+        box-sizing: border-box;
+      }
+      .person-who {
+        min-width: 0;
+      }
+      .person-who h2 {
+        margin: 0;
+        font-size: 1.15rem;
+        color: var(--ink);
+        overflow-wrap: anywhere;
+      }
+      .person-login {
+        color: var(--accent);
+        font-family: var(--font-mono);
+        font-size: 0.82rem;
+        text-decoration: none;
+      }
+      .person-meta {
+        color: var(--ink-2);
+        font-family: var(--font-mono);
+        font-size: 0.78rem;
+        margin-top: 4px;
+      }
+      .person-bio {
+        margin: 10px 0 0;
+        color: var(--ink);
+        line-height: 1.5;
+        overflow-wrap: anywhere;
+      }
+      .person-links {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin-top: 12px;
+      }
+      .person-links .neon-btn {
+        min-height: 40px;
+        padding: 8px 14px;
+        font-size: 0.8rem;
+        text-decoration: none;
+        max-width: 100%;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+    </style>
+  </head>
+  <body>
+    <nav class="site-nav" data-nav data-page="contributors"></nav>
+    <main>
+      <h1>Contributors</h1>
+      <p class="muted">
+        <span data-count></span>
+        Make one yourself — <a href="contribute.html">add your game</a>. Your card comes from a
+        <code>contributor.json</code> in your games repo.
+      </p>
+      <div data-people></div>
+    </main>
+
+    <script src="lib/pwa.js"></script>
+    <script src="lib/stats.js"></script>
+    <script src="lib/account.js"></script>
+    <script src="lib/account-ui.js"></script>
+    <script src="lib/catalog.js"></script>
+    <script src="community/catalog.js"></script>
+    <script src="lib/nav.js"></script>
+    <script src="lib/contributors.js"></script>
+  </body>
+</html>

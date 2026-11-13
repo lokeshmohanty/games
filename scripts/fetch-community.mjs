@@ -38,7 +38,7 @@ import {
 import { tmpdir } from "node:os";
 import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { catalogEntries, catalogScript } from "./catalog-lib.mjs";
+import { catalogEntries, catalogScript, contributorEntry } from "./catalog-lib.mjs";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const OUT = join(ROOT, "community");
@@ -107,6 +107,7 @@ function main() {
 	const registry = join(ROOT, "registry");
 	const manifests = [];
 	const errors = [];
+	const contributors = [];
 
 	for (const owner of existsSync(registry) ? readdirSync(registry).sort() : []) {
 		if (!NAME.test(owner)) continue;
@@ -148,6 +149,13 @@ function main() {
 					manifests.push({ file: join(to, "game.json"), owner });
 				}
 				writeFileSync(join(OUT, owner, repo, "pin.json"), JSON.stringify(entry, null, 2) + "\n");
+				// The owner's card for the Contributors page, from the same commit.
+				try {
+					const card = join(src, "contributor.json");
+					contributors.push(contributorEntry(owner, entry.repo, existsSync(card) ? JSON.parse(readFileSync(card, "utf8")) : null));
+				} catch (err) {
+					errors.push(`${where}: ${err.message}`);
+				}
 			} finally {
 				rmSync(src, { recursive: true, force: true });
 			}
@@ -166,7 +174,7 @@ function main() {
 	}
 	writeFileSync(
 		join(OUT, "catalog.js"),
-		catalogScript(games, { file: "community/catalog.js", source: "scripts/fetch-community.mjs" }),
+		catalogScript(games, { file: "community/catalog.js", source: "scripts/fetch-community.mjs", contributors }),
 	);
 	// Preview gifs stay out, as the first-party ones do (sw.js): large, and
 	// cached on first sight anyway.

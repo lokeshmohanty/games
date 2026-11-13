@@ -41,7 +41,7 @@ try {
 	const p = await ctx.newPage();
 	p.on("pageerror", (e) => check(`no page error (${e.message})`, false));
 	await p.goto(site.url("index.html"));
-	await p.locator(".acct-bar .acct-theme").click();
+	await p.locator(".site-bar .acct-theme").click();
 	await p.locator('.theme-choice[data-theme="neon"]').click();
 	let a = await attrs(p);
 	check("Neon from the portal's Theme sheet", a.theme === "neon" && a.mode === "dark", a);

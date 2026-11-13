@@ -40,7 +40,7 @@ serve-lan:
     python3 -m http.server {{port}}
 
 # Every suite, in the order they get slower.
-test: check-colours community test-stats test-codec test-hub test-worker-do test-plumbing test-rules test-room test-party test-scan test-pwa test-bots test-devkit test-theme
+test: check-colours community test-stats test-codec test-hub test-worker-do test-plumbing test-rules test-room test-party test-scan test-pwa test-bots test-devkit test-theme test-portal
 
 # No browser needed — the signalling codec round-trip.
 test-codec:
@@ -212,3 +212,8 @@ check-colours *dirs:
 # remembers, a running game's frame (and its canvas) follows the page.
 test-theme:
     node scripts/test-theme.mjs
+
+# The portal's search, the bar and tabs on every page, Contributors, and the
+# add-your-game guide (CONTRIBUTING.md rendered), at 390x844.
+test-portal:
+    node scripts/test-portal.mjs

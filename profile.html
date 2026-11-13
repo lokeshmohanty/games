@@ -17,7 +17,7 @@
       main {
         max-width: 40rem;
         margin: 0 auto;
-        padding: 64px 16px 48px;
+        padding: 16px 16px 48px;
       }
       h1 {
         color: var(--accent);
@@ -170,10 +170,10 @@
     </style>
   </head>
   <body>
-    <a class="portal-link" href="index.html">← All games</a>
+    <nav class="site-nav" data-nav data-page="profile"></nav>
     <main>
       <h1 data-title>Profile</h1>
-      <div data-page></div>
+      <div data-profile></div>
     </main>
 
     <script src="lib/pwa.js"></script>
@@ -181,6 +181,7 @@
     <script src="lib/stats.js"></script>
     <script src="lib/account.js"></script>
     <script src="lib/account-ui.js"></script>
+    <script src="lib/nav.js"></script>
     <script src="lib/catalog.js"></script>
     <script src="community/catalog.js"></script>
     <script src="lib/profile.js"></script>

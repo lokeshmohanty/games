@@ -37,3 +37,33 @@ export function validateManifest(m) {
 	if (typeof m.repo !== "string" || !m.repo.startsWith("https://github.com/")) p.push('"repo" must be a https://github.com/ URL');
 	return p;
 }
+
+/**
+ * Problems with a contributor.json (optional, at the root of a games repo):
+ * how its owner appears on the Contributors page. Their GitHub login and
+ * avatar are known already; this is the part they choose.
+ *
+ *   { "name": "Ada", "bio": "Makes small strategy games.", "location": "Pune",
+ *     "links": [{ "label": "Blog", "url": "https://…" }] }
+ */
+export function validateContributor(c) {
+	const p = [];
+	if (!c || typeof c !== "object" || Array.isArray(c)) return ["not a JSON object"];
+	const text = (k, max) => {
+		if (c[k] != null && (typeof c[k] !== "string" || c[k].length > max)) p.push(`"${k}" must be text of at most ${max} characters`);
+	};
+	text("name", 40);
+	text("bio", 280);
+	text("location", 40);
+	if (c.links != null) {
+		if (!Array.isArray(c.links) || c.links.length > 5) p.push('"links" is a list of at most 5');
+		else
+			for (const l of c.links) {
+				if (!l || typeof l.label !== "string" || !l.label || l.label.length > 24) p.push("each link needs a label of 1–24 characters");
+				if (!l || typeof l.url !== "string" || !/^https:\/\/[^\s]+$/.test(l.url) || l.url.length > 200) p.push("each link needs an https:// url");
+			}
+	}
+	const known = new Set(["name", "bio", "location", "links"]);
+	for (const k of Object.keys(c)) if (!known.has(k)) p.push(`unknown field "${k}"`);
+	return p;
+}

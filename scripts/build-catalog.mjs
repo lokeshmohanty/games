@@ -13,7 +13,7 @@
 import { existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { catalogEntries, catalogScript } from "./catalog-lib.mjs";
+import { catalogEntries, catalogScript, contributorEntry } from "./catalog-lib.mjs";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const OUT = join(ROOT, "lib", "catalog.js");
@@ -30,7 +30,17 @@ try {
 	console.error(err.message);
 	process.exit(1);
 }
-const body = catalogScript(games, { file: "lib/catalog.js", source: "scripts/build-catalog.mjs" });
+// This repo's own author: its contributor.json, like any games repo's.
+let contributors = [];
+try {
+	const own = join(ROOT, "contributor.json");
+	const login = games[0]?.author;
+	if (login) contributors = [contributorEntry(login, games[0].repo, existsSync(own) ? JSON.parse(readFileSync(own, "utf8")) : null)];
+} catch (err) {
+	console.error(err.message);
+	process.exit(1);
+}
+const body = catalogScript(games, { file: "lib/catalog.js", source: "scripts/build-catalog.mjs", contributors });
 
 if (process.argv.includes("--check")) {
 	const now = existsSync(OUT) ? readFileSync(OUT, "utf8") : "";

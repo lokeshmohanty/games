@@ -76,6 +76,25 @@ exactly this.
 Built files must be **committed**: the arcade never builds or runs your
 tooling, it copies the folder at the pinned commit.
 
+## Your card on the Contributors page
+
+Optional: a `contributor.json` at the root of your repository says how you
+appear on the [Contributors](contributors.html) page — your GitHub avatar
+and login are shown anyway.
+
+```json
+{
+  "name": "Ada Lovelace",
+  "bio": "Small strategy games for two.",
+  "location": "London",
+  "links": [{ "label": "Blog", "url": "https://example.com" }]
+}
+```
+
+Name ≤ 40, bio ≤ 280, location ≤ 40 characters, up to 5 https links. It is
+read at the same pinned commit as your games, so it changes with your next
+pin bump.
+
 ## 4. Open a pull request
 
 Push your repository, then add one file here:
