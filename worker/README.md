@@ -94,7 +94,8 @@ dials loses its members' re-dials until the window closes. Rotating it
 member's next re-dial is charged once, and the seat it gets brings a new
 pass.
 
-Deployed 2026-11-11 at **https://neon-arcade-room.lokeshmohanty.workers.dev** (account subdomain
+Deployed 2026-11-11, last redeployed 2026-11-13 (version 5b7a8599, the
+`released:true` notice) at **https://neon-arcade-room.lokeshmohanty.workers.dev** (account subdomain
 `lokeshmohanty`, `preview_urls = false`). That base is
 `NeonArcade.roomServerUrl` in `lib/room-join.js`. One secret:
 `ROOM_PASS_KEY`, above.

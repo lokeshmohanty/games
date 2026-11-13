@@ -56,8 +56,9 @@ Audit backlog (2026-11-12), owner to pick — highest first:
       releases it first (`busy` → "open in another tab"); a code link to your
       own party reconnects; a release is announced `released:true` and the mesh
       drops the seat at once; `online` redials at once; offline strip
-      (2026-11-13, test-worker 12, test-room). **Needs a worker deploy** for
-      `released:true` — the deployed worker still holds such seats 5 min.
+      (2026-11-13, test-worker 12, test-room). Worker deployed 2026-11-13
+      (version 5b7a8599): test-live all passing, and a raw probe saw
+      `released:true` from production.
 - NAT lab scenario 11 is **flaky run alone** (`--only=11`): "cone host
   reload: full mesh back (the carrier pair too) in < 6s" takes ~15.5 s in
   most isolated runs, on the committed code too (3/5) — passes inside the
