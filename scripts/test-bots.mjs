@@ -183,6 +183,35 @@ try {
 	check("every field and button clears 44px", setup.minTap >= 44, `${setup.minTap}px`);
 	check("the whole form fits the phone", setup.bottom <= 844, `${setup.bottom}px`);
 
+	// The host picks topics on a screen of their own, so the player list keeps
+	// fitting the phone however many topics there are.
+	await G.locator("button", { hasText: "WORDS:" }).click();
+	check("WORDS opens the topic picker", (await debug(page)).phase === "words");
+	await G.locator("button", { hasText: "NONE" }).click();
+	check("with no topic picked, DONE is refused",
+		await G.locator("button", { hasText: "DONE" }).isDisabled());
+	await G.locator(".uc-cats button", { hasText: "Animals" }).click();
+	await G.locator("button", { hasText: "HARD" }).click();
+	const words = await G.evaluate(() => {
+		const fields = [...document.querySelectorAll(".uc-toggle, .uc-actions button")];
+		return {
+			docWidth: document.documentElement.scrollWidth,
+			winWidth: window.innerWidth,
+			minTap: Math.min(...fields.map((f) => Math.round(f.getBoundingClientRect().height))),
+			bottom: Math.round(Math.max(...fields.map((f) => f.getBoundingClientRect().bottom))),
+		};
+	});
+	check("the topic picker does not scroll sideways", words.docWidth <= words.winWidth, `${words.docWidth} > ${words.winWidth}`);
+	check("every topic and button clears 44px", words.minTap >= 44, `${words.minTap}px`);
+	check("the whole picker fits the phone", words.bottom <= 844, `${words.bottom}px`);
+	uc = await debug(page);
+	check("the choice is one topic, hard pairs", uc.categories.join() === "animals" && uc.wordLevel === "hard",
+		`${uc.categories}/${uc.wordLevel}`);
+	await G.locator("button", { hasText: "DONE" }).click();
+	check("DONE goes back to the player list", (await debug(page)).phase === "setup");
+	check("which says what will be dealt",
+		(await G.locator("button", { hasText: "WORDS: ANIMALS · HARD" }).count()) === 1);
+
 	await G.locator("button", { hasText: "BLANK: OFF" }).click();
 	await G.locator("button", { hasText: "DEAL" }).click();
 	await G.waitForFunction(() => window.__game.handle.debug().phase === "pass", null, { timeout: TIMEOUT });
@@ -195,6 +224,9 @@ try {
 		&& uc.players.filter((p) => p.role === "civilian").length === 4,
 		JSON.stringify(uc.players.map((p) => p.role)));
 	check("the two words differ", uc.civilianWord !== uc.spyWord, `${uc.civilianWord}/${uc.spyWord}`);
+	check("the pair came from the chosen topic and difficulty", uc.category === "Animals" && uc.level === "hard",
+		`${uc.category}/${uc.level}`);
+	check("and the phone remembers it was dealt", uc.seen >= 1, `${uc.seen}`);
 	// The whole point: the phone has just changed hands, so nothing is showing.
 	check("nothing is on screen until somebody taps", uc.onScreen === null);
 	check("and no word is in the DOM either",
@@ -207,6 +239,8 @@ try {
 		const state = await debug(page);
 		const shown = await G.locator(".uc-word").textContent();
 		seen.push({ who: state.onScreen, shown });
+		if (i === 0) check("the reveal names the topic",
+			(await G.locator(".uc-hint", { hasText: "Topic: Animals" }).count()) === 1);
 		check(`${state.onScreen} is shown exactly one word`,
 			(await G.locator(".uc-word").count()) === 1, "more than one word on screen");
 		await G.locator("button", { hasText: "HIDE &" }).click();

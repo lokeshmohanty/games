@@ -28,7 +28,7 @@
 // first, a forgotten bump costs an out-of-date *offline* copy — never a stale
 // app for an online player, which is the failure mode that would be hard to
 // notice.
-const VERSION = "arcade-games-v31";
+const VERSION = "arcade-games-v32";
 
 // The shell: everything needed to open any page and start a game with no
 // network at all. The preview gifs are deliberately absent — they are ~2 MB
@@ -85,6 +85,7 @@ const SHELL = [
 	"./games/connect4/connect4.js",
 	"./games/connect4/game.json",
 	"./games/undercover/index.html",
+	"./games/undercover/words.js",
 	"./games/undercover/undercover.js",
 	"./games/undercover/game.json",
 	"./games/neon-bid/index.html",

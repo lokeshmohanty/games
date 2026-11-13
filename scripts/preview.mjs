@@ -24,6 +24,7 @@ import { existsSync, globSync, mkdtempSync, readdirSync, renameSync } from "node
 import { homedir, tmpdir } from "node:os";
 import { dirname, join, resolve as resolvePath } from "node:path";
 import { fileURLToPath } from "node:url";
+import { gameScope, readyToClick, serve } from "./serve.mjs";
 
 const require = createRequire(import.meta.url);
 const ROOT = resolvePath(dirname(fileURLToPath(import.meta.url)), "..");
@@ -197,10 +198,14 @@ const GAMES = {
 		// point of the game. The harness only runs its handshake for peers > 1,
 		// so this scenario starts the game itself.
 		peers: 1,
-		seconds: 14,
+		seconds: 18,
 		async play([a], seconds) {
 			await a.locator("button", { hasText: "START" }).first().click();
 			await a.waitForFunction(() => window.__game?.handle, null, { timeout: 20_000 });
+			// The game runs in the party's sandboxed frame: find its buttons there.
+			const page = a;
+			a = await gameScope(page, 20_000);
+			await readyToClick(page);
 
 			await a.locator("button", { hasText: "+ PLAYER" }).click();
 			const names = ["ANA", "BO", "CY", "DI"];
@@ -209,6 +214,19 @@ const GAMES = {
 				await sleep(160);
 			}
 			await sleep(400);
+			// A glimpse of the topic picker: two topics, hard pairs.
+			await a.locator("button", { hasText: "WORDS:" }).click();
+			await sleep(700);
+			await a.locator("button", { hasText: "NONE" }).click();
+			for (const topic of ["Animals", "Food & drink"]) {
+				await sleep(350);
+				await a.locator(".uc-cats button", { hasText: topic }).click();
+			}
+			await sleep(350);
+			await a.locator("button", { hasText: "HARD" }).click();
+			await sleep(800);
+			await a.locator("button", { hasText: "DONE" }).click();
+			await sleep(500);
 			await a.locator("button", { hasText: "DEAL" }).click();
 			await sleep(600);
 
@@ -601,7 +619,10 @@ for (let i = 0; i < spec.peers; i++) {
 }
 
 const t0 = Date.now();
-const url = "file://" + join(ROOT, spec.file);
+// Served, not file://: a framed game (lib/bridge.js) cannot load its sandboxed
+// frame from a file URL.
+const SITE = await serve(8736);
+const url = SITE.url(spec.file);
 await Promise.all(pages.map((p) => p.goto(url)));
 
 if (spec.peers > 1) {
@@ -644,3 +665,5 @@ if (out) {
 console.log(`video=${video}`);
 console.log(`start=${startOffset.toFixed(1)}`);
 console.log(`duration=${playedFor.toFixed(1)}`);
+// The served site's python process would otherwise keep node alive.
+process.exit(0);

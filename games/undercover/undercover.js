@@ -19,6 +19,11 @@
 // player says one word describing theirs, out loud, off the phone. Then you
 // vote somebody out and the phone says what they were.
 //
+// The host picks which topics to deal from (food, animals, tech…) and how
+// close the two words should be; the words themselves are in `words.js`, and
+// the phone remembers which pairs it has dealt so a regular table does not
+// keep meeting the same ones. Points carry over from hand to hand.
+//
 // Civilians win by voting out every undercover. The undercovers win by
 // surviving until they match the civilians in number. The blank wins outright
 // if, on being voted out, they can name the civilians' word.
@@ -32,25 +37,62 @@
 // between hands.
 
 (() => {
-	// Pairs that are close enough to argue about. A pair whose two halves are
-	// obviously unrelated makes the undercover's first word a confession.
-	const PAIRS = [
-		["Coffee", "Tea"], ["Cat", "Dog"], ["Sun", "Moon"], ["Ocean", "Lake"],
-		["Guitar", "Violin"], ["Pizza", "Burger"], ["Winter", "Autumn"],
-		["Doctor", "Nurse"], ["Bus", "Train"], ["Pencil", "Pen"],
-		["Soap", "Shampoo"], ["Butterfly", "Moth"], ["Piano", "Organ"],
-		["Bicycle", "Motorbike"], ["Chess", "Draughts"], ["Rain", "Snow"],
-		["Village", "Town"], ["Novel", "Diary"], ["Beard", "Moustache"],
-		["Sandal", "Slipper"], ["Honey", "Syrup"], ["Mirror", "Window"],
-		["Candle", "Torch"], ["Wallet", "Purse"], ["Ladder", "Staircase"],
-		["Camel", "Horse"], ["Yoga", "Pilates"], ["Museum", "Gallery"],
-		["Cinema", "Theatre"], ["Toothbrush", "Comb"], ["Kite", "Balloon"],
-		["Blanket", "Towel"], ["Sunrise", "Sunset"], ["Island", "Peninsula"],
-		["Volcano", "Geyser"], ["Magician", "Clown"], ["Referee", "Coach"],
-		["Passport", "Ticket"], ["Envelope", "Postcard"], ["Helmet", "Cap"],
-		["Spoon", "Ladle"], ["Rice", "Noodles"], ["Tent", "Cabin"],
-		["Compass", "Map"], ["Trumpet", "Trombone"],
-	];
+	// The word pairs live in words.js, by category and by how close the two
+	// halves are. Parsed once here into `{ words, level, category }`.
+	const parse = (text) => text.split(",").map((s) => s.trim()).filter(Boolean)
+		.map((s) => s.split("/").map((w) => w.trim()));
+	const CATEGORIES = NeonArcade.undercoverWords.map((c) => ({
+		id: c.id,
+		label: c.label,
+		pairs: ["easy", "hard"].flatMap((level) =>
+			parse(c[level]).map((words) => ({ words, level, category: c.id }))),
+	}));
+	const ALL_PAIRS = CATEGORIES.flatMap((c) => c.pairs);
+	const PAIRS = ALL_PAIRS.map((p) => p.words);
+	const LEVELS = ["easy", "mixed", "hard"];
+	const labelOf = (id) => CATEGORIES.find((c) => c.id === id)?.label ?? id;
+
+	/** Every pair the host's choice of categories and difficulty deals from. */
+	const pairPool = (categoryIds, level = "mixed") => ALL_PAIRS.filter((p) =>
+		categoryIds.includes(p.category) && (level === "mixed" || p.level === level));
+
+	const pairKey = (pair) => pair.words.join("/").toLowerCase();
+
+	/**
+	 * Draw a pair this phone has not dealt yet.
+	 *
+	 * `seen` is the keys of pairs already dealt, oldest first, kept across
+	 * evenings in the game's storage. Only once every pair in the pool has come
+	 * up does the pool start over — and even then not with the pair just played.
+	 * Returns the pair and the new `seen`, capped so it stays well inside the
+	 * storage budget.
+	 */
+	function drawPair(pool, seen = [], rng = Math.random) {
+		const dealt = new Set(seen);
+		let fresh = pool.filter((p) => !dealt.has(pairKey(p)));
+		let kept = seen;
+		if (!fresh.length) {
+			const inPool = new Set(pool.map(pairKey));
+			kept = seen.filter((k) => !inPool.has(k));
+			const last = seen[seen.length - 1];
+			fresh = pool.length > 1 ? pool.filter((p) => pairKey(p) !== last) : pool;
+		}
+		const pair = fresh[Math.floor(rng() * fresh.length)];
+		return { pair, seen: [...kept, pairKey(pair)].slice(-ALL_PAIRS.length) };
+	}
+
+	/**
+	 * Points for one hand, by name. Winning as an undercover is harder than
+	 * winning as one of many civilians, and the blank's word guess is the
+	 * longest shot of all, so they pay accordingly. Everybody on the winning
+	 * side scores, voted out or not.
+	 */
+	const POINTS = { civilian: 1, spy: 3, blank: 4 };
+	const WINNING_ROLE = { civilians: "civilian", spies: "spy", blank: "blank" };
+	function handPoints(players, done) {
+		const role = WINNING_ROLE[done];
+		return Object.fromEntries(players.filter((p) => p.role === role).map((p) => [p.name, POINTS[role]]));
+	}
 
 	const MIN_PLAYERS = 3;
 	const MAX_PLAYERS = 12;
@@ -101,15 +143,15 @@
 	 *
 	 * Returns one entry per player: `{ name, role, word }` where role is
 	 * "civilian" | "spy" | "blank". The blank's word is null, which is the
-	 * whole of its difficulty.
+	 * whole of its difficulty. `pair` is one from `drawPair`; left out, any
+	 * pair from any category will do.
 	 */
-	function dealRoles(names, spyCount, withBlank, rng = Math.random) {
-		const pair = PAIRS[Math.floor(rng() * PAIRS.length)];
+	function dealRoles(names, spyCount, withBlank, rng = Math.random, pair = drawPair(ALL_PAIRS, [], rng).pair) {
 		// Which half of the pair the civilians get is itself random, so a player
 		// who has seen the word list cannot infer their role from it.
 		const flip = rng() < 0.5;
-		const civilianWord = flip ? pair[0] : pair[1];
-		const spyWord = flip ? pair[1] : pair[0];
+		const civilianWord = flip ? pair.words[0] : pair.words[1];
+		const spyWord = flip ? pair.words[1] : pair.words[0];
 
 		const roles = [];
 		for (let i = 0; i < spyCount; i++) roles.push("spy");
@@ -120,6 +162,8 @@
 		return {
 			civilianWord,
 			spyWord,
+			category: labelOf(pair.category),
+			level: pair.level,
 			players: names.map((name, i) => ({
 				name,
 				role: assigned[i],
@@ -146,7 +190,8 @@
 	}
 
 	NeonArcade.undercoverRules = {
-		PAIRS, MIN_PLAYERS, MAX_PLAYERS, defaultSpies, maxOthers, maxSpies, blankAllowed, shuffle, dealRoles, winner,
+		PAIRS, CATEGORIES, LEVELS, MIN_PLAYERS, MAX_PLAYERS, POINTS, defaultSpies, maxOthers, maxSpies, blankAllowed,
+		shuffle, pairPool, pairKey, drawPair, dealRoles, winner, handPoints,
 	};
 })();
 
@@ -163,8 +208,10 @@ NeonArcade.registerGame({
 	seats: { min: 1, max: 8 },
 
 	mount(ctx) {
-		const { MIN_PLAYERS, MAX_PLAYERS, defaultSpies, maxSpies, blankAllowed, shuffle, dealRoles, winner } =
-			NeonArcade.undercoverRules;
+		const {
+			CATEGORIES, LEVELS, MIN_PLAYERS, MAX_PLAYERS, maxSpies, blankAllowed, shuffle, pairPool, pairKey, drawPair,
+			dealRoles, winner, handPoints,
+		} = NeonArcade.undercoverRules;
 
 		const shell = NeonArcade.gameShell(ctx.root, {
 			css: `
@@ -212,6 +259,8 @@ NeonArcade.registerGame({
 				.uc-row small { color: var(--muted); font-size: 0.7rem; letter-spacing: 0.08em; }
 				.uc-actions { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; }
 				.uc-actions .neon-btn { min-height: 46px; }
+				.uc-cats { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; }
+				.uc-row .uc-pts { color: var(--accent); font-size: 0.9rem; min-width: 3ch; text-align: right; }
 				.uc-guess { width: 100%; min-height: 46px; padding: 8px 12px; background: var(--panel);
 					border: 2px solid var(--border); border-radius: 8px; color: var(--ink);
 					font-size: 16px; font-family: inherit; }
@@ -241,6 +290,22 @@ NeonArcade.registerGame({
 		let done = null; // "civilians" | "spies" | "blank"
 		let deals = 0; // games finished in this mount
 		let picked = null; // who the table has tapped, before it is confirmed
+
+		// What to deal from, and which pairs this phone has dealt already. Both
+		// are kept on the device, so a group that plays every week keeps getting
+		// pairs it has not had (drawPair).
+		const allIds = CATEGORIES.map((c) => c.id);
+		const savedWords = ctx.storage?.get("words") ?? {};
+		let categories = (savedWords.categories ?? allIds).filter((id) => allIds.includes(id));
+		if (!categories.length) categories = allIds;
+		let level = LEVELS.includes(savedWords.level) ? savedWords.level : "mixed";
+		let seen = Array.isArray(ctx.storage?.get("seen")) ? ctx.storage.get("seen") : [];
+		// Points by name, kept on the device until RESET SCORES, so a reload or a
+		// closed tab mid-evening does not wipe the table's tally. By name, so
+		// CHANGE PLAYERS (adding a late arrival) keeps everyone else's.
+		const savedScores = ctx.storage?.get("scores");
+		let scores = savedScores && typeof savedScores === "object" ? { ...savedScores } : {};
+		let gained = {}; // this hand's points, shown beside the totals
 
 		const alive = () => (deal ? deal.players.filter((p) => !p.out) : []);
 		const cleanNames = () => names.map((n) => n.trim()).filter(Boolean);
@@ -324,6 +389,14 @@ NeonArcade.registerGame({
 			blank.title = "One player gets no word at all";
 			blank.disabled = !canBlank;
 			opts.append(blank);
+
+			const which = categories.length === CATEGORIES.length ? "ALL"
+				: categories.length === 1 ? CATEGORIES.find((c) => c.id === categories[0]).label.toUpperCase()
+				: `${categories.length} TOPICS`;
+			opts.append(button(`WORDS: ${which} · ${level.toUpperCase()}`, () => {
+				phase = "words";
+				render();
+			}, { className: "uc-toggle" }));
 			wrap.append(opts);
 
 			if (withBlank && canBlank) {
@@ -366,6 +439,73 @@ NeonArcade.registerGame({
 			spies = Math.min(Math.max(1, spies), maxSpies(n, withBlank));
 		}
 
+		// -------------------------------------------------------------- words
+
+		function saveWords() {
+			ctx.storage?.set("words", { categories, level });
+		}
+
+		function renderWords() {
+			wrap.replaceChildren();
+			wrap.append(el("div", "uc-big", "Words"));
+			wrap.append(el("div", "uc-hint", "Deal from any of these. Everyone is told the topic, never the word."));
+
+			const cats = el("div", "uc-cats");
+			for (const c of CATEGORIES) {
+				const on = categories.includes(c.id);
+				const chip = button(c.label, () => {
+					categories = on ? categories.filter((id) => id !== c.id) : allIds.filter((id) => id === c.id || categories.includes(id));
+					saveWords();
+					render();
+				}, { className: "uc-toggle" + (on ? " on" : "") });
+				chip.setAttribute("aria-pressed", String(on));
+				cats.append(chip);
+			}
+			wrap.append(cats);
+
+			const bulk = el("div", "uc-opts");
+			bulk.append(button("ALL", () => {
+				categories = [...allIds];
+				saveWords();
+				render();
+			}, { className: "uc-toggle" }));
+			bulk.append(button("NONE", () => {
+				categories = [];
+				render();
+			}, { className: "uc-toggle" }));
+			wrap.append(bulk);
+
+			// How close the two words are: easy pairs pull apart within a round,
+			// hard ones (Butterfly / Moth) can take several.
+			const levels = el("div", "uc-opts");
+			for (const l of LEVELS) {
+				const b = button(l.toUpperCase(), () => {
+					level = l;
+					saveWords();
+					render();
+				}, { className: "uc-toggle" + (l === level ? " on" : "") });
+				b.setAttribute("aria-pressed", String(l === level));
+				levels.append(b);
+			}
+			wrap.append(levels);
+
+			const pool = pairPool(categories, level);
+			const dealt = new Set(seen);
+			const fresh = pool.filter((p) => !dealt.has(pairKey(p))).length;
+			wrap.append(el("div", "uc-hint", pool.length
+				? `${pool.length} pairs · ${fresh} not dealt on this phone yet`
+				: "Pick at least one topic."));
+
+			const actions = el("div", "uc-actions");
+			const done = button("DONE", () => {
+				phase = "setup";
+				render();
+			}, { accent: true });
+			done.disabled = !pool.length;
+			actions.append(done);
+			wrap.append(actions);
+		}
+
 		// --------------------------------------------------------------- deal
 
 		function startHand() {
@@ -373,7 +513,14 @@ NeonArcade.registerGame({
 			// Re-checked here as well as in the UI: the toggle can be left on from
 			// a bigger game and then players removed.
 			const blank = withBlank && blankAllowed(list.length);
-			deal = dealRoles(list, Math.min(spies, maxSpies(list.length, blank)), blank);
+			// The words screen will not close on an empty pool, but a saved choice
+			// from an older list could still name nothing; fall back to everything.
+			let pool = pairPool(categories, level);
+			if (!pool.length) pool = pairPool(CATEGORIES.map((c) => c.id), "mixed");
+			const draw = drawPair(pool, seen);
+			seen = draw.seen;
+			ctx.storage?.set("seen", seen);
+			deal = dealRoles(list, Math.min(spies, maxSpies(list.length, blank)), blank, Math.random, draw.pair);
 			handIndex = 0;
 			revealed = false;
 			round = 1;
@@ -401,6 +548,7 @@ NeonArcade.registerGame({
 			const player = deal.players[handIndex];
 			wrap.replaceChildren();
 			wrap.append(el("div", "uc-hint", player.name));
+			wrap.append(el("div", "uc-hint", `Topic: ${deal.category}`));
 			if (player.word) {
 				wrap.append(el("div", "uc-word", player.word));
 			} else {
@@ -430,7 +578,7 @@ NeonArcade.registerGame({
 		function renderDescribe() {
 			wrap.replaceChildren();
 			wrap.append(el("div", "uc-hint",
-				`Round ${round}. One word each, out loud. Do not say your word itself.`));
+				`Round ${round} · ${deal.category}. One word each, out loud. Do not say your word itself.`));
 			const list = el("div", "uc-list");
 			order.forEach((name, i) => {
 				const row = el("div", "uc-row" + (i === speaker ? " now" : ""));
@@ -533,6 +681,9 @@ NeonArcade.registerGame({
 					// never as anyone's win (lib/stats.js "local").
 					deals++;
 					ctx.reportResult?.({ kind: "local", match: deals, ranking: [[ctx.room.selfId]] });
+					gained = handPoints(deal.players, done);
+					for (const [name, pts] of Object.entries(gained)) scores[name] = (scores[name] ?? 0) + pts;
+					ctx.storage?.set("scores", scores);
 					render();
 				}, { accent: true }));
 			} else {
@@ -554,13 +705,18 @@ NeonArcade.registerGame({
 				: "THE BLANK WINS";
 			wrap.append(el("div", "uc-big", title));
 			wrap.append(el("div", "uc-hint",
-				`Civilians had "${deal.civilianWord}". The undercover had "${deal.spyWord}".`));
+				`${deal.category}: civilians had "${deal.civilianWord}". The undercover had "${deal.spyWord}".`));
+			// Everyone at this table, best total first: this hand's role and
+			// points on the left, the running total on the right.
 			const list = el("div", "uc-list");
-			for (const player of deal.players) {
+			const ranked = [...deal.players].sort((a, b) => (scores[b.name] ?? 0) - (scores[a.name] ?? 0));
+			for (const player of ranked) {
 				const row = el("div", "uc-row" + (player.out ? " gone" : ""));
-				row.append(el("span", null, player.name));
-				row.append(el("small", null,
-					player.role === "spy" ? "UNDERCOVER" : player.role === "blank" ? "BLANK" : "CIVILIAN"));
+				const who = el("span", null, player.name + " ");
+				const role = player.role === "spy" ? "UNDERCOVER" : player.role === "blank" ? "BLANK" : "CIVILIAN";
+				who.append(el("small", null, gained[player.name] ? `${role} +${gained[player.name]}` : role));
+				row.append(who);
+				row.append(el("span", "uc-pts", String(scores[player.name] ?? 0)));
 				list.append(row);
 			}
 			wrap.append(list);
@@ -568,6 +724,12 @@ NeonArcade.registerGame({
 			actions.append(button("PLAY AGAIN", () => startHand(), { accent: true }));
 			actions.append(button("CHANGE PLAYERS", () => {
 				phase = "setup";
+				render();
+			}));
+			actions.append(button("RESET SCORES", () => {
+				scores = {};
+				gained = {};
+				ctx.storage?.set("scores", scores);
 				render();
 			}));
 			wrap.append(actions);
@@ -578,6 +740,7 @@ NeonArcade.registerGame({
 		function renderHud() {
 			const parts = [];
 			if (phase === "setup") parts.push({ key: "s", text: "Who is playing?", className: "g-muted" });
+			else if (phase === "words") parts.push({ key: "s", text: "Words", className: "g-muted" });
 			else if (phase === "pass") parts.push({ key: "s", text: "Dealing", className: "g-muted" });
 			else if (phase === "describe") parts.push({ key: "s", text: `Round ${round}` });
 			else if (phase === "vote") parts.push({ key: "s", text: "Vote" });
@@ -590,6 +753,7 @@ NeonArcade.registerGame({
 
 		function render() {
 			if (phase === "setup") renderSetup();
+			else if (phase === "words") renderWords();
 			else if (phase === "pass") (revealed ? renderReveal : renderPass)();
 			else if (phase === "describe") renderDescribe();
 			else if (phase === "vote") renderVote();
@@ -619,6 +783,12 @@ NeonArcade.registerGame({
 				players: deal ? deal.players.map((p) => ({ ...p })) : [],
 				civilianWord: deal?.civilianWord ?? null,
 				spyWord: deal?.spyWord ?? null,
+				category: deal?.category ?? null,
+				level: deal?.level ?? null,
+				categories: [...categories],
+				wordLevel: level,
+				seen: seen.length,
+				scores: { ...scores },
 				order: [...order],
 				speaker,
 				alive: alive().length,

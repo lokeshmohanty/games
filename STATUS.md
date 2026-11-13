@@ -11,6 +11,15 @@ session pay for it.*
 act → record → clear the item. This is the single inbox — do not create a
 separate `TODO.md`.*
 
+## Undercover topics, no-repeat deal, scores (2026-11-13) — committed on main, not pushed
+
+`games/undercover/words.js`: 754 pairs in 14 topics × easy/hard; WORDS screen
+(topics multi-select + EASY/MIXED/HARD, saved per device); deal avoids pairs
+already dealt on this phone (`ctx.storage` "seen"); topic shown on reveal;
+running scores (civ 1 / undercover 3 / blank 4), saved per device, with RESET SCORES. sw.js v32
+precaches words.js. test-undercover + test-bots green. Preview gif re-recorded (preview.mjs now
+serves over http so framed games load, and exits explicitly).
+
 ## Themes, search, contributors, PR-only pins (2026-11-13) — live (9f3c0bd)
 
 Built and green (every `just test` suite + accounts + social): lib/theme.css

@@ -21,11 +21,14 @@ import { readFileSync } from "node:fs";
 globalThis.window = globalThis;
 globalThis.location = { href: "file:///x", hash: "", pathname: "/x", search: "" };
 globalThis.history = { replaceState() {} };
-for (const f of ["../lib/net.js", "../lib/games.js", "../games/undercover/undercover.js"]) {
+for (const f of ["../lib/net.js", "../lib/games.js", "../games/undercover/words.js", "../games/undercover/undercover.js"]) {
 	new Function(readFileSync(new URL(f, import.meta.url), "utf8"))();
 }
 const R = globalThis.NeonArcade.undercoverRules;
-const { PAIRS, MIN_PLAYERS, MAX_PLAYERS, defaultSpies, maxOthers, maxSpies, blankAllowed, dealRoles, winner } = R;
+const {
+	PAIRS, CATEGORIES, LEVELS, MIN_PLAYERS, MAX_PLAYERS, POINTS, defaultSpies, maxOthers, maxSpies, blankAllowed,
+	pairPool, pairKey, drawPair, dealRoles, winner, handPoints,
+} = R;
 
 let failures = 0;
 const check = (label, ok, detail = "") => {
@@ -39,7 +42,16 @@ const names = (n) => Array.from({ length: n }, (_, i) => `P${i + 1}`);
 console.log("\nthe word list");
 
 {
-	check("there are plenty of pairs", PAIRS.length >= 40, `${PAIRS.length}`);
+	check("there are plenty of pairs", PAIRS.length >= 600, `${PAIRS.length}`);
+	// A long evening should not come round to the same pair: every topic needs
+	// enough of both kinds that even one topic on one difficulty lasts a while.
+	const thin = CATEGORIES.flatMap((c) => ["easy", "hard"]
+		.map((l) => [c.id, l, c.pairs.filter((p) => p.level === l).length])
+		.filter(([, , n]) => n < 20)
+		.map(([id, l, n]) => `${id}/${l}:${n}`));
+	check("every topic has at least 20 pairs at each difficulty", thin.length === 0, thin.join(", "));
+	check("topic ids are unique", new Set(CATEGORIES.map((c) => c.id)).size === CATEGORIES.length);
+	check("every topic has a label", CATEGORIES.every((c) => c.label));
 	check("every pair has two words", PAIRS.every((p) => p.length === 2 && p[0] && p[1]));
 	check("no pair is the same word twice", PAIRS.every((p) => p[0].toLowerCase() !== p[1].toLowerCase()));
 	const flat = PAIRS.flat().map((w) => w.toLowerCase());
@@ -47,6 +59,75 @@ console.log("\nthe word list");
 	// rule out the other half.
 	const dupes = flat.filter((w, i) => flat.indexOf(w) !== i);
 	check("no word appears in two pairs", dupes.length === 0, [...new Set(dupes)].join(", "));
+}
+
+// ---------------------------------------------------------------------------
+console.log("\ntopics and difficulty");
+
+{
+	const food = pairPool(["food"], "mixed");
+	check("a topic deals only its own pairs", food.length > 0 && food.every((p) => p.category === "food"));
+	check("easy deals only easy pairs", pairPool(["food", "tech"], "easy").every((p) => p.level === "easy"));
+	check("hard deals only hard pairs", pairPool(["food", "tech"], "hard").every((p) => p.level === "hard"));
+	check("mixed is easy and hard together",
+		pairPool(["food"], "mixed").length
+			=== pairPool(["food"], "easy").length + pairPool(["food"], "hard").length);
+	check("several topics pool together",
+		pairPool(["food", "animals"]).length === pairPool(["food"]).length + pairPool(["animals"]).length);
+	check("no topics, no pairs", pairPool([], "mixed").length === 0);
+	check("the three difficulties", LEVELS.join() === "easy,mixed,hard");
+
+	const pair = pairPool(["animals"], "hard")[0];
+	const d = dealRoles(names(5), 1, false, Math.random, pair);
+	check("the deal uses the pair it is given", pair.words.includes(d.civilianWord) && pair.words.includes(d.spyWord));
+	check("and says which topic it came from", d.category === "Animals" && d.level === "hard", `${d.category}/${d.level}`);
+}
+
+{
+	// No repeats until the pool is spent. A table that plays every week should
+	// get through every pair in its topics before it meets one again.
+	const pool = pairPool(["sports"], "easy");
+	let seen = [];
+	const dealt = [];
+	for (let i = 0; i < pool.length; i++) {
+		const draw = drawPair(pool, seen);
+		dealt.push(pairKey(draw.pair));
+		seen = draw.seen;
+	}
+	check("every pair comes up once before any comes up twice", new Set(dealt).size === pool.length,
+		`${new Set(dealt).size} of ${pool.length}`);
+	const next = drawPair(pool, seen);
+	check("then the pool starts over", pool.some((p) => pairKey(p) === pairKey(next.pair)));
+	check("but not with the pair just played", pairKey(next.pair) !== dealt[dealt.length - 1]);
+	check("and forgets only that pool's history", next.seen.length === 1, `${next.seen.length}`);
+
+	// Pairs dealt from other topics stay remembered while this one cycles.
+	const other = pairKey(pairPool(["food"])[0]);
+	const kept = drawPair(pool, [other, ...pool.map(pairKey)]);
+	check("other topics' history survives a cycle", kept.seen.includes(other));
+
+	// The history is stored on the device: it must stay bounded.
+	let long = [];
+	const all = pairPool(CATEGORIES.map((c) => c.id));
+	for (let i = 0; i < PAIRS.length * 2 + 5; i++) long = drawPair(all, long).seen;
+	check("the history never outgrows the word list", long.length <= PAIRS.length, `${long.length}`);
+	check("and fits the game's storage", JSON.stringify(long).length < 32 * 1024, `${JSON.stringify(long).length} bytes`);
+}
+
+// ---------------------------------------------------------------------------
+console.log("\nscores");
+
+{
+	const players = [
+		{ name: "A", role: "civilian", out: false }, { name: "B", role: "civilian", out: true },
+		{ name: "C", role: "spy", out: false }, { name: "D", role: "blank", out: true },
+	];
+	const civ = handPoints(players, "civilians");
+	check("civilians all score when they win, out or not", civ.A === POINTS.civilian && civ.B === POINTS.civilian);
+	check("and nobody else does", civ.C === undefined && civ.D === undefined);
+	check("undercovers score on their win", JSON.stringify(handPoints(players, "spies")) === JSON.stringify({ C: POINTS.spy }));
+	check("the blank scores on its guess", JSON.stringify(handPoints(players, "blank")) === JSON.stringify({ D: POINTS.blank }));
+	check("the harder win pays more", POINTS.blank > POINTS.spy && POINTS.spy > POINTS.civilian);
 }
 
 // ---------------------------------------------------------------------------

@@ -550,6 +550,19 @@ bug:
   before could otherwise rule out the other half. The test caught "Violin" in
   two pairs.
 
+**The words** live in `games/undercover/words.js`: about 750 pairs across 14
+topics (Food & drink … Science & space), each split into *easy* pairs (the same
+family, pulled apart within a round) and *hard* ones (nearly the same thing —
+Butterfly / Moth). The host ticks any set of topics and a difficulty on the
+WORDS screen; everyone is told the topic on the reveal, never the word. The
+phone keeps the keys of pairs it has dealt in `ctx.storage` ("seen") and draws
+only unseen pairs until a pool is spent (`drawPair`), so a table that plays
+every week works through the whole list before meeting a pair again. Points
+carry across hands, and across reloads (`ctx.storage` "scores") — civilian 1, undercover 3,
+blank 4, to everyone on the winning side — and reset on RESET SCORES.
+`scripts/test-undercover.mjs` holds every topic to at least 20 pairs per
+difficulty and still forbids a word in two pairs anywhere in the list.
+
 ## Adding a game
 
 One file in `games/`, one script tag in `party.html`, one in its own page.
