@@ -110,7 +110,8 @@ function main() {
 	const contributors = [];
 
 	for (const owner of existsSync(registry) ? readdirSync(registry).sort() : []) {
-		if (!NAME.test(owner)) continue;
+		// Owners are folders; registry/trusted.txt and the like are not.
+		if (!NAME.test(owner) || !statSync(join(registry, owner)).isDirectory()) continue;
 		for (const file of readdirSync(join(registry, owner)).sort()) {
 			if (!file.endsWith(".json")) continue;
 			const repo = file.slice(0, -".json".length);

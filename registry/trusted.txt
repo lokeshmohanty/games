@@ -1,0 +1,4 @@
+# Owners whose pin bumps the registry-bump workflow merges by itself once the
+# checks pass (.github/workflows/registry-bump.yml). Everyone else's bump
+# waits for a maintainer to read the diff and merge. One GitHub login a line.
+lokeshmohanty

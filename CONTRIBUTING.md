@@ -110,7 +110,14 @@ Push your repository, then add one file here:
 
 The check fetches that commit, validates every listed game and plays each in
 a headless browser. Once merged, the next deploy lists your games as
-`<your-github-user>/<id>`. **To update**, open a PR that changes `commit`.
+`<your-github-user>/<id>`.
+
+**Updates come by themselves.** Every 30 minutes a workflow
+(`registry-bump.yml`) looks at your repo's default branch; when it has moved,
+it opens a pull request bumping your `commit`, runs the same checks, and
+puts the result in the PR. A maintainer reads the diff and merges it (owners
+in `registry/trusted.txt` are merged automatically when the checks pass).
+You never edit the pin by hand after the first PR.
 
 ## Review and removal
 

@@ -11,6 +11,20 @@ session pay for it.*
 act → record → clear the item. This is the single inbox — do not create a
 separate `TODO.md`.*
 
+## Themes, search, contributors, PR-only pins (2026-11-13) — branch `themes`, not merged
+
+Built and green (every `just test` suite + accounts + social): lib/theme.css
++ theme.js (Paper default from lokeshmohanty.github.io, Neon; fonts
+self-hosted; frames follow; check-colours lint), two-choice game pages
+(PLAY WITH BOTS / PLAY WITH FRIENDS, code only for friends), portal search
+(author: type: tag: players: from:), lib/nav.js (GitHub + Add your game top
+left, tabs), contribute.html (CONTRIBUTING.md rendered), contributors.html
+(contributor.json), registry-bump.yml (pins move only by PR; trusted owners
+auto-merged). arcade-games branch `themes`: palette + contributor.json.
+Waiting on Lokesh: merge/push confirmation; enable "Allow GitHub Actions to
+create and approve pull requests" (Settings → Actions → General), then the
+first bump PR carries arcade-games' new commit.
+
 ## Phases 1–6 (2026-11-13) — merged, site and Worker deployed (b35232de)
 
 Built and green locally: stats/favourites/recents + portal from catalogs
