@@ -186,6 +186,8 @@ if (m) {
 console.log("\npwa: every page is part of the app");
 for (const p of [
 	"party.html",
+	"profile.html",
+	"leaderboard.html",
 	"connect4.html",
 	"light-cycles.html",
 	"draw-guess.html",

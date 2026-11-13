@@ -196,3 +196,9 @@ test-stats:
 # (`nix shell nixpkgs#wrangler` on NixOS), and skips with a message without it.
 test-accounts:
     node scripts/test-accounts.mjs
+
+# The account layer in real browsers at 390x844 against wrangler dev: sign-in,
+# profile, favourites on two devices, friends in a party, an invite, a ranked
+# game, leaderboards, groups, feedback, deleting the account. Needs wrangler.
+test-social:
+    node scripts/test-social.mjs

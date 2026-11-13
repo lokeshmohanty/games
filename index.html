@@ -13,6 +13,9 @@
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black" />
     <meta name="apple-mobile-web-app-title" content="Arcade Games" />
+    <!-- The shared theme, for the account sheets and buttons (lib/account-ui.js);
+         this page's own rules below take precedence. -->
+    <link rel="stylesheet" href="lib/styles.css" />
     <style>
       body {
         margin: 0;
@@ -293,6 +296,13 @@
           grid-template-columns: repeat(2, 1fr);
           gap: 12px;
         }
+        .game-card .fb {
+          width: 36px;
+          height: 36px;
+          font-size: 0.9rem;
+          top: 4px;
+          left: 4px;
+        }
         .game-card .fav {
           width: 36px;
           height: 36px;
@@ -335,9 +345,27 @@
         .game-card:hover {
           transform: none;
         }
+        /* One row that scrolls sideways (inside itself, never the page):
+           eight chips wrapped to three rows, which pushed the games down. */
         .filters {
           gap: 6px;
           margin-bottom: 14px;
+          flex-wrap: nowrap;
+          justify-content: flex-start;
+          overflow-x: auto;
+          width: 94%;
+          padding-bottom: 2px;
+          scrollbar-width: none;
+        }
+        .filters::-webkit-scrollbar {
+          display: none;
+        }
+        .filter {
+          flex: none;
+        }
+        .acct-bar {
+          padding-top: 6px;
+          min-height: 40px;
         }
         .filter {
           font-size: 0.66rem;
@@ -448,9 +476,73 @@
         font-size: 0.85rem;
         white-space: nowrap;
       }
+
+      /* lib/portal.js: the account bar, play counts, the feedback button. */
+      .acct-bar {
+        align-self: stretch;
+        display: flex;
+        justify-content: flex-end;
+        align-items: center;
+        gap: 8px;
+        padding: 10px 16px 0;
+        min-height: 44px;
+        box-sizing: border-box;
+      }
+      .acct-bar a,
+      .acct-bar button {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        min-height: 40px;
+        padding: 6px 12px;
+        border: 1px solid #333;
+        border-radius: 999px;
+        background: rgba(10, 10, 10, 0.75);
+        color: #aaa;
+        font: inherit;
+        font-size: 0.75rem;
+        letter-spacing: 1px;
+        text-transform: uppercase;
+        text-decoration: none;
+        cursor: pointer;
+      }
+      .acct-bar img {
+        width: 24px;
+        height: 24px;
+        border-radius: 50%;
+      }
+      .acct-bar .acct-me {
+        color: #0ff;
+        border-color: #0ff;
+        text-transform: none;
+        letter-spacing: 0;
+        max-width: 45vw;
+        overflow: hidden;
+        white-space: nowrap;
+        text-overflow: ellipsis;
+      }
+      .game-card .fb {
+        position: absolute;
+        top: 8px;
+        left: 8px;
+        width: 44px;
+        height: 44px;
+        border: 1px solid #333;
+        border-radius: 50%;
+        background: rgba(10, 10, 10, 0.75);
+        font-size: 1.1rem;
+        cursor: pointer;
+      }
+      .game-card p.game-plays {
+        color: #777;
+        font-size: 0.7rem;
+        margin-top: -6px;
+      }
     </style>
   </head>
   <body>
+    <!-- Filled by lib/portal.js: LEADERBOARDS, and SIGN IN or your name. -->
+    <nav class="acct-bar" data-account aria-label="Account"></nav>
     <h1>Arcade Games</h1>
     <p class="tagline">
       Every game is multiplayer. Play the bots on this device, or send an invite
@@ -520,6 +612,8 @@
 
     <!-- The cards: every game's manifest, this device's stats, the drawing. -->
     <script src="lib/stats.js"></script>
+    <script src="lib/account.js"></script>
+    <script src="lib/account-ui.js"></script>
     <script src="lib/catalog.js"></script>
     <script src="community/catalog.js"></script>
     <script src="lib/portal.js"></script>

@@ -1,0 +1,117 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <title>Leaderboards · Arcade Games</title>
+    <link rel="manifest" href="manifest.webmanifest" />
+    <meta name="theme-color" content="#0a0a0a" />
+    <link rel="icon" href="assets/icon.svg" type="image/svg+xml" />
+    <link rel="apple-touch-icon" href="assets/apple-touch-icon.png" />
+    <link rel="stylesheet" href="lib/styles.css" />
+    <style>
+      main {
+        max-width: 40rem;
+        margin: 0 auto;
+        padding: 64px 16px 48px;
+      }
+      h1 {
+        color: var(--accent);
+        text-shadow: 0 0 14px var(--accent-glow);
+        font-size: 1.6rem;
+        letter-spacing: 3px;
+        text-transform: uppercase;
+        margin: 0 0 14px;
+      }
+      select {
+        width: 100%;
+        min-height: 44px;
+        background: var(--panel);
+        color: #fff;
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        padding: 8px 10px;
+        font: inherit;
+        margin-bottom: 10px;
+      }
+      .scopes {
+        display: flex;
+        gap: 6px;
+        overflow-x: auto;
+        padding-bottom: 4px;
+        margin-bottom: 12px;
+        scrollbar-width: none;
+      }
+      .scopes::-webkit-scrollbar {
+        display: none;
+      }
+      .scope {
+        flex: none;
+        min-height: 40px;
+        padding: 8px 14px;
+        border: 1px solid var(--border);
+        border-radius: 999px;
+        background: var(--panel);
+        color: var(--muted);
+        font: inherit;
+        font-size: 0.8rem;
+        cursor: pointer;
+      }
+      .scope[aria-pressed="true"] {
+        border-color: var(--accent);
+        color: #000;
+        background: var(--accent);
+      }
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 0.9rem;
+      }
+      th,
+      td {
+        text-align: left;
+        padding: 9px 4px;
+        border-top: 1px solid var(--border);
+      }
+      th {
+        color: var(--muted);
+        font-weight: normal;
+        font-size: 0.75rem;
+        text-transform: uppercase;
+        letter-spacing: 1px;
+      }
+      td.n,
+      th.n {
+        text-align: right;
+        font-variant-numeric: tabular-nums;
+      }
+      td a {
+        color: inherit;
+      }
+      tr.me td {
+        color: var(--accent);
+      }
+      .muted {
+        color: var(--muted);
+        font-size: 0.85rem;
+      }
+    </style>
+  </head>
+  <body>
+    <a class="portal-link" href="index.html">← All games</a>
+    <main>
+      <h1>Leaderboards</h1>
+      <select data-game aria-label="Game"></select>
+      <div class="scopes" data-scopes role="group" aria-label="Whose board"></div>
+      <p class="muted" data-note></p>
+      <div data-board></div>
+    </main>
+    <script src="lib/pwa.js"></script>
+    <script src="lib/stats.js"></script>
+    <script src="lib/account.js"></script>
+    <script src="lib/account-ui.js"></script>
+    <script src="lib/catalog.js"></script>
+    <script src="community/catalog.js"></script>
+    <script src="lib/leaderboard.js"></script>
+  </body>
+</html>
