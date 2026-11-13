@@ -273,7 +273,10 @@ they are the whole design:
    the host owns the board, the knot, the swarm — so the side that plays a bot
    is the side that was refereeing anyway. A bot's move is applied through the
    same function a person's tap goes through, and the broadcast that follows is
-   indistinguishable.
+   indistinguishable. When the crown moves the bots stay: the running game
+   ends anyway (a crown change ends it), and the new host plays them from the
+   next one. They used to be dropped, which cost the party its bots every
+   time a host's connection blinked.
 
 Bot ids are prefixed `bot_` so the **routing** code can recognise one from an id
 alone, without consulting the record. That matters in four places in `net.js`,

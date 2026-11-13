@@ -50,8 +50,8 @@ Audit backlog (2026-11-12), owner to pick — highest first:
       the host is out of the app, "Resuming in 3" on return
       (`NeonArcade.hostPause`) (2026-11-13, test-party). Wake lock not tried on
       a real phone; headless Chrome grants it.
-- [ ] Host blip drops its bots for good (`_vacateCrown`); onPeerLeave fires
-      before the crown moves.
+- [x] Bots stay when the crown moves (`_vacateCrown` no longer drops them; the
+      new host plays them next game) (2026-11-13, test-plumbing, test-party).
 - [ ] Portal START A PARTY / code join skip `releaseRejoin` (old seat held 5 min;
       can steal another tab's token). No `online` redial, no offline banner.
 - [ ] Perf: party `render()` rebuilds the whole screen (and QR) on every roster

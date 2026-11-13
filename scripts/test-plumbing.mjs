@@ -464,7 +464,7 @@ const bare = (opts, host = true) => {
 	await sleep(30);
 	check("the host leaving crowns its heir at once", bo.hostId() === heir && cy.hostId() === heir, `${bo.hostId()} / ${cy.hostId()}`);
 	check("everyone drops the host's seat", !bo.getMember(host.selfId) && !cy.getMember(host.selfId));
-	check("the host's bots go with it", bo.bots().length === 0 && cy.bots().length === 0);
+	check("the host's bots stay, for the heir to play", bo.bots().length === 1 && cy.bots().length === 1, `${bo.bots().length} / ${cy.bots().length}`);
 
 	const why = [];
 	cy.onLeave = (r) => why.push(r);

@@ -133,7 +133,7 @@ handlers on the same object are called when the party changes under you.
 `onPeerLeave(id, { name, reason })` gets the departed member's name — they are
 already out of the roster, so `nameOf(id)` no longer knows it — and how they
 went: `"left"` (on purpose), `"dropped"` (lost, not back within the grace),
-`"removed"` (by the host), `"crown"` (a bot that went with its host's crown) or
+`"removed"` (by the host) or
 `"gone"` (vanished from the host's record with no goodbye of its own).
 `onPeerJoin(id, info)` also fires on the host, with `info.back`, when a member
 mounts the game the host is already running — in practice a returner after a

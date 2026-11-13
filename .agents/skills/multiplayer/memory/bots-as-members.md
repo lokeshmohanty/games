@@ -32,7 +32,7 @@ Four places in `net.js`, each a real bug if forgotten:
 | `_meshUp` | opens a WebRTC connection to a browser that does not exist — a full ICE timeout, on every roster change, forever, silently |
 | `_send` broadcast `missing` | counts a bot as a peer somebody must relay to, so every broadcast asks for pointless forwarding |
 | `_ranked` (behind `_heir` / `heir()`) | nominates a bot for the crown; nothing is there to accept it and the party is stuck |
-| `_vacateCrown` | leaves bots in the roster after the only browser simulating them has gone — seats that never move again |
+| `_vacateCrown` | ~~drops the host's bots~~ — reversed 2026-11-13: a crown change now ends the running game, and the new host plays every bot in the next one, so the bots stay (a host's blip used to cost the party its bots) |
 
 `scripts/test-bots.mjs` asserts the first one from the guest's side
 (`directPeers()` must not grow when the host adds a bot) because it is the one

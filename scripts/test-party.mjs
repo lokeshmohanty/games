@@ -630,6 +630,8 @@ try {
 
 	console.log("\nparty: losing the host");
 	// Mid-game: the game's state was the host's, so it ends, and says so.
+	// With a bot, which must stay for the next host to play.
+	const keptBot = await host.evaluate(() => window.__party.room.addBot("B"));
 	await host.evaluate(() => window.__party.room.setGame("tug-of-war"));
 	for (const page of [host, p2, p3]) await page.locator("#tug-canvas").waitFor({ timeout: TIMEOUT });
 	const hostName = await host.evaluate(() => window.__party.room.self().name);
@@ -671,11 +673,32 @@ try {
 	// crown passes immediately, but the roster shrinks only once the grace
 	// runs out — so give it room before asserting the party survived.
 	await p2.waitForFunction(
-		() => document.querySelectorAll(".party-member").length === 2,
+		() => document.querySelectorAll(".party-member").length === 3,
 		undefined,
 		{ timeout: TIMEOUT },
 	);
-	check("the party survived losing its host", (await names(p2)).length === 2);
+	check("the party survived losing its host", (await names(p2)).length === 3);
+	check("…and kept the host's bot", await p2.evaluate((id) => !!window.__party.room.getMember(id), keptBot));
+	// The new host plays it: a Connect 4 move gets the bot's answer.
+	await p2.evaluate((id) => {
+		const r = window.__party.room;
+		r.setTeam(r.selfId, "A");
+		r.setTeam(id, "B");
+		for (const m of r.getMembers()) if (m.id !== r.selfId && m.id !== id) r.setTeam(m.id, "spectator");
+		r.setGame("connect4");
+	}, keptBot);
+	await p2.waitForFunction(() => window.__party.handle?.debug?.().started, null, { timeout: TIMEOUT });
+	const c4box = await p2.locator("#board").boundingBox();
+	await p2.mouse.click(c4box.x + c4box.width / 2, c4box.y + c4box.height / 2);
+	const botAnswered = await p2
+		.waitForFunction(() => window.__party.handle.debug().board.flat().filter(Boolean).length === 2, null, { timeout: TIMEOUT })
+		.then(() => true, () => false);
+	check("…which the new host plays", botAnswered);
+	await p2.evaluate((id) => {
+		window.__party.room.setGame(null);
+		window.__party.room.removeMember(id);
+	}, keptBot);
+	await p2.waitForFunction(() => document.querySelectorAll(".party-member").length === 2, undefined, { timeout: TIMEOUT });
 
 	console.log("\nparty: a carried reply that failed");
 	// Between some networks a reply only works if it is carried back within
