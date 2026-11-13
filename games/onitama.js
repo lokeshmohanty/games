@@ -777,6 +777,8 @@ NeonArcade.registerGame({
 		render();
 		begin();
 
+		const leftNames = new Map(); // id -> name, for a leave noticed before taking over
+
 		// The side to move lost connection: say so; the host may pass for them —
 		// the same move a stuck player makes, handing a card over.
 		const stall = NeonArcade.turnWait(ctx, {
@@ -798,7 +800,28 @@ NeonArcade.registerGame({
 				broadcast();
 				render();
 			},
+			/**
+			 * The crown moved to us mid-game. The position came with every
+			 * broadcast, so play on from it: a seated player gone for good
+			 * (the old host, who left while we were not yet refereeing) loses
+			 * as any leaver does; a held seat stays theirs.
+			 */
+			takeOver() {
+				const members = new Set(room.getMembers().map((m) => m.id));
+				const gone = state.seats.findIndex((id) => id && !members.has(id));
+				if (state.started && state.winner === null && gone >= 0) {
+					state.winner = 1 - gone;
+					state.by = "left";
+					state.leaver = leftNames.get(state.seats[gone]) ?? "Your opponent";
+				}
+				broadcast();
+				render();
+				maybeBot();
+				return true;
+			},
 			onPeerLeave(id, info) {
+				// Remembered even by a guest: it may be the one that takes over.
+				if (info?.name) leftNames.set(id, info.name);
 				if (!ctx.isHost) return;
 				// A seated player gone for good mid-game: the one still sitting wins.
 				const side = state.seats.indexOf(id);

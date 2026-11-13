@@ -901,6 +901,27 @@ NeonArcade.registerGame({
 		})();
 
 		return {
+			/**
+			 * The crown moved to us mid-auction. Credits, gems and results came
+			 * with every broadcast; the sealed bids — the bots', and whatever was
+			 * collected for the lot under way — went with the old host. So the
+			 * lot that was not yet settled opens for bidding again (Lokesh,
+			 * 2026-11-13); everything settled stands.
+			 */
+			takeOver() {
+				if (over || !game) {
+					pushState();
+					return !!over;
+				}
+				settledLot = game.lot - 1;
+				settling = false;
+				botPrep = { lot: -1, promise: Promise.resolve() };
+				botCommits = {};
+				if (game.lot >= LOTS) return false;
+				if (!rounds.adopt({ round: game.lot, index: 0 })) return false;
+				pushState();
+				return true;
+			},
 			onPeerJoin() {
 				if (!ctx.isHost) return;
 				pushState();

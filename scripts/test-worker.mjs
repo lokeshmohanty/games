@@ -41,6 +41,8 @@
  *      own party reconnects the seat, and going offline says so.
  *  13. a game page opens a party (code, quick start, START GAME), and a
  *      reload mid-game rejoins it; another game page moves on.
+ *  14. the host goes mid-game: in each game the heir carries it on from
+ *      what everyone was sent (Battleship ends with a word).
  *
  * Wrangler comes from $WRANGLER (a command line), else `wrangler` on PATH,
  * else `nix shell nixpkgs#wrangler` (npx wrangler cannot link workerd on
@@ -1231,6 +1233,154 @@ try {
 		const title = await g.locator(".lobby-title", { hasText: "TIGER" }).or(g.locator(".lobby-title", { hasText: "ONITAMA" })).first().waitFor({ timeout: TIMEOUT }).then(() => true, () => false);
 		check("…and opens a new party for that game", title);
 		for (const p of [h, g]) await p.context().close();
+	}
+	// ----------------- 14. the host goes mid-game: the heir carries it on
+	// Every game keeps its state on the host, and each was sent to everyone.
+	// When the host's tab closes, the heir takes the game over from that —
+	// the old host's seat held like any lost player's — or, for Battleship,
+	// whose bots' fleets left with the host, ends it with a word.
+	console.log("\nworker: the host goes mid-game and the heir carries it on");
+	{
+		const dbgOf = (p) => p.evaluate(() => window.__party.handle?.debug?.() ?? null);
+		const mountedOn = (p, game) =>
+			p.waitForFunction((id) => window.__party?.game === id && !!window.__party.handle, game, { timeout: TIMEOUT }).then(() => true, () => false);
+		async function trio(game, teamsOf) {
+			const [h, a, b] = [await person(`ho-${game}-h`), await person(`ho-${game}-a`), await person(`ho-${game}-b`)];
+			for (const p of [h, a, b]) {
+				await p.addInitScript(() => {
+					window.NeonArcade = window.NeonArcade || {};
+					window.NeonArcade.turnWaitMs = 3000;
+				});
+			}
+			const t = await host(h);
+			const joined = (await joinByCode(a, t.code)) && (await joinByCode(b, t.code)) && (await waitForMembers(h, 3));
+			const id = (p) => p.evaluate(() => window.__party.room.selfId);
+			const ids = { h: await id(h), a: await id(a), b: await id(b) };
+			await h.evaluate(({ game, teams }) => {
+				const r = window.__party.room;
+				for (const [m, team] of Object.entries(teams)) r.setTeam(m, team);
+				r.setGame(game);
+			}, { game, teams: teamsOf(ids) });
+			const up = joined && (await mountedOn(h, game)) && (await mountedOn(a, game)) && (await mountedOn(b, game));
+			return { h, a, b, ids, up };
+		}
+		const goes = async (t, game, label) => {
+			const kept = toastWait(t.a, /You are the host now — .+ goes on\./);
+			const told = toastWait(t.b, /carries .+ on\./);
+			await t.h.close();
+			check(`${label}: the heir takes it over, and says so`, await kept);
+			check(`${label}: …and the others are told`, await told);
+			check(`${label}: …still playing it`, (await t.b.evaluate(() => window.__party.game)) === game && (await t.a.evaluate(() => window.__party.room.isHost())));
+		};
+		const done = async (t) => {
+			for (const p of [t.a, t.b]) await p.context().close();
+			await t.h.context().close().catch(() => {});
+		};
+		function toastWait(p, re) {
+			return p.locator(".neon-toast", { hasText: re }).first().waitFor({ timeout: 20_000 }).then(() => true, () => false);
+		}
+		const oneVsOne = (ids) => ({ [ids.h]: "A", [ids.a]: "B", [ids.b]: "spectator" });
+		const everyone = (ids) => ({ [ids.h]: "A", [ids.a]: "A", [ids.b]: "A" });
+
+		// Connect 4: the host moves, goes; the heir answers and the board holds.
+		let t = await trio("connect4", oneVsOne);
+		check("connect 4: (three in, the game up)", t.up);
+		const box = await t.h.locator("#board").boundingBox();
+		await t.h.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
+		await t.a.waitForFunction(() => window.__party.handle.debug().turn === 2, null, { timeout: TIMEOUT });
+		await goes(t, "connect4", "connect 4");
+		const abox = await t.a.locator("#board").boundingBox();
+		await t.a.mouse.click(abox.x + abox.width / 3, abox.y + abox.height / 2);
+		const both = await t.b
+			.waitForFunction(() => window.__party.handle.debug().board.flat().filter(Boolean).length === 2, null, { timeout: TIMEOUT })
+			.then(() => true, () => false);
+		check("connect 4: the heir's move lands on top of the host's", both);
+		check("connect 4: …and the departed host's turn waits for them, as for anyone lost", await t.a.locator(".turn-wait:not([hidden])").first().waitFor({ timeout: 15_000 }).then(() => true, () => false));
+		await done(t);
+
+		// Onitama: one move, the host goes, the position stands.
+		t = await trio("onitama", oneVsOne);
+		check("onitama: (three in, the game up)", t.up);
+		const before = JSON.stringify((await dbgOf(t.b))?.board);
+		await goes(t, "onitama", "onitama");
+		const oni = await dbgOf(t.a);
+		check("onitama: the heir holds the same position, the game unfinished", JSON.stringify(oni?.board) === before && oni.winner === null, JSON.stringify(oni).slice(0, 160));
+		await done(t);
+
+		// Light cycles: the round restarts under the heir, wins carried.
+		t = await trio("light-cycles", everyone);
+		check("light cycles: (three in, the game up)", t.up);
+		await goes(t, "light-cycles", "light cycles");
+		const racing = await t.b.waitForFunction(() => window.__party.handle.debug().racing, null, { timeout: 20_000 }).then(() => true, () => false);
+		check("light cycles: a new round races under the heir", racing);
+		await done(t);
+
+		// Neon survival: the swarm keeps coming.
+		t = await trio("neon-survival-mp", everyone);
+		check("neon survival: (three in, the game up)", t.up);
+		await goes(t, "neon-survival-mp", "neon survival");
+		// After the heir's 3-2-1 (the old host was out of the app, as a closed
+		// tab is), the swarm spawns and moves again for everyone.
+		const swarm = () => t.b.evaluate(() => JSON.stringify(window.enemies?.map((e) => [Math.round(e.x), Math.round(e.y)]) ?? []));
+		await t.b.waitForFunction(() => (window.enemies?.length ?? 0) > 0, null, { timeout: 15_000 }).catch(() => {});
+		const e0 = await swarm();
+		await t.b.waitForTimeout(1000);
+		const e1 = await swarm();
+		check("neon survival: the swarm still comes, and moves, for the others", e0 !== "[]" && e0 !== e1, `${e0.slice(0, 60)} / ${e1.slice(0, 60)}`);
+		await done(t);
+
+		// Draw & guess: the clock goes on under the heir.
+		t = await trio("draw-guess", everyone);
+		check("draw & guess: (three in, the game up)", t.up);
+		await t.b.waitForFunction(() => ["choosing", "drawing"].includes(window.__party.handle.debug().phase), null, { timeout: TIMEOUT });
+		await goes(t, "draw-guess", "draw & guess");
+		const drawing = await t.a
+			.waitForFunction(() => {
+				const d = window.__party.handle.debug();
+				return d.phase === "drawing" && !!d.word;
+			}, null, { timeout: 20_000 })
+			.then(() => true, () => false);
+		check("draw & guess: the heir runs a round it knows the word of", drawing);
+		await done(t);
+
+		// Liar's dice: the round is rolled again, everyone keeping their dice.
+		t = await trio("liars-dice", everyone);
+		check("liar's dice: (three in, the game up)", t.up);
+		await t.b.waitForFunction(() => window.__party.handle.debug().phase === "bid", null, { timeout: TIMEOUT });
+		await goes(t, "liars-dice", "liar's dice");
+		const rerolled = await t.b
+			.waitForFunction(() => {
+				const d = window.__party.handle.debug();
+				return d.phase === "bid" && d.committed && d.myDice === 5;
+			}, null, { timeout: 25_000 })
+			.then(() => true, () => false);
+		check("liar's dice: a fresh roll, committed, five dice still", rerolled, JSON.stringify(await dbgOf(t.b)).slice(0, 200));
+		await done(t);
+
+		// Neon bid: the lot under way opens again; nothing settled is lost.
+		t = await trio("neon-bid", everyone);
+		check("neon bid: (three in, the game up)", t.up);
+		await t.b.waitForFunction(() => window.__party.handle.debug().phase === "bid", null, { timeout: TIMEOUT });
+		await t.b.locator(".nb-go").click();
+		await goes(t, "neon-bid", "neon bid");
+		const reopened = await t.b
+			.waitForFunction(() => {
+				const d = window.__party.handle.debug();
+				return d.phase === "bid" && d.lot === 0 && !d.committed && d.players.every((p) => p.credits === 100);
+			}, null, { timeout: 20_000 })
+			.then(() => true, () => false);
+		check("neon bid: the first lot is open again, bids unsealed, credits whole", reopened, JSON.stringify(await dbgOf(t.b)).slice(0, 200));
+		await done(t);
+
+		// Battleship: the host's fleet went with it; the game ends with a word.
+		t = await trio("battleship", oneVsOne);
+		check("battleship: (three in, the game up)", t.up);
+		// "The host changed…" while the old host's seat is held, "…left" once not.
+		const ended = toastWait(t.b, /so the game ended/);
+		await t.h.close();
+		check("battleship: cannot be carried on, so it ends and says so", await ended);
+		check("battleship: …everyone back on the party screen", await t.b.waitForFunction(() => window.__party.game === null, null, { timeout: TIMEOUT }).then(() => true, () => false));
+		await done(t);
 	}
 } catch (err) {
 	console.log(`  FAIL ${err.stack ?? err}`);

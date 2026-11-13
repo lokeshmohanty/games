@@ -974,7 +974,8 @@ try {
 
 	console.log("\nleaving: a game page whose host goes says so");
 	// A game page opens a party, so the guest is never stranded: the crown
-	// passes to them, and a game the host was running ends with a word.
+	// passes to them, and a game the host was running is handed over — here
+	// with the host gone for good, so the one still sitting wins it.
 	for (const midGame of [true, false]) {
 		const pair = await newContext();
 		const [hostP, guestP] = [await pair.newPage(), await pair.newPage()];
@@ -999,7 +1000,7 @@ try {
 			await guestP.waitForFunction(() => window.__game?.handle, null, { timeout: TIMEOUT });
 		}
 		await hostP.close();
-		const msg = midGame ? "The host left, so the game ended." : "You are the host now.";
+		const msg = midGame ? "You are the host now — CONNECT 4 goes on." : "You are the host now.";
 		const told = await guestP
 			.locator(".neon-toast", { hasText: msg })
 			.waitFor({ timeout: TIMEOUT })
@@ -1007,9 +1008,22 @@ try {
 			.catch(() => false);
 		check(`${midGame ? "mid-game" : "before START"}: the guest is told (${msg})`, told);
 		const after = await guestP
-			.waitForFunction(() => window.__game.game === null && !document.getElementById("party").hidden && window.__game.room.isHost(), null, { timeout: TIMEOUT })
+			.waitForFunction(
+				(mid) => {
+					const g = window.__game;
+					if (!g.room.isHost()) return false;
+					if (!mid) return g.game === null && !document.getElementById("party").hidden;
+					const d = g.handle?.debug?.();
+					return g.game === "connect4" && d?.winner === (d.yellow === g.room.selfId ? 2 : 1);
+				},
+				midGame,
+				{ timeout: TIMEOUT },
+			)
 			.then(() => true, () => false);
-		check("…and holds the party, back on its screen, not on a frozen board", after);
+		check(
+			midGame ? "…holds the game, and wins it: the other side left for good" : "…and holds the party, back on its screen",
+			after,
+		);
 		await pair.close();
 	}
 

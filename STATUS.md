@@ -36,8 +36,10 @@ Audit backlog (2026-11-12), owner to pick — highest first:
       `goJoinCode` removed. test-worker 13, test-bots (ported, kept off the
       deployed server), test-room (scripts/room-harness.html). Preview gifs not
       re-recorded (the recorder is ported; new clips would show the PARTY pill).
-- [ ] Maybe: hand a game over instead of ending it (needs per-game state
-      transfer; `ctx.isHost` is a snapshot, games.js:156).
+- [x] A crown change hands the running game over (`takeOver()` per game,
+      `rounds.adopt()`); the old host's seat is held; hidden-info games resume
+      at a clean point; Battleship still ends (Lokesh, 2026-11-13; test-worker
+      14, test-party).
 - [x] Returner after reload re-synced: party shell's mounted notice →
       host's `onPeerJoin(id, {back})`; draw & guess replays the canvas and
       re-announces its clock (2026-11-12, test-worker 10).

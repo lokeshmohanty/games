@@ -834,6 +834,23 @@ NeonArcade.registerGame({
 		startGame();
 
 		return {
+			/**
+			 * The crown moved to us mid-run. The swarm, the gems and the score came
+			 * with every broadcast; the bots' ships were steered on the old host,
+			 * so take them over from where they were last seen, and carry on.
+			 */
+			takeOver() {
+				for (const id of ctx.botSeats()) {
+					const seen = peers[id];
+					if (seen && !botShips[id]) {
+						botShips[id] = { x: seen.x, y: seen.y, alive: seen.alive !== false, color: colorFor(id) };
+					}
+				}
+				syncBotShips();
+				lastSpawn = performance.now();
+				broadcastState();
+				return true;
+			},
 			onPeerJoin(peerId) {
 				if (!isPlaying(peerId)) return;
 				peers[peerId] = {

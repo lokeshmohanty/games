@@ -526,6 +526,16 @@ NeonArcade.registerGame({
 		return {
 			onPeerJoin: rosterChanged,
 			onPeerLeave: rosterChanged,
+			/**
+			 * The crown moved to us mid-game. The whole board came with every
+			 * broadcast, so carry on: re-seat (a host gone for good loses, as
+			 * any player who leaves does; a held seat stays theirs), publish,
+			 * and play the bot if it is its move.
+			 */
+			takeOver() {
+				rosterChanged(null);
+				return true;
+			},
 			/** A copy of the authoritative board, for scripts/test-bots.mjs. */
 			debug: () => ({ ...state, board: state.board.map((r) => [...r]) }),
 			/** Team assignments changed in the party screen mid-game. */

@@ -820,6 +820,21 @@ NeonArcade.registerGame({
 		});
 
 		return {
+			/**
+			 * The crown moved to us mid-game. Dice counts and turns came with every
+			 * broadcast, but the bots' cups lived on the old host, and a bid
+			 * against cups nobody can open settles nothing — so the round is
+			 * rolled again (Lokesh, 2026-11-13), everyone keeping their dice.
+			 */
+			takeOver() {
+				if (over) {
+					pushState();
+					return true;
+				}
+				if (!rounds.adopt({ index: 0 })) return false;
+				pushState();
+				return true;
+			},
 			onPeerJoin() {
 				if (!ctx.isHost) return;
 				pushState();

@@ -695,8 +695,8 @@ try {
 	await p4.close();
 
 	console.log("\nparty: losing the host");
-	// Mid-game: the game's state was the host's, so it ends, and says so.
-	// With a bot, which must stay for the next host to play.
+	// Mid-game: the heir takes the game over from what everyone was sent, and
+	// says so. With a bot, which must stay for the next host to play.
 	const keptBot = await host.evaluate(() => window.__party.room.addBot("B"));
 	await host.evaluate(() => window.__party.room.setGame("tug-of-war"));
 	for (const page of [host, p2, p3]) await page.locator("#tug-canvas").waitFor({ timeout: TIMEOUT });
@@ -706,18 +706,25 @@ try {
 		toastOn(p2, "You are the host now."),
 		toastOn(p3, `${p2Name} is the host now.`),
 		toastOn(p3, `${hostName} lost connection and left the party.`),
-		toastOn(p3, "The host left, so the game ended."),
+		toastOn(p2, "You are the host now — TUG OF WAR goes on."),
+		toastOn(p3, `${p2Name} carries TUG OF WAR on.`),
 	]);
 	await host.close();
-	const [heirTold, restTold, dropTold, endTold] = await told;
-	check("a game the host was running ends, and everyone is told why", endTold);
-	check(
-		"…and everyone is back on the party screen",
-		await p3
-			.waitForFunction(() => window.__party.game === null && !document.getElementById("party").hidden, null, { timeout: TIMEOUT })
-			.then(() => true)
-			.catch(() => false),
-	);
+	const [heirTold, restTold, dropTold, keptTold, restKept] = await told;
+	check("a game the host was running goes on under the heir, who is told", keptTold);
+	check("…and so is everyone else", restKept);
+	const pullsNow = () => p2.evaluate(() => window.__party.handle.debug().pulls);
+	const p0 = await pullsNow();
+	for (let i = 0; i < 4; i++) await p3.locator("#tug-tap").dispatchEvent("pointerdown");
+	const pulled = await p2
+		.waitForFunction((n) => {
+			const d = window.__party.handle.debug().pulls;
+			return d.A + d.B > n;
+		}, p0.A + p0.B, { timeout: 8000 })
+		.then(() => true, () => false);
+	check("…and the new host referees it: a pull lands", pulled && (await p3.evaluate(() => window.__party.game)) === "tug-of-war");
+	await p2.evaluate(() => window.__party.room.setGame(null));
+	await p3.waitForFunction(() => window.__party.game === null && !document.getElementById("party").hidden, null, { timeout: TIMEOUT });
 	check("the heir is told the crown is theirs", heirTold);
 	check("the rest are told who holds it now", restTold);
 	check("…and that the host's connection went, not that they chose to leave", dropTold);

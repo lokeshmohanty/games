@@ -917,6 +917,23 @@ NeonArcade.registerGame({
 				applyPartyNames();
 				updateHud();
 			},
+			/**
+			 * The crown moved to us mid-game. Scores and the round came with every
+			 * broadcast; the clock is adopted from our mirror of it. The word is
+			 * the one thing that may not have: only the drawer and the old host
+			 * knew it before the reveal. Knowing it, the round goes on; not
+			 * knowing it, the round starts again from choosing, with a new word.
+			 */
+			takeOver() {
+				if (phase === "gameover") {
+					endGame();
+					return true;
+				}
+				const known = phase === "reveal" || (drawerId === room.selfId && !!currentWord);
+				const ok = known ? rounds?.adopt() : rounds?.adopt({ index: 0 });
+				if (ok) broadcastState();
+				return !!ok;
+			},
 			/** The live round, for the tests. */
 			debug: () => ({
 				phase,

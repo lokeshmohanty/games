@@ -107,6 +107,8 @@ repo over `http://127.0.0.1`; `file://` and `http://<lan-ip>` will not do.
   a stalled turn waits 30 s, then the host decides),
   and the back-button guard's browser traps (gesture-gated history entries,
   popstate on fragment links, Playwright skipping `beforeunload`).
+- `memory/handover.md` — how a running game survives its host leaving: the
+  per-game `takeOver`, `rounds.adopt` and its epoch, and what each game loses.
 - `memory/game-pages-are-party-shortcuts.md` — why game pages redirect into
   `party.html?game=`, the quick start, and keeping tests off production.
 - `memory/reload-mid-game.md` — how a returner gets the running game back

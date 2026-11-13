@@ -661,6 +661,17 @@
 			if (ctx.isHost) newRound();
 
 			return {
+				/**
+				 * The crown moved to us. A race runs on the host's clock tick by
+				 * tick, and a half-run one cannot be picked up fairly, so the round
+				 * starts again; everyone's wins carry over (`seat` keeps them).
+				 */
+				takeOver() {
+					clearInterval(countTimer);
+					clearInterval(tickTimer);
+					newRound();
+					return true;
+				},
 				onPeerJoin() {
 					if (!ctx.isHost) return;
 					// Mid-round arrivals watch this one out: dropping a rider into a

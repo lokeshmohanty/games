@@ -23,7 +23,7 @@ handshake per person and nothing else.
 - **`qr.js`** — `NeonArcade.qrCanvas()`: a self-contained QR encoder, so invites can be scanned instead of typed.
 - **`qr-decode.js`** — `NeonArcade.qrDecode()` / `scanQr()`: a self-contained QR *decoder* plus a camera scanner.
 - **`secrets.js`** — `NeonArcade.makeSecrets(room)`: sealed private channels (so a *relaying player* cannot read a dealt secret) and commit-reveal (so the host cannot either), with `keep`/`kept` so a commitment survives a reload of the tab. Optional. `games/battleship.js` is the worked example for commit-reveal, where verifying the digest is only half the check; **no game currently uses the sealed channel** — see `docs/index.md` for why.
-- **`rounds.js`** — `NeonArcade.makeRounds(ctx, spec)`: the host-owned round/phase clock, including `collect` phases that end when everyone has submitted and `next()` for a phase that ends on a game event. Optional. `games/draw-guess.js` is the game it was generalised from and now runs on.
+- **`rounds.js`** — `NeonArcade.makeRounds(ctx, spec)`: the host-owned round/phase clock, including `collect` phases that end when everyone has submitted, `next()` for a phase that ends on a game event, and `adopt({ round, index })` for a new host taking the clock over (a restarted phase is new to everyone, even at the same round and index). Optional. `games/draw-guess.js` is the game it was generalised from and now runs on.
 - **`ui.js`** — `NeonArcade.gameShell(root, opts)`: the stage, status line and overlay every game was rebuilding. Optional, but new games should use it.
 
 A game registered with `local: true` (`games/undercover.js`) is played by people in one room on one device: `checkRoster` stops enforcing seats and the lobby offers a plain START. See `docs/index.md` → "Games played on one device".
@@ -130,6 +130,11 @@ NeonArcade.registerGame({
 — a `requestAnimationFrame` loop, an interval, a window listener — will fight
 the next game for input. Optional `onPeerJoin` / `onPeerLeave` / `onRoster`
 handlers on the same object are called when the party changes under you.
+Optional `takeOver()`: the crown moved to this browser mid-game (`ctx.isHost`
+is already true when it runs). Become the referee from the state you were
+sent — start the host's timers, play the bots, reconcile seats whose owner is
+gone for good, publish — and return `true`; return `false` (or leave it out)
+and the game ends as before. Round-clock games call `rounds.adopt()`.
 `onPeerLeave(id, { name, reason })` gets the departed member's name — they are
 already out of the roster, so `nameOf(id)` no longer knows it — and how they
 went: `"left"` (on purpose), `"dropped"` (lost, not back within the grace),

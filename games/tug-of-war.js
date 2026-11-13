@@ -478,6 +478,22 @@ NeonArcade.registerGame({
 		return {
 			/** A copy of the live round, for scripts/test-bots.mjs. */
 			debug: () => ({ ...state, pulls: { ...state.pulls } }),
+			/**
+			 * The crown moved to us mid-pull. The rope's position came with every
+			 * broadcast; only its momentum is lost. Start the clocks the host
+			 * runs and carry on.
+			 */
+			takeOver() {
+				vel = 0;
+				botDue.clear();
+				clearInterval(stateTimer);
+				clearInterval(botTimer);
+				stateTimer = setInterval(() => broadcast(), STATE_MS);
+				botTimer = setInterval(botTick, BOT_TICK_MS);
+				broadcast();
+				updateTapButton();
+				return true;
+			},
 			onPeerJoin(peerId) {
 				renderRosters();
 				// Bring the newcomer straight to the current round.

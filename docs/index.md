@@ -273,10 +273,10 @@ they are the whole design:
    the host owns the board, the knot, the swarm — so the side that plays a bot
    is the side that was refereeing anyway. A bot's move is applied through the
    same function a person's tap goes through, and the broadcast that follows is
-   indistinguishable. When the crown moves the bots stay: the running game
-   ends anyway (a crown change ends it), and the new host plays them from the
-   next one. They used to be dropped, which cost the party its bots every
-   time a host's connection blinked.
+   indistinguishable. When the crown moves the bots stay, and the new host
+   plays them — from the running game if it is handed over (below, Honest
+   gaps), else from the next one. They used to be dropped, which cost the
+   party its bots every time a host's connection blinked.
 
 Bot ids are prefixed `bot_` so the **routing** code can recognise one from an id
 alone, without consulting the record. That matters in four places in `net.js`,
@@ -718,14 +718,23 @@ the favicon via `<link rel="icon">`.
   kept alive 250 ms to drain. A page that navigates away instantly may cut it
   off, and the peers then fall back to the probe (and, for a room-server
   member, the reconnect grace).
-- `lib/rounds.js` does not survive host succession, and neither does any game:
-  each keeps its state on the host that started it. So a crown that moves
-  under a running game **ends it** — on the party screen the new host sets the
-  game to none 1.5 s after the move (a flicker that settles back ends nothing)
-  and everyone is told "The host left, so the game ended." (Game pages open
-  parties now, so this is the only path.) Nothing *resumes*
-  a game in progress. A room-server host that merely lost its connection loses
-  the game too, since the crown does not wait out the reconnect grace.
+- **A crown that moves under a running game hands it over** (2026-11-13). Every
+  game keeps its state on its host, but each sends it to everyone, so 1.5 s
+  after the move (a flicker that settles back changes nothing) the new host
+  calls the game's `takeOver()` and carries on from what it was sent; the old
+  host's seat is held like any lost player's (the turn banner covers a turn
+  of theirs), and an old host whose tab survived the blip remounts as a guest.
+  What is lost is whatever lived only on the old host, so: Connect 4, Onitama
+  and Tug of War (its rope's momentum aside) continue where they were; Light
+  Cycles restarts the round, wins kept; Neon Survival takes the bots' ships
+  over from where they were last seen; Draw & Guess goes on if the new host
+  knows the word, else restarts the round with a new one; Liar's Dice re-rolls
+  the round, dice kept; Neon Bid reopens the unsettled lot, credits and gems
+  kept (Lokesh's choices). **Battleship ends** ("…so the game ended."): the
+  bots' fleets left with the old host. Undercover is one device. Not covered:
+  a game's in-flight message the old host never relayed; Neon Survival's
+  first seconds under the new host include the 3-2-1 (the old host's closed
+  tab read as out of the app). test-worker 14, test-party.
 - **Battleship's audit is never triggered in real play**, because no player here
   can cheat: every client runs the same honest `answerShot`. The audit is tested
   against deliberately corrupted answers, which is the right test, but a genuine
