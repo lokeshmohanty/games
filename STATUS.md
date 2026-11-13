@@ -23,10 +23,13 @@ left, tabs), contribute.html (CONTRIBUTING.md rendered), contributors.html
 auto-merged). arcade-games branch `themes`: palette + contributor.json.
 Published 2026-11-13: games main 9f3c0bd (site deployed, checked live in
 both themes), arcade-games main 4ae4d37. The site still pins arcade-games
-efabb70 (old colours) until the first bump PR — which needs Lokesh to enable
-"Allow GitHub Actions to create and approve pull requests" (Settings →
-Actions → General); then registry-bump.yml opens it within 30 min, checks
-it, and (trusted owner) merges and deploys.
+efabb70 (old colours).
+Then (branch `propose`, not pushed): Lokesh dropped the bump workflow — PRs
+are the contributor's; `just propose` / the site's Propose form and Check
+for updates open GitHub's page filled in; merge → deploy.yml. Cards: PLAY
+WITH BOTS / PLAY WITH FRIENDS on hover or tap, no PLAY NOW.
+Next: Lokesh opens the arcade-games pin PR himself (edit link from `just
+propose lokeshmohanty/arcade-games`).
 
 ## Phases 1–6 (2026-11-13) — merged, site and Worker deployed (b35232de)
 
