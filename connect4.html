@@ -2,12 +2,20 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta
-      name="viewport"
-      content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"
-    />
-    <title>Connect 4 — P2P</title>
-    <!-- Installable: manifest + icons, registered by lib/pwa.js. -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Connect 4 — Arcade Games</title>
+    <!--
+      A shortcut into the party shell with Connect 4 picked (Lokesh, 2026-11-13:
+      game pages are party shortcuts). It used to carry its own two-player
+      lobby, with no join by code and no way back after a reload; the party
+      shell has both, and every game is one code path now. This page stays so
+      that links, bookmarks and home-screen shortcuts keep working: it
+      redirects with `location.replace` (no back-button entry), keeping the
+      query (a test's `?mockroom` or loopback `?rs=`) and any `#i=`/`#c=`
+      link, which the party joins instead of starting fresh.
+    -->
+    <link rel="canonical" href="party.html?game=connect4" />
+    <meta http-equiv="refresh" content="0; url=party.html?game=connect4&amp;fresh=1" />
     <link rel="manifest" href="manifest.webmanifest" />
     <meta name="theme-color" content="#0a0a0a" />
     <link rel="icon" href="assets/icon.svg" type="image/svg+xml" />
@@ -19,30 +27,21 @@
     <link rel="stylesheet" href="lib/styles.css" />
   </head>
   <body>
-    <!--
-      A deep link straight into one game. The game itself lives in
-      games/connect4.js and is mounted here exactly as party.html mounts
-      it; this page only supplies the two-player lobby around it.
-    -->
-    <a class="portal-link" href="index.html">&#8592; All games</a>
-    <div id="lobby"></div>
-    <div id="stage" hidden></div>
-
+    <div class="lobby">
+      <h1 class="lobby-title">CONNECT 4</h1>
+      <p class="lobby-sub">Opening the game…</p>
+      <div class="lobby-row">
+        <a class="neon-btn neon-btn--accent" href="party.html?game=connect4&amp;fresh=1">PLAY CONNECT 4</a>
+        <a class="neon-btn" href="index.html">ALL GAMES</a>
+      </div>
+    </div>
     <script src="lib/pwa.js"></script>
-    <script src="lib/qr.js"></script>
-    <script src="lib/qr-decode.js"></script>
-    <script src="lib/net.js"></script>
-    <script src="lib/room-join.js"></script>
-    <script src="lib/games.js"></script>
-    <script src="lib/lobby.js"></script>
-    <script src="games/connect4.js"></script>
     <script>
-      // Exposed so scripts/test-bots.mjs can inspect the live room and game.
-      window.__game = NeonArcade.mountGamePage(
-        document.getElementById("lobby"),
-        document.getElementById("stage"),
-        "connect4",
-      );
+      const q = new URLSearchParams(location.search);
+      q.set("game", "connect4");
+      // A fresh visit starts a new party; a carried link joins one.
+      if (!location.hash) q.set("fresh", "1");
+      location.replace("party.html?" + q + location.hash);
     </script>
   </body>
 </html>

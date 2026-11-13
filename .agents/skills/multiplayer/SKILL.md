@@ -19,7 +19,8 @@ flows peer-to-peer over WebRTC data channels. See
 ## Read these first, do not re-derive them
 
 - [`lib/README.md`](../../../lib/README.md) — the API: room controller,
-  `registerGame`, `mountParty`, `mountLobby`, `scanQr`, the topology, the
+  `registerGame`, `mountParty` (and its `?game=` quick start, which game
+  pages redirect to), `scanQr`, the topology, the
   connectivity rules.
 - [`docs/index.md`](../../../docs/index.md) — how a handshake is paid once per
   person, parties and succession, and the **Honest gaps** section, which is the
@@ -106,6 +107,8 @@ repo over `http://127.0.0.1`; `file://` and `http://<lan-ip>` will not do.
   a stalled turn waits 30 s, then the host decides),
   and the back-button guard's browser traps (gesture-gated history entries,
   popstate on fragment links, Playwright skipping `beforeunload`).
+- `memory/game-pages-are-party-shortcuts.md` — why game pages redirect into
+  `party.html?game=`, the quick start, and keeping tests off production.
 - `memory/reload-mid-game.md` — how a returner gets the running game back
   (the party shell's mounted notice, `secrets.keep/kept` checked against the
   published digest), and why net.js's own re-announce cannot be relied on.

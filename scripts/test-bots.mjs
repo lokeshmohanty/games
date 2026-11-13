@@ -89,7 +89,24 @@ const browser = await chromium.launch({
 	executablePath: chromePath(),
 	args: ["--no-sandbox", "--autoplay-policy=no-user-gesture-required"],
 });
-const context = await browser.newContext({ viewport: { width: 390, height: 844 } });
+/**
+ * A context whose pages never reach the deployed room server. Game pages
+ * open parties now, and a party probes the room server: left alone, every
+ * run would host real parties on production — spending this address's
+ * hosting budget — and leave rejoin tokens that the next page's fresh start
+ * then has to release. An unreachable loopback server keeps every party
+ * here classic, as the game pages always were.
+ */
+async function newContext() {
+	const ctx = await browser.newContext({ viewport: { width: 390, height: 844 } });
+	await ctx.addInitScript(() => {
+		try {
+			localStorage.setItem("neon.rs", "http://127.0.0.1:9");
+		} catch {}
+	});
+	return ctx;
+}
+const context = await newContext();
 const page = await context.newPage();
 page.on("pageerror", (err) => {
 	console.log(`  FAIL page error: ${err.message}`);
@@ -119,7 +136,8 @@ try {
 
 	console.log("\nlocal: undercover needs no second device");
 	await page.goto(url("undercover.html"));
-	const lobbyButtons = await page.locator("#lobby button").allTextContents();
+	await page.locator("#party button").first().waitFor({ timeout: TIMEOUT });
+	const lobbyButtons = await page.locator("#party button").allTextContents();
 	check("the lobby asks for nothing but START", lobbyButtons.join() === "START", JSON.stringify(lobbyButtons));
 
 	await page.locator("button", { hasText: "START" }).first().click();
@@ -629,7 +647,25 @@ try {
 	check("the bot did not answer instantly with nonsense", oni.pieces >= 8 && oni.masters === 2, `${oni.pieces}/${oni.masters}`);
 
 	console.log("\nbots: connect 4 plays a real opponent");
-	await startSolo(page, "connect4.html", "PLAY A BOT");
+	// The game page is a party shortcut; its quick start must suit a phone.
+	await page.goto(url("connect4.html"));
+	await page.locator("button", { hasText: "PLAY A BOT" }).first().click();
+	await page.locator("button", { hasText: "START GAME" }).first().waitFor({ timeout: TIMEOUT });
+	const quickFit = await page.evaluate(() => {
+		const btns = [...document.querySelectorAll(".party-quick button")].map((b) => b.getBoundingClientRect());
+		return {
+			labels: [...document.querySelectorAll(".party-quick button")].map((b) => b.textContent),
+			left: Math.min(...btns.map((b) => b.left)),
+			right: Math.max(...btns.map((b) => b.right)),
+			bottom: Math.max(...btns.map((b) => b.bottom)),
+			minH: Math.min(...btns.map((b) => b.height)),
+			doc: document.documentElement.scrollWidth,
+		};
+	});
+	check("the quick start offers ADD BOT, REMOVE BOT, INVITE A FRIEND, START GAME", quickFit.labels.join() === "ADD BOT,REMOVE BOT,INVITE A FRIEND,START GAME", quickFit.labels.join());
+	check("…all on the phone's screen, 44px tall, no sideways scroll", quickFit.left >= 0 && quickFit.right <= 390 && quickFit.bottom <= 844 && quickFit.minH >= 44 && quickFit.doc <= 390, JSON.stringify(quickFit));
+	await page.locator("button", { hasText: "START GAME" }).first().click();
+	await page.waitForFunction(() => window.__game?.handle, null, { timeout: TIMEOUT });
 
 	let state = await debug(page);
 	check("a bot took the second seat", state.red !== null && state.yellow !== null);
@@ -810,7 +846,7 @@ try {
 	// a phone. Same rule as the party screen (scripts/test-party.mjs).
 	console.log("\nbots: a game-page reply that failed says so, and offers a new one");
 	{
-		const pair = await browser.newContext({ viewport: { width: 390, height: 844 } });
+		const pair = await newContext();
 		// The replier's *first* reply is also kept from ever reaching the
 		// inviter (the invite's candidates are stripped before it is
 		// answered), as across the networks this models: on loopback its
@@ -851,7 +887,7 @@ try {
 		const replyBox = replier.locator("textarea.share-code").first();
 		await replyBox.waitFor({ timeout: TIMEOUT });
 		const firstReply = await replyBox.inputValue();
-		const hint = (await replier.locator("#lobby .share-hint").first().textContent()) ?? "";
+		const hint = (await replier.locator("#party .share-hint", { hasText: /right away/i }).first().textContent().catch(() => "")) ?? "";
 		check("the reply screen says to send it back right away", /right away/i.test(hint) && /15 seconds/.test(hint), hint);
 		await replier.evaluate(() => {
 			for (const pc of window.__pcs) {
@@ -906,13 +942,15 @@ try {
 		await inviter.locator("textarea.share-code").last().fill(secondReply ?? "");
 		await inviter.locator("button.neon-btn", { hasText: /^CONNECT$/ }).first().click();
 		const linked = await replier
-			.waitForFunction(() => /Connected/.test(document.querySelector(".lobby-status")?.textContent ?? ""), null, { timeout: TIMEOUT })
+			.locator(".party-member")
+			.nth(1)
+			.waitFor({ timeout: TIMEOUT })
 			.then(() => true)
 			.catch(() => false);
 		check("…and the new reply connects", linked);
 
-		// A game page is a party of its own: walking off it with somebody
-		// else in it asks first, and they are told.
+		// A game page opens a party: walking off it with somebody else in it
+		// asks first, and they are told.
 		const guestName = await replier.evaluate(() => window.__game.room.self().name);
 		await replier.locator("a.portal-link").click();
 		const asked = await replier
@@ -935,10 +973,10 @@ try {
 	}
 
 	console.log("\nleaving: a game page whose host goes says so");
-	// A game page has no party screen to fall back to: the guest used to sit
-	// on a board — or on "waiting for the host" — that would never move again.
+	// A game page opens a party, so the guest is never stranded: the crown
+	// passes to them, and a game the host was running ends with a word.
 	for (const midGame of [true, false]) {
-		const pair = await browser.newContext({ viewport: { width: 390, height: 844 } });
+		const pair = await newContext();
 		const [hostP, guestP] = [await pair.newPage(), await pair.newPage()];
 		for (const p of [hostP, guestP]) {
 			p.on("pageerror", (err) => {
@@ -955,30 +993,23 @@ try {
 		await reply.waitFor({ timeout: TIMEOUT });
 		await hostP.locator("textarea.share-code").last().fill(await reply.inputValue());
 		await hostP.locator("button.neon-btn", { hasText: /^CONNECT$/ }).first().click();
-		await guestP.waitForFunction(() => /Connected/.test(document.querySelector(".lobby-status")?.textContent ?? ""), null, { timeout: TIMEOUT });
+		await guestP.locator(".party-member").nth(1).waitFor({ timeout: TIMEOUT });
 		if (midGame) {
 			await hostP.locator("button", { hasText: "START GAME" }).first().click();
 			await guestP.waitForFunction(() => window.__game?.handle, null, { timeout: TIMEOUT });
 		}
 		await hostP.close();
-		const msg = midGame ? "The host left, so the game ended." : "The host left before the game started.";
+		const msg = midGame ? "The host left, so the game ended." : "You are the host now.";
 		const told = await guestP
 			.locator(".neon-toast", { hasText: msg })
 			.waitFor({ timeout: TIMEOUT })
 			.then(() => true)
 			.catch(() => false);
-		check(`${midGame ? "mid-game" : "before START"}: the guest is told the host left`, told);
-		const after = await guestP.evaluate(() => ({
-			stage: document.getElementById("stage").hidden,
-			handle: !!window.__game.handle,
-			ways: [...document.querySelectorAll("#lobby button, #lobby a.neon-btn")].map((b) => b.textContent),
-			closed: window.__game.room.closed,
-		}));
-		check(
-			"…and lands on a screen with a way on, not a frozen board",
-			after.stage && !after.handle && after.closed && after.ways.includes("HOST A NEW GAME") && after.ways.includes("ALL GAMES"),
-			JSON.stringify(after),
-		);
+		check(`${midGame ? "mid-game" : "before START"}: the guest is told (${msg})`, told);
+		const after = await guestP
+			.waitForFunction(() => window.__game.game === null && !document.getElementById("party").hidden && window.__game.room.isHost(), null, { timeout: TIMEOUT })
+			.then(() => true, () => false);
+		check("…and holds the party, back on its screen, not on a frozen board", after);
 		await pair.close();
 	}
 

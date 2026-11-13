@@ -19,8 +19,8 @@
       `<link rel="canonical">` plus the meta refresh cover the case where
       scripts do not run at all.
     -->
-    <link rel="canonical" href="neon-survival-mp.html" />
-    <meta http-equiv="refresh" content="0; url=neon-survival-mp.html" />
+    <link rel="canonical" href="party.html?game=neon-survival-mp" />
+    <meta http-equiv="refresh" content="0; url=party.html?game=neon-survival-mp&amp;fresh=1" />
     <link rel="manifest" href="manifest.webmanifest" />
     <meta name="theme-color" content="#0a0a0a" />
     <link rel="icon" href="assets/icon.svg" type="image/svg+xml" />
@@ -39,7 +39,7 @@
         or with friends.
       </p>
       <div class="lobby-row">
-        <a class="neon-btn neon-btn--accent" href="neon-survival-mp.html"
+        <a class="neon-btn neon-btn--accent" href="party.html?game=neon-survival-mp&amp;fresh=1"
           >PLAY NEON SURVIVAL</a
         >
         <a class="neon-btn" href="index.html">ALL GAMES</a>
@@ -49,7 +49,7 @@
     <script>
       // Replace rather than assign: BACK from the game should leave the arcade
       // the way it came in, not bounce through this page forever.
-      location.replace("neon-survival-mp.html");
+      location.replace("party.html?game=neon-survival-mp&fresh=1");
     </script>
   </body>
 </html>

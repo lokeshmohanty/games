@@ -72,20 +72,18 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 // ------------------------------------------------------------------ helpers
 
 /**
- * Walk the manual handshake the lobby asks players to perform: the first page
+ * Walk the manual handshake the party asks players to perform: the first page
  * hosts and mints an invite link, each other page opens that link and produces
  * an answer code, and the host pastes it back. There is no signaling server to
- * wait on, so this is deterministic rather than a poll-until-discovered loop.
+ * wait on (the recorder keeps away from it, below), so this is deterministic
+ * rather than a poll-until-discovered loop.
  */
 async function connectPeers(pages, timeoutMs = 30_000) {
 	const [host, ...guests] = pages;
 	for (const [i, guest] of guests.entries()) {
-		// The first invite comes from INVITE A FRIEND on the host-choice screen;
-		// later ones from INVITE ANOTHER once the host flow is already open.
-		const opener = host.locator("button", {
-			hasText: i === 0 ? "INVITE A FRIEND" : "INVITE ANOTHER",
-		});
-		await opener.first().click();
+		// The game page opens the party's quick start: INVITE A FRIEND, every
+		// time — it is offered again once the last invite has connected.
+		await host.locator("button", { hasText: "INVITE A FRIEND" }).first().click();
 
 		const inviteBox = host.locator("textarea.share-code").first();
 		await inviteBox.waitFor({ timeout: timeoutMs });
@@ -102,7 +100,8 @@ async function connectPeers(pages, timeoutMs = 30_000) {
 		await host.locator("textarea.share-code").last().fill(answer);
 		await host.locator("button", { hasText: "CONNECT" }).first().click();
 		await host
-			.locator(".peer", { hasText: "other player" })
+			.locator(".party-member")
+			.nth(i + 1)
 			.waitFor({ timeout: timeoutMs });
 	}
 }
@@ -644,6 +643,13 @@ for (let i = 0; i < spec.peers; i++) {
 	const ctx = await browser.newContext(
 		i === 0 ? { viewport, recordVideo: { dir: outDir, size: viewport } } : { viewport },
 	);
+	// Never the deployed room server: a game page opens a party, and a party
+	// with a reachable server would host a real one per peer per recording.
+	await ctx.addInitScript(() => {
+		try {
+			localStorage.setItem("neon.rs", "http://127.0.0.1:9");
+		} catch {}
+	});
 	contexts.push(ctx);
 	const page = await ctx.newPage();
 	page.on("pageerror", (e) => console.error(`[peer${i}] ${String(e).slice(0, 140)}`));

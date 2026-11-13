@@ -29,7 +29,13 @@ Audit backlog (2026-11-12), owner to pick — highest first:
       after 1.5 s; game page ends the session with a way on). Not resumed:
       games still keep state on the starting host (2026-11-12, test-party,
       test-bots).
-- [ ] Game page: still no room server/rejoin — any reload/blip >~9 s ends it.
+- [x] Game pages are party shortcuts (Lokesh, 2026-11-13): `connect4.html`
+      etc. redirect to `party.html?game=<id>&fresh=1`, a quick start (PLAY A
+      BOT / INVITE A FRIEND / START GAME) then an ordinary party — code, rejoin,
+      PARTY, END GAME, turn banner. `mountLobby` / `mountGamePage` /
+      `goJoinCode` removed. test-worker 13, test-bots (ported, kept off the
+      deployed server), test-room (scripts/room-harness.html). Preview gifs not
+      re-recorded (the recorder is ported; new clips would show the PARTY pill).
 - [ ] Maybe: hand a game over instead of ending it (needs per-game state
       transfer; `ctx.isHost` is a snapshot, games.js:156).
 - [x] Returner after reload re-synced: party shell's mounted notice →

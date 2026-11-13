@@ -95,10 +95,10 @@ page.on("pageerror", (err) => {
 
 try {
 	// ------------------------------------------------------------- setup
-	// A game page, not party.html: the lobby waits for a click before hosting
-	// anything, so the only rooms on this page are the ones the test makes.
-	// party.html hosts on boot, which would be a second, unaccounted room.
-	await page.goto(PAGE("connect4.html", "?mockroom=1"));
+	// The harness, not party.html: nothing is mounted, so the only rooms on
+	// this page are the ones the test makes. party.html hosts on boot, which
+	// would be a second, unaccounted room.
+	await page.goto(PAGE("scripts/room-harness.html", "?mockroom=1"));
 	await page.evaluate(() => {
 		localStorage.removeItem("neon.room");
 		localStorage.removeItem("neon.rs");
@@ -2023,7 +2023,7 @@ try {
 		["http://127.0.0.1.evil.example", false],
 	]) {
 		const probe = await context.newPage();
-		await probe.goto(PAGE("connect4.html", "?rs=" + encodeURIComponent(rs)));
+		await probe.goto(PAGE("scripts/room-harness.html", "?rs=" + encodeURIComponent(rs)));
 		const base = await probe.evaluate(() => NeonArcade._roomServerBase);
 		check(`?rs=${rs} is ${ok ? "honoured" : "ignored"}`, ok ? base.startsWith(rs.replace(/^http/, "ws")) : !base.includes("evil"), base);
 		await probe.close();
@@ -2031,14 +2031,13 @@ try {
 
 	// ------------------------------------------- 8. the fallback path
 	console.log("\nroom: the zero-server fallback");
+	// A game page opens the party shell; with no room server it offers the
+	// classic invite, and no code that nobody could use.
 	const plain = await context.newPage();
-	await plain.goto(PAGE("connect4.html"));
+	await plain.goto(PAGE("connect4.html", "?rs=http://localhost:1"));
 	await plain.locator("button", { hasText: "INVITE A FRIEND" }).waitFor({ timeout: TIMEOUT });
-	check("the classic invite flow is still offered", true);
-	check(
-		"JOIN WITH A CODE is hidden without the room server",
-		(await plain.locator("button", { hasText: "JOIN WITH A CODE" }).count()) === 0,
-	);
+	check("a game page still offers the classic invite", true);
+	check("…and shows no party code without the room server", (await plain.locator(".party-code-digits").count()) === 0);
 	const plainParty = await context.newPage();
 	await plainParty.goto(PAGE("party.html", "?rs=http://localhost:1"));
 	await plainParty.evaluate(() => localStorage.removeItem("neon.room"));

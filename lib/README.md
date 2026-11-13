@@ -16,9 +16,9 @@ handshake per person and nothing else.
 ## Files
 
 - **`net.js`** — `NeonArcade.createHost()` / `createGuest()`: the mesh, the party record, typed message channels.
-- **`games.js`** — `NeonArcade.registerGame()`: the registry every game plugs into, plus `mountGamePage` for single-game pages.
+- **`games.js`** — `NeonArcade.registerGame()`: the registry every game plugs into, the `ctx` a game is mounted with, and `turnWait` / `hostPause` / `keepAwake`.
 - **`party.js`** — `NeonArcade.mountParty()`: the persistent party screen — roster, teams, game switching, host handover.
-- **`lobby.js`** — `NeonArcade.mountLobby()`: the invite/answer UI used by the per-game pages, plus the bot controls that let one person start a game alone.
+- **`lobby.js`** — the shared pieces of the party screen: invite/reply blocks, the in-page question every way out asks, presence toasts, AWAY and OFFLINE.
 - **`room-join.js`** — `NeonArcade.hostRoom()` / `joinRoom(code, { signal })` / `rejoinToken()` / `releaseRejoin()` / `roomServerReachable()`: client-side glue for the optional Cloudflare-Worker room server (`worker/`). Joins are by six-digit code over a WebSocket; `joinRoom` resolves only once a link is open *and* a host is known (never into a hostless party), and an `AbortSignal` cancels it, releasing the claim; rejoin tokens survive a reload. `releaseRejoin()` gives a claim back with a `release` that never binds, resolving `"busy"` (token kept) when another tab holds the seat live. The server is `localStorage["neon.rs"]` or the default; `?rs=` only when it names a loopback server; the reachability probe is `GET /ping`. A tab whose seat another tab of the same browser took over (same token; the server hangs up with 4409) stands down and calls `opts.onDisplaced()` instead of re-dialling. Falls back to the classic scan/paste flow when the server is unreachable. See `docs/room-server.md` for the design and `worker/README.md` for deployment.
 - **`qr.js`** — `NeonArcade.qrCanvas()`: a self-contained QR encoder, so invites can be scanned instead of typed.
 - **`qr-decode.js`** — `NeonArcade.qrDecode()` / `scanQr()`: a self-contained QR *decoder* plus a camera scanner.
@@ -124,7 +124,7 @@ NeonArcade.registerGame({
 
 `mount(ctx)` receives `root`, `room`, `isHost`, `seatOf(id)`, `seats(team)`,
 `players()`, `nameOf(id)`, `isBot(id)`, `botSeats(team)`, `end()` and `canEnd`
-(whether `end()` does anything — the party shell, not a game page). It
+(whether `end()` does anything). It
 **must** return an object with
 `unmount()`: games are swapped without a page reload, so anything left running
 — a `requestAnimationFrame` loop, an interval, a window listener — will fight
@@ -210,53 +210,37 @@ as `http://`. Load in this order before the game script:
 ### `NeonArcade.mountParty(container, stage)`
 
 The party screen in `container`; mounted games build themselves into `stage`.
-Handles joining (`#i=` in the URL), recruiting, teams, switching and succession.
+Handles joining (`#i=` / `#c=` in the URL), recruiting, teams, switching and
+succession.
+
+**Game pages are shortcuts into it** (2026-11-13). `connect4.html` and the rest
+redirect to `party.html?game=<id>&fresh=1` (keeping the query and any `#i=` /
+`#c=` link). With `?game=` the host of a fresh party gets a **quick start**
+first: the game's name as the title, INVITE A FRIEND and PLAY A BOT / PLAY
+ALONE (enough bots to make it legal), then ADD BOT / REMOVE BOT and START GAME
+(START alone for a local game, which shows nothing else). START seats people
+by the rule game pages always had — host on A; a one-against-one game puts the
+first other member on B and the rest watch; a bigger team game deals the
+others out alternately, B first; any other game seats everyone on one side;
+past the game's seats, the rest watch. After the first game it is an ordinary
+party. A party opened this way does not ask a lone host before leaving.
 
 ### Shared handshake pieces (`lib/lobby.js`)
 
-The party shell and the game-page lobby walk the same handshake, so
-`lobby.js` exports the pieces both use, and **`party.js` requires `lobby.js`
-to be loaded before it**.
+**`party.js` requires `lobby.js` to be loaded before it.**
 
 | export | description |
 | --- | --- |
-| `NeonArcade.el(tag, props)` | the small DOM builder both screens use |
+| `NeonArcade.el(tag, props)` | the small DOM builder the party screen uses |
 | `NeonArcade.savedName()` / `rememberName(name)` | the display name remembered in `localStorage` (`neon.name`) |
-| `NeonArcade.goJoinCode(raw)` | navigate to `party.html#c=<6 digits>`; returns `false` (and stays put) for anything but six digits |
 | `NeonArcade.shareBlock({ label, hint, value, qrValue, linkValue, title })` | a code box with a copy button and a QR; a labelled `.share` card when `label` is given. `linkValue` adds a second copy-as-link button so the QR stays small |
 | `NeonArcade.replyEntry({ room, setStatus, placeholder, scanPrompt, onConnected })` | the inviter's reply box with CONNECT / PASTE / SCAN REPLY. Returns `{ nodes, row, close }` — place `nodes`, add buttons to `row`, and always call `close()` on teardown (it stops the camera) |
 | `NeonArcade.ask(question, { ok, cancel })` | a yes/no question in the page's own `<dialog class="neon-ask">` (buttons `[data-ask="yes"]` / `[data-ask="no"]`); resolves `true` for yes. Never `confirm()`: it freezes the page's JS — the host's game loop and the mesh's relaying with it. Escape and a tap outside mean no; a second question dismisses the first |
 | `NeonArcade.toast(text, kind)` | a notice over whatever is on screen (`.neon-toasts`, under the portal link), `kind` `"good"` / `"warn"`; takes no taps, gone after 4.5 s, at most 3 |
 | `NeonArcade.presence()` | `{ sync(room), left(room, id, info) }`: feed it every roster callback and it toasts what changed — joined, left (with the reason), lost connection (after 2.5 s still lost) and back, the crown moving (after 1.2 s still moved). The first sync with a room is silent |
-| `NeonArcade.guardParty({ room, askAlone })` | register the page's party: `room()` returns the live room or null. From then on "← All games" (and any `a[data-leaves]`), back / swipe-back (a history entry pushed on the first tap) and `beforeunload` (only with another person present) all go through `leaveParty`. `askAlone`: ask even with nobody else here (the party shell; a game page with only bots is never asked) |
+| `NeonArcade.guardParty({ room, askAlone })` | register the page's party: `room()` returns the live room or null. From then on "← All games" (and any `a[data-leaves]`), back / swipe-back (a history entry pushed on the first tap) and `beforeunload` (only with another person present) all go through `leaveParty`. `askAlone` (boolean or function): ask even with nobody else here (the party shell, except a party a game page opened) |
 | `NeonArcade.leaveParty(question)` / `leaveQuestion(room, question)` | ask (naming the heir, for a host), then `leave()` and wait for `roomSettled()`; resolves `true` once it may navigate, `false` if they stayed. Not asked, it still leaves — that is what drops the rejoin token |
 | `NeonArcade.REPLY_NOW` / `NeonArcade.replyFailed(setStatus)` | the replier's side of a hand-carried reply: the "do it right away" sentence for the reply screen (between some networks a reply works for ~15 s — docs/index.md Honest gaps), and, on a `no-route` before the link ever opened, the error status plus `{ hint, again }` — a hint node and a MAKE A NEW REPLY button (a reload: the same `#i=` invite answered afresh) for the caller to place |
-
-### `NeonArcade.mountGamePage(lobbyEl, stage, gameId)`
-
-One game on its own page, through the plain lobby. Returns `{ game, room,
-handle }` with live getters — each page publishes it as `window.__game`, which
-is how `scripts/test-bots.mjs` drives the real page.
-
-Seats fall back to a rule rather than a choice. A one-against-one game keeps the
-old one: the host is Team A, the first other player is Team B, anyone else
-spectates. A team game with `seats.max > 2` deals players out **alternately**
-instead, which is the only way a deep link can seat several bots without most of
-them watching. `coop`/`free` games put everybody on one side.
-
-### `NeonArcade.mountLobby(container, opts)`
-
-The lobby itself: `gameName`, `game` (the registered def, for seat counts and
-bots), `onReady(room)`, `onStart()`, `onEnd()` (the session ended under a
-running game — the host left, or the connection failed — so take the game
-down: the terminal screen is drawn in the lobby, beneath the stage),
-`onPeerJoin(id)`, `onPeerLeave(id, info)`. When the crown moves (1.5 s settle)
-the lobby ends the session itself: it leaves the room and says the host left.
-
-It offers two host paths: **INVITE A FRIEND** (the handshake) and **PLAY A
-BOT** / **PLAY ALONE** (no handshake at all — it seats enough bots to make the
-game legal and goes straight to START). START refuses on the **seat** count, not
-the peer count, so a game with bots in it is startable with nobody connected.
 
 ### Scanning
 

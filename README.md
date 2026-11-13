@@ -88,10 +88,12 @@ the crown. Only **DELETE PARTY** ends it.
 
 ### One game on its own
 
-Each game also has its own page (`connect4.html` and friends) with the plain
-two-player lobby: **INVITE A FRIEND**, send the invite, take the reply, **START
-GAME**. Use **INVITE ANOTHER** to add more players, and **ADD BOT** to fill the
-rest of the seats.
+Each game also has its own page (`connect4.html` and friends) — a shortcut that
+opens a party with that game picked: **PLAY A BOT** (or **PLAY ALONE**) and
+**START GAME**, or **INVITE A FRIEND** to share the party's code or an invite
+first. Use **ADD BOT** to fill the rest of the seats. After the first game it
+is an ordinary party: switch games, add people, reload without losing your
+seat.
 
 `file://` works for testing on the same machine (open two tabs). To serve it:
 
@@ -166,8 +168,6 @@ The multiplayer games share a common P2P layer loaded as traditional scripts
   Seat a simulated member, list them, and send an action as one.
 - **`NeonArcade.mountParty(container, stage)`** — the party screen: roster,
   teams, recruiting, game switching, host succession.
-- **`NeonArcade.mountGamePage(lobbyEl, stage, gameId)`** — one game on its own
-  page, through the plain two-player lobby.
 
 See [`lib/README.md`](lib/README.md) for full API documentation.
 
@@ -265,6 +265,7 @@ not there offline.
 ## Adding a game
 
 One file in `games/` that calls `NeonArcade.registerGame({ ... })`, plus a
-script tag in `party.html` (and its own page, if you want a deep link). The
+script tag in `party.html` (and, for a deep link, a copy of any game page with
+its id swapped — it only redirects). The
 party's game switcher lists whatever registered itself — no shell code changes.
 The contract is documented at the top of [`lib/games.js`](lib/games.js).

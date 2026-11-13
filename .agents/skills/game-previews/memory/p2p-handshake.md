@@ -14,16 +14,24 @@ masked the bug that prompted the rewrite (see below).
 `scripts/preview.mjs` drives the same steps a human does:
 
 1. Page 0 (always the **host**, always the recorded page) clicks `INVITE A FRIEND`
-   — or `INVITE ANOTHER` for the second and later guests.
+   — every time: since 2026-11-13 a game page redirects into the party shell's
+   quick start (`party.html?game=<id>&fresh=1`), which offers it again once
+   the last invite has connected.
 2. Read the invite link out of the first `textarea.share-code`.
 3. Guest opens the link, produces a reply code in *its* first
    `textarea.share-code`.
 4. Host fills the **last** `textarea.share-code` with that reply and clicks
-   `CONNECT`, then waits for `.peer` to say "other player".
+   `CONNECT`, then waits for the next `.party-member` row.
 
 Only the host can start the game, so `startGame` clicks page 0 unconditionally.
 
 ## Traps
+
+- **Keep the recorder off the deployed room server.** A game page opens a
+  party, and a party probes the room server: every peer of every recording
+  would host a real party on production. Each context gets
+  `localStorage["neon.rs"] = "http://127.0.0.1:9"` (unreachable) first, so the
+  parties are classic, as the old game-page lobby always was.
 
 - **Navigate the guest to `about:blank` first.** The guest page is already
   sitting on the same game file, so going straight to the invite differs only in

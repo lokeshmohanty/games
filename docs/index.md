@@ -215,8 +215,8 @@ question is a `<dialog>`, never `confirm()`, which would freeze the host's game
 loop and relaying for everyone while it was up. A tab close or reload can only
 get the browser's own "Leave site?" prompt, and only with another person in
 the party; going ahead is not a leave — the seat is held, as a reload should.
-The party shell asks even a host who is alone (the party ends); a game page
-with only bots never asks.
+The party shell asks even a host who is alone (the party ends) — except in a
+party a game page opened, where one person against the bots is never asked.
 
 Everyone else gets a toast, over the game if one is running: who joined, who
 left and how (on purpose, lost connection, removed by the host), who lost
@@ -554,9 +554,14 @@ The rule that matters: `mount(ctx)` must return an object with `unmount()` that
 stops every loop, timer and window listener it started. Games are swapped
 without a page reload, so anything left running fights the next game for input.
 
-Each game keeps a standalone page (`connect4.html` and friends) as a deep link
-into that one game. Those pages mount the same module through the plain
-two-player lobby, so a game is implemented exactly once.
+Each game keeps a page of its own (`connect4.html` and friends), and since
+2026-11-13 it is a **shortcut into the party shell**: it redirects to
+`party.html?game=<id>&fresh=1`, where the host gets a quick start for that game
+(INVITE A FRIEND, PLAY A BOT, START GAME) before the ordinary party screen
+(lib/README.md, `mountParty`). There used to be a separate two-player lobby
+here, without join by code, rejoin after a reload, PARTY, END GAME or the turn
+banner's choices; Lokesh chose one connection path over teaching it all that.
+A game is implemented exactly once, and connected exactly once.
 
 `lib/ui.js` supplies the furniture every game was rebuilding — an injected
 `<style>`, a centred stage, a status line and a full-bleed overlay:
@@ -717,8 +722,8 @@ the favicon via `<link rel="icon">`.
   each keeps its state on the host that started it. So a crown that moves
   under a running game **ends it** — on the party screen the new host sets the
   game to none 1.5 s after the move (a flicker that settles back ends nothing)
-  and everyone is told "The host left, so the game ended."; on a game page the
-  session ends on a screen with HOST A NEW GAME / ALL GAMES. Nothing *resumes*
+  and everyone is told "The host left, so the game ended." (Game pages open
+  parties now, so this is the only path.) Nothing *resumes*
   a game in progress. A room-server host that merely lost its connection loses
   the game too, since the crown does not wait out the reconnect grace.
 - **Battleship's audit is never triggered in real play**, because no player here

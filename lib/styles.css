@@ -261,17 +261,6 @@ a.neon-btn {
   background: #fff;
   border-radius: 6px;
 }
-.peer-list {
-  min-height: 1.5em;
-  font-size: 0.9rem;
-}
-.peer {
-  color: var(--good);
-}
-.peer-empty {
-  color: var(--muted);
-}
-
 /* Overlay (game over / modal) */
 .overlay {
   position: absolute;
@@ -523,6 +512,12 @@ canvas {
   .neon-toast {
     animation: none;
   }
+}
+
+/* The quick start a game page opens (party.js quickBlock): thumbs, not a
+   mouse, so every button clears 44px. */
+.party-quick .neon-btn {
+  min-height: 44px;
 }
 
 /* No network (lobby.js): a strip under the top band, above the game. */

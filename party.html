@@ -51,8 +51,9 @@
     <script src="games/tug-of-war.js"></script>
 
     <script>
-      // Exposed so scripts/test-party.mjs can inspect the live room.
-      window.__party = NeonArcade.mountParty(
+      // Exposed so the tests can inspect the live room and game. `__game` is
+      // the name the game pages used to publish; they are party shortcuts now.
+      window.__party = window.__game = NeonArcade.mountParty(
         document.getElementById("party"),
         document.getElementById("stage"),
       );

@@ -39,6 +39,8 @@
  *  12. moving on (the portal's START A PARTY, a code link) hands the old
  *      seat back — unless another tab holds it live — a code link to your
  *      own party reconnects the seat, and going offline says so.
+ *  13. a game page opens a party (code, quick start, START GAME), and a
+ *      reload mid-game rejoins it; another game page moves on.
  *
  * Wrangler comes from $WRANGLER (a command line), else `wrangler` on PATH,
  * else `nix shell nixpkgs#wrangler` (npx wrangler cannot link workerd on
@@ -1187,6 +1189,48 @@ try {
 		const back = await k.locator(".neon-offline").waitFor({ state: "detached", timeout: 5000 }).then(() => true, () => false);
 		check("…and that it is back online", back && (await k.locator(".neon-toast", { hasText: "Back online." }).count()) === 1);
 		for (const p of [h, g, k]) await p.context().close();
+	}
+	// --------------------------- 13. a game page is a party shortcut
+	// Game pages used to carry their own lobby: no code, no way back after a
+	// reload. Now they open the party shell with that game picked.
+	console.log("\nworker: a game page opens a party: code, quick start, reload rejoins");
+	{
+		const PAGES = PARTY.replace(/party\.html$/, "");
+		const h = await person("gp-host");
+		const g = await person("gp-guest");
+		await h.goto(PAGES + "connect4.html");
+		const quick = await h.locator(".party-code-digits").waitFor({ timeout: TIMEOUT }).then(() => true, () => false);
+		const head = await h.evaluate(() => ({
+			title: document.querySelector(".lobby-title")?.textContent,
+			buttons: [...document.querySelectorAll("#party button")].map((b) => b.textContent),
+			url: location.pathname.split("/").pop() + location.search,
+		}));
+		check("connect4.html opens a party with a code, Connect 4 up front", quick && head.title === "CONNECT 4" && head.buttons.includes("INVITE A FRIEND") && head.buttons.includes("PLAY A BOT"), JSON.stringify(head));
+		check("…and leaves no `fresh` in the URL to break a reload", head.url === "party.html?game=connect4", head.url);
+		const t = await token(h);
+		check("(the friend joins by its code)", await joinByCode(g, t.code));
+		await h.locator("button", { hasText: "INVITE A FRIEND" }).first().waitFor({ timeout: TIMEOUT });
+		await h.locator("button", { hasText: "START GAME" }).first().click();
+		const mounted = (p) =>
+			p.waitForFunction(() => window.__party?.game === "connect4" && !!window.__party.handle, null, { timeout: TIMEOUT }).then(() => true, () => false);
+		check("START GAME seats them and starts Connect 4 for both", (await mounted(h)) && (await mounted(g)));
+		const seats = await h.evaluate(() => {
+			const d = window.__party.handle.debug();
+			return { red: d.red, yellow: d.yellow, me: window.__party.room.selfId };
+		});
+		const gId = await g.evaluate(() => window.__party.room.selfId);
+		check("…host red, friend yellow", seats.red === seats.me && seats.yellow === gId, JSON.stringify(seats));
+		await g.reload();
+		check("the friend's reload rejoins the party", await waitInParty(g));
+		check("…and the game, in the same seat", (await mounted(g)) && (await g.evaluate(() => window.__party.handle.debug().yellow)) === gId);
+
+		// A fresh visit to another game page moves on: the old seat goes at once.
+		await g.goto(PAGES + "onitama.html");
+		const gone = await h.waitForFunction((id) => !window.__party.room.getMember(id), gId, { timeout: 10_000 }).then(() => true, () => false);
+		check("opening another game page gives the old seat back", gone);
+		const title = await g.locator(".lobby-title", { hasText: "TIGER" }).or(g.locator(".lobby-title", { hasText: "ONITAMA" })).first().waitFor({ timeout: TIMEOUT }).then(() => true, () => false);
+		check("…and opens a new party for that game", title);
+		for (const p of [h, g]) await p.context().close();
 	}
 } catch (err) {
 	console.log(`  FAIL ${err.stack ?? err}`);
