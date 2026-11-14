@@ -28,7 +28,7 @@ jobs:
   # (game.json "app") is built here, in a throwaway container — so this job
   # holds no token that can deploy: author code never runs beside one.
   build-community:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       contents: read
     steps:
@@ -60,7 +60,7 @@ jobs:
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - name: Checkout
         uses: actions/checkout@v7
