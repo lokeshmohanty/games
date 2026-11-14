@@ -26,7 +26,8 @@ podium for the top 3, avatar rows, win %, skeleton while loading, a sticky
 "you" bar (sign-in ask when signed out). worker/api/lb.js: boards carry `me`
 (rank past the top 100, or `need`/`hidden`); global takes `&me=1`, uncached.
 test-accounts + test-social green; past-100 rank checked against a JS sort.
-**Worker needs a deploy** for `me`; without it the bar just doesn't show.
+Worker deployed 2026-11-14 (version 2dd27a0a): `&me=1` live — 401 without a
+token, public board still `max-age=60`.
 Undercover: a new phone starts on the 9 everyday topics (`simple: true` in
 words.js) at EASY; EVERYDAY button on WORDS; names, undercovers and blank are
 saved per device like the words (`players`). test-undercover + test-bots green.
