@@ -47,6 +47,20 @@ stalls (fails on the old bot). test-neon-bid and test-bots are green.
 sw.js v38 shipped with this; the Tug of War removal (session games-99, shared
 tree, uncommitted) also bumped to v38 and must take v39.
 
+## Platform v2 refactor — Phase 1 (speed) done on branch `platform-v2`, NOT merged (2026-11-14)
+
+Lokesh asked for a fast, slick platform and a language-neutral game contract.
+Plan of record: `~/.claude/plans/ethereal-honking-beaver.md`; decisions in
+the multiplayer skill's `gaming-platform-vision` memory. Phases: perf → SDK v2
+protocol (+WASM) → managed state + adapters + port all 10 games, drop v1 →
+Solid + Vite single-page shell. Worktree `../games-platform-v2`.
+Phase 1 (docs/perf.md, `just perf`): cold PLAY WITH BOTS 4.9 s + tap → 2.2 s,
+no tap; warm 1.8 s → 0.29 s; cold portal 5.7 MB / 30 s → 471 KB / 2.6 s; FCP
+unchanged. Code served from one versioned snapshot; VERSION is now a content
+hash (`just sw-version`, checked by `just test`). Full `just test` green.
+**Awaiting Lokesh's confirmation before merging to main.** Not met: party.html
+JS ≤ 300 KB (403 KB) — needs Phase 4's bundling.
+
 ## New app mark, "linked players" (2026-11-14): pushed to main, deployed
 
 Lokesh picked option A from https://claude.ai/artifact/MctQN4fSg3imRQTeYPGooc:
