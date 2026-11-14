@@ -277,9 +277,12 @@ The shell starts fetching the module as soon as the game is picked
 `init.wasm`, a fresh copy on each mount. Toolchains fit like this:
 
 - **wasm-bindgen** with `--target no-modules`, then
-  `wasm_bindgen.initSync({ module: init.wasm })`.
-- **Emscripten** with `-sSINGLE_FILE`, or the bytes given to `Module.wasmBinary`.
-- **TinyGo**: `wasm_exec.js`, then `WebAssembly.instantiate(init.wasm, go.importObject)`.
+  `wasm_bindgen.initSync({ module: arcade.wasm })` (adapters/rust).
+- **Emscripten** with `-sMODULARIZE`, the bytes given as `wasmBinary`
+  (adapters/c). Emscripten 6.0.9's loader works inlined in a srcdoc frame
+  without a patch.
+- **TinyGo** with `-scheduler=none`: `wasm_exec.js`, then
+  `WebAssembly.instantiate(arcade.wasm, go.importObject)` (adapters/go).
 
 Engines are welcome up to the 10 MB cap. Godot and Unity are out (decided
 2026-11-14).
@@ -310,8 +313,8 @@ rematch. Every answer must equal the JavaScript reference's.
 | TypeScript + Solid | `adapters/ts`: `defineGame<State, Action, View>`, `createView` | typed rules (`apply` gets an `Untrusted<Action>`) and a Solid view | 5.7 KB (mostly Solid) |
 | Rust | `adapters/rust`: crate `arcade`, `trait Game` with associated serde types, `arcade::export!(G)` | `impl Game` | 43 KB wasm + 2 KB glue |
 | Python | `adapters/python`: `arcade.Game`, `arcade.run(cls)`, a boot script | a class | 7 KB, plus the platform's Pyodide (12.8 MB, outside the cap) |
-| C/C++ | `adapters/c` | (see its README) | |
-| Go (TinyGo) | `adapters/go` | (see its README) | |
+| C/C++ | `adapters/c`: header-only `arcade.h` (bounded JSON reader and writer), `ARCADE_GAME(.init = …, …)` | a struct of rule functions | 6.4 KB wasm + 2 KB loader and glue |
+| Go (TinyGo) | `adapters/go`: `Game` interface (+ `Skipper`, `Ticker`), `arcade.Run(new, restore)`, its own small JSON codec | an implementation of `Game` | 65 KB wasm + 5 KB glue |
 
 Each adapter's README has the minimal game and how to build it. Built
 output is committed, because CI never builds contributor code. Builds go
@@ -330,6 +333,17 @@ Lane notes:
   (`runtime.file`) and loads only the core: no packages, no network. Every
   phone boots it, because every phone's frame holds the rules for a
   takeover.
+- **C/C++.** `dispatch`'s answer belongs to the header until the next call.
+  Its JSON parser is strict (RFC 8259) and refuses nesting deeper than 64.
+  It was fuzzed under ASan and UBSan with 4,058 malformed calls, and gave
+  the same answers as the JS reference natively too. `arcade_fail` works only
+  from the file holding `ARCADE_GAME`.
+- **Go.** TinyGo with `-scheduler=none`, and no `encoding/json`, `fmt` or
+  `syscall/js`. Those cost about 1 MB, 125 KB and double the module
+  respectively. JSON crosses through linear memory (`arcade-go.js`, 20
+  lines). TinyGo cannot recover a panic in wasm: a panicking rule becomes
+  that call's `err`, but the Go side may not be sound afterwards.
+  `go test` in `adapters/go` covers the codec against encoding/json.
 - **TypeScript.** The protocol types are imported type-only from
   `sdk/v2/bindings/protocol.ts`, so nothing of them ships. The build is
   Vite in library mode, as a single classic IIFE script.

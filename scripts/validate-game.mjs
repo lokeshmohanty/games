@@ -36,7 +36,7 @@ import { homedir } from "node:os";
 import { dirname, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { COLOUR, validateManifest } from "./manifest.mjs";
-import { gameFrame, serve } from "./serve.mjs";
+import { PORT_OFFSET, gameFrame, serve } from "./serve.mjs";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const MAX_BYTES = 10 * 1024 * 1024;
@@ -198,7 +198,7 @@ async function checkBrowser(games) {
 	const site = await serve(8736);
 	const { chromium } = loadPlaywright();
 	const browser = await chromium.launch({ executablePath: chromePath(), args: ["--no-sandbox"] });
-	let port = 5180;
+	let port = 5180 + PORT_OFFSET;
 	for (const { dir, m } of games) {
 		console.log(`\n${m.id}: in the party at 390x844`);
 		const p = port++;

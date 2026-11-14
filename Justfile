@@ -143,6 +143,7 @@ test-managed:
 # SDK v2 adapters: Tic Tac Toe in every language gives the reference's answers, call for call.
 test-conformance *lanes: pyodide
     node scripts/test-conformance.mjs {{lanes}}
+    cd sdk/v2/adapters/go && go test ./...
 
 # Every game playable by one person, and the mobile layouts at 390x844.
 test-bots:

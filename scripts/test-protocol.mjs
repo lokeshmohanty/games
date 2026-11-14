@@ -17,12 +17,12 @@ import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { SCHEMA, deref, validate } from "./protocol-check.mjs";
-import { gameFrame, serve } from "./serve.mjs";
+import { PORT_OFFSET, gameFrame, serve } from "./serve.mjs";
 
 const require = createRequire(import.meta.url);
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const TIMEOUT = 40_000;
-const DEV_PORT = 5190;
+const DEV_PORT = 5190 + PORT_OFFSET;
 // Not reached by this run: join/leave need a peer to come and go mid-game,
 // hostNew leaves the party. test-party covers those paths in the shell.
 // runtime.file: only a Python game asks (test-conformance's Python example).

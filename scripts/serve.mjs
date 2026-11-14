@@ -10,8 +10,15 @@ import { fileURLToPath } from "node:url";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
+/**
+ * Added to every test's fixed ports (NEON_PORT_OFFSET=100 …), so two test
+ * runs — two agents, or a test beside `just run` — do not share a server.
+ */
+export const PORT_OFFSET = Number(process.env.NEON_PORT_OFFSET ?? 0) || 0;
+
 /** Start serving; returns { base, url(path), stop() } once it answers. */
 export async function serve(port) {
+	port += PORT_OFFSET;
 	const server = spawn("python3", ["-m", "http.server", String(port), "--bind", "127.0.0.1"], {
 		cwd: ROOT,
 		stdio: "ignore",

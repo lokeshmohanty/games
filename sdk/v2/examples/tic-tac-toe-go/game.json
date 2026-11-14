@@ -1,0 +1,25 @@
+{
+  "sdk": 2,
+  "id": "tic-tac-toe-go",
+  "name": "TIC TAC TOE (GO)",
+  "blurb": "Three in a row. SDK v2 managed state: only the rules, in Go compiled to WebAssembly.",
+  "entry": "index.html",
+  "runtime": "wasm",
+  "wasm": "tic-tac-toe.wasm",
+  "kind": "duel",
+  "shape": "teams",
+  "seats": {
+    "min": 2,
+    "max": 2
+  },
+  "bots": true,
+  "tags": [
+    "alone",
+    "duel",
+    "quick"
+  ],
+  "license": "MIT",
+  "author": "lokeshmohanty",
+  "repo": "https://github.com/lokeshmohanty/games",
+  "state": "managed"
+}

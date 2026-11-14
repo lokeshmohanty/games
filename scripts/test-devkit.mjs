@@ -13,12 +13,12 @@ import { createRequire } from "node:module";
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { gameFrame, readyToClick, serve } from "./serve.mjs";
+import { PORT_OFFSET, gameFrame, readyToClick, serve } from "./serve.mjs";
 
 const require = createRequire(import.meta.url);
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const TIMEOUT = 30_000;
-const DEV_PORT = 5175;
+const DEV_PORT = 5175 + PORT_OFFSET;
 
 let failures = 0;
 const check = (label, ok, detail = "") => {
@@ -131,6 +131,8 @@ await playExample("sdk v2 managed, Rust", "sdk/v2/examples", "tic-tac-toe-rust",
 await playExample("sdk v2 managed, JavaScript", "sdk/v2/examples", "tic-tac-toe-js", DEV_PORT + 3);
 await playExample("sdk v2 managed, HTML/CSS", "sdk/v2/examples", "tic-tac-toe-html", DEV_PORT + 4);
 await playExample("sdk v2 managed, TypeScript", "sdk/v2/examples", "tic-tac-toe-ts", DEV_PORT + 5);
+await playExample("sdk v2 managed, Go", "sdk/v2/examples", "tic-tac-toe-go", DEV_PORT + 6);
+await playExample("sdk v2 managed, C", "sdk/v2/examples", "tic-tac-toe-c", DEV_PORT + 7);
 
 console.log("\ndevkit: only this machine");
 const away = await ctx.newPage();

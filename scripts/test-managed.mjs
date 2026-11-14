@@ -27,7 +27,7 @@ import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { catalogue, checkTrace } from "./protocol-check.mjs";
-import { gameFrame, readyToClick, serve } from "./serve.mjs";
+import { PORT_OFFSET, gameFrame, readyToClick, serve } from "./serve.mjs";
 
 const require = createRequire(import.meta.url);
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
@@ -56,6 +56,7 @@ function loadPlaywright() {
 const site = await serve(8741);
 /** The dev kit's server for a folder of games; its base URL for `game`. */
 async function devServer(folder, port, game) {
+	port += PORT_OFFSET;
 	const dev = spawn("node", [join(ROOT, "sdk/v1/dev-server.mjs"), join(ROOT, folder), String(port)], { env: { ...process.env, NEON_PLATFORM: site.base }, stdio: "ignore" });
 	process.on("exit", () => dev.kill());
 	const base = `http://127.0.0.1:${port}/${game}/`;

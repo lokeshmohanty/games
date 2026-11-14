@@ -24,6 +24,11 @@
 //     (a local clone instead of GitHub. A clone at ../<repo> that has the
 //      pinned commit is used without asking. Either way the commit is
 //      exported with `git archive`, never the working tree.)
+//   NEON_PIN_OVERRIDE=owner/repo=<sha>[,…] node scripts/fetch-community.mjs
+//     (testing only: build from that commit instead of the pin, games list
+//      read from it too — to run this platform's tests against a contributor's
+//      unmerged branch. The registry file is never touched; pins move only by
+//      the contributor's pull request.)
 //   NEON_APP_CACHE=dir node scripts/fetch-community.mjs
 //     (keep each web app's build in dir, and reuse it while the pin and the
 //      build tooling are unchanged — CI restores dir with actions/cache.
@@ -64,6 +69,12 @@ const APP_CACHE = process.env.NEON_APP_CACHE ? resolve(process.env.NEON_APP_CACH
 // these and every web app is built again.
 const BUILD_TOOLS = ["scripts/app-build.mjs", "scripts/py-deps.py", "sdk/v1/pyodide/pyodide-lock.json"];
 
+const overrides = new Map(
+	(process.env.NEON_PIN_OVERRIDE ?? "")
+		.split(",")
+		.filter(Boolean)
+		.map((pair) => pair.split("=")),
+);
 const local = new Map(
 	(process.env.NEON_LOCAL_REPOS ?? "")
 		.split(",")
@@ -170,6 +181,15 @@ function main() {
 			if (bad.length) {
 				errors.push(`${where}: ${bad.join("; ")}`);
 				continue;
+			}
+			const override = overrides.get(`${owner}/${repo}`);
+			if (override) {
+				if (!SHA.test(override)) {
+					errors.push(`NEON_PIN_OVERRIDE for ${owner}/${repo}: not a 40-character sha`);
+					continue;
+				}
+				console.log(`  ${owner}/${repo}: NEON_PIN_OVERRIDE ${override.slice(0, 8)} instead of the pin ${entry.commit.slice(0, 8)} (testing only)`);
+				entry = { ...entry, commit: override };
 			}
 			const src = checkout(owner, repo, entry.commit);
 			try {

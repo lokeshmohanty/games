@@ -20,12 +20,12 @@ import { existsSync, globSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { serve } from "./serve.mjs";
+import { PORT_OFFSET, serve } from "./serve.mjs";
 
 const require = createRequire(import.meta.url);
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const TIMEOUT = 40_000;
-const DEV_PORT = 5191;
+const DEV_PORT = 5191 + PORT_OFFSET;
 
 let failures = 0;
 const check = (label, ok, detail = "") => {
