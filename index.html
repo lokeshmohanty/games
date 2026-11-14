@@ -287,12 +287,6 @@
         background: var(--accent-2);
         color: var(--on-accent-2);
       }
-      /* The star and the feedback bubble stay reachable above the choices. */
-      .game-card .fav,
-      .game-card .fb {
-        z-index: 2;
-      }
-
       /*
         The install offer. It sits in the flow directly under the title rather
         than floating: lib/pwa.js only fills it when the browser says the app
@@ -365,20 +359,6 @@
         .games-grid {
           grid-template-columns: repeat(2, 1fr);
           gap: 12px;
-        }
-        .game-card .fb {
-          width: 36px;
-          height: 36px;
-          font-size: 0.9rem;
-          top: 4px;
-          left: 4px;
-        }
-        .game-card .fav {
-          width: 36px;
-          height: 36px;
-          font-size: 1.05rem;
-          top: 4px;
-          right: 4px;
         }
         .game-card p.game-you,
         .game-card p.game-by {
@@ -481,26 +461,8 @@
         text-align: center;
       }
 
-      /* lib/portal.js: the favourite star, your own record, the author of a
-         community game, and the recently-played row. */
-      .game-card .fav {
-        position: absolute;
-        top: 8px;
-        right: 8px;
-        width: 44px;
-        height: 44px;
-        border: 1px solid var(--rule);
-        border-radius: 50%;
-        background: color-mix(in oklch, var(--bg) 82%, transparent);
-        color: var(--warn);
-        font-size: 1.3rem;
-        line-height: 1;
-        cursor: pointer;
-      }
-      .game-card .fav[aria-pressed="true"] {
-        border-color: var(--warn);
-        box-shadow: 0 0 12px color-mix(in oklch, var(--warn) 40%, transparent);
-      }
+      /* lib/portal.js: your own record, the author of a community game, and
+         the recently-played row. */
       /* Shown on a phone too, where the description is not. */
       .game-card p.game-you:not([hidden]),
       .game-card p.game-by {
@@ -547,19 +509,7 @@
         white-space: nowrap;
       }
 
-      /* lib/portal.js: play counts, the feedback button. */
-      .game-card .fb {
-        position: absolute;
-        top: 8px;
-        left: 8px;
-        width: 44px;
-        height: 44px;
-        border: 1px solid var(--rule);
-        border-radius: 50%;
-        background: color-mix(in oklch, var(--bg) 82%, transparent);
-        font-size: 1.1rem;
-        cursor: pointer;
-      }
+      /* lib/portal.js: play counts. */
       .game-card p.game-plays,
       .game-card p.game-you {
         font-family: var(--font-mono);

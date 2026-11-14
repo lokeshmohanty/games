@@ -448,13 +448,14 @@ try {
 	await host.evaluate(() => window.__party.room.setGame("lokeshmohanty/tug-of-war"));
 	for (const page of [host, p2, p3]) await (await gameFrame(page, TIMEOUT)).locator("#tug-canvas").waitFor({ timeout: TIMEOUT });
 	const pill = await p2.evaluate(() => {
+		// PARTY and, beside it, FEEDBACK and FAVOURITE: the whole group.
 		const p = document.querySelector(".party-pill");
-		const r = p && !p.hidden ? p.getBoundingClientRect() : null;
+		const r = p && !p.hidden ? document.querySelector(".top-actions").getBoundingClientRect() : null;
 		const l = document.querySelector(".portal-link").getBoundingClientRect();
 		return { r: r && { left: r.left, right: r.right, bottom: r.bottom }, portalRight: l.right, vw: innerWidth };
 	});
 	check(
-		"a running game shows PARTY, clear of ← All games, on the phone",
+		"a running game shows PARTY (with FEEDBACK and FAVOURITE), clear of ← All games, on the phone",
 		!!pill.r && pill.r.right <= pill.vw && pill.r.left > pill.portalRight && pill.r.bottom <= 52,
 		JSON.stringify(pill),
 	);

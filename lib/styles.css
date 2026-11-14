@@ -604,14 +604,26 @@ canvas {
   margin: 0;
 }
 
-/* PARTY, mid-game (party.js): the way back to the party screen while a game
+/* The top right of a game page (party.js): FEEDBACK and FAVOURITE for the
+   game, and PARTY mid-game — the way back to the party screen while a game
    runs. The portal link's twin on the other side of the same top band, which
    every game already keeps clear (ui.js gameShell's 52px). */
-.party-pill {
+.top-actions {
   position: fixed;
   top: calc(env(safe-area-inset-top) + 10px);
   right: max(12px, env(safe-area-inset-right));
   z-index: 50;
+  display: flex;
+  gap: 6px;
+}
+.top-actions [hidden] {
+  display: none;
+}
+.party-pill,
+.top-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   padding: 7px 14px;
   border: 1px solid var(--accent);
   border-radius: 999px;
@@ -623,6 +635,36 @@ canvas {
   letter-spacing: 1px;
   text-transform: uppercase;
   cursor: pointer;
+}
+.top-btn {
+  padding: 7px 12px;
+  border-color: var(--border);
+  color: var(--muted);
+}
+.top-btn:hover {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+.top-btn .icon {
+  font-size: 0.95rem;
+  line-height: 1;
+  letter-spacing: 0;
+}
+.top-fav .icon {
+  color: var(--warn);
+}
+.top-fav[aria-pressed="true"] {
+  border-color: var(--warn);
+}
+/* A phone has room beside ALL GAMES and PARTY for the icons only; the
+   names stay as each button's label and tooltip. */
+@media (max-width: 559px) {
+  .top-btn .label {
+    display: none;
+  }
+  .top-btn {
+    padding: 7px 10px;
+  }
 }
 /* The party screen pulled up over a running game, which keeps running
    underneath. Below the portal link (50) and the notices (60). */

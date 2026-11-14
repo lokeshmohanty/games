@@ -11,6 +11,14 @@ session pay for it.*
 act → record → clear the item. This is the single inbox — do not create a
 separate `TODO.md`.*
 
+## In-game FEEDBACK / FAVOURITE (2026-11-14) — pushed to main
+
+The ☆ and 💬 left the portal cards (lib/portal.js, index.html). Inside a game,
+party.html's top right now holds 💬 FEEDBACK, ☆ FAVOURITE and PARTY
+(`.top-actions`, lib/party.js + styles.css), across from ← All games; on a
+phone (<560px) the two are icons only. The ★ FAVOURITES filter on the portal
+stays. sw.js v35. test-party, test-social, test-portal, test-pwa green.
+
 ## Leaderboard UI; Undercover starts easy (2026-11-14) — pushed to main
 
 leaderboard.html + lib/leaderboard.js: game cards (with what each ranks by),

@@ -67,13 +67,19 @@ try {
 	await ana.p.goto(page("index.html"));
 	check("the portal names you", (await ana.p.locator(".site-bar .acct-me").textContent({ timeout: TIMEOUT })).includes("Ana Lima"));
 	check("…and still fits the phone", await noSideScroll(ana.p));
-	await ana.p.locator('.game-card[data-game="connect4"] .fav').click();
+	check("…with no star or feedback on the cards any more", (await ana.p.locator(".game-card .fav, .game-card .fb").count()) === 0);
+	// Starred from inside the game now (party.js, top right).
+	await ana.p.goto(page("party.html", "&game=connect4"));
+	await ana.p.locator(".top-fav").click({ timeout: TIMEOUT });
+	check("☆ at the top of a game stars it", (await ana.p.locator('.top-fav[aria-pressed="true"]').count()) === 1);
 	await ana.p.waitForTimeout(1200); // the push is debounced
+	// That game hosted a party of its own; forget it, so the party below is new.
+	await ana.p.evaluate(() => localStorage.removeItem("neon.room"));
 	const tablet = await device("Ana", "Ana"); // the same account elsewhere
 	await tablet.p.goto(page("index.html"));
 	const starred = await tablet.p
-		.locator('.game-card[data-game="connect4"] .fav[aria-pressed="true"]')
-		.waitFor({ timeout: TIMEOUT })
+		.locator('.game-card[data-game="connect4"][data-tags~="favs"]')
+		.waitFor({ state: "attached", timeout: TIMEOUT })
 		.then(() => true, () => false);
 	check("a star on one device is a favourite on the other", starred);
 	await tablet.ctx.close();
@@ -175,8 +181,8 @@ try {
 	check("…which counts the game they played together", groupRows === 2, groupRows);
 
 	console.log("\nsocial: feedback");
-	await ana.p.goto(page("index.html"));
-	await ana.p.locator('.game-card[data-game="connect4"] .fb').click();
+	await ana.p.goto(page("party.html", "&game=connect4"));
+	await ana.p.locator(".top-feedback").click({ timeout: TIMEOUT });
 	const fbOpen = await ana.p.locator("dialog.neon-sheet", { hasText: "Feedback: Connect 4" }).waitFor({ timeout: TIMEOUT }).then(() => true, () => false);
 	check("💬 opens the game's feedback sheet", fbOpen);
 	check("…which, without GitHub connected, offers CONNECT GITHUB instead of a box", (await ana.p.locator("dialog.neon-sheet button", { hasText: "CONNECT GITHUB" }).count()) === 1 && (await ana.p.locator("dialog.neon-sheet textarea").count()) === 0);
