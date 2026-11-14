@@ -38,7 +38,7 @@
 
 // A hash of SHELL's files and this one — written by scripts/sw-version.mjs,
 // never by hand.
-const VERSION = "arcade-1f8a957e4535";
+const VERSION = "arcade-bfe16ba94c4a";
 // Network-first for code, for development (see above).
 const DEV = ["localhost", "127.0.0.1", "[::1]"].includes(self.location.hostname) && !new URL(self.location.href).searchParams.has("snapshot");
 
@@ -83,6 +83,7 @@ const SHELL = [
 	"./lib/load.js",
 	"./lib/bridge.js",
 	"./lib/sdk-host.js",
+	"./lib/sdk-managed.js",
 	"./lib/py-server.js",
 	"./lib/stats.js",
 	"./lib/portal.js",

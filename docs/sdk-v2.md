@@ -36,7 +36,7 @@ Two layers (decided 2026-11-14):
 | Layer | What the game writes | Status |
 |---|---|---|
 | 1. The protocol | Messages: channels to other phones, plus services. Host-authoritative, as before. | **built** |
-| 2. Managed state | `init / apply / tick / view / turn / bot / result / snapshot / restore`; the platform does sync, bots, rejoin and host handover | Phase 3 |
+| 2. Managed state | `init / apply / tick / view / turn / bot / result / snapshot / restore`; the platform does sync, bots, rejoin and host handover | **built** (Phase 3) |
 
 ## A game, end to end
 
@@ -85,6 +85,89 @@ arcade.debug = () => state              // tests read it as __game.handle.debug(
 The runtime also applies `theme.set` to `<html>`, so a DOM game's CSS
 variables follow the page without code.
 
+## Managed state (Layer 2)
+
+*Built 2026-11-14 (Phase 3): `lib/sdk-managed.js`, `arcade.managed()` in the
+runtime, the example `sdk/v2/examples/tic-tac-toe-js`, and
+`just test-managed`.*
+
+With `"state": "managed"` in game.json, a game writes **rules and a draw
+function**, and the platform does everything else that every v1 game wrote
+by hand:
+- host authority, with views for each phone;
+- bots, the turn-wait banner and results;
+- the end card with PLAY AGAIN;
+- rejoining, and carrying on under the heir when the host leaves.
+
+```js
+arcade.managed({
+  init({ seats, opts, seed, match }) { … },   // seats: [{ id, name, team, bot }]
+  apply({ action, by }) { … },                // return nothing to allow; a string to refuse (the reason)
+  view({ seat }) { return … },                // what this seat may see; seat null = a spectator
+  turn() { return [ids…] },                   // whose move it is: drives bots and the turn-wait banner
+  bot({ seat }) { return action },            // a bot's move (null: none)
+  result() { return null | { kind, ranking, scores? } },   // sdk.md "Reporting a result"
+  snapshot() { return state },                // for the heir
+  restore({ snapshot }) { … },
+  skip({ seat }) { … return true },           // optional: the host chose SKIP TURN
+  tick({ inputs, dt }) { … },                 // with manifest "tick": a fixed step
+});
+arcade.on("view", ({ state }) => draw(state));  // every phone, on change only
+button.onclick = () => arcade.act({ i: 4 });    // your move; a refusal comes back as "rejected"
+```
+
+How it runs:
+
+- **Every phone's frame holds the rules; only the host's are live.** A
+  guest's `act` goes to the host shell (`v:m$act`), which calls
+  `apply({ action, by })`. On success it calls `turn`, `result` and `view`
+  for every phone, all in **one `rules` request**, and sends each phone its
+  view, only when that view changed. A refusal goes back to that phone as
+  `rejected { reason }`.
+- **Bots.** After every change the host asks `turn()`. A bot on turn moves
+  after a 0.6–1.1 s pause, through `bot({ seat })` and then `apply`.
+- **Waiting.** When exactly one person is on turn and they have switched
+  apps, are reconnecting, or have left, the shell's turn-wait banner shows.
+  SKIP TURN calls `skip`; a game without `skip` says it cannot.
+- **Results.** `result()` is checked after every change. It is reported once
+  on every phone (with `match`), and the shell draws the end card: the
+  winner's name, PLAY AGAIN for the host, and SEE THE BOARD. PLAY AGAIN
+  calls `init` again with `match + 1`.
+- **Handover.** After every change the host sends `snapshot()` to the heir
+  (net.js `heir()`, the longest-present member), at most once a second when
+  ticking. When the crown moves, the heir's shell calls `restore` on its
+  own frame and carries on. This replaces every game's hand-written
+  `takeOver`. The heir can read the whole state (the trusted-host decision).
+- **Rejoin.** A phone that (re)mounts is sent its view at once.
+- **Ticking** (manifest `"tick": 1–60`, `"viewRate"` ≤ tick, default 15):
+  - The host steps `tick({ inputs, dt })` at a fixed rate, with each seat's
+    latest `arcade.input(i)` and each bot's `bot()` as its input.
+  - Views go out at `viewRate`; interpolating between them is the game's
+    job.
+  - While the host's tab is hidden, everyone is paused (`paused`).
+  - One tick is one round trip: tick, turn, result and the due views are
+    batched together.
+- **Determinism is not required:** the host is authoritative.
+
+A managed game may still use Layer 1 channels for ephemeral streams (a
+drawing's strokes), and Layer 1 services.
+
+**The HTML/CSS lane.** A managed game can be markup plus its rules, with no
+rendering code:
+
+| Attribute | Effect |
+|---|---|
+| `data-arcade-text="board.3"` | shows that path of the view |
+| `data-arcade-show="mine"` | shows the element while the path is truthy |
+| `data-arcade-class="o:isO"` | toggles a class |
+| `data-arcade-act='{"i":4}'` | on a button: sends that action |
+
+The runtime applies them on every `view`.
+
+**Conformance.** The JS example's rules are the reference: every language's
+tic-tac-toe must give the same views and results for the same moves
+(`scripts/test-conformance.mjs`).
+
 ## The catalogue
 
 The schema is the authority; this table is the map.
@@ -101,6 +184,8 @@ The schema is the authority; this table is the map.
 | Clock | `timer.open {name, rounds, phases, bots}` · `timer.do {name, op, …}` | `timer {name, ev, info, entries?, bot?}` |
 | Waiting | `wait.turn {who}` · `wait.pause {on}` | `wait {ev: "skip", who}` · `paused {on}` |
 | Secrets | `seal.listen {ch}` · `seal.send {ch, to, d}` → ok · `commit {value}` → `{digest, nonce}` · `verify {…}` → `{valid}` | `sealed {ch, d, from, to?}` |
+| Managed (Layer 2) | `act {a}` · `input {i}` | `rules {calls}` (request) → `{out}` · `view {state}` · `rejected {a, reason}` |
+| Runtimes | `runtime.file {path}` → `{bytes, type}` (Pyodide, for `runtime: "python"`) | |
 
 What the services do, briefly. The long explanations are in the files they
 come from, which the shell now runs:
@@ -308,9 +393,9 @@ and `RTCDataChannel` are rejected outright.
 
 ## What is deliberately not here yet
 
-- **Managed state, adapters, ports (Phase 3).** Managed state will replace
-  each game's hand-written `takeOver`. Adapters cover Rust, C/C++, Go,
-  Python, TypeScript/Solid and HTML/CSS. Then the ten games get ported.
+- **Adapters and ports (rest of Phase 3).** The adapters for Rust, C/C++,
+  Go, Python, TypeScript/Solid and HTML/CSS, then porting the ten games and
+  dropping v1.
 - **The roster event.** The shell still compares the party every 250 ms,
   because away and reconnecting change without a roster event. It only
   *sends* on a change. A net.js event replaces the poll in Phase 4.

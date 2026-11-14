@@ -11,21 +11,24 @@
 // never sent or answered is listed.
 
 import { spawn } from "node:child_process";
-import { existsSync, globSync, readFileSync } from "node:fs";
+import { existsSync, globSync } from "node:fs";
 import { createRequire } from "node:module";
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { SCHEMA, deref, validate } from "./protocol-check.mjs";
 import { gameFrame, serve } from "./serve.mjs";
 
 const require = createRequire(import.meta.url);
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const SCHEMA = JSON.parse(readFileSync(join(ROOT, "sdk/v2/protocol.json"), "utf8"));
 const TIMEOUT = 40_000;
 const DEV_PORT = 5190;
 // Not reached by this run: join/leave need a peer to come and go mid-game,
 // hostNew leaves the party. test-party covers those paths in the shell.
-const NOT_EXERCISED = new Set(["join", "leave", "hostNew"]);
+// runtime.file: only a Python game asks (test-conformance's Python example).
+const NOT_EXERCISED = new Set(["join", "leave", "hostNew", "runtime.file"]);
+// Layer 2 (managed state) has its own run: scripts/test-managed.mjs.
+const LAYER2 = new Set(["act", "input", "rules", "view", "rejected"]);
 // What each peer's fixture must report, named here so a step whose event
 // never comes fails instead of going missing from the report.
 const EVERYONE = ["init", "theme", "theme.set", "roster", "ready", "channels+bin+emitAs", "meta", "fire-and-forget", "asset", "asset outside the folder is refused", "commit+verify", "timer", "paused", "done"];
@@ -40,53 +43,6 @@ const check = (label, ok, detail = "") => {
 	console.log(`  ${ok ? "ok  " : "FAIL"} ${label}${!ok && detail ? ` — ${detail}` : ""}`);
 	if (!ok) failures++;
 };
-
-// -- a JSON Schema validator, for the subset protocol.json uses ---------------
-
-const deref = (ref) => ref.replace(/^#\//, "").split("/").reduce((o, k) => o[k], SCHEMA);
-const typeOf = (v) => (v === null ? "null" : Array.isArray(v) ? "array" : Number.isInteger(v) ? "integer" : typeof v);
-/** Problems with `v` against `s`, as paths; empty when it conforms. */
-function validate(v, s, at = "") {
-	if (s.$ref) return validate(v, deref(s.$ref), at);
-	const out = [];
-	if (s.oneOf) {
-		const passing = s.oneOf.filter((alt) => !validate(v, alt, at).length);
-		if (passing.length !== 1) {
-			// Name the closest alternative: the one whose `t` matches, when it is a message.
-			const named = s.oneOf.map((alt) => (alt.$ref ? deref(alt.$ref) : alt)).find((alt) => alt.properties?.t?.const === v?.t);
-			return named ? validate(v, named, at) : [`${at || "/"}: matches ${passing.length} of ${s.oneOf.length} alternatives`];
-		}
-	}
-	if ("const" in s && v !== s.const) out.push(`${at}: must be ${JSON.stringify(s.const)}`);
-	if (s.enum && !s.enum.includes(v)) out.push(`${at}: must be one of ${s.enum.join(", ")}`);
-	if (s.type) {
-		const types = [].concat(s.type);
-		const t = typeOf(v);
-		if (!types.includes(t) && !(t === "integer" && types.includes("number"))) return [...out, `${at}: is ${t}, not ${types.join("|")}`];
-	}
-	if (typeof v === "string") {
-		if (s.minLength != null && v.length < s.minLength) out.push(`${at}: shorter than ${s.minLength}`);
-		if (s.maxLength != null && v.length > s.maxLength) out.push(`${at}: longer than ${s.maxLength}`);
-	}
-	if (typeof v === "number") {
-		if (s.minimum != null && v < s.minimum) out.push(`${at}: below ${s.minimum}`);
-		if (s.maximum != null && v > s.maximum) out.push(`${at}: above ${s.maximum}`);
-	}
-	if (Array.isArray(v)) {
-		if (s.minItems != null && v.length < s.minItems) out.push(`${at}: fewer than ${s.minItems} items`);
-		if (s.maxItems != null && v.length > s.maxItems) out.push(`${at}: more than ${s.maxItems} items`);
-		if (s.items) v.forEach((x, i) => out.push(...validate(x, s.items, `${at}/${i}`)));
-	}
-	if (v && typeof v === "object" && !Array.isArray(v)) {
-		for (const k of s.required ?? []) if (!(k in v)) out.push(`${at}/${k}: required`);
-		for (const [k, x] of Object.entries(v)) {
-			if (s.properties?.[k]) out.push(...validate(x, s.properties[k], `${at}/${k}`));
-			else if (s.additionalProperties === false) out.push(`${at}/${k}: not allowed`);
-			else if (typeof s.additionalProperties === "object") out.push(...validate(x, s.additionalProperties, `${at}/${k}`));
-		}
-	}
-	return out;
-}
 
 // -- the browsers ---------------------------------------------------------------
 
@@ -258,7 +214,7 @@ try {
 	for (const [dir, m] of traced) seen[dir].add(m.t);
 	for (const dir of ["toShell", "toFrame"]) {
 		const types = SCHEMA.$defs[dir].oneOf.map((r) => deref(r.$ref).properties.t.const);
-		const missing = types.filter((t) => !seen[dir].has(t) && !NOT_EXERCISED.has(t));
+		const missing = types.filter((t) => !seen[dir].has(t) && !NOT_EXERCISED.has(t) && !LAYER2.has(t));
 		check(`every ${dir === "toShell" ? "frame → shell" : "shell → frame"} message was exercised`, !missing.length, `never seen: ${missing.join(", ")}`);
 		const unknown = [...seen[dir]].filter((t) => !types.includes(t));
 		check(`…and nothing outside the catalogue (${dir})`, !unknown.length, unknown.join(", "));

@@ -581,6 +581,131 @@ Sealed = TypedDict(
     },
 )
 
+class Act(TypedDict):
+    """
+    `act`, frame to shell. Layer 2 (manifest `state: "managed"`): this player's
+    move. The platform applies it on the host with the rules' `apply({ action,
+    by })`; a refusal comes back as `rejected`.
+    """
+
+    v: Literal[2]
+    t: Literal["act"]
+    # May carry ArrayBuffers (see Json).
+    a: Json
+
+class Input(TypedDict):
+    """
+    `input`, frame to shell. Layer 2, a ticking game (manifest `tick`): this
+    player's latest input. The host keeps the latest per seat and hands them
+    all to `tick({ inputs, dt })`.
+    """
+
+    v: Literal[2]
+    t: Literal["input"]
+    # May carry ArrayBuffers (see Json).
+    i: Json
+
+# Values of RulesCallFn.
+RulesCallFn = Literal["init", "apply", "tick", "view", "turn", "bot", "result", "snapshot", "restore", "skip"]
+
+class RulesCallSeatsItem(TypedDict):
+    id: MemberId
+    name: str
+    team: NotRequired[str | None]
+    bot: bool
+
+class RulesCall(TypedDict):
+    """
+    One call into a managed game's rules. `fn` names the rule; the other fields
+    are its arguments.
+    """
+
+    fn: RulesCallFn
+    # init: the seated players, in party order.
+    seats: NotRequired[list[RulesCallSeatsItem]]
+    # init: the game's options (manifest `opts`). May carry ArrayBuffers (see
+    # Json).
+    opts: NotRequired[dict[str, Any]]
+    # init: a random seed.
+    seed: NotRequired[int]
+    # init: which match of this run (0, then 1 on the first rematch…).
+    match: NotRequired[int]
+    # apply: the move. May carry ArrayBuffers (see Json).
+    action: NotRequired[Json]
+    # apply: who made it (a bot's id for a bot).
+    by: NotRequired[MemberId]
+    # tick: each seat's latest input. May carry ArrayBuffers (see Json).
+    inputs: NotRequired[dict[str, Json]]
+    # tick: seconds since the last tick (1 / manifest tick).
+    dt: NotRequired[float]
+    # view (null: a spectator), bot, skip: the seat.
+    seat: NotRequired[MemberId | None]
+    # restore: what `snapshot()` returned on the old host. May carry
+    # ArrayBuffers (see Json).
+    snapshot: NotRequired[Json]
+
+class RulesOut(TypedDict):
+    """
+    One call's outcome: `v`, what the rule returned (apply: null or true when
+    allowed, else the reason as a string; skip: true if it skipped), or `err`
+    when it threw or does not exist.
+    """
+
+    # May carry ArrayBuffers (see Json).
+    v: NotRequired[Json]
+    err: NotRequired[str]
+
+class Rules(TypedDict):
+    """
+    `rules`, shell to frame. Request, Layer 2: call a managed game's rules, in
+    order, in one round trip. Reply `{ out: [rulesOut…] }`, one per call. Only
+    the host's rules are live; every phone's frame answers on a takeover.
+    """
+
+    v: Literal[2]
+    t: Literal["rules"]
+    id: Id
+    # At least 1 items.
+    calls: list[RulesCall]
+
+class View(TypedDict):
+    """
+    `view`, shell to frame. Layer 2: what this phone's player may see now (the
+    rules' `view({ seat })`), in `state`. Sent only when it changed.
+    """
+
+    v: Literal[2]
+    t: Literal["view"]
+    # May carry ArrayBuffers (see Json).
+    state: Json
+
+class Rejected(TypedDict):
+    """
+    `rejected`, shell to frame. Layer 2: the host's rules refused this player's
+    `act`.
+    """
+
+    v: Literal[2]
+    t: Literal["rejected"]
+    # May carry ArrayBuffers (see Json).
+    a: NotRequired[Json]
+    reason: str
+
+class RuntimeFile(TypedDict):
+    """
+    `runtime.file`, frame to shell. Request: a file of a runtime the platform
+    ships, for a game whose language needs one (manifest `runtime: "python"`:
+    Pyodide, from sdk/v1/pyodide/). Reply `{ bytes, type }`. Only that folder;
+    it does not count toward the game's size cap.
+    """
+
+    v: Literal[2]
+    t: Literal["runtime.file"]
+    id: Id
+    # Relative to the runtime's folder, e.g. `pyodide.asm.wasm`. At most 256
+    # chars.
+    path: str
+
 # Frame to shell. Each message's t.
 ToShellType = Literal[
     "hello",
@@ -607,6 +732,9 @@ ToShellType = Literal[
     "seal.send",
     "commit",
     "verify",
+    "act",
+    "input",
+    "runtime.file",
 ]
 
 TO_SHELL: tuple[ToShellType, ...] = (
@@ -634,6 +762,9 @@ TO_SHELL: tuple[ToShellType, ...] = (
     "seal.send",
     "commit",
     "verify",
+    "act",
+    "input",
+    "runtime.file",
 )
 
 # Frame to shell.
@@ -662,6 +793,9 @@ ToShell = (
     | SealSend
     | Commit
     | Verify
+    | Act
+    | Input
+    | RuntimeFile
 )
 
 # Shell to frame. Each message's t.
@@ -679,6 +813,9 @@ ToFrameType = Literal[
     "wait",
     "paused",
     "sealed",
+    "rules",
+    "view",
+    "rejected",
 ]
 
 TO_FRAME: tuple[ToFrameType, ...] = (
@@ -695,6 +832,9 @@ TO_FRAME: tuple[ToFrameType, ...] = (
     "wait",
     "paused",
     "sealed",
+    "rules",
+    "view",
+    "rejected",
 )
 
 # Shell to frame.
@@ -712,6 +852,9 @@ ToFrame = (
     | Wait
     | Paused
     | Sealed
+    | Rules
+    | View
+    | Rejected
 )
 
 # Every message's t.

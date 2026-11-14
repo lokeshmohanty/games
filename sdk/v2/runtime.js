@@ -24,6 +24,10 @@
 //   arcade.channel(ch, (d, from) => …)    listen + filter `msg` → { send(d, to?) }
 //   arcade.isHost()  arcade.ready()  arcade.result(r)  arcade.toast(text)
 //
+// Layer 2, managed state: `arcade.managed(rules)`, `arcade.act(a)`,
+// `arcade.input(i)`, `arcade.on("view", …)`, and data-arcade-* bindings for a
+// game written as markup (lib/sdk-managed.js runs the rest).
+//
 // Messages the game posts before the port arrives wait in an outbox. A
 // handler added after `init` arrived still gets `init` (on("init") replays it).
 // The theme is applied to <html> here, so a DOM game's CSS variables follow
@@ -90,15 +94,16 @@
 			// The shell's request (takeOver): answered by the game, or refused.
 			// A game that hears everything ("*") and has no answer registered
 			// sends its own `reply` (re: m.id); the shell times out without one.
+			// An answer is a boolean (ok), or an object of reply fields.
 			const fn = answers.get(m.t);
 			if (!fn && handlers.get("*")?.size) return emit(m);
-			let ok = false;
+			let out = false;
 			try {
-				ok = fn ? !!(await fn(m)) : false;
+				out = fn ? await fn(m) : false;
 			} catch (err) {
 				console.error(`arcade: answering "${m.t}" threw`, err);
 			}
-			post({ t: "reply", re: m.id, ok });
+			post(out && typeof out === "object" ? { ok: true, ...out, t: "reply", re: m.id } : { t: "reply", re: m.id, ok: !!out });
 		}
 		emit(m);
 	}
@@ -144,8 +149,71 @@
 		},
 		/** For tests: a game may set `arcade.debug = () => ({ … })`. */
 		debug: null,
+
+		// -- Layer 2: managed state (lib/sdk-managed.js) -----------------------
+		/**
+		 * Hand the platform your rules: { init, apply, view, turn, bot, result,
+		 * snapshot, restore, tick?, skip? } (docs/sdk-v2.md "Managed state").
+		 * The platform calls them on the host and sends each phone its view;
+		 * render it in `arcade.on("view", (m) => draw(m.state))`. Says `ready`.
+		 */
+		managed(rules) {
+			arcade.answer("rules", async (m) => {
+				const out = [];
+				for (const c of Array.isArray(m.calls) ? m.calls : []) {
+					const fn = rules[c?.fn];
+					try {
+						if (typeof fn !== "function") out.push(c?.fn === "skip" ? { v: false } : { err: `no rule "${c?.fn}"` });
+						else out.push({ v: (await fn.call(rules, c)) ?? null });
+					} catch (err) {
+						out.push({ err: String(err?.message ?? err) });
+					}
+				}
+				return { out };
+			});
+			arcade.init.then(() => post({ t: "ready" }));
+		},
+		/** This player's move: applied on the host by `apply({ action, by })`. */
+		act: (a) => post({ t: "act", a }),
+		/** A ticking game: this player's latest input (latest wins). */
+		input: (i) => post({ t: "input", i }),
+		/** The last view this phone was sent (null before the first). */
+		view: null,
 	};
 	window.arcade = arcade;
+
+	// The HTML/CSS lane: a managed game's markup binds to its view without
+	// code. `data-arcade-act='{"i":4}'` on a button sends that action;
+	// `data-arcade-text="board.3"` shows that path of the view;
+	// `data-arcade-show="mine"` shows the element while that path is truthy;
+	// `data-arcade-class="cls:path"` toggles a class.
+	const at = (v, path) => path.split(".").reduce((o, k) => (o == null ? undefined : o[k]), v);
+	const bind = (v) => {
+		for (const el of document.querySelectorAll("[data-arcade-text]")) {
+			const x = at(v, el.dataset.arcadeText);
+			el.textContent = x == null ? "" : String(x);
+		}
+		for (const el of document.querySelectorAll("[data-arcade-show]")) el.hidden = !at(v, el.dataset.arcadeShow);
+		for (const el of document.querySelectorAll("[data-arcade-class]")) {
+			for (const pair of el.dataset.arcadeClass.split(/\s+/)) {
+				const [cls, path] = pair.split(":");
+				if (cls && path) el.classList.toggle(cls, !!at(v, path));
+			}
+		}
+	};
+	arcade.on("view", (m) => {
+		arcade.view = m.state;
+		bind(m.state);
+	});
+	addEventListener("click", (e) => {
+		const el = e.target.closest?.("[data-arcade-act]");
+		if (!el || el.disabled) return;
+		try {
+			arcade.act(JSON.parse(el.dataset.arcadeAct));
+		} catch (err) {
+			console.error("arcade: data-arcade-act is not JSON", err);
+		}
+	});
 
 	// The tests reach a running game through `window.__game.handle.debug()`
 	// (scripts/serve.mjs gameFrame), the same as a v1 game. It appears once

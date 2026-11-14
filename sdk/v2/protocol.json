@@ -290,6 +290,15 @@
         },
         {
           "$ref": "#/$defs/verify"
+        },
+        {
+          "$ref": "#/$defs/act"
+        },
+        {
+          "$ref": "#/$defs/input"
+        },
+        {
+          "$ref": "#/$defs/runtime.file"
         }
       ]
     },
@@ -334,6 +343,15 @@
         },
         {
           "$ref": "#/$defs/sealed"
+        },
+        {
+          "$ref": "#/$defs/rules"
+        },
+        {
+          "$ref": "#/$defs/view"
+        },
+        {
+          "$ref": "#/$defs/rejected"
         }
       ]
     },
@@ -1339,6 +1357,253 @@
         "to": {
           "$ref": "#/$defs/memberId",
           "description": "Set when the host sealed a message to a bot it plays: the bot it was for."
+        }
+      }
+    },
+    "act": {
+      "description": "Layer 2 (manifest `state: \"managed\"`): this player's move. The platform applies it on the host with the rules' `apply({ action, by })`; a refusal comes back as `rejected`.",
+      "type": "object",
+      "required": [
+        "v",
+        "t",
+        "a"
+      ],
+      "properties": {
+        "v": {
+          "const": 2
+        },
+        "t": {
+          "const": "act"
+        },
+        "a": {
+          "$ref": "#/$defs/json"
+        }
+      }
+    },
+    "input": {
+      "description": "Layer 2, a ticking game (manifest `tick`): this player's latest input. The host keeps the latest per seat and hands them all to `tick({ inputs, dt })`.",
+      "type": "object",
+      "required": [
+        "v",
+        "t",
+        "i"
+      ],
+      "properties": {
+        "v": {
+          "const": 2
+        },
+        "t": {
+          "const": "input"
+        },
+        "i": {
+          "$ref": "#/$defs/json"
+        }
+      }
+    },
+    "rulesCall": {
+      "type": "object",
+      "required": [
+        "fn"
+      ],
+      "description": "One call into a managed game's rules. `fn` names the rule; the other fields are its arguments.",
+      "properties": {
+        "fn": {
+          "enum": [
+            "init",
+            "apply",
+            "tick",
+            "view",
+            "turn",
+            "bot",
+            "result",
+            "snapshot",
+            "restore",
+            "skip"
+          ]
+        },
+        "seats": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "id",
+              "name",
+              "bot"
+            ],
+            "properties": {
+              "id": {
+                "$ref": "#/$defs/memberId"
+              },
+              "name": {
+                "type": "string"
+              },
+              "team": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "bot": {
+                "type": "boolean"
+              }
+            }
+          },
+          "description": "init: the seated players, in party order."
+        },
+        "opts": {
+          "type": "object",
+          "description": "init: the game's options (manifest `opts`)."
+        },
+        "seed": {
+          "type": "integer",
+          "description": "init: a random seed."
+        },
+        "match": {
+          "type": "integer",
+          "description": "init: which match of this run (0, then 1 on the first rematch…)."
+        },
+        "action": {
+          "$ref": "#/$defs/json",
+          "description": "apply: the move."
+        },
+        "by": {
+          "$ref": "#/$defs/memberId",
+          "description": "apply: who made it (a bot's id for a bot)."
+        },
+        "inputs": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/json"
+          },
+          "description": "tick: each seat's latest input."
+        },
+        "dt": {
+          "type": "number",
+          "description": "tick: seconds since the last tick (1 / manifest tick)."
+        },
+        "seat": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/memberId"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "view (null: a spectator), bot, skip: the seat."
+        },
+        "snapshot": {
+          "$ref": "#/$defs/json",
+          "description": "restore: what `snapshot()` returned on the old host."
+        }
+      }
+    },
+    "rulesOut": {
+      "type": "object",
+      "description": "One call's outcome: `v`, what the rule returned (apply: null or true when allowed, else the reason as a string; skip: true if it skipped), or `err` when it threw or does not exist.",
+      "properties": {
+        "v": {
+          "$ref": "#/$defs/json"
+        },
+        "err": {
+          "type": "string"
+        }
+      }
+    },
+    "rules": {
+      "description": "Request, Layer 2: call a managed game's rules, in order, in one round trip. Reply `{ out: [rulesOut…] }`, one per call. Only the host's rules are live; every phone's frame answers on a takeover.",
+      "type": "object",
+      "required": [
+        "v",
+        "t",
+        "id",
+        "calls"
+      ],
+      "properties": {
+        "v": {
+          "const": 2
+        },
+        "t": {
+          "const": "rules"
+        },
+        "id": {
+          "$ref": "#/$defs/id"
+        },
+        "calls": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/rulesCall"
+          },
+          "minItems": 1
+        }
+      }
+    },
+    "view": {
+      "description": "Layer 2: what this phone's player may see now (the rules' `view({ seat })`), in `state`. Sent only when it changed.",
+      "type": "object",
+      "required": [
+        "v",
+        "t",
+        "state"
+      ],
+      "properties": {
+        "v": {
+          "const": 2
+        },
+        "t": {
+          "const": "view"
+        },
+        "state": {
+          "$ref": "#/$defs/json"
+        }
+      }
+    },
+    "rejected": {
+      "description": "Layer 2: the host's rules refused this player's `act`.",
+      "type": "object",
+      "required": [
+        "v",
+        "t",
+        "reason"
+      ],
+      "properties": {
+        "v": {
+          "const": 2
+        },
+        "t": {
+          "const": "rejected"
+        },
+        "a": {
+          "$ref": "#/$defs/json"
+        },
+        "reason": {
+          "type": "string"
+        }
+      }
+    },
+    "runtime.file": {
+      "description": "Request: a file of a runtime the platform ships, for a game whose language needs one (manifest `runtime: \"python\"`: Pyodide, from sdk/v1/pyodide/). Reply `{ bytes, type }`. Only that folder; it does not count toward the game's size cap.",
+      "type": "object",
+      "required": [
+        "v",
+        "t",
+        "id",
+        "path"
+      ],
+      "properties": {
+        "v": {
+          "const": 2
+        },
+        "t": {
+          "const": "runtime.file"
+        },
+        "id": {
+          "$ref": "#/$defs/id"
+        },
+        "path": {
+          "type": "string",
+          "maxLength": 256,
+          "description": "Relative to the runtime's folder, e.g. `pyodide.asm.wasm`."
         }
       }
     }

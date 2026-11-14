@@ -61,6 +61,7 @@ export function catalogEntries(files, root) {
 			app: m.app ?? null,
 			// SDK v2 (docs/sdk-v2.md): the protocol runtime, and a WASM game's module.
 			...(m.sdk === 2 ? { sdk: 2, runtime: m.runtime ?? "js", ...(m.wasm ? { wasm: m.wasm } : {}) } : {}),
+			...(m.state === "managed" ? { state: "managed", ...(m.tick ? { tick: m.tick, viewRate: m.viewRate ?? Math.min(15, m.tick) } : {}), ...(m.opts ? { opts: m.opts } : {}) } : {}),
 			ownColours: !!m.ownColours,
 			author: m.author,
 			repo: m.repo,

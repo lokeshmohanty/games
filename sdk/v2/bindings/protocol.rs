@@ -638,6 +638,148 @@ pub struct Sealed {
     pub to: Option<MemberId>,
 }
 
+/// `act`, frame to shell. Layer 2 (manifest `state: "managed"`): this player's move. The platform
+/// applies it on the host with the rules' `apply({ action, by })`; a refusal comes back as
+/// `rejected`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Act {
+    pub v: V2,
+    /// May carry ArrayBuffers (see Json).
+    pub a: Json,
+}
+
+/// `input`, frame to shell. Layer 2, a ticking game (manifest `tick`): this player's latest input.
+/// The host keeps the latest per seat and hands them all to `tick({ inputs, dt })`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Input {
+    pub v: V2,
+    /// May carry ArrayBuffers (see Json).
+    pub i: Json,
+}
+
+/// Values of RulesCallFn.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum RulesCallFn {
+    #[serde(rename = "init")]
+    Init,
+    #[serde(rename = "apply")]
+    Apply,
+    #[serde(rename = "tick")]
+    Tick,
+    #[serde(rename = "view")]
+    View,
+    #[serde(rename = "turn")]
+    Turn,
+    #[serde(rename = "bot")]
+    Bot,
+    #[serde(rename = "result")]
+    Result,
+    #[serde(rename = "snapshot")]
+    Snapshot,
+    #[serde(rename = "restore")]
+    Restore,
+    #[serde(rename = "skip")]
+    Skip,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct RulesCallSeatsItem {
+    pub id: MemberId,
+    pub name: String,
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub team: Option<String>,
+    pub bot: bool,
+}
+
+/// One call into a managed game's rules. `fn` names the rule; the other fields are its arguments.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct RulesCall {
+    #[serde(rename = "fn")]
+    pub fn_: RulesCallFn,
+    /// init: the seated players, in party order.
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub seats: Option<Vec<RulesCallSeatsItem>>,
+    /// init: the game's options (manifest `opts`). May carry ArrayBuffers (see Json).
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub opts: Option<serde_json::Map<String, serde_json::Value>>,
+    /// init: a random seed.
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub seed: Option<i64>,
+    /// init: which match of this run (0, then 1 on the first rematch…).
+    #[serde(rename = "match", skip_serializing_if = "Option::is_none", default)]
+    pub match_: Option<i64>,
+    /// apply: the move. May carry ArrayBuffers (see Json).
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub action: Option<Json>,
+    /// apply: who made it (a bot's id for a bot).
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub by: Option<MemberId>,
+    /// tick: each seat's latest input. May carry ArrayBuffers (see Json).
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub inputs: Option<BTreeMap<String, Json>>,
+    /// tick: seconds since the last tick (1 / manifest tick).
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub dt: Option<f64>,
+    /// view (null: a spectator), bot, skip: the seat.
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub seat: Option<MemberId>,
+    /// restore: what `snapshot()` returned on the old host. May carry ArrayBuffers (see Json).
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub snapshot: Option<Json>,
+}
+
+/// One call's outcome: `v`, what the rule returned (apply: null or true when allowed, else the
+/// reason as a string; skip: true if it skipped), or `err` when it threw or does not exist.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct RulesOut {
+    /// May carry ArrayBuffers (see Json).
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub v: Option<Json>,
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub err: Option<String>,
+}
+
+/// `rules`, shell to frame. Request, Layer 2: call a managed game's rules, in order, in one round
+/// trip. Reply `{ out: [rulesOut…] }`, one per call. Only the host's rules are live; every phone's
+/// frame answers on a takeover.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Rules {
+    pub v: V2,
+    pub id: Id,
+    /// At least 1 items.
+    pub calls: Vec<RulesCall>,
+}
+
+/// `view`, shell to frame. Layer 2: what this phone's player may see now (the rules' `view({ seat
+/// })`), in `state`. Sent only when it changed.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct View {
+    pub v: V2,
+    /// May carry ArrayBuffers (see Json).
+    pub state: Json,
+}
+
+/// `rejected`, shell to frame. Layer 2: the host's rules refused this player's `act`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Rejected {
+    pub v: V2,
+    /// May carry ArrayBuffers (see Json).
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub a: Option<Json>,
+    pub reason: String,
+}
+
+/// `runtime.file`, frame to shell. Request: a file of a runtime the platform ships, for a game
+/// whose language needs one (manifest `runtime: "python"`: Pyodide, from sdk/v1/pyodide/). Reply `{
+/// bytes, type }`. Only that folder; it does not count toward the game's size cap.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct RuntimeFile {
+    pub v: V2,
+    pub id: Id,
+    /// Relative to the runtime's folder, e.g. `pyodide.asm.wasm`. At most 256 chars.
+    pub path: String,
+}
+
 /// Frame to shell.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[allow(clippy::large_enum_variant)]
@@ -691,6 +833,12 @@ pub enum ToShell {
     Commit(Commit),
     #[serde(rename = "verify")]
     Verify(Verify),
+    #[serde(rename = "act")]
+    Act(Act),
+    #[serde(rename = "input")]
+    Input(Input),
+    #[serde(rename = "runtime.file")]
+    RuntimeFile(RuntimeFile),
     /// A `t` this version does not know. The protocol says to ignore it (the other side may be
     /// newer); it cannot be serialised.
     #[serde(other, skip_serializing)]
@@ -728,6 +876,12 @@ pub enum ToFrame {
     Paused(Paused),
     #[serde(rename = "sealed")]
     Sealed(Sealed),
+    #[serde(rename = "rules")]
+    Rules(Rules),
+    #[serde(rename = "view")]
+    View(View),
+    #[serde(rename = "rejected")]
+    Rejected(Rejected),
     /// A `t` this version does not know. The protocol says to ignore it (the other side may be
     /// newer); it cannot be serialised.
     #[serde(other, skip_serializing)]
@@ -760,6 +914,9 @@ pub const TO_SHELL: &[&str] = &[
     "seal.send",
     "commit",
     "verify",
+    "act",
+    "input",
+    "runtime.file",
 ];
 
 /// Every ToFrame `t`, in schema order.
@@ -777,4 +934,7 @@ pub const TO_FRAME: &[&str] = &[
     "wait",
     "paused",
     "sealed",
+    "rules",
+    "view",
+    "rejected",
 ];

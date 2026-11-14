@@ -26,42 +26,48 @@ const Version = 2
 
 // Each message's t.
 const (
-	TypeHello      = "hello"
-	TypeReady      = "ready"
-	TypeReply      = "reply"
-	TypeListen     = "listen"
-	TypeSend       = "send"
-	TypeEmitAs     = "emitAs"
-	TypeMeta       = "meta"
-	TypeStoreSet   = "store.set"
-	TypeSessionSet = "session.set"
-	TypeAsset      = "asset"
-	TypeResult     = "result"
-	TypeEnd        = "end"
-	TypeHostNew    = "hostNew"
-	TypeToast      = "toast"
-	TypeAsk        = "ask"
-	TypeHaptic     = "haptic"
-	TypeTimerOpen  = "timer.open"
-	TypeTimerDo    = "timer.do"
-	TypeWaitTurn   = "wait.turn"
-	TypeWaitPause  = "wait.pause"
-	TypeSealListen = "seal.listen"
-	TypeSealSend   = "seal.send"
-	TypeCommit     = "commit"
-	TypeVerify     = "verify"
-	TypeInit       = "init"
-	TypeRoster     = "roster"
-	TypeJoin       = "join"
-	TypeLeave      = "leave"
-	TypeMsg        = "msg"
-	TypeThemeSet   = "theme.set"
-	TypeTakeOver   = "takeOver"
-	TypeUnmount    = "unmount"
-	TypeTimer      = "timer"
-	TypeWait       = "wait"
-	TypePaused     = "paused"
-	TypeSealed     = "sealed"
+	TypeHello       = "hello"
+	TypeReady       = "ready"
+	TypeReply       = "reply"
+	TypeListen      = "listen"
+	TypeSend        = "send"
+	TypeEmitAs      = "emitAs"
+	TypeMeta        = "meta"
+	TypeStoreSet    = "store.set"
+	TypeSessionSet  = "session.set"
+	TypeAsset       = "asset"
+	TypeResult      = "result"
+	TypeEnd         = "end"
+	TypeHostNew     = "hostNew"
+	TypeToast       = "toast"
+	TypeAsk         = "ask"
+	TypeHaptic      = "haptic"
+	TypeTimerOpen   = "timer.open"
+	TypeTimerDo     = "timer.do"
+	TypeWaitTurn    = "wait.turn"
+	TypeWaitPause   = "wait.pause"
+	TypeSealListen  = "seal.listen"
+	TypeSealSend    = "seal.send"
+	TypeCommit      = "commit"
+	TypeVerify      = "verify"
+	TypeAct         = "act"
+	TypeInput       = "input"
+	TypeRuntimeFile = "runtime.file"
+	TypeInit        = "init"
+	TypeRoster      = "roster"
+	TypeJoin        = "join"
+	TypeLeave       = "leave"
+	TypeMsg         = "msg"
+	TypeThemeSet    = "theme.set"
+	TypeTakeOver    = "takeOver"
+	TypeUnmount     = "unmount"
+	TypeTimer       = "timer"
+	TypeWait        = "wait"
+	TypePaused      = "paused"
+	TypeSealed      = "sealed"
+	TypeRules       = "rules"
+	TypeView        = "view"
+	TypeRejected    = "rejected"
 )
 
 // ToShellTypes lists every t that goes frame to shell, in schema order.
@@ -90,6 +96,9 @@ var ToShellTypes = [...]string{
 	TypeSealSend,
 	TypeCommit,
 	TypeVerify,
+	TypeAct,
+	TypeInput,
+	TypeRuntimeFile,
 }
 
 // ToFrameTypes lists every t that goes shell to frame, in schema order.
@@ -107,6 +116,9 @@ var ToFrameTypes = [...]string{
 	TypeWait,
 	TypePaused,
 	TypeSealed,
+	TypeRules,
+	TypeView,
+	TypeRejected,
 }
 
 // ID: A request's number, unique per sender. At least 1.
@@ -855,6 +867,144 @@ type Sealed struct {
 	To *MemberID `json:"to,omitempty"`
 }
 
+// Act: `act`, frame to shell. Layer 2 (manifest `state: "managed"`): this
+// player's move. The platform applies it on the host with the rules' `apply({
+// action, by })`; a refusal comes back as `rejected`.
+type Act struct {
+	// Version.
+	V int `json:"v"`
+	// TypeAct.
+	T string `json:"t"`
+	// May carry ArrayBuffers (see Json).
+	A JSON `json:"a"`
+}
+
+// Input: `input`, frame to shell. Layer 2, a ticking game (manifest `tick`):
+// this player's latest input. The host keeps the latest per seat and hands them
+// all to `tick({ inputs, dt })`.
+type Input struct {
+	// Version.
+	V int `json:"v"`
+	// TypeInput.
+	T string `json:"t"`
+	// May carry ArrayBuffers (see Json).
+	I JSON `json:"i"`
+}
+
+// RulesCallFn: Values of RulesCallFn.
+type RulesCallFn string
+
+// RulesCallFn values.
+const (
+	RulesCallFnInit     RulesCallFn = "init"
+	RulesCallFnApply    RulesCallFn = "apply"
+	RulesCallFnTick     RulesCallFn = "tick"
+	RulesCallFnView     RulesCallFn = "view"
+	RulesCallFnTurn     RulesCallFn = "turn"
+	RulesCallFnBot      RulesCallFn = "bot"
+	RulesCallFnResult   RulesCallFn = "result"
+	RulesCallFnSnapshot RulesCallFn = "snapshot"
+	RulesCallFnRestore  RulesCallFn = "restore"
+	RulesCallFnSkip     RulesCallFn = "skip"
+)
+
+// RulesCallSeatsItem
+type RulesCallSeatsItem struct {
+	ID   MemberID `json:"id"`
+	Name string   `json:"name"`
+	Team *string  `json:"team,omitempty"`
+	Bot  bool     `json:"bot"`
+}
+
+// RulesCall: One call into a managed game's rules. `fn` names the rule; the
+// other fields are its arguments.
+type RulesCall struct {
+	Fn RulesCallFn `json:"fn"`
+	// init: the seated players, in party order.
+	Seats []RulesCallSeatsItem `json:"seats,omitempty"`
+	// init: the game's options (manifest `opts`). May carry ArrayBuffers (see
+	// Json).
+	Opts map[string]json.RawMessage `json:"opts,omitempty"`
+	// init: a random seed.
+	Seed *int `json:"seed,omitempty"`
+	// init: which match of this run (0, then 1 on the first rematch…).
+	Match *int `json:"match,omitempty"`
+	// apply: the move. May carry ArrayBuffers (see Json).
+	Action JSON `json:"action,omitempty"`
+	// apply: who made it (a bot's id for a bot).
+	By *MemberID `json:"by,omitempty"`
+	// tick: each seat's latest input. May carry ArrayBuffers (see Json).
+	Inputs map[string]JSON `json:"inputs,omitempty"`
+	// tick: seconds since the last tick (1 / manifest tick).
+	Dt *float64 `json:"dt,omitempty"`
+	// view (null: a spectator), bot, skip: the seat.
+	Seat *MemberID `json:"seat,omitempty"`
+	// restore: what `snapshot()` returned on the old host. May carry ArrayBuffers
+	// (see Json).
+	Snapshot JSON `json:"snapshot,omitempty"`
+}
+
+// RulesOut: One call's outcome: `v`, what the rule returned (apply: null or
+// true when allowed, else the reason as a string; skip: true if it skipped), or
+// `err` when it threw or does not exist.
+type RulesOut struct {
+	// May carry ArrayBuffers (see Json).
+	V   JSON    `json:"v,omitempty"`
+	Err *string `json:"err,omitempty"`
+}
+
+// Rules: `rules`, shell to frame. Request, Layer 2: call a managed game's
+// rules, in order, in one round trip. Reply `{ out: [rulesOut…] }`, one per
+// call. Only the host's rules are live; every phone's frame answers on a
+// takeover.
+type Rules struct {
+	// Version.
+	V int `json:"v"`
+	// TypeRules.
+	T  string `json:"t"`
+	ID ID     `json:"id"`
+	// At least 1 items.
+	Calls []RulesCall `json:"calls"`
+}
+
+// View: `view`, shell to frame. Layer 2: what this phone's player may see now
+// (the rules' `view({ seat })`), in `state`. Sent only when it changed.
+type View struct {
+	// Version.
+	V int `json:"v"`
+	// TypeView.
+	T string `json:"t"`
+	// May carry ArrayBuffers (see Json).
+	State JSON `json:"state"`
+}
+
+// Rejected: `rejected`, shell to frame. Layer 2: the host's rules refused this
+// player's `act`.
+type Rejected struct {
+	// Version.
+	V int `json:"v"`
+	// TypeRejected.
+	T string `json:"t"`
+	// May carry ArrayBuffers (see Json).
+	A      JSON   `json:"a,omitempty"`
+	Reason string `json:"reason"`
+}
+
+// RuntimeFile: `runtime.file`, frame to shell. Request: a file of a runtime the
+// platform ships, for a game whose language needs one (manifest `runtime:
+// "python"`: Pyodide, from sdk/v1/pyodide/). Reply `{ bytes, type }`. Only that
+// folder; it does not count toward the game's size cap.
+type RuntimeFile struct {
+	// Version.
+	V int `json:"v"`
+	// TypeRuntimeFile.
+	T  string `json:"t"`
+	ID ID     `json:"id"`
+	// Relative to the runtime's folder, e.g. `pyodide.asm.wasm`. At most 256
+	// chars.
+	Path string `json:"path"`
+}
+
 // Envelope is what every message shares: decode it to see what a message is.
 type Envelope struct {
 	V int    `json:"v"`
@@ -924,6 +1074,12 @@ func DecodeToShell(b []byte) (any, error) {
 		m = &Commit{}
 	case TypeVerify:
 		m = &Verify{}
+	case TypeAct:
+		m = &Act{}
+	case TypeInput:
+		m = &Input{}
+	case TypeRuntimeFile:
+		m = &RuntimeFile{}
 	default:
 		return nil, fmt.Errorf("%w: %q", ErrUnknownType, e.T)
 	}
@@ -970,6 +1126,12 @@ func DecodeToFrame(b []byte) (any, error) {
 		m = &Paused{}
 	case TypeSealed:
 		m = &Sealed{}
+	case TypeRules:
+		m = &Rules{}
+	case TypeView:
+		m = &View{}
+	case TypeRejected:
+		m = &Rejected{}
 	default:
 		return nil, fmt.Errorf("%w: %q", ErrUnknownType, e.T)
 	}

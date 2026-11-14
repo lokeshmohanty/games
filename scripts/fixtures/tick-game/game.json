@@ -1,0 +1,17 @@
+{
+  "sdk": 2,
+  "id": "tick-game",
+  "name": "TICK CHECK",
+  "blurb": "A fixture for scripts/test-managed.mjs: a managed game that ticks.",
+  "entry": "index.html",
+  "kind": "ffa",
+  "shape": "free",
+  "seats": { "min": 1, "max": 4 },
+  "bots": true,
+  "state": "managed",
+  "tick": 20,
+  "viewRate": 10,
+  "license": "MIT",
+  "author": "lokeshmohanty",
+  "repo": "https://github.com/lokeshmohanty/games"
+}

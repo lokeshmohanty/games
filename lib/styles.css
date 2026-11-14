@@ -604,6 +604,54 @@ canvas {
   margin: 0;
 }
 
+/* SDK v2 managed games: the platform's own end card (lib/sdk-managed.js),
+   over the game frame. SEE THE BOARD tucks it to the bottom edge. */
+.managed-over {
+  position: fixed;
+  inset: 0;
+  z-index: 44;
+  display: grid;
+  place-items: center;
+  background: var(--scrim);
+  transition: background 0.2s;
+}
+.managed-over > div {
+  display: grid;
+  gap: 12px;
+  justify-items: center;
+  width: min(320px, calc(100vw - 32px));
+  box-sizing: border-box;
+  padding: 20px 16px;
+  border: 1px solid var(--accent);
+  border-radius: 12px;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--font);
+  text-align: center;
+}
+.managed-over h2 {
+  margin: 0;
+  font-family: var(--font-display);
+  letter-spacing: 0.06em;
+}
+.managed-over p {
+  margin: 0;
+  color: var(--ink-2);
+}
+.managed-over.is-peek {
+  place-items: end center;
+  padding-bottom: max(12px, env(safe-area-inset-bottom));
+  background: transparent;
+  pointer-events: none;
+}
+.managed-over.is-peek > div {
+  pointer-events: auto;
+}
+.managed-over.is-peek h2,
+.managed-over.is-peek p {
+  display: none;
+}
+
 /* The top right of a game page (party.js): FEEDBACK and FAVOURITE for the
    game, and PARTY mid-game — the way back to the party screen while a game
    runs. The portal link's twin on the other side of the same top band, which

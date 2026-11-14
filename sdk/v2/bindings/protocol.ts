@@ -569,6 +569,138 @@ export interface Sealed {
 	to?: MemberId;
 }
 
+/**
+ * `act`, frame to shell. Layer 2 (manifest `state: "managed"`): this player's
+ * move. The platform applies it on the host with the rules' `apply({ action, by
+ * })`; a refusal comes back as `rejected`.
+ */
+export interface Act {
+	v: 2;
+	t: "act";
+	/** May carry ArrayBuffers (see Json). */
+	a: Json;
+}
+
+/**
+ * `input`, frame to shell. Layer 2, a ticking game (manifest `tick`): this
+ * player's latest input. The host keeps the latest per seat and hands them all
+ * to `tick({ inputs, dt })`.
+ */
+export interface Input {
+	v: 2;
+	t: "input";
+	/** May carry ArrayBuffers (see Json). */
+	i: Json;
+}
+
+/** Values of RulesCallFn. */
+export type RulesCallFn = "init" | "apply" | "tick" | "view" | "turn" | "bot" | "result" | "snapshot" | "restore" | "skip";
+
+export interface RulesCallSeatsItem {
+	id: MemberId;
+	name: string;
+	team?: string | null;
+	bot: boolean;
+}
+
+/**
+ * One call into a managed game's rules. `fn` names the rule; the other fields
+ * are its arguments.
+ */
+export interface RulesCall {
+	fn: RulesCallFn;
+	/** init: the seated players, in party order. */
+	seats?: RulesCallSeatsItem[];
+	/**
+	 * init: the game's options (manifest `opts`). May carry ArrayBuffers (see
+	 * Json).
+	 */
+	opts?: Record<string, unknown>;
+	/** init: a random seed. */
+	seed?: number;
+	/** init: which match of this run (0, then 1 on the first rematch…). */
+	match?: number;
+	/** apply: the move. May carry ArrayBuffers (see Json). */
+	action?: Json;
+	/** apply: who made it (a bot's id for a bot). */
+	by?: MemberId;
+	/** tick: each seat's latest input. May carry ArrayBuffers (see Json). */
+	inputs?: Record<string, Json>;
+	/** tick: seconds since the last tick (1 / manifest tick). */
+	dt?: number;
+	/** view (null: a spectator), bot, skip: the seat. */
+	seat?: MemberId | null;
+	/**
+	 * restore: what `snapshot()` returned on the old host. May carry ArrayBuffers
+	 * (see Json).
+	 */
+	snapshot?: Json;
+}
+
+/**
+ * One call's outcome: `v`, what the rule returned (apply: null or true when
+ * allowed, else the reason as a string; skip: true if it skipped), or `err`
+ * when it threw or does not exist.
+ */
+export interface RulesOut {
+	/** May carry ArrayBuffers (see Json). */
+	v?: Json;
+	err?: string;
+}
+
+/**
+ * `rules`, shell to frame. Request, Layer 2: call a managed game's rules, in
+ * order, in one round trip. Reply `{ out: [rulesOut…] }`, one per call. Only
+ * the host's rules are live; every phone's frame answers on a takeover.
+ */
+export interface Rules {
+	v: 2;
+	t: "rules";
+	id: Id;
+	/** At least 1 items. */
+	calls: RulesCall[];
+}
+
+/**
+ * `view`, shell to frame. Layer 2: what this phone's player may see now (the
+ * rules' `view({ seat })`), in `state`. Sent only when it changed.
+ */
+export interface View {
+	v: 2;
+	t: "view";
+	/** May carry ArrayBuffers (see Json). */
+	state: Json;
+}
+
+/**
+ * `rejected`, shell to frame. Layer 2: the host's rules refused this player's
+ * `act`.
+ */
+export interface Rejected {
+	v: 2;
+	t: "rejected";
+	/** May carry ArrayBuffers (see Json). */
+	a?: Json;
+	reason: string;
+}
+
+/**
+ * `runtime.file`, frame to shell. Request: a file of a runtime the platform
+ * ships, for a game whose language needs one (manifest `runtime: "python"`:
+ * Pyodide, from sdk/v1/pyodide/). Reply `{ bytes, type }`. Only that folder; it
+ * does not count toward the game's size cap.
+ */
+export interface RuntimeFile {
+	v: 2;
+	t: "runtime.file";
+	id: Id;
+	/**
+	 * Relative to the runtime's folder, e.g. `pyodide.asm.wasm`. At most 256
+	 * chars.
+	 */
+	path: string;
+}
+
 /** Frame to shell. */
 export type ToShell =
 	| Hello
@@ -594,7 +726,10 @@ export type ToShell =
 	| SealListen
 	| SealSend
 	| Commit
-	| Verify;
+	| Verify
+	| Act
+	| Input
+	| RuntimeFile;
 
 /** Shell to frame. */
 export type ToFrame =
@@ -610,7 +745,10 @@ export type ToFrame =
 	| Timer
 	| Wait
 	| Paused
-	| Sealed;
+	| Sealed
+	| Rules
+	| View
+	| Rejected;
 
 /** Any message, either direction. */
 export type Message = ToShell | ToFrame;
@@ -644,6 +782,9 @@ export const TO_SHELL: readonly ToShell["t"][] = [
 	"seal.send",
 	"commit",
 	"verify",
+	"act",
+	"input",
+	"runtime.file",
 ];
 
 /** Every ToFrame `t`, in schema order. */
@@ -661,4 +802,7 @@ export const TO_FRAME: readonly ToFrame["t"][] = [
 	"wait",
 	"paused",
 	"sealed",
+	"rules",
+	"view",
+	"rejected",
 ];

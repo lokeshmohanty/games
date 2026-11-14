@@ -40,7 +40,7 @@ serve-lan:
     python3 -m http.server {{port}}
 
 # Every suite, in the order they get slower.
-test: check-precache check-sw-version check-bindings check-colours community test-stats test-submission test-codec test-hub test-worker-do test-plumbing test-rules test-room test-party test-scan test-pwa test-bots test-devkit test-protocol test-webapp test-theme test-portal
+test: check-precache check-sw-version check-bindings check-colours community test-stats test-submission test-codec test-hub test-worker-do test-plumbing test-rules test-room test-party test-scan test-pwa test-bots test-devkit test-protocol test-managed test-webapp test-theme test-portal
 
 # No browser needed — the signalling codec round-trip.
 test-codec:
@@ -135,6 +135,10 @@ test-pwa:
 # SDK v2: three peers play a fixture that uses every service; every message is checked against sdk/v2/protocol.json.
 test-protocol:
     node scripts/test-protocol.mjs
+
+# SDK v2 managed state: views, refusals, end card, rematch, handover to the heir, a ticking game.
+test-managed:
+    node scripts/test-managed.mjs
 
 # Every game playable by one person, and the mobile layouts at 390x844.
 test-bots:
