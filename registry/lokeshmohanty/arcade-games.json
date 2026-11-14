@@ -1,5 +1,5 @@
 {
   "repo": "https://github.com/lokeshmohanty/arcade-games",
-  "commit": "a1eeebfb9fe4f2d6c8886ad97c6b2f162a375817",
+  "commit": "2997566b30933798045c667a4b129d58c0c2a845",
   "games": ["battleship", "draw-guess", "liars-dice", "light-cycles", "sudoku"]
 }
