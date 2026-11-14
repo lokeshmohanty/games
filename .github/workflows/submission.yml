@@ -39,8 +39,18 @@ jobs:
         run: npm install --no-save playwright@1.62.1
       - name: Fetch Pyodide (web apps' servers)
         run: node scripts/vendor-pyodide.mjs
+      # Each web app's build, kept per pinned commit (fetch-community.mjs,
+      # NEON_APP_CACHE): only a new pin or new build tooling builds again.
+      # A pull request reads main's entries; what it builds stays its own.
+      - name: Restore web app builds
+        uses: actions/cache@v6
+        with:
+          path: ${{ runner.temp }}/app-cache
+          key: apps-${{ hashFiles('registry/**/*.json', 'scripts/app-build.mjs', 'scripts/py-deps.py', 'sdk/v1/pyodide/pyodide-lock.json') }}
+          restore-keys: apps-
       - name: Judge the submission
         env:
+          NEON_APP_CACHE: ${{ runner.temp }}/app-cache
           CHROME: /usr/bin/google-chrome
           GITHUB_TOKEN: ${{ github.token }}
         run: node scripts/check-submission.mjs --base "origin/${{ github.base_ref }}" --out submission

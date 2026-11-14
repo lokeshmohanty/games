@@ -24,8 +24,13 @@
 //     (a local clone instead of GitHub. A clone at ../<repo> that has the
 //      pinned commit is used without asking. Either way the commit is
 //      exported with `git archive`, never the working tree.)
+//   NEON_APP_CACHE=dir node scripts/fetch-community.mjs
+//     (keep each web app's build in dir, and reuse it while the pin and the
+//      build tooling are unchanged — CI restores dir with actions/cache.
+//      Entries no pin uses any more are removed.)
 
 import { execFileSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import {
 	cpSync,
 	existsSync,
@@ -33,6 +38,7 @@ import {
 	mkdtempSync,
 	readdirSync,
 	readFileSync,
+	renameSync,
 	rmSync,
 	statSync,
 	writeFileSync,
@@ -51,6 +57,11 @@ const MAX_WHEEL_BYTES = 5 * 1024 * 1024; // a web app's server/wheels/, counted 
 const SHA = /^[0-9a-f]{40}$/;
 const NAME = /^[A-Za-z0-9_.-]+$/;
 const GAME_PATH = /^[A-Za-z0-9_.-]+(\/[A-Za-z0-9_.-]+)*$/;
+
+const APP_CACHE = process.env.NEON_APP_CACHE ? resolve(process.env.NEON_APP_CACHE) : null;
+// What a build's output depends on besides the pinned commit: change any of
+// these and every web app is built again.
+const BUILD_TOOLS = ["scripts/app-build.mjs", "scripts/py-deps.py", "sdk/v1/pyodide/pyodide-lock.json"];
 
 const local = new Map(
 	(process.env.NEON_LOCAL_REPOS ?? "")
@@ -78,6 +89,13 @@ function markColours(dir) {
 	if (!own) return;
 	const file = join(dir, "game.json");
 	writeFileSync(file, JSON.stringify({ ...JSON.parse(readFileSync(file, "utf8")), ownColours: true }, null, "\t") + "\n");
+}
+
+/** The build tooling's fingerprint, part of every cache key. */
+function toolsHash() {
+	const h = createHash("sha256");
+	for (const f of BUILD_TOOLS) h.update(f + "\0" + (existsSync(join(ROOT, f)) ? readFileSync(join(ROOT, f)) : "") + "\0");
+	return h.digest("hex");
 }
 
 /** Problems with a registry entry, as sentences. */
@@ -127,6 +145,9 @@ function main() {
 	const manifests = [];
 	const errors = [];
 	const contributors = [];
+	const tools = APP_CACHE && toolsHash();
+	const usedCache = new Set();
+	let [cacheHits, cacheBuilds] = [0, 0];
 
 	for (const owner of existsSync(registry) ? readdirSync(registry).sort() : []) {
 		// Owners are folders; registry/trusted.txt and the like are not.
@@ -164,11 +185,30 @@ function main() {
 						continue;
 					}
 					if (manifest?.app) {
-						try {
-							buildApp({ repo: src, gameDir: from, manifest, to });
-						} catch (err) {
-							errors.push(`${where}: ${path}: ${err.message.split("\n")[0]}`);
-							continue;
+						// A pinned commit's build is the same every time: the
+						// sources are fixed, and so is the tooling (in the key).
+						const key = tools && createHash("sha256").update([owner, repo, entry.commit, path, tools].join("\0")).digest("hex");
+						const cached = key && join(APP_CACHE, key);
+						if (cached) usedCache.add(key);
+						if (cached && existsSync(join(cached, "game.json"))) {
+							rmSync(to, { recursive: true, force: true });
+							cpSync(cached, to, { recursive: true });
+							console.log(`  ${owner}/${repo}/${path}: built at ${entry.commit.slice(0, 8)} before — reused`);
+							cacheHits++;
+						} else {
+							try {
+								buildApp({ repo: src, gameDir: from, manifest, to });
+							} catch (err) {
+								errors.push(`${where}: ${path}: ${err.message.split("\n")[0]}`);
+								continue;
+							}
+							if (cached) {
+								// Whole or not at all: a half-copied entry would pass for a build.
+								rmSync(cached, { recursive: true, force: true });
+								cpSync(to, cached + ".part", { recursive: true });
+								renameSync(cached + ".part", cached);
+								cacheBuilds++;
+							}
 						}
 						const wheels = (f) => f.startsWith("server/wheels/");
 						const built = walk(to);
@@ -218,6 +258,11 @@ function main() {
 	if (errors.length) {
 		console.error(errors.join("\n"));
 		process.exit(1);
+	}
+	if (APP_CACHE && existsSync(APP_CACHE)) {
+		const stale = readdirSync(APP_CACHE).filter((k) => !usedCache.has(k));
+		for (const k of stale) rmSync(join(APP_CACHE, k), { recursive: true, force: true });
+		console.log(`app cache: ${cacheHits} reused, ${cacheBuilds} built, ${stale.length} dropped`);
 	}
 	writeFileSync(
 		join(OUT, "catalog.js"),

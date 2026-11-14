@@ -294,7 +294,16 @@ web app?").
 tarball checkout mounted (`--userns=keep-id` under rootless Podman). In
 `deploy.yml` that happens in a `build-community` job with `contents: read`
 only; the Pages job downloads its output, so author code never runs beside a
-deploy token. The published folder:
+deploy token.
+
+A pinned commit always builds the same, so each build is kept
+(`NEON_APP_CACHE=dir`, set in all three workflows and restored with
+`actions/cache`). An entry's key hashes the owner, repo, commit, game path
+and the build tooling (`app-build.mjs`, `py-deps.py`, the Pyodide lock), so a
+new pin or new tooling builds again and nothing else does; entries no pin uses
+are dropped at the end of a run. A pull request reads main's entries, but
+what it builds is saved where only that pull request sees it. Locally,
+without the variable, every run builds. The published folder:
 
 ```
 web/            the built site (app.build.out, or app.web); every script's

@@ -30,7 +30,10 @@ submission check is the first real container build.
 ac106f3: actions bumped to Node 24 (checkout/setup-node/upload-artifact v7,
 download-artifact v8, configure-pages v6, upload-pages-artifact v5).
 f557928: every job pinned to `ubuntu-24.04`. Deploys now run warning-free.
-Follow-ups: build caching per pinned commit; start-up time on a real phone.
+Build caching per pinned commit (NEON_APP_CACHE, actions/cache in deploy,
+platform-check, submission; docs/sdk.md "Build"): Locale cold 42 s → 0.2 s
+reused locally, output byte-identical; tooling change rebuilds, removed pin
+drops its entry. Follow-up: start-up time on a real phone.
 
 ## In-game FEEDBACK / FAVOURITE (2026-11-14) — pushed to main
 
