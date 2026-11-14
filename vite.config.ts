@@ -16,7 +16,9 @@ export default defineConfig({
 	// Static files are copied by scripts/assemble.mjs, not Vite's public dir.
 	publicDir: false,
 	build: {
-		outDir: "dist",
+		// NEON_DIST: another folder, so two builds (two agents, two checkouts of
+		// a test) do not empty each other's dist/ (scripts/serve.mjs reads it too).
+		outDir: process.env.NEON_DIST || "dist",
 		emptyOutDir: true,
 		target: "es2022",
 		manifest: true,

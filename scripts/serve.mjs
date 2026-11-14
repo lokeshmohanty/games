@@ -15,7 +15,8 @@ const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
  * shell is one page bundled by Vite since 2026-11-15, so the repo itself no
  * longer runs as it stands. NEON_SERVE_SRC=1 serves the repo instead.
  */
-export const SITE_DIR = !process.env.NEON_SERVE_SRC && existsSync(join(ROOT, "dist", "index.html")) ? join(ROOT, "dist") : ROOT;
+const DIST = resolve(ROOT, process.env.NEON_DIST || "dist"); // as vite.config.ts
+export const SITE_DIR = !process.env.NEON_SERVE_SRC && existsSync(join(DIST, "index.html")) ? DIST : ROOT;
 
 /**
  * Added to every test's fixed ports (NEON_PORT_OFFSET=100 …), so two test

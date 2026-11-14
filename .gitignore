@@ -45,3 +45,4 @@ sdk/v1/pyodide/
 # The shell's build (pnpm build → dist/, docs/spa.md) and its dependencies.
 node_modules/
 dist/
+dist-*/

@@ -29,7 +29,7 @@ import { basename, dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const DIST = join(ROOT, "dist");
+const DIST = process.env.NEON_DIST ? resolve(ROOT, process.env.NEON_DIST) : join(ROOT, "dist");
 if (!existsSync(join(DIST, "index.html"))) {
 	console.error("assemble: dist/index.html missing — run vite build first (pnpm build)");
 	process.exit(1);
