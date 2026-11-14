@@ -606,7 +606,7 @@ class Input(TypedDict):
     i: Json
 
 # Values of RulesCallFn.
-RulesCallFn = Literal["init", "apply", "tick", "view", "turn", "bot", "result", "snapshot", "restore", "skip"]
+RulesCallFn = Literal["init", "apply", "tick", "view", "turn", "bot", "result", "snapshot", "restore", "skip", "leave"]
 
 class RulesCallSeatsItem(TypedDict):
     id: MemberId
@@ -638,7 +638,7 @@ class RulesCall(TypedDict):
     inputs: NotRequired[dict[str, Json]]
     # tick: seconds since the last tick (1 / manifest tick).
     dt: NotRequired[float]
-    # view (null: a spectator), bot, skip: the seat.
+    # view (null: a spectator), bot, skip, leave: the seat.
     seat: NotRequired[MemberId | None]
     # restore: what `snapshot()` returned on the old host. May carry
     # ArrayBuffers (see Json).
@@ -647,8 +647,8 @@ class RulesCall(TypedDict):
 class RulesOut(TypedDict):
     """
     One call's outcome: `v`, what the rule returned (apply: null or true when
-    allowed, else the reason as a string; skip: true if it skipped), or `err`
-    when it threw or does not exist.
+    allowed, else the reason as a string; skip / leave: true if the game acted
+    on it; both optional), or `err` when it threw or does not exist.
     """
 
     # May carry ArrayBuffers (see Json).

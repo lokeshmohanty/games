@@ -1,0 +1,23 @@
+{
+  "sdk": 2,
+  "id": "tic-tac-toe-html",
+  "name": "TIC TAC TOE (HTML)",
+  "blurb": "Three in a row. SDK v2 managed state: markup, CSS and rules, no rendering code.",
+  "entry": "index.html",
+  "kind": "duel",
+  "shape": "teams",
+  "seats": {
+    "min": 2,
+    "max": 2
+  },
+  "bots": true,
+  "tags": [
+    "alone",
+    "duel",
+    "quick"
+  ],
+  "license": "MIT",
+  "author": "lokeshmohanty",
+  "repo": "https://github.com/lokeshmohanty/games",
+  "state": "managed"
+}

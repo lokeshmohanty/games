@@ -11,7 +11,8 @@
 //   5. arcade.result when the game is decided
 //   6. roster / join / takeOver messages
 //
-// The same game in Rust is in ../tic-tac-toe-rust.
+// The same game as managed state (the platform runs it; you write only the
+// rules) is ../tic-tac-toe-js, and in six more languages beside it.
 
 const X = 1;
 const O = 2;

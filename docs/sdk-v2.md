@@ -284,42 +284,61 @@ The shell starts fetching the module as soon as the game is picked
 Engines are welcome up to the 10 MB cap. Godot and Unity are out (decided
 2026-11-14).
 
-The Rust example, `sdk/v2/examples/tic-tac-toe-rust`, keeps its rules, bot
-and host authority in Rust, behind one function:
+## Adapters: the same game in every language
 
-- **Input:** `dispatch(json)` takes a protocol message or a page event
-  (`click`, `again`, `wake`, `debug`).
-- **Output:** it returns `{ out: [messages to post], view, wake?, answer? }`.
-- **The rest:** `glue.js` (59 lines, generic) pumps messages in, posts `out`,
-  draws `view` and runs the `wake` timer.
+*Built 2026-11-14 (Phase 3).* Every language other than JavaScript reaches
+managed state through one function:
 
-This is the shape Phase 3's adapters will standardise on for every language
-that is not JavaScript.
+- **Input:** `dispatch(json)` takes one `rulesCall`, e.g.
+  `{"fn":"apply","action":{"i":4},"by":"pX"}`.
+- **Output:** it returns that call's `rulesOut`, `{"v": …}` or `{"err": "…"}`.
+- **Wiring it up:** the page calls `arcade.managedJson(dispatch)` once the
+  language is up.
+- **The adapter's part:** making the rules idiomatic, so an author never
+  touches JSON or the protocol.
 
-| File | Size |
-|---|---|
-| `.wasm` | 87 KB (38 KB gzipped), without wasm-opt |
-| wasm-bindgen glue | 7.7 KB |
+Each lane ships Tic Tac Toe as a managed game in
+`sdk/v2/examples/tic-tac-toe-<lane>`. `just test-conformance` drives each
+one's real sandboxed frame through one 25-step scripted match: refusals and
+their reasons, bot moves, snapshot → restore, skip, the result and a
+rematch. Every answer must equal the JavaScript reference's.
 
-Build it with `./build.sh` (Nix: rustc 1.99, wasm-bindgen-cli 0.2.129). The
-built `pkg/` is committed, because CI never builds contributor code.
+| Lane | Adapter | The author writes | Ships (gzip) |
+|---|---|---|---|
+| JavaScript | runtime.js `arcade.managed` | an object of rules | 1.5 KB |
+| HTML/CSS | runtime.js `data-arcade-*` | markup, CSS, and the rules object | 1.6 KB |
+| TypeScript + Solid | `adapters/ts`: `defineGame<State, Action, View>`, `createView` | typed rules (`apply` gets an `Untrusted<Action>`) and a Solid view | 5.7 KB (mostly Solid) |
+| Rust | `adapters/rust`: crate `arcade`, `trait Game` with associated serde types, `arcade::export!(G)` | `impl Game` | 43 KB wasm + 2 KB glue |
+| Python | `adapters/python`: `arcade.Game`, `arcade.run(cls)`, a boot script | a class | 7 KB, plus the platform's Pyodide (12.8 MB, outside the cap) |
+| C/C++ | `adapters/c` | (see its README) | |
+| Go (TinyGo) | `adapters/go` | (see its README) | |
 
-**A wasm-bindgen pitfall:**
-- **What breaks:** the `no-modules` output runs `new URL(document.currentScript.src,
-  location.href)`. Inlined into a srcdoc frame, `src` is `""` and the base is
-  `about:srcdoc`, so it throws "Invalid URL" at load.
-- **The workaround today:** `build.sh` patches that one condition, and fails
-  if the generated line ever changes.
-- **Later:** the Phase 3 Rust adapter owns the patch.
+Each adapter's README has the minimal game and how to build it. Built
+output is committed, because CI never builds contributor code. Builds go
+through `nix shell` (Rust 1.99 with wasm-bindgen-cli 0.2.129; Node 24 for
+the TypeScript lane, whose npm files live only in its example folder).
 
-Learned from building the Rust example (2026-11-14), and carried into
-Phase 3:
-- `arcade.on("*")` delivers every message (added).
-- `arcade.wasm` holds the bytes outside `init` (added), so init can be
-  serialised as JSON.
-- A catch-all game with no `answer` registered sends its own `reply` (added).
-- Still to do: binary `d` should reach a JSON `dispatch` as `{$bin}`, and the
-  adapters should standardise `wake`.
+Lane notes:
+- **Rust.** wasm-bindgen's `no-modules` output runs
+  `new URL(document.currentScript.src, location.href)`. Inlined into a
+  srcdoc frame, `src` is `""` and the base is `about:srcdoc`, so it throws
+  at load. `adapters/rust/build.sh` patches that condition, and stops if the
+  generated line ever changes or if the wasm-bindgen CLI and crate versions
+  differ.
+- **Python.** Boot time is 2 s in the harness and 5 s in the real party,
+  cold. The game's frame boots Pyodide from files the shell hands it
+  (`runtime.file`) and loads only the core: no packages, no network. Every
+  phone boots it, because every phone's frame holds the rules for a
+  takeover.
+- **TypeScript.** The protocol types are imported type-only from
+  `sdk/v2/bindings/protocol.ts`, so nothing of them ships. The build is
+  Vite in library mode, as a single classic IIFE script.
+
+Learned from the first Rust example (Layer 1), and done since:
+- `arcade.on("*")` delivers every message.
+- `arcade.wasm` holds the module bytes outside `init`.
+- A catch-all game sends its own `reply`.
+- One `dispatch` shape for every language.
 
 ## Bindings
 
@@ -327,7 +346,7 @@ Phase 3:
 Rust (serde), Go and Python, in `sdk/v2/bindings/`. Run `just bindings`
 after changing the schema. `just check-bindings`, which is part of
 `just test`, fails if the bindings are stale. C has no common JSON library,
-so its binding will be JSON strings plus a header, coming with the adapters.
+so its adapter carries a small JSON reader and writer instead (adapters/c).
 
 Why JSON Schema: the wire is JSON, and every target language has validators
 and code generators for it. Not chosen:
@@ -343,7 +362,9 @@ v2 adds these fields to sdk.md's `game.json`:
 | Field | |
 |---|---|
 | `"sdk": 2` | required for v2 |
-| `"runtime"` | `"js"` (default) or `"wasm"`. `"python"` arrives with its adapter. |
+| `"runtime"` | `"js"` (default), `"wasm"`, or `"python"` (the platform's Pyodide; adapters/python) |
+| `"state"` | `"managed"`: the platform runs the rules (Layer 2) |
+| `"tick"`, `"viewRate"` | managed and real-time: steps and views per second |
 | `"wasm"` | with `runtime: "wasm"` only: the module's path inside the folder |
 
 A web app (`app`, `kind: "shared"`) stays on `sdk: 1` until Phase 3 moves
@@ -393,9 +414,7 @@ and `RTCDataChannel` are rejected outright.
 
 ## What is deliberately not here yet
 
-- **Adapters and ports (rest of Phase 3).** The adapters for Rust, C/C++,
-  Go, Python, TypeScript/Solid and HTML/CSS, then porting the ten games and
-  dropping v1.
+- **Ports (rest of Phase 3).** Porting the ten games and dropping v1.
 - **The roster event.** The shell still compares the party every 250 ms,
   because away and reconnecting change without a roster event. It only
   *sends* on a change. A net.js event replaces the poll in Phase 4.

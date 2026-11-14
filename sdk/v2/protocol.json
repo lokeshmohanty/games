@@ -1418,7 +1418,8 @@
             "result",
             "snapshot",
             "restore",
-            "skip"
+            "skip",
+            "leave"
           ]
         },
         "seats": {
@@ -1490,7 +1491,7 @@
               "type": "null"
             }
           ],
-          "description": "view (null: a spectator), bot, skip: the seat."
+          "description": "view (null: a spectator), bot, skip, leave: the seat."
         },
         "snapshot": {
           "$ref": "#/$defs/json",
@@ -1500,7 +1501,7 @@
     },
     "rulesOut": {
       "type": "object",
-      "description": "One call's outcome: `v`, what the rule returned (apply: null or true when allowed, else the reason as a string; skip: true if it skipped), or `err` when it threw or does not exist.",
+      "description": "One call's outcome: `v`, what the rule returned (apply: null or true when allowed, else the reason as a string; skip / leave: true if the game acted on it; both optional), or `err` when it threw or does not exist.",
       "properties": {
         "v": {
           "$ref": "#/$defs/json"

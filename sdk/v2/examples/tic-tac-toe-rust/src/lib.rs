@@ -1,327 +1,181 @@
-//! Tic Tac Toe — the SDK v2 example in Rust, compiled to WebAssembly
-//! (docs/sdk-v2.md). The same game as ../tic-tac-toe, move for move.
+//! Tic Tac Toe — SDK v2 managed state, in Rust compiled to WebAssembly
+//! (docs/sdk-v2.md "Managed state", sdk/v2/adapters/rust).
 //!
-//! The whole game is one function, `dispatch`: JSON in, JSON out.
+//! The whole game is its rules and a draw function. The rules are here, as
+//! an `arcade::Game`; the draw function is tic-tac-toe.js. The platform runs
+//! the rules on the host, sends each phone its view, moves the bots, shows
+//! the turn-wait banner, reports the result, draws the end card and hands the
+//! game to the heir if the host leaves.
 //!
-//! In: any message the party shell sent (sdk/v2/protocol.json: `init`,
-//! `roster`, `msg`, `join`, `takeOver`, `unmount`, …), or an event glue.js
-//! made up from the page: `{"t":"click","i":4}`, `{"t":"again"}`,
-//! `{"t":"wake"}` (the timer asked for below), `{"t":"debug"}` (tests).
-//!
-//! Out: `{ "out": [messages to post], "view": {what to draw}, "wake": ms }`,
-//! plus `"answer"` for a request (`takeOver`). `wake` is there only when the
-//! timer changes: a number (re)arms it, null cancels it.
-//!
-//! Rules, host authority, the bot, seating and results all live here;
-//! glue.js only carries messages and draws `view`.
+//! These are the rules of ../tic-tac-toe-js, the conformance reference, and
+//! must give exactly its views and results (scripts/test-conformance.mjs).
 
+use arcade::{Game, Kind, Outcome, Seat};
 use serde::{Deserialize, Serialize};
-use serde_json::{json, Map, Value};
-use std::cell::RefCell;
-use wasm_bindgen::prelude::*;
+use serde_json::Value;
 
-const X: u8 = 1;
-const O: u8 = 2;
-const LINES: [[usize; 3]; 8] = [
-    [0, 1, 2], [3, 4, 5], [6, 7, 8],
-    [0, 3, 6], [1, 4, 7], [2, 5, 8],
-    [0, 4, 8], [2, 4, 6],
-];
-const BOT_DELAY_MS: u32 = 500;
+const LINES: [[usize; 3]; 8] = [[0, 1, 2], [3, 4, 5], [6, 7, 8], [0, 3, 6], [1, 4, 7], [2, 5, 8], [0, 4, 8], [2, 4, 6]];
 
-/// The host's word, sent on the "state" channel. The same shape as the
-/// JavaScript example's, so tests read both alike.
+/// Some(1) or Some(2): that mark won; Some(0): a draw; None: still going.
+fn winner_of(b: &[u8; 9]) -> Option<u8> {
+    for [x, y, z] in LINES {
+        if b[x] != 0 && b[x] == b[y] && b[x] == b[z] {
+            return Some(b[x]);
+        }
+    }
+    b.iter().all(|&m| m != 0).then_some(0)
+}
+
+/// The whole state, and the heir's snapshot. Marks: 0 empty, 1 X, 2 O.
 #[derive(Clone, Serialize, Deserialize)]
-struct State {
+pub struct TicTacToe {
     board: [u8; 9],
     turn: u8,
-    winner: Option<u8>, // 0 = draw, None = still going
+    winner: Option<u8>,
     x: Option<String>,
     o: Option<String>,
 }
 
-impl State {
-    fn new(x: Option<String>, o: Option<String>) -> Self {
-        State { board: [0; 9], turn: X, winner: None, x, o }
-    }
+/// A move, `{"i": 0..8}`. Anything else is kept, to be refused in the
+/// reference's order (game over, then turn, then square).
+#[derive(Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum Move {
+    Square { i: i64 },
+    Other(Value),
+}
+
+/// One seat's view: the state, and which mark is `you` (0: spectating).
+#[derive(Serialize)]
+pub struct View {
+    #[serde(flatten)]
+    state: TicTacToe,
+    you: u8,
+}
+
+impl TicTacToe {
     fn mark_of(&self, id: &str) -> u8 {
-        if self.x.as_deref() == Some(id) { X } else if self.o.as_deref() == Some(id) { O } else { 0 }
+        if self.x.as_deref() == Some(id) {
+            1
+        } else if self.o.as_deref() == Some(id) {
+            2
+        } else {
+            0
+        }
     }
-    fn id_of(&self, mark: u8) -> Option<&str> {
-        if mark == X { self.x.as_deref() } else { self.o.as_deref() }
+    fn id_of(&self, mark: u8) -> Vec<String> {
+        if mark == 1 { &self.x } else { &self.o }.iter().cloned().collect()
     }
 }
 
-#[derive(Deserialize)]
-struct Member {
-    id: String,
-    #[serde(default)]
-    name: String,
-    #[serde(default)]
-    team: Option<String>,
-}
+impl Game for TicTacToe {
+    type Action = Move;
+    type View = View;
+    type Snapshot = TicTacToe;
 
-#[derive(Deserialize)]
-struct Party {
-    #[serde(rename = "self")]
-    me: String,
-    host: String,
-    members: Vec<Member>,
-}
+    fn init(seats: Vec<Seat>, _opts: Value, _seed: i64, _match_no: i64) -> Self {
+        let team = |t: &str, i: usize| seats.iter().find(|s| s.team.as_deref() == Some(t)).or(seats.get(i)).map(|s| s.id.clone());
+        TicTacToe { board: [0; 9], turn: 1, winner: None, x: team("A", 0), o: team("B", 1) }
+    }
 
-fn winner_of(board: &[u8; 9]) -> Option<u8> {
-    for [a, b, c] in LINES {
-        if board[a] != 0 && board[a] == board[b] && board[a] == board[c] {
-            return Some(board[a]);
+    fn apply(&mut self, mv: Move, by: &str) -> Result<(), String> {
+        if self.winner.is_some() {
+            return Err("the game is over".into());
         }
-    }
-    if board.iter().all(|&m| m != 0) { Some(0) } else { None }
-}
-
-fn is_bot(id: Option<&str>) -> bool {
-    id.is_some_and(|id| id.starts_with("bot_"))
-}
-
-/// One dispatch's answer, gathered as the game runs.
-#[derive(Default)]
-struct Reply {
-    out: Vec<Value>,
-    wake: Option<Option<u32>>, // None: leave the timer; Some(None): cancel
-    answer: Option<bool>,
-}
-
-struct Game {
-    party: Option<Party>,
-    state: State,
-    hud: String,
-    bot: Option<String>, // the bot the armed timer will move for
-}
-
-impl Game {
-    fn is_host(&self) -> bool {
-        self.party.as_ref().is_some_and(|p| p.host == p.me)
-    }
-    fn me(&self) -> &str {
-        self.party.as_ref().map_or("", |p| p.me.as_str())
-    }
-    fn name_of(&self, id: Option<&str>) -> String {
-        let member = self.party.as_ref().and_then(|p| p.members.iter().find(|m| Some(m.id.as_str()) == id));
-        member.map_or_else(|| "Player".into(), |m| m.name.clone())
-    }
-    fn seat(&self, team: &str) -> Option<String> {
-        let p = self.party.as_ref()?;
-        p.members.iter().find(|m| m.team.as_deref() == Some(team)).map(|m| m.id.clone())
-    }
-
-    fn handle(&mut self, ev: &Value, r: &mut Reply) {
-        match ev["t"].as_str().unwrap_or("") {
-            "init" => {
-                self.party = Party::deserialize(&ev["party"]).ok();
-                r.out.push(json!({ "t": "listen", "ch": "state" }));
-                r.out.push(json!({ "t": "listen", "ch": "move" }));
-                self.restart(r); // host only
-            }
-            "roster" => {
-                if let Ok(p) = Party::deserialize(&ev["party"]) {
-                    self.party = Some(p);
-                }
-                let moved = self.state.x != self.seat("A") || self.state.o != self.seat("B");
-                if self.is_host() && self.state.winner.is_none() && moved {
-                    self.restart(r);
-                }
-            }
-            "msg" => {
-                let from = ev["from"].as_str().unwrap_or("");
-                match ev["ch"].as_str() {
-                    // Only the host's word counts.
-                    Some("state") if self.party.as_ref().is_some_and(|p| p.host == from) => {
-                        if let Ok(next) = State::deserialize(&ev["d"]) {
-                            let decided = self.state.winner.is_none() && next.winner.is_some();
-                            self.state = next;
-                            if decided {
-                                self.report(r);
-                            }
-                        }
-                    }
-                    Some("move") if self.is_host() => {
-                        if let Some(i) = ev["d"]["i"].as_u64().filter(|&i| i < 9) {
-                            self.apply(from.to_owned(), i as usize, r);
-                        }
-                    }
-                    _ => {}
-                }
-            }
-            // Someone (re)joined: catch them up.
-            "join" => self.publish(ev["who"].as_str(), r),
-            // The crown moved to us mid-game; we have the whole state, so carry on.
-            "takeOver" => {
-                self.publish(None, r);
-                self.bot_turn(r);
-                r.answer = Some(true);
-            }
-            "unmount" => r.wake = Some(None),
-            // From the page.
-            "click" => {
-                if let Some(i) = ev["i"].as_u64().filter(|&i| i < 9) {
-                    self.play(i as usize, r);
-                }
-            }
-            "again" => self.restart(r),
-            "wake" => self.bot_move(r),
-            _ => {}
+        if self.mark_of(by) != self.turn {
+            return Err("not your turn".into());
         }
-    }
-
-    /// Host only: apply a move by `id` at square `i`, if it is legal.
-    fn apply(&mut self, id: String, i: usize, r: &mut Reply) {
-        let s = &mut self.state;
-        let mark = s.mark_of(&id);
-        if s.winner.is_some() || mark == 0 || mark != s.turn || s.board[i] != 0 {
-            return;
-        }
-        s.board[i] = mark;
-        s.turn = if mark == X { O } else { X };
-        s.winner = winner_of(&s.board);
-        if s.winner.is_some() {
-            self.report(r);
-        }
-        self.publish(None, r);
-        self.bot_turn(r);
-    }
-
-    fn play(&mut self, i: usize, r: &mut Reply) {
-        if self.is_host() {
-            self.apply(self.me().to_owned(), i, r);
-        } else if let Some(p) = &self.party {
-            r.out.push(json!({ "t": "send", "ch": "move", "d": { "i": i }, "to": p.host }));
-        }
-    }
-
-    fn publish(&self, to: Option<&str>, r: &mut Reply) {
-        if !self.is_host() {
-            return;
-        }
-        let mut m = json!({ "t": "send", "ch": "state", "d": self.state });
-        if let Some(to) = to {
-            m["to"] = to.into();
-        }
-        r.out.push(m);
-    }
-
-    /// Everyone reports what they saw; the platform counts it once.
-    fn report(&self, r: &mut Reply) {
-        let s = &self.state;
-        let ranking = match s.winner {
-            Some(0) => json!([[s.x, s.o]]),
-            Some(w) => json!([[s.id_of(w)], [s.id_of(if w == X { O } else { X })]]),
-            None => return,
+        let i = match mv {
+            Move::Square { i } if (0..9).contains(&i) && self.board[i as usize] == 0 => i as usize,
+            _ => return Err("that square is taken".into()),
         };
-        r.out.push(json!({ "t": "result", "r": { "kind": "duel", "ranking": ranking } }));
+        self.board[i] = self.turn;
+        self.turn = 3 - self.turn;
+        self.winner = winner_of(&self.board);
+        Ok(())
     }
 
-    fn restart(&mut self, r: &mut Reply) {
-        if !self.is_host() {
-            return;
-        }
-        self.state = State::new(self.seat("A"), self.seat("B"));
-        self.publish(None, r);
-        self.bot_turn(r);
+    fn view(&self, seat: Option<&str>) -> View {
+        View { state: self.clone(), you: seat.map_or(0, |s| self.mark_of(s)) }
     }
 
-    /// Host only: if a bot is to move, wake in a moment to move for it.
-    fn bot_turn(&mut self, r: &mut Reply) {
-        r.wake = Some(None);
-        self.bot = None;
-        let bot = self.state.id_of(self.state.turn);
-        if self.is_host() && self.state.winner.is_none() && is_bot(bot) {
-            self.bot = bot.map(str::to_owned);
-            r.wake = Some(Some(BOT_DELAY_MS));
-        }
+    fn turn(&self) -> Vec<String> {
+        if self.winner.is_none() { self.id_of(self.turn) } else { vec![] }
     }
 
-    /// Win if it can, block if it must, else the centre, else anything. The
-    /// move arrives like anyone's: through the move channel, sent as the bot.
-    fn bot_move(&mut self, r: &mut Reply) {
-        let Some(bot) = self.bot.take() else { return };
-        let board = self.state.board;
-        let free: Vec<usize> = (0..9).filter(|&i| board[i] == 0).collect();
+    /// Win if it can, block if it must, else the centre, else the first free.
+    fn bot(&self, _seat: &str) -> Option<Move> {
+        let free: Vec<usize> = (0..9).filter(|&i| self.board[i] == 0).collect();
         let wins = |mark: u8| {
             free.iter().copied().find(|&i| {
-                let mut b = board;
+                let mut b = self.board;
                 b[i] = mark;
                 winner_of(&b) == Some(mark)
             })
         };
-        let mine = self.state.turn;
-        let pick = wins(mine)
-            .or_else(|| wins(if mine == X { O } else { X }))
+        let i = wins(self.turn)
+            .or_else(|| wins(3 - self.turn))
             .or_else(|| free.contains(&4).then_some(4))
             .or_else(|| free.first().copied());
-        if let Some(i) = pick {
-            r.out.push(json!({ "t": "emitAs", "bot": bot, "ch": "move", "d": { "i": i }, "to": self.me() }));
-        }
+        i.map(|i| Move::Square { i: i as i64 })
     }
 
-    /// What to draw: the squares, the line above them, and the end card.
-    fn view(&mut self) -> Value {
-        let s = &self.state;
-        let me = s.mark_of(self.me());
-        let cells: Vec<&str> = s.board.iter().map(|&m| match m { X => "X", O => "O", _ => "" }).collect();
-        let over = match s.winner {
-            None => {
-                self.hud = if me == 0 {
-                    "SPECTATING".into()
-                } else if s.turn == me {
-                    "YOUR TURN".into()
-                } else {
-                    format!("{} TO MOVE", self.name_of(s.id_of(s.turn)))
-                };
-                Value::Null
-            }
-            Some(w) => {
-                let title = if w == 0 {
-                    "DRAW".into()
-                } else if w == me {
-                    "YOU WIN".into()
-                } else {
-                    format!("{} WINS", self.name_of(s.id_of(w)))
-                };
-                json!({ "title": title, "again": self.is_host() })
-            }
+    fn result(&self) -> Option<Outcome> {
+        let ranking = match self.winner? {
+            0 => vec![self.x.iter().chain(&self.o).cloned().collect()],
+            w => vec![self.id_of(w), self.id_of(3 - w)],
         };
-        json!({ "cells": cells, "hud": self.hud, "over": over })
+        Some(Outcome::new(Kind::Duel, ranking))
+    }
+
+    fn skip(&mut self, _seat: &str) -> bool {
+        self.turn = 3 - self.turn;
+        true
+    }
+
+    fn snapshot(&self) -> TicTacToe {
+        self.clone()
+    }
+
+    fn restore(snapshot: TicTacToe) -> Self {
+        snapshot
     }
 }
 
-thread_local! {
-    static GAME: RefCell<Game> = RefCell::new(Game {
-        party: None,
-        state: State::new(None, None),
-        hud: String::new(),
-        bot: None,
-    });
-}
+arcade::export!(TicTacToe);
 
-/// The game's one entry point: a message or page event in, what to do out.
-#[wasm_bindgen]
-pub fn dispatch(input: &str) -> String {
-    let Ok(ev) = serde_json::from_str::<Value>(input) else { return r#"{"out":[]}"#.into() };
-    GAME.with(|g| {
-        let mut g = g.borrow_mut();
-        if ev["t"] == "debug" {
-            return json!({ "out": [], "debug": g.state }).to_string();
-        }
-        let mut r = Reply::default();
-        g.handle(&ev, &mut r);
-        let mut res = Map::new();
-        res.insert("out".into(), r.out.into());
-        res.insert("view".into(), if g.party.is_some() { g.view() } else { Value::Null });
-        if let Some(wake) = r.wake {
-            res.insert("wake".into(), wake.into());
-        }
-        if let Some(ok) = r.answer {
-            res.insert("answer".into(), ok.into());
-        }
-        Value::Object(res).to_string()
-    })
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::cell::RefCell;
+
+    #[test]
+    fn plays_like_the_reference() {
+        let g = RefCell::new(None::<TicTacToe>);
+        let run = |c: &str| arcade::dispatch(&g, c);
+        let seats = r#"[{"id":"pX","name":"Ada","team":"A","bot":false},{"id":"bot_O","name":"Bot","team":"B","bot":true}]"#;
+        assert_eq!(run(&format!(r#"{{"fn":"init","seats":{seats},"opts":{{}},"seed":7,"match":0}}"#)), r#"{"v":null}"#);
+        assert_eq!(run(r#"{"fn":"view","seat":null}"#), r#"{"v":{"board":[0,0,0,0,0,0,0,0,0],"turn":1,"winner":null,"x":"pX","o":"bot_O","you":0}}"#);
+        assert_eq!(run(r#"{"fn":"apply","action":{"i":4},"by":"bot_O"}"#), r#"{"v":"not your turn"}"#);
+        assert_eq!(run(r#"{"fn":"apply","action":{"i":4.5},"by":"pX"}"#), r#"{"v":"that square is taken"}"#);
+        assert_eq!(run(r#"{"fn":"apply","action":null,"by":"pX"}"#), r#"{"v":"that square is taken"}"#);
+        assert_eq!(run(r#"{"fn":"apply","action":{"i":4},"by":"pX"}"#), r#"{"v":null}"#);
+        assert_eq!(run(r#"{"fn":"apply","action":{"i":9},"by":"bot_O"}"#), r#"{"v":"that square is taken"}"#);
+        assert_eq!(run(r#"{"fn":"turn"}"#), r#"{"v":["bot_O"]}"#);
+        assert_eq!(run(r#"{"fn":"bot","seat":"bot_O"}"#), r#"{"v":{"i":0}}"#);
+        assert_eq!(run(r#"{"fn":"view","seat":"bot_O"}"#), r#"{"v":{"board":[0,0,0,0,1,0,0,0,0],"turn":2,"winner":null,"x":"pX","o":"bot_O","you":2}}"#);
+        assert_eq!(run(r#"{"fn":"result"}"#), r#"{"v":null}"#);
+        assert_eq!(run(r#"{"fn":"skip","seat":"bot_O"}"#), r#"{"v":true}"#);
+    }
+
+    #[test]
+    fn a_draw_ranks_both_together() {
+        let mut g = TicTacToe::init(vec![], Value::Null, 0, 0);
+        (g.x, g.o) = (Some("a".into()), Some("b".into()));
+        g.board = [1, 2, 1, 1, 2, 2, 2, 1, 1];
+        g.winner = winner_of(&g.board);
+        assert_eq!(serde_json::to_string(&g.result()).unwrap(), r#"{"kind":"duel","ranking":[["a","b"]]}"#);
+        assert!(g.turn().is_empty());
+        assert_eq!(g.apply(Move::Square { i: 0 }, "a"), Err("the game is over".into()));
+    }
 }

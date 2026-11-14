@@ -237,6 +237,16 @@ async function checkBrowser(games) {
 			}
 			const frame = await gameFrame(page, TIMEOUT).catch(() => null);
 			if (!check("it mounts in its sandboxed frame", !!frame)) continue;
+			if (m.sdk === 2) {
+				// A v2 game says `ready` (a managed one once its rules are in:
+				// a Python game's Pyodide must boot first), and the shell marks
+				// its frame. Without this a game that never starts would pass.
+				const up = await page
+					.locator(".game-frame[data-ready]")
+					.waitFor({ state: "attached", timeout: m.runtime === "python" ? 90_000 : TIMEOUT })
+					.then(() => true, () => false);
+				check("it says ready (the protocol's `ready`)", up);
+			}
 			if (m.app?.server) {
 				const answered = await page
 					.waitForEvent("console", { predicate: (msg) => /^\[arcade\] server answered \d+/.test(msg.text()), timeout: 60_000 })

@@ -52,6 +52,7 @@
 
 	const applyTheme = (theme) => {
 		if (!theme) return;
+		arcade.theme = theme;
 		document.documentElement.dataset.theme = theme.name;
 		document.documentElement.dataset.mode = theme.mode;
 	};
@@ -112,6 +113,8 @@
 		version: V,
 		party: null,
 		wasm: null,
+		/** The page's theme as values (protocol.json `theme`), kept current. */
+		theme: null,
 		init: new Promise((r) => (resolveInit = r)),
 		on(t, fn) {
 			if (!handlers.has(t)) handlers.set(t, new Set());
@@ -163,7 +166,8 @@
 				for (const c of Array.isArray(m.calls) ? m.calls : []) {
 					const fn = rules[c?.fn];
 					try {
-						if (typeof fn !== "function") out.push(c?.fn === "skip" ? { v: false } : { err: `no rule "${c?.fn}"` });
+						// skip and leave are optional: a game without them declines.
+						if (typeof fn !== "function") out.push(c?.fn === "skip" || c?.fn === "leave" ? { v: false } : { err: `no rule "${c?.fn}"` });
 						else out.push({ v: (await fn.call(rules, c)) ?? null });
 					} catch (err) {
 						out.push({ err: String(err?.message ?? err) });
@@ -172,6 +176,23 @@
 				return { out };
 			});
 			arcade.init.then(() => post({ t: "ready" }));
+		},
+		/**
+		 * Managed rules behind one function of strings, for a language compiled
+		 * to WebAssembly (or Python): `dispatch('{"fn":"apply","action":…,"by":…}')`
+		 * returns the call's outcome as JSON, `{"v": …}` or `{"err": "…"}`
+		 * (protocol.json `rulesCall` / `rulesOut`). Every adapter's glue is this.
+		 */
+		managedJson(dispatch) {
+			const rules = {};
+			for (const fn of ["init", "apply", "tick", "view", "turn", "bot", "result", "snapshot", "restore", "skip", "leave"]) {
+				rules[fn] = (c) => {
+					const out = JSON.parse(dispatch(JSON.stringify(c)));
+					if (out && typeof out === "object" && "err" in out) throw new Error(out.err);
+					return out?.v ?? null;
+				};
+			}
+			arcade.managed(rules);
 		},
 		/** This player's move: applied on the host by `apply({ action, by })`. */
 		act: (a) => post({ t: "act", a }),
@@ -186,7 +207,9 @@
 	// code. `data-arcade-act='{"i":4}'` on a button sends that action;
 	// `data-arcade-text="board.3"` shows that path of the view;
 	// `data-arcade-show="mine"` shows the element while that path is truthy;
-	// `data-arcade-class="cls:path"` toggles a class.
+	// `data-arcade-class="cls:path"` toggles a class;
+	// `data-arcade-attr="data-mark:board.3"` sets an attribute to that path's
+	// value, for CSS to style (`[data-mark="1"]::after { content: "X" }`).
 	const at = (v, path) => path.split(".").reduce((o, k) => (o == null ? undefined : o[k]), v);
 	const bind = (v) => {
 		for (const el of document.querySelectorAll("[data-arcade-text]")) {
@@ -194,6 +217,15 @@
 			el.textContent = x == null ? "" : String(x);
 		}
 		for (const el of document.querySelectorAll("[data-arcade-show]")) el.hidden = !at(v, el.dataset.arcadeShow);
+		for (const el of document.querySelectorAll("[data-arcade-attr]")) {
+			for (const pair of el.dataset.arcadeAttr.split(/\s+/)) {
+				const [name, path] = pair.split(":");
+				if (!name || !path || /^on/i.test(name)) continue; // never an event handler
+				const x = at(v, path);
+				if (x == null) el.removeAttribute(name);
+				else el.setAttribute(name, String(x));
+			}
+		}
 		for (const el of document.querySelectorAll("[data-arcade-class]")) {
 			for (const pair of el.dataset.arcadeClass.split(/\s+/)) {
 				const [cls, path] = pair.split(":");

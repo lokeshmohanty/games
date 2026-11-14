@@ -1,0 +1,14 @@
+/* The arcade's tokens (lib/theme.css) are already defined: use them, and the
+   game follows the player's theme. */
+body { margin: 0; min-height: 100dvh; display: grid; place-content: center; gap: 16px;
+  background: var(--bg); color: var(--ink); font-family: var(--font-body); text-align: center; }
+#hud { font-family: var(--font-display); letter-spacing: 0.08em; margin: 0; }
+#ttt { display: grid; grid-template-columns: repeat(3, min(26vw, 120px)); gap: 8px; }
+#ttt button { aspect-ratio: 1; font-size: min(14vw, 64px); background: var(--surface);
+  border: 2px solid var(--rule); border-radius: 12px; color: var(--accent); font-family: var(--font-display); }
+#ttt button.o { color: var(--accent-2); }
+#over { position: fixed; inset: 0; display: grid; place-content: center; background: var(--scrim); }
+#over .card { display: grid; gap: 16px; padding: 24px 32px; background: var(--surface); color: var(--ink); border-radius: 16px; }
+#over[hidden] { display: none; }
+/* Solid renders #hud and #ttt into #app; this keeps them the body's grid items. */
+#app { display: contents; }

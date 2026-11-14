@@ -1,0 +1,19 @@
+{
+  "name": "tic-tac-toe-ts",
+  "private": true,
+  "description": "SDK v2 managed Tic Tac Toe: rules in TypeScript, view in Solid. Builds dist/tic-tac-toe.js, one classic script.",
+  "license": "MIT",
+  "type": "module",
+  "scripts": {
+    "check": "tsc --noEmit",
+    "build": "tsc --noEmit && vite build"
+  },
+  "dependencies": {
+    "solid-js": "1.9.18"
+  },
+  "devDependencies": {
+    "typescript": "7.0.2",
+    "vite": "8.3.5",
+    "vite-plugin-solid": "2.11.15"
+  }
+}

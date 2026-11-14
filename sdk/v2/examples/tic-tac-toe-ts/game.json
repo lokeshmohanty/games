@@ -1,0 +1,23 @@
+{
+  "sdk": 2,
+  "id": "tic-tac-toe-ts",
+  "name": "TIC TAC TOE (TS)",
+  "blurb": "Three in a row. SDK v2 managed state: the rules in TypeScript, the view in Solid.",
+  "entry": "index.html",
+  "kind": "duel",
+  "shape": "teams",
+  "seats": {
+    "min": 2,
+    "max": 2
+  },
+  "bots": true,
+  "tags": [
+    "alone",
+    "duel",
+    "quick"
+  ],
+  "license": "MIT",
+  "author": "lokeshmohanty",
+  "repo": "https://github.com/lokeshmohanty/games",
+  "state": "managed"
+}

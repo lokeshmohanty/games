@@ -40,7 +40,7 @@ serve-lan:
     python3 -m http.server {{port}}
 
 # Every suite, in the order they get slower.
-test: check-precache check-sw-version check-bindings check-colours community test-stats test-submission test-codec test-hub test-worker-do test-plumbing test-rules test-room test-party test-scan test-pwa test-bots test-devkit test-protocol test-managed test-webapp test-theme test-portal
+test: check-precache check-sw-version check-bindings check-colours community test-stats test-submission test-codec test-hub test-worker-do test-plumbing test-rules test-room test-party test-scan test-pwa test-bots test-devkit test-protocol test-managed test-conformance test-webapp test-theme test-portal
 
 # No browser needed — the signalling codec round-trip.
 test-codec:
@@ -139,6 +139,10 @@ test-protocol:
 # SDK v2 managed state: views, refusals, end card, rematch, handover to the heir, a ticking game.
 test-managed:
     node scripts/test-managed.mjs
+
+# SDK v2 adapters: Tic Tac Toe in every language gives the reference's answers, call for call.
+test-conformance *lanes: pyodide
+    node scripts/test-conformance.mjs {{lanes}}
 
 # Every game playable by one person, and the mobile layouts at 390x844.
 test-bots:

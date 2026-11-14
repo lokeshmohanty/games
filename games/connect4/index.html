@@ -5,8 +5,12 @@
     <title>Connect 4</title>
   </head>
   <body>
-    <!-- The platform inlines its runtime ahead of this: NeonArcade.registerGame,
-         gameShell, makeRounds, makeSecrets and the room bridge. -->
+    <!-- SDK v2, managed state: the platform inlines sdk/v2/runtime.js ahead of
+         this and runs the rules below on the host (docs/sdk-v2.md). -->
+    <div id="game">
+      <div id="hud" role="status"></div>
+      <canvas id="board"></canvas>
+    </div>
     <script src="connect4.js"></script>
   </body>
 </html>

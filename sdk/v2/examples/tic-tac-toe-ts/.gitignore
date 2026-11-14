@@ -1,0 +1,3 @@
+# npm's install. dist/ (the one built script the page names) is committed:
+# the arcade's CI never builds contributor code.
+node_modules/

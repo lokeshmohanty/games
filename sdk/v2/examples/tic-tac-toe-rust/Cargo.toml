@@ -3,15 +3,15 @@ name = "tic-tac-toe-rust"
 version = "0.1.0"
 edition = "2021"
 license = "MIT"
-description = "Tic Tac Toe, the arcade's SDK v2 example in Rust (WebAssembly)."
+description = "Tic Tac Toe, the arcade's SDK v2 managed-state example in Rust (WebAssembly)."
 publish = false
 
 [lib]
 crate-type = ["cdylib"]
 
 [dependencies]
-# Pinned to the wasm-bindgen CLI that build.sh runs: the two must match exactly.
-wasm-bindgen = "=0.2.129"
+# The adapter: the Game trait and export!, which makes `dispatch`.
+arcade = { path = "../../adapters/rust" }
 serde = { version = "1", default-features = false, features = ["derive", "alloc"] }
 serde_json = { version = "1", default-features = false, features = ["alloc"] }
 

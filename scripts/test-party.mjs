@@ -492,7 +492,7 @@ try {
 	await hostC4.waitForFunction(() => window.__game.handle.debug().started, null, { timeout: TIMEOUT });
 	const away4 = await hostC4.evaluate(() => {
 		const d = window.__game.handle.debug();
-		return { toMove: d.turn === 1 ? d.red : d.yellow, host: window.__game.ctx.room.selfId };
+		return { toMove: d.turn === 1 ? d.red : d.yellow, host: window.arcade?.party.self ?? window.__game.ctx.room.selfId };
 	});
 	if (away4.toMove === away4.host) {
 		await readyToClick(host);
@@ -511,9 +511,10 @@ try {
 	check("(a guest is to move in Connect 4)", !!mover);
 	if (mover) {
 		await setHidden(mover, true);
-		check("a turn game waiting on a player who left the app says so", await shown(hostC4, ".turn-wait", /Waiting for .+ switched away \(0:\d\d\)/));
+		// Connect 4 is an SDK v2 managed game: the banner is the shell's, on the page.
+		check("a turn game waiting on a player who left the app says so", await shown(host, ".turn-wait", /Waiting for .+ switched away \(0:\d\d\)/));
 		await setHidden(mover, false);
-		check("…and the banner goes when they are back", await hostC4.locator(".turn-wait").first().waitFor({ state: "hidden", timeout: 6000 }).then(() => true, () => false));
+		check("…and the banner goes when they are back", await host.locator(".turn-wait").first().waitFor({ state: "hidden", timeout: 6000 }).then(() => true, () => false));
 	}
 	await host.evaluate(() => window.__party.room.setGame(null));
 

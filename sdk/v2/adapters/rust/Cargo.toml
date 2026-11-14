@@ -1,0 +1,17 @@
+[package]
+name = "arcade"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+description = "Write an SDK v2 managed game for the arcade in Rust: implement `arcade::Game`, then `arcade::export!(MyGame);`."
+publish = false
+
+[dependencies]
+# Pinned to the wasm-bindgen CLI that build.sh runs (nixpkgs#wasm-bindgen-cli):
+# the two must match exactly, or the glue and the module disagree.
+wasm-bindgen = "=0.2.129"
+serde = { version = "1", default-features = false, features = ["derive", "alloc"] }
+serde_json = { version = "1", default-features = false, features = ["alloc"] }
+
+# Not part of any outer workspace.
+[workspace]

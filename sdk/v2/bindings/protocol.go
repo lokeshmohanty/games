@@ -906,6 +906,7 @@ const (
 	RulesCallFnSnapshot RulesCallFn = "snapshot"
 	RulesCallFnRestore  RulesCallFn = "restore"
 	RulesCallFnSkip     RulesCallFn = "skip"
+	RulesCallFnLeave    RulesCallFn = "leave"
 )
 
 // RulesCallSeatsItem
@@ -937,7 +938,7 @@ type RulesCall struct {
 	Inputs map[string]JSON `json:"inputs,omitempty"`
 	// tick: seconds since the last tick (1 / manifest tick).
 	Dt *float64 `json:"dt,omitempty"`
-	// view (null: a spectator), bot, skip: the seat.
+	// view (null: a spectator), bot, skip, leave: the seat.
 	Seat *MemberID `json:"seat,omitempty"`
 	// restore: what `snapshot()` returned on the old host. May carry ArrayBuffers
 	// (see Json).
@@ -945,8 +946,8 @@ type RulesCall struct {
 }
 
 // RulesOut: One call's outcome: `v`, what the rule returned (apply: null or
-// true when allowed, else the reason as a string; skip: true if it skipped), or
-// `err` when it threw or does not exist.
+// true when allowed, else the reason as a string; skip / leave: true if the
+// game acted on it; both optional), or `err` when it threw or does not exist.
 type RulesOut struct {
 	// May carry ArrayBuffers (see Json).
 	V   JSON    `json:"v,omitempty"`

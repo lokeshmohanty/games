@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Tic Tac Toe</title>
+    <link rel="stylesheet" href="tic-tac-toe.css" />
+  </head>
+  <!-- The view ({ board, turn, winner, you, … }) lands in attributes; CSS does the rest. -->
+  <body data-arcade-attr="data-turn:turn data-you:you data-winner:winner">
+    <p id="hud" role="status"></p>
+    <div id="ttt">
+      <button aria-label="square 1" data-arcade-act='{"i":0}' data-arcade-attr="data-mark:board.0"></button>
+      <button aria-label="square 2" data-arcade-act='{"i":1}' data-arcade-attr="data-mark:board.1"></button>
+      <button aria-label="square 3" data-arcade-act='{"i":2}' data-arcade-attr="data-mark:board.2"></button>
+      <button aria-label="square 4" data-arcade-act='{"i":3}' data-arcade-attr="data-mark:board.3"></button>
+      <button aria-label="square 5" data-arcade-act='{"i":4}' data-arcade-attr="data-mark:board.4"></button>
+      <button aria-label="square 6" data-arcade-act='{"i":5}' data-arcade-attr="data-mark:board.5"></button>
+      <button aria-label="square 7" data-arcade-act='{"i":6}' data-arcade-attr="data-mark:board.6"></button>
+      <button aria-label="square 8" data-arcade-act='{"i":7}' data-arcade-attr="data-mark:board.7"></button>
+      <button aria-label="square 9" data-arcade-act='{"i":8}' data-arcade-attr="data-mark:board.8"></button>
+    </div>
+    <script src="rules.js"></script>
+  </body>
+</html>

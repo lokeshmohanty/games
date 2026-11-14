@@ -3,6 +3,15 @@
 version = 4
 
 [[package]]
+name = "arcade"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "wasm-bindgen",
+]
+
+[[package]]
 name = "bumpalo"
 version = "3.20.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -114,9 +123,9 @@ dependencies = [
 name = "tic-tac-toe-rust"
 version = "0.1.0"
 dependencies = [
+ "arcade",
  "serde",
  "serde_json",
- "wasm-bindgen",
 ]
 
 [[package]]

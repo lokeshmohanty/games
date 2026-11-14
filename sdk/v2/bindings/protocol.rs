@@ -680,6 +680,8 @@ pub enum RulesCallFn {
     Restore,
     #[serde(rename = "skip")]
     Skip,
+    #[serde(rename = "leave")]
+    Leave,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -720,7 +722,7 @@ pub struct RulesCall {
     /// tick: seconds since the last tick (1 / manifest tick).
     #[serde(skip_serializing_if = "Option::is_none", default)]
     pub dt: Option<f64>,
-    /// view (null: a spectator), bot, skip: the seat.
+    /// view (null: a spectator), bot, skip, leave: the seat.
     #[serde(skip_serializing_if = "Option::is_none", default)]
     pub seat: Option<MemberId>,
     /// restore: what `snapshot()` returned on the old host. May carry ArrayBuffers (see Json).
@@ -729,7 +731,8 @@ pub struct RulesCall {
 }
 
 /// One call's outcome: `v`, what the rule returned (apply: null or true when allowed, else the
-/// reason as a string; skip: true if it skipped), or `err` when it threw or does not exist.
+/// reason as a string; skip / leave: true if the game acted on it; both optional), or `err` when it
+/// threw or does not exist.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct RulesOut {
     /// May carry ArrayBuffers (see Json).

@@ -2,16 +2,24 @@
   "sdk": 2,
   "id": "tic-tac-toe-rust",
   "name": "TIC TAC TOE (RUST)",
-  "blurb": "Three in a row. The SDK v2 example, in Rust compiled to WebAssembly.",
+  "blurb": "Three in a row. SDK v2 managed state: only the rules, in Rust compiled to WebAssembly.",
   "entry": "index.html",
   "runtime": "wasm",
   "wasm": "pkg/tic_tac_toe_rust_bg.wasm",
   "kind": "duel",
   "shape": "teams",
-  "seats": { "min": 2, "max": 2 },
+  "seats": {
+    "min": 2,
+    "max": 2
+  },
   "bots": true,
-  "tags": ["alone", "duel", "quick"],
+  "tags": [
+    "alone",
+    "duel",
+    "quick"
+  ],
   "license": "MIT",
   "author": "lokeshmohanty",
-  "repo": "https://github.com/lokeshmohanty/games"
+  "repo": "https://github.com/lokeshmohanty/games",
+  "state": "managed"
 }

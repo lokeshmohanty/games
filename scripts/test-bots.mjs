@@ -1078,7 +1078,10 @@ try {
 				.waitForFunction(() => {
 					const { handle, ctx } = window.__game;
 					const d = handle.debug();
-					return ctx.room.isHost() && d.winner === (d.yellow === ctx.room.selfId ? 2 : 1);
+					// v2 (sdk/v2/runtime.js) knows the party as arcade.party; v1 as ctx.room.
+					const self = window.arcade?.party.self ?? ctx.room.selfId;
+					const host = window.arcade ? window.arcade.party.host === self : ctx.room.isHost();
+					return host && d.winner === (d.yellow === self ? 2 : 1);
 				}, null, { timeout: TIMEOUT })
 				.then(() => true, () => false);
 		}

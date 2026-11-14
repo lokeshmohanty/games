@@ -1,5 +1,6 @@
 {
-  "sdk": 1,
+  "sdk": 2,
+  "state": "managed",
   "id": "connect4",
   "name": "CONNECT 4",
   "title": "Connect 4",

@@ -127,8 +127,10 @@ async function playExample(label, folder, game, port) {
 
 await playExample("sdk v1", "sdk/v1/example", "tic-tac-toe", DEV_PORT);
 await playExample("sdk v2, JavaScript", "sdk/v2/examples", "tic-tac-toe", DEV_PORT + 1);
-await playExample("sdk v2, Rust", "sdk/v2/examples", "tic-tac-toe-rust", DEV_PORT + 2);
+await playExample("sdk v2 managed, Rust", "sdk/v2/examples", "tic-tac-toe-rust", DEV_PORT + 2);
 await playExample("sdk v2 managed, JavaScript", "sdk/v2/examples", "tic-tac-toe-js", DEV_PORT + 3);
+await playExample("sdk v2 managed, HTML/CSS", "sdk/v2/examples", "tic-tac-toe-html", DEV_PORT + 4);
+await playExample("sdk v2 managed, TypeScript", "sdk/v2/examples", "tic-tac-toe-ts", DEV_PORT + 5);
 
 console.log("\ndevkit: only this machine");
 const away = await ctx.newPage();

@@ -86,7 +86,8 @@ try {
 	await p.waitForTimeout(200);
 	const after = await boardColour();
 	check("…and the game repaints its canvas in the new colours", before !== after, `${before} → ${after}`);
-	const same = await Promise.all([p.evaluate(() => NeonArcade.palette().bg), f.evaluate(() => NeonArcade.palette().bg)]);
+	// A v2 frame has the theme as values (sdk/v2/runtime.js arcade.theme).
+	const same = await Promise.all([p.evaluate(() => NeonArcade.palette().bg), f.evaluate(() => window.arcade?.theme?.tokens.bg ?? NeonArcade.palette().bg)]);
 	check("the frame's palette is the page's", same[0] === same[1], same);
 	const ff = await f.evaluate(async () => {
 		await document.fonts.ready;

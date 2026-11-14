@@ -5,16 +5,17 @@ let wasm_bindgen = (function(exports) {
     }
 
     /**
-     * The game's one entry point: a message or page event in, what to do out.
-     * @param {string} input
+     * The game's rules behind one function of strings: a `rulesCall` in,
+     * its `rulesOut` out (sdk/v2/protocol.json).
+     * @param {string} call
      * @returns {string}
      */
-    function dispatch(input) {
+    function dispatch(call) {
         let deferred2_0;
         let deferred2_1;
         try {
             const retptr = wasm.__wbindgen_add_to_stack_pointer(-16);
-            const ptr0 = passStringToWasm0(input, wasm.__wbindgen_export, wasm.__wbindgen_export2);
+            const ptr0 = passStringToWasm0(call, wasm.__wbindgen_export, wasm.__wbindgen_export2);
             const len0 = WASM_VECTOR_LEN;
             wasm.dispatch(retptr, ptr0, len0);
             var r0 = getDataViewMemory0().getInt32(retptr + 4 * 0, true);
