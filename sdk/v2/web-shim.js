@@ -363,4 +363,6 @@
 
 	// The arcade's side is the runtime's: a web app answers no takeOver (its
 	// server's state lived on the old host's phone), so the runtime refuses.
+	// It is drawn once the page has loaded: say so (validate-game waits for it).
+	addEventListener("load", () => arcade.ready(), { once: true });
 })();

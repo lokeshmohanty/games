@@ -211,6 +211,7 @@
 	// `data-arcade-attr="data-mark:board.3"` sets an attribute to that path's
 	// value, for CSS to style (`[data-mark="1"]::after { content: "X" }`).
 	const at = (v, path) => path.split(".").reduce((o, k) => (o == null ? undefined : o[k]), v);
+	const ATTR_OK = /^(?:data-[\w-]+|aria-[\w-]+|value|title|alt|disabled|hidden|checked|role|tabindex)$/i;
 	const bind = (v) => {
 		for (const el of document.querySelectorAll("[data-arcade-text]")) {
 			const x = at(v, el.dataset.arcadeText);
@@ -220,7 +221,10 @@
 		for (const el of document.querySelectorAll("[data-arcade-attr]")) {
 			for (const pair of el.dataset.arcadeAttr.split(/\s+/)) {
 				const [name, path] = pair.split(":");
-				if (!name || !path || /^on/i.test(name)) continue; // never an event handler
+				// Only attributes that cannot run code or load anything: a view can
+				// carry a player's text, and href/src/srcdoc would let it be a
+				// javascript: URL on everyone's phone (review, 2026-11-14).
+				if (!name || !path || !ATTR_OK.test(name)) continue;
 				const x = at(v, path);
 				if (x == null) el.removeAttribute(name);
 				else el.setAttribute(name, String(x));

@@ -181,6 +181,9 @@ try {
 	const offered = await skip.waitFor({ timeout: TIMEOUT }).then(() => true, () => false);
 	check("the departed player's turn shows the shell's turn-wait banner", offered);
 	if (offered) await skip.click();
+	// SKIP may be pressed as the crown arrives, before the takeover has run;
+	// it waits for it, so the turn passes a moment later.
+	await viewUntil(f2, (v) => v.turn === 2, 10_000);
 	await play(p2, f2, 8, 3);
 	const after = await viewUntil(f3, (v) => v.board[8] === 2, 10_000);
 	check("…SKIP passes their turn, and the new host's move reaches the spectator", after?.board[8] === 2, after);

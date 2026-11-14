@@ -148,6 +148,26 @@ How it runs:
   - One tick is one round trip: tick, turn, result and the due views are
     batched together.
 - **Determinism is not required:** the host is authoritative.
+- **Races, fixed after the review of 2026-11-14:**
+  - **Epochs.** Every start (match, rematch, takeover) begins a new epoch,
+    and anything still in flight from an older one is dropped. A refresh
+    across PLAY AGAIN no longer ends the new match.
+  - **Acts carry their match.** A tap meant for the last game is refused,
+    not applied to the new one. A guest's acts are capped at 30 a second.
+  - **The heir's copy.** It is sent the moment a result lands, and an heir
+    keeps a result it already heard. On a takeover, only leaves heard after
+    the copy are replayed, and never for someone who came back.
+  - **Views are re-sent on every roster change.** A link that drops and
+    returns without a reload fires no join, so a view sent into the outage
+    would otherwise be lost.
+  - **Late joiners** get the end card too.
+  - **Ticking inputs** are pruned to the seated players, and cleared on a
+    rematch.
+  - **The turn-wait banner** shows on every phone; only the host has its
+    buttons. SKIP waits for a takeover still settling, and checks `turn()`
+    before calling `skip`.
+  - **Binary** in acts, inputs, views and snapshots crosses as `{ $bin }`,
+    like channel messages.
 
 A managed game may still use Layer 1 channels for ephemeral streams (a
 drawing's strokes), and Layer 1 services.
@@ -160,6 +180,7 @@ rendering code:
 | `data-arcade-text="board.3"` | shows that path of the view |
 | `data-arcade-show="mine"` | shows the element while the path is truthy |
 | `data-arcade-class="o:isO"` | toggles a class |
+| `data-arcade-attr="data-mark:board.3"` | sets an attribute (only `data-*`, `aria-*`, `value`, `title`, `alt`, `disabled`, `hidden`, `checked`, `role`, `tabindex`: a view may carry player text, and `href`/`src` could be a `javascript:` URL) |
 | `data-arcade-act='{"i":4}'` | on a button: sends that action |
 
 The runtime applies them on every `view`.
