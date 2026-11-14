@@ -43,3 +43,19 @@ Decisions he took (AskUserQuestion, 2026-11-14), so don't re-ask them:
 before bots mode, serial frame fetches, a network-first service worker,
 6.7 MB of gifs), not the DOM. And the old contract was a JS object API, so
 non-JS games could not exist at all (the CSP blocked WebAssembly).
+
+**Learned while building it (2026-11-14):**
+- **Managed vs manual** is decided by one question: may the host know the
+  whole state? Yes → managed (connect4, sudoku, light-cycles, draw-guess,
+  neon-survival-mp). No (a sealed bid, hidden dice or fleets) → Layer 1 with
+  the shell's commit/verify/seal (neon-bid, liars-dice, battleship).
+  Managed rules run on the host, so a host who is also a player sees
+  everything they hold.
+- **Landing order is forced:** the platform must deploy v2 support before
+  arcade-games' pin moves to v2 games (by its own PR), and sdk/v1 can only be
+  deleted after that pin moves. Test unmerged contributor commits with
+  `NEON_PIN_OVERRIDE`, never by editing registry/.
+- **Managed-state races** are the hard part, not the protocol: epochs per
+  start, acts tagged with their match, the heir's copy sent the moment a
+  result lands. See docs/sdk-v2.md "Races, fixed after the review".
+

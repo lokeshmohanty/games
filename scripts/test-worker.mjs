@@ -1265,7 +1265,7 @@ try {
 			.waitForFunction(() => window.__game.handle.debug().board.flat().filter(Boolean).length === 2, null, { timeout: TIMEOUT })
 			.then(() => true, () => false);
 		check("connect 4: the heir's move lands on top of the host's", both);
-		check("connect 4: …and the departed host's turn waits for them, as for anyone lost", await (await inGame(t.a)).locator(".turn-wait:not([hidden])").first().waitFor({ timeout: 15_000 }).then(() => true, () => false));
+		check("connect 4: …and the departed host's turn waits for them, as for anyone lost", await t.a.locator(".turn-wait:not([hidden])").first().waitFor({ timeout: 15_000 }) /* the shell's banner, on the page (SDK v2) */.then(() => true, () => false));
 		await done(t);
 
 		// Light cycles: the round restarts under the heir, wins carried.
