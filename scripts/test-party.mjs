@@ -460,8 +460,9 @@ try {
 	await host.bringToFront();
 	await (await gameFrame(host, TIMEOUT)).waitForFunction(() => (window.enemies ?? []).length > 0, null, { timeout: TIMEOUT });
 	await setHidden(host, true);
-	const [hostT2, p2T2] = [await gameFrame(host, TIMEOUT), await gameFrame(p2, TIMEOUT)];
-	check("the host leaves the app: the others see the game paused, and why", await shown(p2T2, ".host-pause", /Paused — .+ left the app/));
+	const hostT2 = await gameFrame(host, TIMEOUT);
+	// Neon Survival is an SDK v2 managed game that ticks: the pause card is the shell's, on the page.
+	check("the host leaves the app: the others see the game paused, and why", await shown(p2, ".host-pause", /Paused — .+ left the app/));
 	// The roster under a game is not redrawn; PARTY pulls it up, current.
 	await p2.locator(".party-pill").click();
 	check("…and AWAY by the host's name on the roster", await p2.locator(".party-tag.is-away").first().waitFor({ timeout: 5000 }).then(() => true, () => false));
@@ -475,14 +476,16 @@ try {
 	const during = await swarm();
 	check("…and the host's simulation stands still meanwhile", before === during && before !== "[]", `${before.slice(0, 80)} → ${during.slice(0, 80)}`);
 	await setHidden(host, false);
-	check("back: everyone counts down together", (await shown(p2T2, ".host-pause", /Resuming in [1-3]/)) && (await shown(hostT2, ".host-pause", /Resuming in [1-3]/)));
-	const resumed = await p2T2.locator(".host-pause").waitFor({ state: "hidden", timeout: 6000 }).then(() => true, () => false);
+	check("back: everyone counts down together", (await shown(p2, ".host-pause", /Resuming in [1-3]/)) && (await shown(host, ".host-pause", /Resuming in [1-3]/)));
+	const resumed = await p2.locator(".host-pause").waitFor({ state: "hidden", timeout: 6000 }).then(() => true, () => false);
 	check("…and play resumes", resumed);
 	await host.waitForTimeout(600);
 	const after = await swarm();
 	check("…with the simulation running again", after !== during, after.slice(0, 80));
 	await p2.locator(".party-pill").click();
 	check("…and AWAY gone", await p2.locator(".party-tag.is-away").first().waitFor({ state: "detached", timeout: 5000 }).then(() => true, () => false));
+	// Nobody steers, so the run may have ended by now: the party screen sits over
+	// a managed game's end card (lib/styles.css), so BACK TO GAME is reachable.
 	await p2.locator("button", { hasText: "BACK TO GAME" }).click();
 
 	await host.evaluate(() => window.__party.room.setGame("connect4"));

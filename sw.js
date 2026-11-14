@@ -38,7 +38,7 @@
 
 // A hash of SHELL's files and this one — written by scripts/sw-version.mjs,
 // never by hand.
-const VERSION = "arcade-8a57a3b74cae";
+const VERSION = "arcade-7e14a6c1cd96";
 // Network-first for code, for development (see above).
 const DEV = ["localhost", "127.0.0.1", "[::1]"].includes(self.location.hostname) && !new URL(self.location.href).searchParams.has("snapshot");
 
@@ -110,6 +110,8 @@ const SHELL = [
 	"./games/undercover/game.json",
 	"./games/neon-bid/index.html",
 	"./games/neon-bid/neon-bid.js",
+	"./games/neon-bid/rules.js",
+	"./games/neon-bid/neon-bid.css",
 	"./games/neon-bid/game.json",
 	"./games/neon-survival-mp/index.html",
 	"./games/neon-survival-mp/neon-survival-mp.js",

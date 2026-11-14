@@ -18,13 +18,13 @@
  */
 import { readFileSync } from "node:fs";
 
+// The game is SDK v2: its rules sit on window.undercoverRules, and the frame
+// half of undercover.js mounts only where the runtime's `arcade` exists.
 globalThis.window = globalThis;
-globalThis.location = { href: "file:///x", hash: "", pathname: "/x", search: "" };
-globalThis.history = { replaceState() {} };
-for (const f of ["../lib/net.js", "../lib/games.js", "../games/undercover/words.js", "../games/undercover/undercover.js"]) {
+for (const f of ["../games/undercover/words.js", "../games/undercover/undercover.js"]) {
 	new Function(readFileSync(new URL(f, import.meta.url), "utf8"))();
 }
-const R = globalThis.NeonArcade.undercoverRules;
+const R = globalThis.undercoverRules;
 const {
 	PAIRS, CATEGORIES, SIMPLE, LEVELS, MIN_PLAYERS, MAX_PLAYERS, POINTS, defaultSpies, maxOthers, maxSpies, blankAllowed,
 	pairPool, pairKey, drawPair, dealRoles, winner, handPoints, wordChoice, playerChoice,

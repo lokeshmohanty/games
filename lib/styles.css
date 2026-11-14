@@ -719,7 +719,7 @@ canvas {
 .party-peek {
   position: fixed;
   inset: 0;
-  z-index: 40;
+  z-index: 46; /* over the shell's own game chrome: .managed-over 44, .turn-wait / .host-pause 45 */
   background: var(--bg);
   overflow-y: auto;
 }

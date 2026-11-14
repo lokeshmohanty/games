@@ -1,6 +1,6 @@
 // games/undercover/words.js — Undercover's word pairs, by category.
 //
-// Loaded before undercover.js, which reads `NeonArcade.undercoverWords`.
+// Loaded before undercover.js, which reads `window.undercoverWords`.
 //
 // Every pair has to be **close enough to argue about**: a pair whose halves are
 // obviously unrelated makes the undercover's first word a confession. Within
@@ -22,12 +22,10 @@
 //
 // Format: one string per level, pairs separated by commas, halves by "/".
 // A long list is the point: on a long evening the deal avoids pairs this phone
-// has already shown (undercover.js, `pickPair`), so the more there are, the
+// has already shown (undercover.js, `drawPair`), so the more there are, the
 // longer before anything comes round again.
 
-window.NeonArcade = window.NeonArcade || {};
-
-NeonArcade.undercoverWords = [
+window.undercoverWords = [
 	{
 		id: "food",
 		label: "Food & drink",

@@ -229,9 +229,32 @@ try {
 	check("and no word is in the DOM either",
 		!(await G.locator(".uc-word").count()), "a word was rendered before the tap");
 
+	// A reload mid-hand (a locked phone, a tab the OS threw away) carries the
+	// hand on from the game's session (SDK v2 session.set) — but never with a
+	// word on screen: whoever holds the phone taps again.
+	async function reloadGame() {
+		await page.reload();
+		await page.waitForFunction(() => window.__game?.handle, null, { timeout: TIMEOUT });
+		G = await gameScope(page, TIMEOUT);
+		await readyToClick(page);
+		return debug(page);
+	}
+
 	// Walk the deal, checking each person sees their own word and only theirs.
 	const seen = [];
 	for (let i = 0; i < 6; i++) {
+		if (i === 2) {
+			const before = await debug(page);
+			await G.locator("button", { hasText: "TAP TO SEE" }).click();
+			check(`(${table[i]}'s word is on screen as the page reloads)`, (await debug(page)).onScreen === table[i]);
+			const after = await reloadGame();
+			check("a reload mid-deal keeps the hand: the same roles and words",
+				JSON.stringify(after.players) === JSON.stringify(before.players) && after.civilianWord === before.civilianWord);
+			check(`…back on ${table[i]}'s turn to look`,
+				after.phase === "pass" && (await G.locator(".uc-big", { hasText: `Pass to ${table[i]}` }).count()) === 1, after.phase);
+			check("…with no word on screen, or in the DOM", after.onScreen === null && !(await G.locator(".uc-word").count()));
+			check("…and nothing dealt again", after.seen === before.seen, `${before.seen} → ${after.seen}`);
+		}
 		await G.locator("button", { hasText: "TAP TO SEE" }).click();
 		const state = await debug(page);
 		const shown = await G.locator(".uc-word").textContent();
@@ -279,6 +302,10 @@ try {
 	uc = await debug(page);
 	check("confirming eliminates them", uc.alive === 5, `${uc.alive}`);
 	check("and says what they were", ["reveal", "guess"].includes(uc.phase), uc.phase);
+	const reloaded = await reloadGame();
+	check("a reload after the vote comes back to the same screen, the same people out",
+		reloaded.phase === uc.phase && reloaded.alive === 5 && reloaded.order.join() === uc.order.join(),
+		`${reloaded.phase}/${reloaded.alive}`);
 
 	// ----------------------------------------------------------- liar's dice
 	//
@@ -567,7 +594,8 @@ try {
 		if (d.phase === "fire") {
 			await G.evaluate(() => {
 				const d = window.__game.handle.debug();
-				const at = window.NeonArcade.battleshipRules.botTarget(d.theirBoard);
+				// SDK v2 (no NeonArcade in the frame): the rules are window.battleshipRules.
+				const at = (window.battleshipRules ?? window.NeonArcade.battleshipRules).botTarget(d.theirBoard);
 				if (!at) return;
 				const cell = document.querySelector(`.bs-grid .bs-cell[data-r="${at[0]}"][data-c="${at[1]}"]`);
 				if (cell && !cell.disabled) cell.click();
@@ -590,7 +618,7 @@ try {
 	// than a mock, because the digest and the answer-replay are two separate
 	// checks and only both together make the game honest.
 	const caught = await G.evaluate(async () => {
-		const R = window.NeonArcade.battleshipRules;
+		const R = window.battleshipRules ?? window.NeonArcade.battleshipRules;
 		const honestFleet = R.randomFleet();
 		const hits = new Set();
 		const answers = [];
@@ -865,14 +893,19 @@ try {
 		Object.entries(window.botShips).map(([id, s]) => [id, s.x, s.y]),
 	);
 	check("two bot ships joined the run", before.length === 2, `${before.length} ships`);
-	await sleep(900);
-	const after = await G.evaluate(() =>
-		Object.entries(window.botShips).map(([id, s]) => [id, s.x, s.y]),
-	);
-	const moved = before.every(([id, x, y]) => {
-		const now = after.find(([o]) => o === id);
-		return now && Math.hypot(now[1] - x, now[2] - y) > 5;
-	});
+	// Flown, not parked: each bot moves within 3 s. One sample at 0.9 s was
+	// flaky on a loaded machine — a bot whose steering target is already
+	// reached can hold still for a moment at the start of a run.
+	let after = before;
+	let moved = false;
+	for (const end = Date.now() + 3000; !moved && Date.now() < end; ) {
+		await sleep(300);
+		after = await G.evaluate(() => Object.entries(window.botShips).map(([id, s]) => [id, s.x, s.y]));
+		moved = before.every(([id, x, y]) => {
+			const now = after.find(([o]) => o === id);
+			return now && Math.hypot(now[1] - x, now[2] - y) > 5;
+		});
+	}
 	check("the bot ships are being flown, not parked", moved, JSON.stringify(after));
 	const published = await G.evaluate(
 		() => Object.keys(window.peers).filter((id) => id.startsWith("bot_")).length,

@@ -3,9 +3,23 @@
   <head>
     <meta charset="utf-8" />
     <title>Neon Bid</title>
+    <link rel="stylesheet" href="neon-bid.css" />
   </head>
   <body>
-    <!-- The platform inlines its runtime ahead of this (docs/sdk.md). -->
+    <!-- SDK v2, Layer 1: the platform inlines sdk/v2/runtime.js ahead of this
+         (docs/sdk-v2.md). Not managed state, because the host must not see a
+         sealed bid before the reveal (neon-bid.js, docs/neon-bid.md). -->
+    <div class="g-stage">
+      <div class="g-hud" id="hud" role="status" aria-live="polite"></div>
+      <div class="g-fill nb-fill">
+        <div class="nb-row" aria-label="The twelve lots, in order"></div>
+        <div class="nb-seats"></div>
+        <div class="nb-lot"></div>
+        <div class="nb-panel"></div>
+        <div class="nb-notice"></div>
+      </div>
+    </div>
+    <script src="rules.js"></script>
     <script src="neon-bid.js"></script>
   </body>
 </html>

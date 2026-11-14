@@ -169,3 +169,20 @@ splits it out.
 - **Not known yet:** why the videos all failed. It may be the throttling
   proxy, or headless Chrome's media stack. **VERIFY** on a real phone; the
   poster fallback makes it cheap either way.
+
+### Phase 3 — Neon Survival as a managed, ticking game (2026-11-14)
+
+The host simulates at 30 Hz (`tick`) and sends views at 15 Hz; guests draw
+each enemy along its velocity between views. Method:
+- a crowded scene (300 enemies) at 390×844, DPR 3, host alone;
+- the frame CPU-throttled through `ctx.newCDPSession(frame)`;
+- 8 runs with v1 and v2 interleaved, since other test runs shared the
+  machine.
+
+| Throttle | v1 | v2 |
+|---|---|---|
+| 6× | 60 fps | 60 fps |
+| 20× | ~35 fps (p95 33–67 ms) | ~39 fps (p95 33 ms every run) |
+
+v2 was faster in all 8 pairs. Both profiles are dominated by raster and
+`drawImage`; messaging is about 3%.

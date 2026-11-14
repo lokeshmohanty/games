@@ -282,7 +282,7 @@ const GAMES = {
 					const btns = [...document.querySelectorAll(".ld-actions button")];
 					if (!btns.length) return;
 					const d = window.__game.handle.debug();
-					const R = window.NeonArcade.liarsDiceRules;
+					const R = window.liarsDiceRules ?? window.NeonArcade.liarsDiceRules; // v2 frame: no NeonArcade
 					const liar = btns.find((x) => x.textContent.includes("LIAR"));
 					const bid = btns.find((x) => x.textContent.startsWith("BID"));
 					const expected = d.totalDice * (2 / 6);
@@ -325,8 +325,8 @@ const GAMES = {
 					const go = document.querySelector(".nb-go:not([disabled])");
 					const out = document.querySelector(".nb-step output");
 					if (!go || !out) return;
-					const R = window.NeonArcade.neonBidRules;
-					const self = window.__game.room?.selfId ?? d.players[0]?.id;
+					const R = window.neonBidRules;
+					const self = window.arcade?.party?.self ?? d.players[0]?.id;
 					const want = R.botBid({ order: d.order, lot: d.lot, players: d.players }, self);
 					const step = (label) => document.querySelector(`.nb-step button[aria-label='${label}']`)?.click();
 					let now = Number(out.textContent);
@@ -372,7 +372,7 @@ const GAMES = {
 					await page.evaluate(() => {
 						const g = window.__game.handle.debug();
 						if (g.phase !== "fire" || g.over) return;
-						const at = window.NeonArcade.battleshipRules.botTarget(g.theirBoard);
+						const at = (window.battleshipRules ?? window.NeonArcade.battleshipRules).botTarget(g.theirBoard);
 						if (!at) return;
 						const cell = document.querySelector(`.bs-grid .bs-cell[data-r="${at[0]}"][data-c="${at[1]}"]`);
 						if (cell && !cell.disabled) cell.click();

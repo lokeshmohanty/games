@@ -1,5 +1,8 @@
 {
-  "sdk": 1,
+  "sdk": 2,
+  "state": "managed",
+  "tick": 30,
+  "viewRate": 15,
   "id": "neon-survival-mp",
   "name": "NEON SURVIVAL",
   "title": "Neon Survival",

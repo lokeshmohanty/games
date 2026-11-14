@@ -5,7 +5,17 @@
     <title>NEON SURVIVAL</title>
   </head>
   <body>
-    <!-- The platform inlines its runtime ahead of this (docs/sdk.md). -->
+    <!-- SDK v2, managed state that ticks: the platform inlines sdk/v2/runtime.js
+         ahead of this and steps the rules below on the host (docs/sdk-v2.md). -->
+    <div id="game">
+      <div id="ui">
+        <div class="stat"><span id="score">Score: 0</span></div>
+        <div class="stat"><span id="alive">Alive: 1</span></div>
+        <div class="stat">You<span id="me-color"></span></div>
+      </div>
+      <canvas id="gameCanvas"></canvas>
+      <div id="ghost" class="ghost-msg" hidden></div>
+    </div>
     <script src="neon-survival-mp.js"></script>
   </body>
 </html>

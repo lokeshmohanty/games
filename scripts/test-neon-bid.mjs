@@ -16,10 +16,13 @@ import { readFileSync } from "node:fs";
 globalThis.window = globalThis;
 globalThis.location = { href: "file:///x", hash: "", pathname: "/x", search: "" };
 globalThis.history = { replaceState() {} };
-for (const f of ["../lib/net.js", "../lib/games.js", "../lib/secrets.js", "../games/neon-bid/neon-bid.js"]) {
+// The rules are their own file, pure functions (games/neon-bid/rules.js). The
+// audit is checked against the shell's real commitments (lib/secrets.js), the
+// ones the game's `commit` / `verify` requests reach.
+for (const f of ["../lib/net.js", "../lib/games.js", "../lib/secrets.js", "../games/neon-bid/rules.js"]) {
 	new Function(readFileSync(new URL(f, import.meta.url), "utf8"))();
 }
-const R = globalThis.NeonArcade.neonBidRules;
+const R = globalThis.neonBidRules;
 const {
 	COLOURS, LOTS, START_CREDITS, RESERVE, score, marginal, worth, validBid, resolveLot,
 	newGame, applyLot, standings, auditBid, shuffledOrder, botBid,

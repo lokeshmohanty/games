@@ -1,0 +1,107 @@
+/* games/neon-bid/neon-bid.css — the auction's look. The page's tokens
+   (lib/theme.css: --p1…--p8, --accent, --panel…) are inlined ahead of this. */
+
+/* The stage and status line, as every v1 game had them from ui.js gameShell:
+   the top 52px is the party page's own band (ALL GAMES, PARTY), drawn over
+   the frame, so nothing of the game goes under it. */
+.g-stage { position: absolute; inset: 0; display: flex; flex-direction: column;
+	align-items: center; justify-content: center; gap: 8px;
+	padding-left: max(12px, env(safe-area-inset-left));
+	padding-right: max(12px, env(safe-area-inset-right));
+	padding-bottom: max(12px, env(safe-area-inset-bottom));
+	padding-top: calc(env(safe-area-inset-top) + 52px); }
+.g-fill { flex: 1 1 auto; min-height: 0; width: 100%;
+	display: flex; flex-direction: column; align-items: center;
+	justify-content: center; gap: 8px; }
+.g-hud { display: flex; flex-wrap: wrap; align-items: baseline;
+	justify-content: center; gap: 4px 14px; min-height: 1.5em;
+	font-size: clamp(0.85rem, 3vw, 1.1rem); color: var(--accent);
+	text-shadow: 0 0 8px var(--accent-glow); text-align: center; }
+.g-hud .g-muted { color: var(--muted); text-shadow: none; }
+
+.nb-fill { justify-content: flex-start; gap: 10px; max-width: 480px; }
+.nb-row { display: grid; grid-template-columns: repeat(12, minmax(0, 26px));
+	gap: 3px; justify-content: center; width: 100%; padding-top: 8px; }
+.nb-slot { display: flex; flex-direction: column; align-items: center; gap: 3px;
+	transition: transform 0.25s, opacity 0.25s; }
+.nb-slot.now { transform: translateY(-6px); }
+.nb-slot.now .nb-glow { animation: nb-pulse 1.1s ease-in-out infinite; }
+.nb-slot.won { opacity: 0.6; }
+.nb-slot.lost { opacity: 0.2; }
+.nb-glow { width: 100%; filter: drop-shadow(0 0 4px var(--gem)); }
+/* clip-path rather than a rotated square: a rotated box is wider than
+   its layout slot, and twelve of them overflowed a 390px phone. */
+.nb-gem { width: 100%; aspect-ratio: 5 / 6; background: linear-gradient(160deg,
+	color-mix(in oklch, var(--gem) 25%, white) 0%, var(--gem) 38%, color-mix(in oklch, var(--gem) 55%, black) 100%);
+	clip-path: polygon(50% 0, 100% 35%, 50% 100%, 0 35%); }
+/* A seat: a ring in its colour around its initial. Under a gem it says who
+   won it; the empty one holds the row's height. */
+.nb-mark { box-sizing: border-box; display: inline-grid; place-items: center; min-width: 16px;
+	height: 16px; padding: 0 2px; border: 2px solid var(--seat); border-radius: 8px;
+	background: var(--panel); color: var(--ink); font: 700 9px/1 var(--font-display); }
+.nb-mark.none { visibility: hidden; }
+@keyframes nb-pulse { 50% { filter: drop-shadow(0 0 10px var(--gem)) brightness(1.25); } }
+
+.nb-seats { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 4px 8px;
+	width: 100%; font-size: 0.72rem; }
+.nb-seat { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 2px 6px;
+	align-items: center; padding: 4px 6px; border: 1px solid var(--border);
+	border-radius: 6px; background: var(--panel); }
+.nb-seat.me { border-color: var(--accent); }
+.nb-seat .who { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.nb-seat .ready { color: var(--good); }
+.nb-seat .cr { color: var(--muted); font-variant-numeric: tabular-nums; }
+.nb-seat .gems { grid-column: 2 / 4; display: flex; gap: 8px; color: var(--muted);
+	font-variant-numeric: tabular-nums; }
+.nb-seat .gems i { font-style: normal; }
+.nb-tiny { display: inline-block; width: 8px; height: 9px; margin-right: 2px;
+	clip-path: polygon(50% 0, 100% 35%, 50% 100%, 0 35%); background: var(--gem); }
+
+.nb-lot { display: flex; align-items: center; gap: 16px; justify-content: center; }
+.nb-big { width: 64px; flex: none; }
+.nb-big .nb-glow { animation: nb-pulse 1.4s ease-in-out infinite; }
+.nb-lot .txt { display: flex; flex-direction: column; gap: 2px; }
+.nb-lot .lotno { font-size: 0.7rem; letter-spacing: 0.14em; color: var(--muted); }
+.nb-lot .name { font-size: 1.3rem; color: var(--ink); }
+.nb-worth { font-size: 0.95rem; color: var(--accent); text-shadow: 0 0 8px var(--accent-glow); }
+.nb-worth small { display: block; font-size: 0.72rem; color: var(--muted); text-shadow: none; }
+
+.nb-panel { width: 100%; display: flex; flex-direction: column; align-items: center; gap: 8px; }
+.nb-wallet { font-size: 0.85rem; color: var(--muted); }
+.nb-wallet b { color: var(--ink); font-size: 1.1rem; font-variant-numeric: tabular-nums; }
+.nb-step { display: flex; align-items: center; gap: 10px; }
+.nb-step button, .nb-chips button { min-width: 50px; min-height: 46px; font-size: 1.1rem;
+	background: var(--panel); border: 2px solid var(--border); border-radius: 8px;
+	color: var(--accent); cursor: pointer; touch-action: manipulation; }
+.nb-step button:disabled, .nb-chips button:disabled { opacity: 0.35; cursor: default; }
+.nb-step output { min-width: 3ch; text-align: center; font-size: 2rem; color: var(--ink);
+	font-variant-numeric: tabular-nums; }
+.nb-chips { display: flex; gap: 8px; }
+.nb-chips button.sel { border-color: var(--accent); }
+.nb-go { min-height: 52px; min-width: 220px; font-size: 16px; }
+
+.nb-banner { font-size: 0.95rem; text-align: center; color: var(--ink); min-height: 1.3em; }
+.nb-banner small { display: block; font-size: 0.72rem; color: var(--muted); }
+.nb-cards { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; width: 100%;
+	perspective: 600px; }
+.nb-card { display: flex; flex-direction: column; align-items: center; gap: 1px; padding: 6px 2px;
+	border: 1px solid var(--border); border-radius: 8px; background: var(--panel);
+	font-size: 0.68rem; color: var(--muted); animation: nb-flip 0.45s ease-out both; }
+.nb-card .who { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.nb-card .amt { font-size: 1.35rem; color: var(--ink); font-variant-numeric: tabular-nums; }
+.nb-card.win { border-color: var(--accent); box-shadow: 0 0 12px var(--accent-glow); }
+.nb-card.win .amt { color: var(--accent); }
+.nb-card.tie { border-color: var(--warn); }
+.nb-card.bad { border-color: var(--danger); }
+.nb-card .pays { color: var(--accent); }
+@keyframes nb-flip { from { transform: rotateY(90deg); opacity: 0; } to { transform: none; opacity: 1; } }
+
+.nb-table { width: 100%; border-collapse: collapse; font-size: 0.78rem; }
+.nb-table th { font-weight: normal; color: var(--muted); font-size: 0.65rem; letter-spacing: 0.08em;
+	text-align: left; padding: 2px 4px; }
+.nb-table td { padding: 5px 4px; border-top: 1px solid var(--border); font-variant-numeric: tabular-nums; }
+.nb-table td.who { max-width: 90px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.nb-table tr.win td { color: var(--accent); }
+.nb-table td.pts { font-size: 1rem; color: var(--ink); }
+.nb-table tr.win td.pts { color: var(--accent); }
+.nb-notice { font-size: 0.7rem; color: var(--warn); min-height: 1em; text-align: center; }

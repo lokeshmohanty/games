@@ -896,7 +896,7 @@ try {
 		const fire = async (page) =>
 			(await inGame(page)).evaluate(() => {
 				const d = window.__game.handle.debug();
-				const at = window.NeonArcade.battleshipRules.botTarget(d.theirBoard);
+				const at = (window.battleshipRules ?? window.NeonArcade.battleshipRules).botTarget(d.theirBoard);
 				document.querySelector(`.bs-grid .bs-cell[data-r="${at[0]}"][data-c="${at[1]}"]:not([disabled])`)?.click();
 			});
 		await fire(g);
@@ -1032,8 +1032,9 @@ try {
 			}, { game: gid(game), teams });
 		const mountedOn = gameMounted;
 		const dbg = gameDebug;
-		// The turn-wait banner is the game's (lib/games.js), so it is in the frame.
-		const bar = async (page) => (await inGame(page)).locator(".turn-wait:not([hidden])");
+		// The turn-wait banner is a shell service since SDK v2 (lib/sdk-host.js):
+		// it is on the party page, over the game frame.
+		const bar = async (page) => page.locator(".turn-wait:not([hidden])");
 		const barText = async (page, re) => {
 			try {
 				await (await bar(page)).locator("p", { hasText: re }).waitFor({ timeout: 15_000 });
@@ -1061,26 +1062,26 @@ try {
 		check("connect 4: the host is told who it waits for, with a countdown", counting[0]);
 		check("connect 4: and so is everyone else", counting[1]);
 		check("connect 4: after the wait the host decides", await barText(h, /hasn't come back\.$/));
-		const buttons = await (await inGame(h)).locator(".turn-wait button").allTextContents();
+		const buttons = await h.locator(".turn-wait button").allTextContents();
 		check("connect 4: WAIT, SKIP TURN, END GAME", buttons.join() === "WAIT,SKIP TURN,END GAME", buttons.join());
 		check("connect 4: the others are told the host decides", await barText(w, /hasn't come back — .+ decides\./));
-		const fit = await (await inGame(h)).evaluate(() => {
+		const fit = await h.evaluate(() => {
 			const r = document.querySelector(".turn-wait").getBoundingClientRect();
 			const btns = [...document.querySelectorAll(".turn-wait button")].map((b) => b.getBoundingClientRect().height);
 			return { left: r.left, right: r.right, bottom: r.bottom, minBtn: Math.min(...btns), doc: document.documentElement.scrollWidth };
 		});
 		check("connect 4: the banner fits the phone, buttons clear 44px", fit.left >= 0 && fit.right <= 390 && fit.bottom <= 844 && fit.minBtn >= 44 && fit.doc <= 390, JSON.stringify(fit));
-		await tap((await inGame(h)).locator(".turn-wait button", { hasText: "WAIT" }));
+		await tap(h.locator(".turn-wait button", { hasText: "WAIT" }));
 		const again = await Promise.all([h, w].map((p) => barText(p, /(reconnecting|switched away) \(0:0\d\)/)));
 		check("connect 4: WAIT starts the countdown again", again[0]);
 		check("connect 4: for everyone", again[1]);
 		await barText(h, /hasn't come back\.$/);
-		await tap((await inGame(h)).locator(".turn-wait button", { hasText: "SKIP TURN" }));
+		await tap(h.locator(".turn-wait button", { hasText: "SKIP TURN" }));
 		check("connect 4: SKIP TURN gives the move back", await turnIs(1));
-		check("connect 4: and the banner goes", await (await bar(h)).waitFor({ state: "detached", timeout: 3000 }).then(() => true, async () => (await inGame(h)).locator(".turn-wait").isHidden()));
+		check("connect 4: and the banner goes", await (await bar(h)).waitFor({ state: "detached", timeout: 3000 }).then(() => true, async () => h.locator(".turn-wait").isHidden()));
 		await drop(4);
 		check("connect 4: waiting on the guest again", (await turnIs(2)) && (await barText(h, /hasn't come back\.$/)));
-		await tap((await inGame(h)).locator(".turn-wait button", { hasText: "END GAME" }));
+		await tap(h.locator(".turn-wait button", { hasText: "END GAME" }));
 		const asked = await nextDialog(h, true);
 		check("connect 4: END GAME asks first", /End the game for everyone/.test(asked), asked);
 		const ended = await Promise.all([h, w].map((p) => p.waitForFunction(() => window.__party.game === null, null, { timeout: TIMEOUT }).then(() => true, () => false)));
@@ -1089,7 +1090,8 @@ try {
 		// SKIP TURN in the other turn game, against the seat still held.
 		const skipOnce = async (label) => {
 			check(`${label}: the host is asked about the lost player`, await barText(h, /hasn't come back\.$/));
-			await tap((await inGame(h)).locator(".turn-wait button", { hasText: "SKIP TURN" }));
+			// Liar's dice is SDK v2 too: the banner is the shell's, on the page.
+			await tap(h.locator(".turn-wait button", { hasText: "SKIP TURN" }));
 		};
 		let d;
 		await setUp("liars-dice", { [ids.host]: "A", [ids.guest]: "B", [ids.watch]: "spectator" });

@@ -3,6 +3,39 @@
 *Decided 2026-11-12 with Lokesh. An original sealed-bid auction; 2–8 seats,
 bots fill any of them. Mobile first.*
 
+## Where the code is (SDK v2, 2026-11-14)
+
+On branch `platform-v2` the game is an SDK v2 game ([sdk-v2.md](sdk-v2.md)),
+**Layer 1**: it speaks the protocol itself rather than handing its rules to
+the platform.
+- `games/neon-bid/rules.js`: the rules as pure functions (lots, paying,
+  scoring, the audit, the bot), exposed as `globalThis.neonBidRules`.
+  `scripts/test-neon-bid.mjs` loads this file alone.
+- `games/neon-bid/neon-bid.js`: the screen and the wire.
+- `games/neon-bid/neon-bid.css`: the look, unchanged from v1.
+
+**Why not managed state.** A managed game's rules run on the host, so every
+bid would reach the host as it was placed, and the host is a player. Here
+the host only ever holds digests until the bidding has closed.
+
+| v1 (in the frame) | v2 (a shell service) |
+|---|---|
+| `makeSecrets().commit` / `verify` | the `commit` / `verify` requests, answered by the bidder's own shell |
+| `secrets.keep` / `kept` (a reload) | `init.session` + `session.set` |
+| `makeRounds` + `botSubmit` | `timer.open` / `timer.do`; a bot's turn arrives as a `timer` `bot` event, answered with `submitFor` |
+| `room.makeAction("nbState" / "nbOpen")` | `arcade.channel("nbState" / "nbOpen")` |
+| `takeOver()` | `arcade.answer("takeOver", …)` |
+| `ctx.reportResult` | `arcade.result`, on every phone |
+
+Openings go to the host on an ordinary channel, as in v1. They are sent only
+once every commitment is in, so a phone that relays one learns nothing it
+could still use. The game keeps its own end table and NEW GAME button: the
+shell's end card is for managed games only.
+
+One workaround: a `timer.do` that reaches the shell before `timer.open` has
+loaded lib/rounds.js is dropped. So the host repeats `start` every 0.5 s until
+the first phase comes back. `start` does nothing to a running clock.
+
 ## The game in one paragraph
 
 Twelve glowing gems — four colours, three of each — are auctioned one at a
@@ -49,9 +82,10 @@ break by credits left; still tied → shared win.
   verifies every reveal against its commitment and against the bidder's
   remaining credits; a bad reveal forfeits that player's bid (counted as 0).
   See [[unrefereed-honesty]] in the multiplayer skill memory.
-- **Simultaneous turns** on `lib/rounds.js` with `collect: true`: the round
-  ends when everyone has committed (bots via `botSubmit`), with a timer as a
-  backstop; an absent player's bid is 0.
+- **Simultaneous turns** on the shell's clock (`timer.*`, lib/rounds.js) with
+  `collect: true`: the round ends when everyone has committed (bots answer
+  the clock's `bot` event with `submitFor`), with a timer as a backstop; an
+  absent player's bid is 0.
 - **The host settles only the lot on screen.** The lot being settled is always
   the round clock's lot, and only while its bids are opening. Until
   2026-11-14 the fallback timer for missing openings was armed *after* the

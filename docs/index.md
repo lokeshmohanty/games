@@ -513,9 +513,10 @@ peers agree on the clock to within a second.
 
 ## Games played on one device
 
-`local: true` in the registration says a game is played by people **in the same
-room, on one phone, passed from hand to hand**. `games/undercover/undercover.js` is the
-first.
+`local: true` in the registration (`"kind": "local"` in game.json) says a game is
+played by people **in the same room, on one phone, passed from hand to hand**.
+`games/undercover/undercover.js` is the first; since 2026-11-14 it is an SDK v2
+game on Layer 1 that speaks only to the shell (storage, session, result).
 
 This is not a lesser kind of multiplayer. It is the answer to the cost this
 whole project is organised around: a handshake is paid once per person, and for
@@ -531,8 +532,8 @@ What the flag changes is small and deliberate:
 - `lib/lobby.js` offers a plain **START** instead of INVITE A FRIEND / PLAY A
   BOT. There is nothing to connect and nobody to wait for.
 
-Everything else is the ordinary module contract. The game keeps its own list of
-players and ignores `ctx.players()` entirely.
+Everything else is the ordinary game contract. The game keeps its own list of
+players and ignores the party's members entirely.
 
 **What such a game is actually responsible for** is narrower than it looks. The
 describing, the arguing and the voting happen between people; the phone deals
@@ -540,7 +541,10 @@ the secrets, remembers who is out, and — the only part that really matters —
 never shows a secret to the wrong person. Undercover takes two deliberate taps
 to reveal a word and one to hide it, and `scripts/test-bots.mjs` asserts that
 nothing is on screen (or in the DOM) before the tap and nothing is left after
-the pass.
+the pass. The hand in progress is kept in the game's session (`session.set`
+"hand"), so a reload mid-hand carries on, but `revealed` is never kept: a hand
+reloaded mid-deal comes back on "Pass to …" and needs the tap again (also
+asserted there).
 
 Two traps found building it, both of which look like a sulky game rather than a
 bug:
@@ -558,10 +562,10 @@ topics (Food & drink … Science & space), each split into *easy* pairs (the sam
 family, pulled apart within a round) and *hard* ones (nearly the same thing —
 Butterfly / Moth). The host ticks any set of topics and a difficulty on the
 WORDS screen; everyone is told the topic on the reveal, never the word. The
-phone keeps the keys of pairs it has dealt in `ctx.storage` ("seen") and draws
+phone keeps the keys of pairs it has dealt in its storage (`store.set` "seen") and draws
 only unseen pairs until a pool is spent (`drawPair`), so a table that plays
 every week works through the whole list before meeting a pair again. Points
-carry across hands, and across reloads (`ctx.storage` "scores") — civilian 1, undercover 3,
+carry across hands, and across reloads (storage "scores") — civilian 1, undercover 3,
 blank 4, to everyone on the winning side — and reset on RESET SCORES.
 `scripts/test-undercover.mjs` holds every topic to at least 20 pairs per
 difficulty and still forbids a word in two pairs anywhere in the list.
