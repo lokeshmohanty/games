@@ -706,6 +706,39 @@ class RuntimeFile(TypedDict):
     # chars.
     path: str
 
+class Http(TypedDict):
+    """
+    `http`, frame to shell. Request, a web app (manifest `app`,
+    sdk/v2/web-shim.js): one request to the app's server, which runs on the
+    host's phone. The reply always has ok: true and an HTTP answer `{ status,
+    headers, body }` (body base64; a failure is a 5xx).
+    """
+
+    v: Literal[2]
+    t: Literal["http"]
+    id: Id
+    # At most 16 chars.
+    method: str
+    # At most 2048 chars.
+    path: str
+    query: NotRequired[str]
+    # Each: Exactly 2 items.
+    headers: NotRequired[list[list[str]]]
+    # base64, at most 1 MB decoded
+    body: NotRequired[str]
+
+class Address(TypedDict):
+    """
+    `address`, frame to shell. A web app's address changed (pushState, or a
+    navigation with `reload`): the party's address, so every phone follows.
+    """
+
+    v: Literal[2]
+    t: Literal["address"]
+    # Starts with /. At most 2048 chars.
+    url: str
+    reload: NotRequired[bool]
+
 # Frame to shell. Each message's t.
 ToShellType = Literal[
     "hello",
@@ -735,6 +768,8 @@ ToShellType = Literal[
     "act",
     "input",
     "runtime.file",
+    "http",
+    "address",
 ]
 
 TO_SHELL: tuple[ToShellType, ...] = (
@@ -765,6 +800,8 @@ TO_SHELL: tuple[ToShellType, ...] = (
     "act",
     "input",
     "runtime.file",
+    "http",
+    "address",
 )
 
 # Frame to shell.
@@ -796,6 +833,8 @@ ToShell = (
     | Act
     | Input
     | RuntimeFile
+    | Http
+    | Address
 )
 
 # Shell to frame. Each message's t.

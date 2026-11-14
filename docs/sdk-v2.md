@@ -381,8 +381,15 @@ v2 adds these fields to sdk.md's `game.json`:
 | `"tick"`, `"viewRate"` | managed and real-time: steps and views per second |
 | `"wasm"` | with `runtime: "wasm"` only: the module's path inside the folder |
 
-A web app (`app`, `kind: "shared"`) stays on `sdk: 1` until Phase 3 moves
-its shim to the v2 envelope.
+**Web apps** (`app`, `kind: "shared"`; sdk.md "Web apps") run on v2 since
+2026-11-14, **whatever their manifest's `sdk` says**. A `shared` sdk 1 app
+such as Locale is upgraded as it mounts, so it needs no change. The frame
+gets `sdk/v2/runtime.js` and `sdk/v2/web-shim.js`, which speaks three
+protocol messages:
+- `asset`, for the app's own files, from `app.web`;
+- `http`, a request answered by the app's server on the host's phone (body
+  in base64);
+- `address`, the party's shared address.
 
 ## The rules a game must follow (v2)
 
@@ -432,4 +439,3 @@ and `RTCDataChannel` are rejected outright.
 - **The roster event.** The shell still compares the party every 250 ms,
   because away and reconnecting change without a roster event. It only
   *sends* on a change. A net.js event replaces the poll in Phase 4.
-- **Web apps** stay on v1 for now (see the manifest section above).

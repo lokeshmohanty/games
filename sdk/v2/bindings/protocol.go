@@ -53,6 +53,8 @@ const (
 	TypeAct         = "act"
 	TypeInput       = "input"
 	TypeRuntimeFile = "runtime.file"
+	TypeHttp        = "http"
+	TypeAddress     = "address"
 	TypeInit        = "init"
 	TypeRoster      = "roster"
 	TypeJoin        = "join"
@@ -99,6 +101,8 @@ var ToShellTypes = [...]string{
 	TypeAct,
 	TypeInput,
 	TypeRuntimeFile,
+	TypeHttp,
+	TypeAddress,
 }
 
 // ToFrameTypes lists every t that goes shell to frame, in schema order.
@@ -1006,6 +1010,39 @@ type RuntimeFile struct {
 	Path string `json:"path"`
 }
 
+// Http: `http`, frame to shell. Request, a web app (manifest `app`,
+// sdk/v2/web-shim.js): one request to the app's server, which runs on the
+// host's phone. The reply always has ok: true and an HTTP answer `{ status,
+// headers, body }` (body base64; a failure is a 5xx).
+type Http struct {
+	// Version.
+	V int `json:"v"`
+	// TypeHttp.
+	T  string `json:"t"`
+	ID ID     `json:"id"`
+	// At most 16 chars.
+	Method string `json:"method"`
+	// At most 2048 chars.
+	Path  string  `json:"path"`
+	Query *string `json:"query,omitempty"`
+	// Each: Exactly 2 items.
+	Headers [][]string `json:"headers,omitempty"`
+	// base64, at most 1 MB decoded
+	Body *string `json:"body,omitempty"`
+}
+
+// Address: `address`, frame to shell. A web app's address changed (pushState,
+// or a navigation with `reload`): the party's address, so every phone follows.
+type Address struct {
+	// Version.
+	V int `json:"v"`
+	// TypeAddress.
+	T string `json:"t"`
+	// Starts with /. At most 2048 chars.
+	Url    string `json:"url"`
+	Reload *bool  `json:"reload,omitempty"`
+}
+
 // Envelope is what every message shares: decode it to see what a message is.
 type Envelope struct {
 	V int    `json:"v"`
@@ -1081,6 +1118,10 @@ func DecodeToShell(b []byte) (any, error) {
 		m = &Input{}
 	case TypeRuntimeFile:
 		m = &RuntimeFile{}
+	case TypeHttp:
+		m = &Http{}
+	case TypeAddress:
+		m = &Address{}
 	default:
 		return nil, fmt.Errorf("%w: %q", ErrUnknownType, e.T)
 	}

@@ -701,6 +701,39 @@ export interface RuntimeFile {
 	path: string;
 }
 
+/**
+ * `http`, frame to shell. Request, a web app (manifest `app`,
+ * sdk/v2/web-shim.js): one request to the app's server, which runs on the
+ * host's phone. The reply always has ok: true and an HTTP answer `{ status,
+ * headers, body }` (body base64; a failure is a 5xx).
+ */
+export interface Http {
+	v: 2;
+	t: "http";
+	id: Id;
+	/** At most 16 chars. */
+	method: string;
+	/** At most 2048 chars. */
+	path: string;
+	query?: string;
+	/** Each: Exactly 2 items. */
+	headers?: string[][];
+	/** base64, at most 1 MB decoded */
+	body?: string;
+}
+
+/**
+ * `address`, frame to shell. A web app's address changed (pushState, or a
+ * navigation with `reload`): the party's address, so every phone follows.
+ */
+export interface Address {
+	v: 2;
+	t: "address";
+	/** Starts with /. At most 2048 chars. */
+	url: string;
+	reload?: boolean;
+}
+
 /** Frame to shell. */
 export type ToShell =
 	| Hello
@@ -729,7 +762,9 @@ export type ToShell =
 	| Verify
 	| Act
 	| Input
-	| RuntimeFile;
+	| RuntimeFile
+	| Http
+	| Address;
 
 /** Shell to frame. */
 export type ToFrame =
@@ -785,6 +820,8 @@ export const TO_SHELL: readonly ToShell["t"][] = [
 	"act",
 	"input",
 	"runtime.file",
+	"http",
+	"address",
 ];
 
 /** Every ToFrame `t`, in schema order. */

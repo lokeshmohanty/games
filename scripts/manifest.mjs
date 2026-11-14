@@ -65,7 +65,6 @@ export function validateManifest(m) {
 	if (m.runtime != null && (m.sdk !== 2 || !RUNTIMES.includes(m.runtime))) p.push(`"runtime" needs "sdk": 2 and is one of ${RUNTIMES.join(", ")}`);
 	if ((m.runtime === "wasm") !== (m.wasm != null)) p.push('"runtime": "wasm" goes with "wasm", the module\'s path, and only with it');
 	if (m.wasm != null && (typeof m.wasm !== "string" || !PATH.test(m.wasm) || !m.wasm.endsWith(".wasm"))) p.push('"wasm" must be a .wasm path inside the game folder');
-	if (m.sdk === 2 && m.app != null) p.push('a web app ("app") stays on "sdk": 1 for now');
 	// Layer 2 (docs/sdk-v2.md "Managed state"): the platform runs the rules.
 	if (m.state != null && (m.sdk !== 2 || !["managed", "manual"].includes(m.state))) p.push('"state" needs "sdk": 2 and is "managed" or "manual"');
 	if (m.tick != null && (m.state !== "managed" || !Number.isInteger(m.tick) || m.tick < 1 || m.tick > 60)) p.push('"tick" (Hz, 1–60) goes with "state": "managed"');

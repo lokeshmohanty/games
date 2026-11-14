@@ -26,7 +26,8 @@ const DEV_PORT = 5190 + PORT_OFFSET;
 // Not reached by this run: join/leave need a peer to come and go mid-game,
 // hostNew leaves the party. test-party covers those paths in the shell.
 // runtime.file: only a Python game asks (test-conformance's Python example).
-const NOT_EXERCISED = new Set(["join", "leave", "hostNew", "runtime.file"]);
+// http, address: a web app's (test-webapp).
+const NOT_EXERCISED = new Set(["join", "leave", "hostNew", "runtime.file", "http", "address"]);
 // Layer 2 (managed state) has its own run: scripts/test-managed.mjs.
 const LAYER2 = new Set(["act", "input", "rules", "view", "rejected"]);
 // What each peer's fixture must report, named here so a step whose event

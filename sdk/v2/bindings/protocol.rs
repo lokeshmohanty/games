@@ -783,6 +783,38 @@ pub struct RuntimeFile {
     pub path: String,
 }
 
+/// `http`, frame to shell. Request, a web app (manifest `app`, sdk/v2/web-shim.js): one request to
+/// the app's server, which runs on the host's phone. The reply always has ok: true and an HTTP
+/// answer `{ status, headers, body }` (body base64; a failure is a 5xx).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Http {
+    pub v: V2,
+    pub id: Id,
+    /// At most 16 chars.
+    pub method: String,
+    /// At most 2048 chars.
+    pub path: String,
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub query: Option<String>,
+    /// Each: Exactly 2 items.
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub headers: Option<Vec<Vec<String>>>,
+    /// base64, at most 1 MB decoded
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub body: Option<String>,
+}
+
+/// `address`, frame to shell. A web app's address changed (pushState, or a navigation with
+/// `reload`): the party's address, so every phone follows.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Address {
+    pub v: V2,
+    /// Starts with /. At most 2048 chars.
+    pub url: String,
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub reload: Option<bool>,
+}
+
 /// Frame to shell.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[allow(clippy::large_enum_variant)]
@@ -842,6 +874,10 @@ pub enum ToShell {
     Input(Input),
     #[serde(rename = "runtime.file")]
     RuntimeFile(RuntimeFile),
+    #[serde(rename = "http")]
+    Http(Http),
+    #[serde(rename = "address")]
+    Address(Address),
     /// A `t` this version does not know. The protocol says to ignore it (the other side may be
     /// newer); it cannot be serialised.
     #[serde(other, skip_serializing)]
@@ -920,6 +956,8 @@ pub const TO_SHELL: &[&str] = &[
     "act",
     "input",
     "runtime.file",
+    "http",
+    "address",
 ];
 
 /// Every ToFrame `t`, in schema order.

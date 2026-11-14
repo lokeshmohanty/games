@@ -299,6 +299,12 @@
         },
         {
           "$ref": "#/$defs/runtime.file"
+        },
+        {
+          "$ref": "#/$defs/http"
+        },
+        {
+          "$ref": "#/$defs/address"
         }
       ]
     },
@@ -1605,6 +1611,79 @@
           "type": "string",
           "maxLength": 256,
           "description": "Relative to the runtime's folder, e.g. `pyodide.asm.wasm`."
+        }
+      }
+    },
+    "http": {
+      "description": "Request, a web app (manifest `app`, sdk/v2/web-shim.js): one request to the app's server, which runs on the host's phone. The reply always has ok: true and an HTTP answer `{ status, headers, body }` (body base64; a failure is a 5xx).",
+      "type": "object",
+      "required": [
+        "v",
+        "t",
+        "id",
+        "method",
+        "path"
+      ],
+      "properties": {
+        "v": {
+          "const": 2
+        },
+        "t": {
+          "const": "http"
+        },
+        "id": {
+          "$ref": "#/$defs/id"
+        },
+        "method": {
+          "type": "string",
+          "maxLength": 16
+        },
+        "path": {
+          "type": "string",
+          "maxLength": 2048
+        },
+        "query": {
+          "type": "string"
+        },
+        "headers": {
+          "type": "array",
+          "items": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "minItems": 2,
+            "maxItems": 2
+          }
+        },
+        "body": {
+          "type": "string",
+          "description": "base64, at most 1 MB decoded"
+        }
+      }
+    },
+    "address": {
+      "description": "A web app's address changed (pushState, or a navigation with `reload`): the party's address, so every phone follows.",
+      "type": "object",
+      "required": [
+        "v",
+        "t",
+        "url"
+      ],
+      "properties": {
+        "v": {
+          "const": 2
+        },
+        "t": {
+          "const": "address"
+        },
+        "url": {
+          "type": "string",
+          "maxLength": 2048,
+          "description": "Starts with /."
+        },
+        "reload": {
+          "type": "boolean"
         }
       }
     }
