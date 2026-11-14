@@ -198,10 +198,11 @@ each other through an invite somebody carries, and a game with real people in
 it still needs a network to reach them.
 
 What the service worker does with your files is deliberately split. Code — the
-pages, `lib/`, `games/` — is fetched **network-first**, because those files have
-to agree with each other and a half-updated app breaks in ways nobody would
-connect to a deploy from last week. Icons and preview gifs are served from the
-cache first, since they are large and a slightly old one costs nothing. See
+pages, `lib/`, `games/` — is served from **one precached snapshot per deploy**,
+because those files have to agree with each other and a half-updated app breaks
+in ways nobody would connect to a deploy from last week; its `VERSION` is a hash
+of the files (`just sw-version`), so a deploy arrives whole on the next load.
+Icons, fonts and previews are served from the cache first. See
 [`sw.js`](sw.js), which explains itself at length.
 
 To change the icon, edit [`assets/icon.svg`](assets/icon.svg) and run:

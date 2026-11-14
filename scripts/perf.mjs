@@ -118,6 +118,9 @@ async function throttle(page) {
 async function context(browser, warm, url) {
 	const ctx = await browser.newContext(PHONE);
 	await ctx.addInitScript(VITALS);
+	// The deployed site's service worker strategy, not loopback's development
+	// network-first (sw.js, lib/pwa.js).
+	await ctx.addInitScript(() => localStorage.setItem("neon.sw", "snapshot"));
 	if (warm) {
 		// The warm-up visit pays the same link, so a gif-heavy portal can take
 		// a minute to load; the service worker's install is what is waited for.

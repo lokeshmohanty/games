@@ -32,8 +32,9 @@ refused by Chrome, and nothing visible said so.
 
 ## When you add or rename a page or a lib/ file
 
-Add it to `SHELL` in `sw.js`. It is a hand-maintained list; a file missing from
-it simply will not be there offline, and nothing warns you. Then bump `VERSION`.
+Add it to `SHELL` in `sw.js` (`just check-precache` catches a forgotten one),
+then `just sw-version`: `VERSION` is a hash of the precached files, and a stale
+one fails `just test` and CI. Never edit `VERSION` by hand.
 
 ## Rules
 
@@ -41,8 +42,12 @@ it simply will not be there offline, and nothing warns you. Then bump `VERSION`.
   `beforeinstallprompt`, which is Chromium-only and always has been. Do not
   audit the manifest over it — read [[install-prompt-is-chromium-only]] first.
   Offline is a *separate* capability and does work in Firefox.
-- **Code is network-first, assets are cache-first.** Do not "optimise" this into
-  cache-first everywhere — see [[caching-split]] for what that would break.
+- **Code comes from one versioned snapshot, assets are cache-first.** Never add a
+  per-file background refresh for code (stale-while-revalidate): it mixes two
+  deploys — see [[caching-split]]. Loopback is network-first for development.
+- **Never use `page.waitForFunction` with an `async` predicate** in a test: in
+  Playwright 1.62 the returned Promise is truthy, so it passes without waiting.
+  Poll from Node instead (test-pwa does).
 - **`assets/icon.svg` must stay strict XML.** It is the favicon, loaded as a
   standalone SVG, and one `--` inside its header comment makes the browser drop
   it. `make-icons.mjs` pastes it into HTML, which forgives that, so the PNGs give
@@ -63,8 +68,8 @@ it simply will not be there offline, and nothing warns you. Then bump `VERSION`.
 
 - `memory/installability-verdict.md` — why an SVG in `icons` makes the whole app
   uninstallable, and why CDP is the only honest check.
-- `memory/caching-split.md` — why code is network-first, and the hand-bumped
-  `VERSION` trade-off.
+- `memory/caching-split.md` — why code is served from one versioned snapshot
+  (and was network-first before 2026-11-14), and how a deploy arrives.
 - `memory/install-prompt-is-chromium-only.md` — why no button can ever appear in
   Firefox or Safari, what each browser actually does, and why offline is fine
   there anyway.

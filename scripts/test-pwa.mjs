@@ -20,7 +20,7 @@
  */
 import { createRequire } from "node:module";
 import { execFileSync, spawn } from "node:child_process";
-import { existsSync, globSync, mkdtempSync, readFileSync } from "node:fs";
+import { cpSync, existsSync, globSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { dirname, join, resolve as resolvePath } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -73,13 +73,20 @@ const check = (label, ok, detail = "") => {
 
 const { chromium } = loadPlaywright();
 
+// A copy of the site, served, so a test can stage a new deploy by changing
+// real files in it — exactly what a deploy does — without touching the repo.
+// (Faking responses through Playwright's routing did not reach the install of
+// a worker that update() brings in.)
+const SITE = mkdtempSync(join(tmpdir(), "pwa-site-"));
+cpSync(ROOT, SITE, { recursive: true, filter: (src) => !/[\\/](\.git|node_modules|\.wrangler)$/.test(src) });
 const server = spawn("python3", ["-m", "http.server", String(PORT), "--bind", "127.0.0.1"], {
-	cwd: ROOT,
+	cwd: SITE,
 	stdio: "ignore",
 });
 const cleanup = () => {
 	try {
 		server.kill();
+		rmSync(SITE, { recursive: true, force: true });
 	} catch {}
 };
 process.on("exit", cleanup);
@@ -91,6 +98,9 @@ const ctx = await browser.newContext({
 	viewport: { width: 390, height: 844 },
 	deviceScaleFactor: 3,
 });
+// The deployed site's strategy (sw.js "Why a snapshot"), not loopback's
+// network-first development mode.
+await ctx.addInitScript(() => localStorage.setItem("neon.sw", "snapshot"));
 const page = await ctx.newPage();
 
 // ------------------------------------------------------------- the manifest
@@ -424,13 +434,14 @@ console.log("\npwa: with the network gone");
 	const sw = readFileSync(join(ROOT, "sw.js"), "utf8");
 	const version = sw.match(/const VERSION = "([^"]+)"/)[1];
 	const shell = [...sw.match(/const SHELL = \[([\s\S]*?)\];/)[1].matchAll(/"(\.\/[^"]*)"/g)].length;
-	const full = await page
-		.waitForFunction(
-			async ([v, n]) => (await (await caches.open(v)).keys()).length >= n,
-			[version, shell],
-			{ timeout: 30_000, polling: 250 },
-		)
-		.then(() => true, () => false);
+	// Polled from here: page.waitForFunction resolves at once on an async
+	// predicate (its Promise is truthy — Playwright 1.62), so this check had
+	// been passing without waiting.
+	let full = false;
+	for (const end = Date.now() + 30_000; Date.now() < end && !full; ) {
+		full = await page.evaluate(async ([v, n]) => (await (await caches.open(v)).keys()).length >= n, [version, shell]);
+		if (!full) await new Promise((r) => setTimeout(r, 250));
+	}
 	check(`the precache holds all ${shell} shell files before going offline`, full);
 }
 // Aborting every request is a truer "no network" than setOffline, which does
@@ -517,19 +528,46 @@ await ctx.setOffline(false);
 
 console.log("\npwa: an update reaches a player who already has the old copy");
 {
-	const before = await page.evaluate(async () => (await (await fetch("lib/games.js")).text()).length);
-	// Serve a changed file without touching the repo: intercept at the network
-	// layer, below the service worker, which is exactly where a deploy lands.
-	await ctx.route("**/lib/games.js", (route) =>
-		route.fulfill({ status: 200, contentType: "text/javascript", body: "// redeployed\n" }),
-	);
-	const after = await page.evaluate(async () => (await (await fetch("lib/games.js")).text()).trim());
-	await ctx.unroute("**/lib/games.js");
-	check(
-		"a redeployed script is picked up rather than served from cache",
-		after === "// redeployed",
-		`was ${before} bytes, still got ${after.length} bytes back`,
-	);
+	const swFile = join(SITE, "sw.js");
+	const swText = readFileSync(swFile, "utf8");
+	const oldVersion = swText.match(/const VERSION = "([^"]+)"/)[1];
+	const newVersion = oldVersion + "-next";
+	const before = await page.evaluate(async () => (await (await fetch("lib/games.js")).text()).trim());
+	writeFileSync(join(SITE, "lib", "games.js"), "// redeployed\n");
+	const mixed = await page.evaluate(async () => (await (await fetch("lib/games.js")).text()).trim());
+	check("one file changed alone is not mixed into the deploy the page runs (the snapshot holds)", mixed === before);
+	// A real deploy changes sw.js too (scripts/sw-version.mjs): the browser's
+	// update check installs the new snapshot beside the old and activates it.
+	writeFileSync(swFile, swText.replace(oldVersion, newVersion));
+	await page.evaluate(async () => (await navigator.serviceWorker.getRegistration())?.update());
+	// Installing the whole new snapshot takes a few seconds; what a player sees
+	// is the new file arriving once it has, and nothing mixed before then.
+	// Polled from here: a waitForFunction with an async predicate passed at once.
+	const seen = [];
+	let arrived = false;
+	for (const end = Date.now() + 30_000; Date.now() < end && !arrived; ) {
+		const got = await page.evaluate(async () => (await (await fetch("lib/games.js")).text()).trim());
+		const reg = await page.evaluate(async () => !!(await navigator.serviceWorker.getRegistration())?.installing);
+		if (got === "// redeployed") arrived = true;
+		else seen.push(reg ? "installing" : "idle");
+		if (got === "// redeployed" && reg) seen.push("MIXED");
+		if (!arrived) await new Promise((r) => setTimeout(r, 300));
+	}
+	const state = await page.evaluate(async (v) => {
+		const reg = await navigator.serviceWorker.getRegistration();
+		const cache = await caches.open(v);
+		return { installing: !!reg?.installing, waiting: !!reg?.waiting, entries: (await cache.keys()).length, keys: await caches.keys() };
+	}, newVersion);
+	check("a new deploy reaches the page once its snapshot is in", arrived);
+	check("…and never while it is still installing", !seen.includes("MIXED"), seen.join(" "));
+	check("…as one whole new snapshot", !state.installing && !state.waiting && state.entries >= 60, JSON.stringify(state));
+	// activate deletes it just after the new worker takes over.
+	let keys = state.keys;
+	for (const end = Date.now() + 5000; Date.now() < end && !(keys.length === 1 && keys[0] === newVersion); ) {
+		await new Promise((r) => setTimeout(r, 200));
+		keys = await page.evaluate(() => caches.keys());
+	}
+	check("…and the old snapshot is dropped", keys.length === 1 && keys[0] === newVersion, keys.join());
 }
 
 await browser.close();

@@ -85,6 +85,10 @@ jobs:
         with:
           name: generated
           path: .
+      # The offline snapshot's VERSION, rehashed over the community games too:
+      # a new pin is a new deploy for every installed copy (sw.js).
+      - name: Version the offline copy
+        run: node scripts/sw-version.mjs --with-community
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v5
         with:

@@ -1,57 +1,77 @@
-# Why code is network-first and assets are cache-first
+# Why code comes from one versioned snapshot (network-first before 2026-11-14)
 
-Decided 2026-08-15, when `sw.js` was written.
+The invariant has not changed since `sw.js` was written on 2026-08-15: **a
+page must run one coherent deploy.** The strategy that keeps it did change.
 
-**Why:** "cache-first for speed" is the default advice for a service worker and
-it is wrong for this repo. The reasoning is not obvious from the code, so it
-would be optimised away by anyone who read `sw.js` as a performance artefact.
+**Why:** the files here are a set that must agree. `party.js` calls into
+`net.js`, every game registers against `games.js`, and the bridge inlines
+`lib/` into game frames. Serve one file from an old deploy beside another from
+a new one and the app breaks silently, days after the deploy responsible, on
+one user's device. "Cache-first for speed" is the default advice, and plain
+stale-while-revalidate is its most tempting form. **It is wrong here**: a
+per-file background refresh writes new files into the old set.
 
-## The split
+## 2026-08-15 to 2026-11-14: network-first
 
-| what | strategy | reason |
-|---|---|---|
-| pages, `lib/`, `games/` | **network-first**, cache as fallback | these files must agree with each other |
-| `assets/` (icons, preview gifs) | **cache-first**, revalidated in background | large, stable, harmless when slightly stale |
+Code was always asked of the network, so an online player ran the latest
+deploy; the cache was only a fallback, with a 3 s timeout. `VERSION` was bumped
+by hand, and forgetting it only staled the offline copy. That cost a round trip
+per file, plus a 3 s stall per file on a bad link. Measured in `docs/perf.md`
+when the speed refactor started.
 
-## The failure cache-first would cause
+## Since 2026-11-14: one snapshot per VERSION
 
-The files here are a set that has to be internally consistent: `party.js` calls
-into `net.js`, every game registers against `games.js`, `lobby.js` depends on
-`qr-decode.js`. Serve one from a stale cache while another arrives fresh and the
-app breaks — **silently, and days after the deploy responsible**, on one user's
-device, in a way nobody would connect back to a release. There is no build step
-here to hash filenames and make that impossible, so the worker has to be the
-thing that prevents it.
+| what | strategy |
+|---|---|
+| pages, `lib/`, `games/`, `sdk/` | **from this VERSION's precache, as-is**. The network only for a file outside SHELL, which is then kept. |
+| icons, fonts, posters, gifs | **cache-first**, nothing downloaded behind a hit |
+| preview videos (`.webm`, `.mp4`) and Range requests | **not handled**: Safari refuses a whole cached file for a media request |
+| loopback (`just run`) | code **network-first**, so an edit shows on reload. Tests opt in to the snapshot with localStorage `neon.sw=snapshot`, which makes lib/pwa.js register `sw.js?snapshot`. |
 
-Network-first means an online player always runs one coherent deploy. The cache
-is a fallback, not a source of truth. The offline snapshot is written in a
-single `install` precache, so with no network you also get one coherent deploy
-rather than an accumulation of whatever happened to be fetched when.
+Coherence is now structural rather than a network round trip:
 
-Cost: a network round trip per file while online. Accepted. It is a small static
-site behind GitHub Pages' CDN, HTTP caching still applies, and `networkFirst`
-falls back to the cache after `NETWORK_TIMEOUT_MS` (3 s) so a bad connection
-never leaves somebody staring at nothing.
+- **`VERSION` is a content hash** of every precached file and of sw.js itself
+  (`scripts/sw-version.mjs`). `just test` (`check-sw-version`) and
+  platform-check fail on a stale one, and the deploy rehashes with
+  `--with-community` after fetching the pinned games.
+- **A deploy is therefore a new sw.js.** The browser's own update check
+  installs the new snapshot beside the old one, `skipWaiting`, then `activate`
+  deletes the old cache, and the next page load is the new deploy, whole.
+- Install uses `fetch(…, {cache: "no-cache"}) + cache.put`. "no-cache" turns
+  files the first page just loaded into 304s. It is fetch + put rather than
+  `cache.add` so a test can see the request.
 
-## The `VERSION` trade-off
+The one window where two deploys meet: an open page that loads a file *later*
+(qr-decode.js on a first scan, a game frame's files) after the new worker has
+activated. It was the same under network-first.
 
-`VERSION` in `sw.js` is bumped by hand — there is no build step to hash
-anything. This is a deliberate, bounded cost: **forgetting it can only stale the
-offline copy, never serve a stale app to a player who is online**, precisely
-because code is network-first. Under a cache-first worker the same slip would be
-unbounded and near-undiagnosable. Recorded as an Honest gap in `docs/index.md`.
+## Testing an update: stage a real deploy
+
+`test-pwa` serves a **temporary copy of the site** and changes real files in it
+(`lib/games.js`, then `sw.js`'s VERSION). It checks three things: the page
+still gets the old file (the snapshot holds), the new file arrives once the
+new snapshot is in, and it never arrives while that snapshot is still
+installing.
+
+What did not work, so don't retry it:
+
+- **Playwright `ctx.route` fulfilling `sw.js` and `lib/games.js`.** The worker
+  that `update()` brought in installed only a fragment, or never fetched the
+  routed script at all. Interception of a worker's own install is unreliable.
+- **`page.waitForFunction(async () => …)`.** In Playwright 1.62 it resolves at
+  once, because its Promise is truthy. It had made an existing check ("the
+  precache holds all N shell files") pass without waiting, and it made the
+  update look instant. Poll from Node.
 
 ## Testing offline: `setOffline` is not enough
 
 `context.setOffline(true)` does **not** reach the fetches the service worker
-itself makes, which are the ones under test — pages appeared to load while the
-worker was quietly still talking to the server. Use route interception instead:
+itself makes, which are the ones under test. Use route interception to cut the
+network instead:
 
 ```js
 const disconnect = (route) => route.abort("internetdisconnected");
 await ctx.route("**/*", disconnect);
 ```
 
-`ctx.route` does intercept worker-originated requests (proven both ways: it is
-also how `test-pwa.mjs` fakes a redeploy to check that network-first actually
-picks up a changed file). Related: [[installability-verdict]].
+Related: [[installability-verdict]].

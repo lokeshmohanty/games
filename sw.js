@@ -5,30 +5,40 @@
 // the same way as everything else here: a plain script, no build step, no
 // dependencies. Registered by lib/pwa.js, which knows not to try on file://.
 //
-// ## What it caches, and why the split
+// ## Why a snapshot (2026-11-14; was network-first since 2026-08-15)
 //
-// Code (HTML, CSS, JS) is served **network-first**. The pages here are a set of
-// files that have to agree with each other — `party.js` calls into `net.js`,
-// games register against `games.js` — so serving one from a stale cache while
-// another comes fresh is a real way to break the app, and it is a failure that
-// arrives silently, days after the deploy that caused it. Going to the network
-// first means an online player always runs one coherent deploy. The cache is
-// the fallback, not the source of truth.
+// The pages here are a set of files that have to agree with each other —
+// `party.js` calls into `net.js`, games register against `games.js` — so
+// serving one file from an old deploy beside another from a new one breaks the
+// app silently. Network-first prevented that by always asking the network, at
+// the price of a round trip per file and a 3 s wait for any file on a bad link
+// (docs/perf.md).
 //
-// Assets (icons, the portal's preview gifs) are served **cache-first**. They
-// are large, they change rarely, and a slightly old preview gif is a cosmetic
-// difference rather than a broken page. They are revalidated in the background,
-// so the next visit has the new one.
+// Code is now served from **the precached snapshot of its VERSION**: written in
+// one go at install, read as-is afterwards, never refreshed file by file (a
+// per-file background refresh is exactly what would mix two deploys). So a
+// page opens from the phone's own storage, and is always one coherent deploy.
+// What is not in the snapshot comes from the network and is kept.
 //
-// The offline snapshot is written in one go at install, so what you get with no
-// network is a single coherent deploy rather than an accumulation of whatever
-// happened to be fetched when.
+// What makes a deploy arrive: VERSION is a hash of every precached file
+// (scripts/sw-version.mjs, checked by `just test` and CI; the deploy rehashes
+// with the community games). A new deploy therefore means a new sw.js, which
+// the browser finds on its own update check, installs beside the old snapshot,
+// and activates — the next page load is the new deploy, whole.
+//
+// Assets (icons, fonts, posters, gifs) are cache-first, and are not
+// re-downloaded behind each hit: they change with a deploy, so with VERSION.
+//
+// On a loopback address (`just run`) code stays network-first, so an edited
+// file shows on reload without rehashing anything. The tests that exercise the
+// real strategy register with `?snapshot` (lib/pwa.js reads localStorage
+// "neon.sw" = "snapshot").
 
-// Bump when the precached shell should be rebuilt. Because code is network-
-// first, a forgotten bump costs an out-of-date *offline* copy — never a stale
-// app for an online player, which is the failure mode that would be hard to
-// notice.
-const VERSION = "arcade-games-v41";
+// A hash of SHELL's files and this one — written by scripts/sw-version.mjs,
+// never by hand.
+const VERSION = "arcade-31bc4bb3f8d0";
+// Network-first for code, for development (see above).
+const DEV = ["localhost", "127.0.0.1", "[::1]"].includes(self.location.hostname) && !new URL(self.location.href).searchParams.has("snapshot");
 
 // The shell: everything needed to open any page and start a game with no
 // network at all. The preview gifs are deliberately absent — they are ~2 MB
@@ -124,9 +134,8 @@ try {
 SHELL.push(...(self.COMMUNITY_SHELL ?? []));
 
 
-// How long to wait for the network before falling back to the cached copy. The
-// request is left running either way, so a slow connection still refreshes the
-// cache for next time — this only decides how long somebody stares at nothing.
+// Development only (DEV): how long to wait for the network before falling back
+// to the cached copy.
 const NETWORK_TIMEOUT_MS = 3000;
 
 self.addEventListener("install", (event) => {
@@ -136,14 +145,23 @@ self.addEventListener("install", (event) => {
 			// One at a time rather than cache.addAll: addAll rejects as a unit, so a
 			// single 404 (a page removed but left in this list) would throw away the
 			// whole offline copy.
+			//
+			// `no-cache`, not `reload`: the browser revalidates what its HTTP cache
+			// holds (ETag / Last-Modified), so the files the first page just loaded
+			// cost a 304 rather than their whole bodies again. Still fresh from the
+			// server: a 304 is the server's word that the copy is current.
+			//
+			// fetch + put rather than cache.add: the same request, but through the
+			// worker's own fetch, which test-pwa can intercept to fake a deploy.
 			await Promise.all(
 				SHELL.map((url) =>
-					cache.add(new Request(url, { cache: "reload" })).catch(() => {}),
+					fetch(new Request(url, { cache: "no-cache" }))
+						.then((res) => (res.ok ? cache.put(url, res) : null))
+						.catch(() => {}),
 				),
 			);
-			// Take over as soon as this version is ready. Safe here because the
-			// worker holds no state a page depends on, and because code is fetched
-			// network-first, so an old page and a new worker cannot disagree.
+			// Take over as soon as this version is ready: the worker holds no state
+			// a page depends on, and a page already open keeps the files it loaded.
 			await self.skipWaiting();
 		})(),
 	);
@@ -182,19 +200,42 @@ async function store(request, response) {
 	return response;
 }
 
-/** Cache first, refreshed in the background for next time. */
+/**
+ * Cache first; the network only for what is not cached, which is then kept.
+ * No refresh behind a hit: every portal visit used to download every preview
+ * again. A changed asset arrives with the next VERSION's cache.
+ */
 async function cacheFirst(request) {
 	const hit = await caches.match(request, { ignoreSearch: false });
-	const fetching = fetch(request)
-		.then((res) => store(request, res))
-		.catch(() => null);
 	if (hit) return hit;
-	const res = await fetching;
+	const res = await fetch(request)
+		.then((r) => store(request, r))
+		.catch(() => null);
 	if (res) return res;
 	return new Response("", { status: 504, statusText: "Offline and not cached" });
 }
 
-/** Network first, with the cache as both a timeout escape and an offline copy. */
+/**
+ * Code, from this VERSION's snapshot. Not in it (a file outside SHELL): the
+ * network, kept for offline. A navigation with a query (party.html?game=…) is
+ * the precached page — the query only steers its script.
+ */
+async function snapshot(request) {
+	const cache = await caches.open(VERSION);
+	const hit = (await cache.match(request)) ?? (request.mode === "navigate" ? await cache.match(request, { ignoreSearch: true }) : null);
+	if (hit) return hit;
+	const res = await fetch(request)
+		.then((r) => store(request, r))
+		.catch(() => null);
+	if (res) return res;
+	if (request.mode === "navigate") {
+		const portal = await cache.match("./index.html");
+		if (portal) return portal;
+	}
+	return new Response("", { status: 504, statusText: "Offline" });
+}
+
+/** Development: network first, with the cache as a timeout escape and an offline copy. */
 async function networkFirst(request) {
 	const fetching = fetch(request)
 		.then((res) => store(request, res))
@@ -246,5 +287,5 @@ self.addEventListener("fetch", (event) => {
 	// Offline, a card shows its cached poster instead.
 	if (/\.(?:webm|mp4)$/i.test(url.pathname)) return;
 
-	event.respondWith(isAsset(url) ? cacheFirst(request) : networkFirst(request));
+	event.respondWith(isAsset(url) ? cacheFirst(request) : DEV ? networkFirst(request) : snapshot(request));
 });

@@ -45,6 +45,8 @@ jobs:
         run: node scripts/fetch-community.mjs
       - name: Catalog is up to date
         run: node scripts/build-catalog.mjs --check
+      - name: sw.js VERSION matches what it precaches
+        run: node scripts/sw-version.mjs --check
       - name: Install Playwright (driver only; the runner's Chrome is used)
         run: npm install --no-save playwright@1.62.1
       - name: Validate every game

@@ -58,8 +58,8 @@ before changing either subsystem:
 - `.agents/skills/multiplayer/` — the P2P layer. Its memory records why SCAN
   REPLY has failed twice, and the one test shape that catches it.
 - `.agents/skills/pwa/` — installability and offline. Its memories record why an
-  SVG in `manifest.icons` makes the app uninstallable, and why code is fetched
-  network-first.
+  SVG in `manifest.icons` makes the app uninstallable, and why code is served
+  from one versioned snapshot (network-first until 2026-11-14).
 
 ## The portal
 
@@ -642,15 +642,28 @@ the Cache API fully, so the arcade caches and plays with no network there
 exactly as it does in Chrome — it just lives in a tab. (Firefox does disable
 service workers in Private Browsing windows.)
 
-**The caching split is the design decision.** Code — the pages, `lib/`,
-`games/` — is fetched **network-first**: those files must agree with each other,
-and serving one from a stale cache beside another fetched fresh breaks the app
-silently, days after the deploy responsible. Icons and preview gifs are
-**cache-first**, being large, stable, and harmless when slightly old. The
-offline copy is precached in one go at install, so with no network you get one
-coherent deploy rather than an accumulation. The preview gifs are deliberately
-left out of that precache (~2 MB, and nobody asked for them yet), which is why
-`assets/placeholder.svg` exists.
+**The caching design (2026-11-14).** Code — the pages, `lib/`, `games/` — must
+agree with each other: serving one file from an old deploy beside another from a
+new one breaks the app silently, days after the deploy responsible. So code is
+served from **one precached snapshot per `VERSION`**, written whole at install
+and never refreshed file by file. A page opens from the phone's own storage,
+and is always one coherent deploy. `VERSION` is a content hash of every
+precached file (`scripts/sw-version.mjs`; `just test` and CI fail on a stale
+one; the deploy rehashes over the community games), so a deploy is a new
+`sw.js`, which the browser's own update check installs beside the old snapshot
+and activates — the next page load is the new deploy, whole. `test-pwa` checks
+both halves: a changed file alone is not mixed in, and a new deploy arrives.
+
+Until 2026-11-14 code was **network-first** for the same coherence reason, at a
+round trip per file and a 3 s wait for any file on a bad link (docs/perf.md).
+On a loopback address (`just run`) it still is, so an edited file shows on
+reload; tests opt into the real strategy with localStorage `neon.sw=snapshot`.
+
+Icons, fonts, posters and gifs are **cache-first**, with no download behind a
+hit (every portal visit used to refetch every preview). Preview videos are left
+to the browser: Safari refuses a whole cached file as the answer to a media
+request. The previews are not precached, which is why `assets/placeholder.svg`
+exists.
 
 **A page offline is matched without its query** when the exact URL was never
 cached: `party.html?game=connect4&fresh=1` gets the precached `party.html`,
@@ -817,6 +830,8 @@ the icon for exactly this reason. `test-pwa` now parses the file.
   phone has been asked to install it, and iOS in particular is unverified: it
   ignores the manifest's icons, gets no install event, and Safari's service
   worker eviction rules are its own.
-- The service worker's `VERSION` is bumped by hand, there being no build step to
-  hash anything. Forgetting it costs an out-of-date *offline* copy; because code
-  is network-first it can never serve a stale app to a player who is online.
+- A deploy reaches an open page only on its next load: the browser installs the
+  new snapshot in the background and the page already running keeps the files
+  it loaded. A file that page loads *later* (qr-decode.js on a first scan, a
+  game's frame) comes from the new snapshot — the one window where two deploys
+  meet. It was the same under network-first.

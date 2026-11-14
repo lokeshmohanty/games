@@ -40,7 +40,7 @@ serve-lan:
     python3 -m http.server {{port}}
 
 # Every suite, in the order they get slower.
-test: check-precache check-colours community test-stats test-submission test-codec test-hub test-worker-do test-plumbing test-rules test-room test-party test-scan test-pwa test-bots test-devkit test-webapp test-theme test-portal
+test: check-precache check-sw-version check-colours community test-stats test-submission test-codec test-hub test-worker-do test-plumbing test-rules test-room test-party test-scan test-pwa test-bots test-devkit test-webapp test-theme test-portal
 
 # No browser needed — the signalling codec round-trip.
 test-codec:
@@ -143,6 +143,17 @@ preview game:
 # Rebuild the app icons from assets/icon.svg. Only after editing the SVG.
 icons:
     node scripts/make-icons.mjs
+
+# sw.js's VERSION is a hash of what it precaches: rewrite it after changing
+# any precached file (scripts/sw-version.mjs). `just test` and CI check it.
+
+# Rehash sw.js's VERSION from the files it precaches.
+sw-version:
+    node scripts/sw-version.mjs
+
+# Fail if sw.js's VERSION does not match its precached files.
+check-sw-version:
+    node scripts/sw-version.mjs --check
 
 # Catches the one mistake sw.js cannot warn about: a page or module added to the
 # repo but not to `SHELL`, which simply is not there offline.

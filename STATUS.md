@@ -147,5 +147,3 @@ Finished work from 2026-11-13 and earlier is in `STATUS-archive.md`.
       from the platform. Open the portal in Firefox desktop and Android once.
 - [ ] No test forces a pair to fail, so the two-hop relay path is unexercised;
       the 8-player cap is likewise untested.
-- [ ] `sw.js`'s `VERSION` is bumped by hand. Harmless while online (code is
-      network-first), but the offline copy goes stale if it is forgotten.
