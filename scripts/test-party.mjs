@@ -346,83 +346,21 @@ try {
 			(await host.locator(".game-frame").count()) === 0);
 	}
 
-	// Tug of War is the only game with more than one player per side, so this
-	// is the one place a team is read as a group rather than as seats[0].
-	console.log("\nparty: a game with multi-player teams");
+	// The roster is checked against each game's shape before START: a 2-v-1
+	// party cannot start a one-against-one game. (Tug of War, the one game
+	// with several players per side, was retired on 2026-11-14;
+	// docs/index.md says what that leaves untested.)
+	console.log("\nparty: a roster the game cannot seat");
 	await host.evaluate(() => window.__party.room.setGame(null));
 	{
 		const rows2 = host.locator(".party-member");
 		await rows2.nth(2).locator("button", { hasText: "TEAM A" }).click(); // p3 joins A
-		const tug = host.locator(".party-game", { hasText: "TUG OF WAR" });
-		await tug.waitFor({ timeout: TIMEOUT });
-		check("Tug of War accepts a 2v1 roster", await tug.isEnabled());
-		await tug.click();
-
-		for (const [page, tag] of [
-			[host, "host"],
-			[p2, "p2"],
-			[p3, "p3"],
-		]) {
-			const g = await gameFrame(page, TIMEOUT);
-			await g.locator("#tug-canvas").waitFor({ timeout: TIMEOUT });
-			check(`${tag} mounted Tug of War`, await g.locator("#tug-canvas").isVisible());
-		}
-		// Tug of War runs framed (lokeshmohanty/arcade-games).
-		const [hostT, p2T, p3T] = await Promise.all([host, p2, p3].map((page) => gameFrame(page, TIMEOUT)));
-
-		const rosterA = await p2T.locator("#tug-roster-a").textContent();
-		check(
-			"a team renders every member, not just the first",
-			(rosterA ?? "").split(",").length === 2,
-			`Team A roster = "${rosterA}"`,
-		);
-		// p2 is alone on Team B and the only one pulling, so it should win — which
-		// only happens if its taps reached the host and the host's result came back.
-		const label = await p2T.locator("#tug-tap").textContent();
-		check("a player is told which side they pull for", /TEAM B/.test(label ?? ""), label ?? "");
-		check(
-			"a spectator-free roster leaves nobody idle",
-			(await hostT.locator("#tug-tap").textContent())?.includes("TEAM A"),
-		);
-
-		await p2T.evaluate(async () => {
-			const btn = document.querySelector("#tug-tap");
-			for (let i = 0; i < 140; i++) {
-				btn.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, cancelable: true }));
-				await new Promise((r) => setTimeout(r, 70));
-			}
-		});
-		const won = await p2T
-			.waitForFunction(
-				() => document.querySelector("#tug-overlay")?.hidden === false,
-				null,
-				{ timeout: TIMEOUT },
-			)
-			.then(() => true)
-			.catch(() => false);
-		check("pulling reaches the host and a winner comes back", won);
-		// The same outcome, told from each player's own side: the winner is on
-		// Team B, the two on Team A both lost.
-		const verdicts = {
-			p2: await p2T.locator("#tug-overlay h1").textContent(),
-			host: await hostT.locator("#tug-overlay h1").textContent(),
-			p3: await p3T.locator("#tug-overlay h1").textContent(),
-		};
-		check(
-			"every player is told the result from their own side",
-			/WINS/.test(verdicts.p2 ?? "") &&
-				/LOSES/.test(verdicts.host ?? "") &&
-				/LOSES/.test(verdicts.p3 ?? ""),
-			JSON.stringify(verdicts),
-		);
-
-		// Back to the party, and the new game must leave nothing running either.
-		await host.evaluate(() => window.__party.room.setGame(null));
-		await host.locator(".party-member").first().waitFor({ timeout: TIMEOUT });
-		check(
-			"Tug of War tore itself down",
-			await host.evaluate(() => document.querySelectorAll(".game-frame").length === 0),
-		);
+		const c4card = host.locator(".party-game", { hasText: "CONNECT 4" });
+		await c4card.waitFor({ timeout: TIMEOUT });
+		await host.waitForFunction(() => window.__party.room.getMembers().filter((m) => m.team === "A").length === 2, null, { timeout: TIMEOUT });
+		check("Connect 4, one against one, refuses a 2v1 roster", !(await c4card.isEnabled()));
+		const why = (await c4card.locator(".party-game-warn").textContent().catch(() => "")) ?? "";
+		check("…and says why", /at most 2 players|one against one/.test(why), why);
 	}
 
 	console.log("\nparty: the host's way out");
@@ -445,8 +383,8 @@ try {
 
 	console.log("\nparty: back to the party from a running game");
 	// Nothing used to lead from a running game back to the party screen.
-	await host.evaluate(() => window.__party.room.setGame("lokeshmohanty/tug-of-war"));
-	for (const page of [host, p2, p3]) await (await gameFrame(page, TIMEOUT)).locator("#tug-canvas").waitFor({ timeout: TIMEOUT });
+	await host.evaluate(() => window.__party.room.setGame("connect4"));
+	for (const page of [host, p2, p3]) await (await gameFrame(page, TIMEOUT)).locator("#board").waitFor({ timeout: TIMEOUT });
 	const pill = await p2.evaluate(() => {
 		// PARTY and, beside it, FEEDBACK and FAVOURITE: the whole group.
 		const p = document.querySelector(".party-pill");
@@ -465,20 +403,20 @@ try {
 		game: window.__party.game,
 		buttons: [...document.querySelectorAll("#party button")].map((b) => b.textContent),
 	}));
-	check("PARTY pulls the party screen up over the game", peek.shown && peek.game === "lokeshmohanty/tug-of-war", JSON.stringify(peek));
+	check("PARTY pulls the party screen up over the game", peek.shown && peek.game === "connect4", JSON.stringify(peek));
 	check("…with BACK TO GAME, and no END GAME for a guest", peek.buttons.includes("BACK TO GAME") && !peek.buttons.includes("END GAME"));
 	await p2.locator("button", { hasText: "BACK TO GAME" }).click();
 	check(
 		"BACK TO GAME puts it away, the game still running",
-		await p2.evaluate(() => document.getElementById("party").hidden && window.__party.game === "lokeshmohanty/tug-of-war"),
+		await p2.evaluate(() => document.getElementById("party").hidden && window.__party.game === "connect4"),
 	);
 
 	await host.locator(".party-pill").click();
 	let endQ = nextDialog(host, false);
 	await host.locator("button", { hasText: "END GAME" }).click();
 	endQ = await endQ;
-	check("END GAME asks first", /End Tug of War for everyone/i.test(endQ), endQ);
-	check("…and KEEP PLAYING keeps it", await host.evaluate(() => window.__party.game === "lokeshmohanty/tug-of-war"));
+	check("END GAME asks first", /End Connect 4 for everyone/i.test(endQ), endQ);
+	check("…and KEEP PLAYING keeps it", await host.evaluate(() => window.__party.game === "connect4"));
 	endQ = nextDialog(host, true);
 	await host.locator("button", { hasText: "END GAME" }).click();
 	await endQ;
@@ -511,12 +449,16 @@ try {
 		);
 	const shown = (page, sel, re, ms = 8000) =>
 		page.locator(`${sel}:not([hidden])`, { hasText: re }).first().waitFor({ timeout: ms }).then(() => true, () => false);
-	await host.evaluate(() => window.__party.room.setGame("lokeshmohanty/tug-of-war"));
-	for (const page of [host, p2, p3]) await (await gameFrame(page, TIMEOUT)).locator("#tug-canvas").waitFor({ timeout: TIMEOUT });
+	await host.evaluate(() => window.__party.room.setGame("neon-survival-mp"));
+	for (const page of [host, p2, p3]) await (await gameFrame(page, TIMEOUT)).locator("#gameCanvas").waitFor({ timeout: TIMEOUT });
 	const wake = await host
 		.waitForFunction(() => !navigator.wakeLock || window.NeonArcade.awake(), null, { timeout: 3000 })
 		.then(() => host.evaluate(() => ({ api: !!navigator.wakeLock, awake: window.NeonArcade.awake() })), () => ({ api: true, awake: false }));
 	check("the screen is kept on while a game runs", !wake.api || wake.awake, JSON.stringify(wake));
+	// The swarm moves on animation frames, which a background tab barely gets:
+	// the host's page in front, and a swarm on the field, before it "leaves".
+	await host.bringToFront();
+	await (await gameFrame(host, TIMEOUT)).waitForFunction(() => (window.enemies ?? []).length > 0, null, { timeout: TIMEOUT });
 	await setHidden(host, true);
 	const [hostT2, p2T2] = [await gameFrame(host, TIMEOUT), await gameFrame(p2, TIMEOUT)];
 	check("the host leaves the app: the others see the game paused, and why", await shown(p2T2, ".host-pause", /Paused — .+ left the app/));
@@ -524,20 +466,21 @@ try {
 	await p2.locator(".party-pill").click();
 	check("…and AWAY by the host's name on the roster", await p2.locator(".party-tag.is-away").first().waitFor({ timeout: 5000 }).then(() => true, () => false));
 	await p2.locator("button", { hasText: "BACK TO GAME" }).click();
-	const tug = () => hostT2.evaluate(() => window.__game.handle.debug());
-	const before = await tug();
-	for (let i = 0; i < 4; i++) await p2T2.locator("#tug-tap").dispatchEvent("pointerdown");
+	// The swarm is the host's simulation: frozen while it is away, moving
+	// again after the count. (Its ships' positions are guests' own input, so
+	// the swarm is what shows whether the host is running anything.)
+	const swarm = () => hostT2.evaluate(() => JSON.stringify((window.enemies ?? []).map((e) => [Math.round(e.x), Math.round(e.y)])));
+	const before = await swarm();
 	await host.waitForTimeout(600);
-	const during = await tug();
-	check("…and pulls meanwhile are refused, not saved up", during.pulls.A + during.pulls.B === before.pulls.A + before.pulls.B, JSON.stringify([before.pulls, during.pulls]));
+	const during = await swarm();
+	check("…and the host's simulation stands still meanwhile", before === during && before !== "[]", `${before.slice(0, 80)} → ${during.slice(0, 80)}`);
 	await setHidden(host, false);
 	check("back: everyone counts down together", (await shown(p2T2, ".host-pause", /Resuming in [1-3]/)) && (await shown(hostT2, ".host-pause", /Resuming in [1-3]/)));
 	const resumed = await p2T2.locator(".host-pause").waitFor({ state: "hidden", timeout: 6000 }).then(() => true, () => false);
 	check("…and play resumes", resumed);
-	for (let i = 0; i < 4; i++) await p2T2.locator("#tug-tap").dispatchEvent("pointerdown");
 	await host.waitForTimeout(600);
-	const after = await tug();
-	check("…with pulls counted again", after.pulls.A + after.pulls.B > during.pulls.A + during.pulls.B, JSON.stringify(after.pulls));
+	const after = await swarm();
+	check("…with the simulation running again", after !== during, after.slice(0, 80));
 	await p2.locator(".party-pill").click();
 	check("…and AWAY gone", await p2.locator(".party-tag.is-away").first().waitFor({ state: "detached", timeout: 5000 }).then(() => true, () => false));
 	await p2.locator("button", { hasText: "BACK TO GAME" }).click();
@@ -577,8 +520,8 @@ try {
 	console.log("\nparty: the party screen does not churn");
 	// Behind a running game nobody sees the party screen, so a roster event
 	// must not rebuild it; and a name being typed survives a rebuild.
-	await host.evaluate(() => window.__party.room.setGame("lokeshmohanty/tug-of-war"));
-	await (await gameFrame(p2, TIMEOUT)).locator("#tug-canvas").waitFor({ timeout: TIMEOUT });
+	await host.evaluate(() => window.__party.room.setGame("connect4"));
+	await (await gameFrame(p2, TIMEOUT)).locator("#board").waitFor({ timeout: TIMEOUT });
 	await p2.evaluate(() => (window.__row = document.querySelector("#party .party-member")));
 	await p3.evaluate(() => window.__party.room.setMeta({ mood: "busy" }));
 	await p2.waitForFunction(() => window.__party.room.getMembers().some((m) => m.mood === "busy"), null, { timeout: TIMEOUT });
@@ -723,33 +666,32 @@ try {
 	// Mid-game: the heir takes the game over from what everyone was sent, and
 	// says so. With a bot, which must stay for the next host to play.
 	const keptBot = await host.evaluate(() => window.__party.room.addBot("B"));
-	await host.evaluate(() => window.__party.room.setGame("lokeshmohanty/tug-of-war"));
-	for (const page of [host, p2, p3]) await (await gameFrame(page, TIMEOUT)).locator("#tug-canvas").waitFor({ timeout: TIMEOUT });
+	await host.evaluate(() => window.__party.room.setGame("neon-survival-mp"));
+	for (const page of [host, p2, p3]) await (await gameFrame(page, TIMEOUT)).locator("#gameCanvas").waitFor({ timeout: TIMEOUT });
 	const hostName = await host.evaluate(() => window.__party.room.self().name);
 	const p2Name = await p2.evaluate(() => window.__party.room.self().name);
 	const told = Promise.all([
 		toastOn(p2, "You are the host now."),
 		toastOn(p3, `${p2Name} is the host now.`),
 		toastOn(p3, `${hostName} lost connection and left the party.`),
-		toastOn(p2, "You are the host now — TUG OF WAR goes on."),
-		toastOn(p3, `${p2Name} carries TUG OF WAR on.`),
+		toastOn(p2, "You are the host now — NEON SURVIVAL goes on."),
+		toastOn(p3, `${p2Name} carries NEON SURVIVAL on.`),
 	]);
 	await host.close();
 	const [heirTold, restTold, dropTold, keptTold, restKept] = await told;
 	check("a game the host was running goes on under the heir, who is told", keptTold);
 	check("…and so is everyone else", restKept);
 	// The heir's frame is the same one: a kept game is not remounted.
-	const [p2H, p3H] = [await gameFrame(p2, TIMEOUT), await gameFrame(p3, TIMEOUT)];
-	const pullsNow = () => p2H.evaluate(() => window.__game.handle.debug().pulls);
-	const p0 = await pullsNow();
-	for (let i = 0; i < 4; i++) await p3H.locator("#tug-tap").dispatchEvent("pointerdown");
-	const pulled = await p2H
-		.waitForFunction((n) => {
-			const d = window.__game.handle.debug().pulls;
-			return d.A + d.B > n;
-		}, p0.A + p0.B, { timeout: 8000 })
+	const p2H = await gameFrame(p2, TIMEOUT);
+	// The heir now runs the swarm: it moves on the heir's own simulation
+	// (in front, so its animation frames run).
+	await p2.bringToFront();
+	const swarmNow = () => p2H.evaluate(() => JSON.stringify((window.enemies ?? []).map((e) => [Math.round(e.x), Math.round(e.y)])));
+	const s0 = await swarmNow();
+	const ran = await p2H
+		.waitForFunction((was) => JSON.stringify((window.enemies ?? []).map((e) => [Math.round(e.x), Math.round(e.y)])) !== was, s0, { timeout: 8000 })
 		.then(() => true, () => false);
-	check("…and the new host referees it: a pull lands", pulled && (await p3.evaluate(() => window.__party.game)) === "lokeshmohanty/tug-of-war");
+	check("…and the new host runs it: the swarm moves on", ran && (await p3.evaluate(() => window.__party.game)) === "neon-survival-mp");
 	await p2.evaluate(() => window.__party.room.setGame(null));
 	await p3.waitForFunction(() => window.__party.game === null && !document.getElementById("party").hidden, null, { timeout: TIMEOUT });
 	check("the heir is told the crown is theirs", heirTold);

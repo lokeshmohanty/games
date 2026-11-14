@@ -19,9 +19,6 @@ takes one tap to get there.
   green. Alone, with bots, or keeping each other alive. 1–8 players.
 - **[Connect 4](connect4.html)** — Drop your discs, line up four in a row.
   The bot searches five moves ahead. 2 players.
-- **[Tug of War](tug-of-war.html)** — Tap to pull; the knot goes to whoever
-  taps hardest. Two teams of any sizes, and a tap counts for more on a smaller
-  team, so 1-against-4 is still a game. 2–8 players.
 - **[Draw & Guess](draw-guess.html)** — One player draws, the rest guess!
   Real-time canvas stroke sync and chat. **The one game with no bots** — a bot
   that draws is replaying a canned doodle and a bot that guesses is reading the
@@ -53,8 +50,6 @@ that plays a bot is the side that was refereeing anyway.
 
 - **Connect 4** — minimax with alpha-beta, five plies. It will take a win and
   it will block yours; it is not trying to be unbeatable.
-- **Tug of War** — taps at about 9 a second with jitter. Mash properly and you
-  beat it; ignore the button and you lose.
 - **Neon Bid** — bids what a gem adds to its own hand (plus a share of the
   rainbow bonus) and half of what it would add to the leader, scaled by the
   credits it has per lot it can expect to win.
@@ -117,12 +112,10 @@ index.html              # Arcade portal — links to everything
 party.html              # Persistent party — roster, teams, bots, switching
 neon-survival.html      # Redirect — the solo game merged into the co-op one
 connect4.html           # Deep link into one game (thin wrapper)
-tug-of-war.html         #   "
 draw-guess.html         #   "
 neon-survival-mp.html   #   "
 games/                  # One file per game; each registers itself
   connect4.js           # 1v1 teams
-  tug-of-war.js         # teams of any size, 2–8
   draw-guess.js         # free-for-all, 2–8
   neon-survival-mp.js   # co-op, 1–8 — also the solo game
 lib/

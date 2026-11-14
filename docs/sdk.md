@@ -205,9 +205,9 @@ Community ids are `<owner>/<id>` — `lokeshmohanty/battleship` — in party
 state and URLs (`party.html?game=lokeshmohanty%2Fbattleship`). The old pages
 (`battleship.html` …) redirect there.
 
-**`lokeshmohanty/arcade-games`** holds battleship, draw-guess, liars-dice,
-light-cycles and tug-of-war (Onitama left out
-2026-11-13: a recreation of a published game), registered exactly like an outsider's
+**`lokeshmohanty/arcade-games`** holds the games its registry entry lists
+(Onitama left out 2026-11-13: a recreation of a published game; Tug of War
+retired 2026-11-14: still in that repo, no longer listed in the registry), registered exactly like an outsider's
 repo (branch `import`, not yet pushed). Its rules tests load the platform
 runtime from a checkout of this repo (`NEON_PLATFORM`, default `../../games/`).
 `just test` runs `community` first; the browser suites play those games

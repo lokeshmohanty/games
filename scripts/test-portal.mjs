@@ -34,7 +34,7 @@ try {
 		await p.locator("[data-search]").fill(q);
 		return shown();
 	};
-	check("a word finds a game by name", (await search("tug")).join() === "Tug of War");
+	check("a word finds a game by name", (await search("swarm")).join() === "Neon Survival", await search("swarm"));
 	check("…or by its description", (await search("impostor")).includes("Undercover"));
 	check("type:duel — the head-to-head games", JSON.stringify((await search("type:duel")).sort()) === JSON.stringify(["Battleship", "Connect 4"]));
 	check("tag:quick", (await search("tag:quick")).length > 0 && (await search("tag:quick")).length < all);
@@ -97,7 +97,7 @@ try {
 	check("on a phone a tap opens a card's choices, without leaving the page", (await tcard.evaluate((c) => c.classList.contains("is-open"))) && tp.url().endsWith("index.html"));
 	const fits = await tcard.locator(".card-play").evaluateAll((as) => as.map((a) => a.getBoundingClientRect()).map((r) => ({ h: Math.round(r.height), right: Math.round(r.right) })));
 	check("…two buttons, 44px tall, inside the phone", fits.length === 2 && fits.every((f) => f.h >= 44 && f.right <= 390), fits);
-	await tp.locator('.game-card[data-game="lokeshmohanty/tug-of-war"] h3').tap();
+	await tp.locator('.game-card[data-game="neon-bid"] h3').tap();
 	check("…and opening another card closes the first", !(await tcard.evaluate((c) => c.classList.contains("is-open"))));
 	await touch.close();
 

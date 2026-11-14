@@ -23,8 +23,9 @@ That is the whole job: it plays the game, records it, converts it, and writes
 `assets/<game>.gif` in place. `index.html` already points at that path, so a
 successful run needs **no HTML edit**.
 
-Games: `light-cycles`, `connect4`, `draw-guess`, `neon-survival-mp`,
-`tug-of-war`. `scripts/preview.mjs --list` is the authority.
+Games: `scripts/preview.mjs --list` is the authority (2026-11-14: undercover,
+liars-dice, neon-bid, battleship, light-cycles, connect4, draw-guess,
+neon-survival-mp).
 
 ## What it does
 

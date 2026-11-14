@@ -213,7 +213,6 @@ for (const p of [
 	"draw-guess.html",
 	"neon-survival.html",
 	"neon-survival-mp.html",
-	"tug-of-war.html",
 ]) {
 	await page.goto(`${BASE}/${p}`);
 	const has = await page.evaluate(() => ({

@@ -171,7 +171,7 @@ END GAME (the last only where `ctx.canEnd`). Nothing happens on its own.
 A player whose page is hidden publishes `away` on their member record
 (lobby.js), and the banner treats them the same ("switched away").
 
-A game **the host simulates** (Tug of War, Neon Survival) calls
+A game **the host simulates** (Neon Survival) calls
 `NeonArcade.hostPause(ctx, { onChange })` and checks `paused()` in its loop and
 input: while the host is out of the app everyone sees "Paused — X left the
 app", then "Resuming in 3" once it is back. `NeonArcade.keepAwake(on)` holds

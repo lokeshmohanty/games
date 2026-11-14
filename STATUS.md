@@ -11,6 +11,18 @@ rather than making every session pay for it.*
 act → record → clear the item. This is the single inbox — do not create a
 separate `TODO.md`.*
 
+## Tug of War retired (2026-11-14)
+
+Lokesh chose "remove only": dropped from registry/lokeshmohanty/arcade-games.json
+(the pin stays a1eeebf, the published commit); its gif, recorder scenario, bots
+and party tests and doc mentions are gone; `tug-of-war.html` redirects to the
+portal (an invite hash goes to the party); sw.js v39. Started by the ended
+session games-99, finished by games-e1.
+**Pending, not shipped:** Bubble Rush, games-99's replacement game, is commit
+0d0c40b on the local `bubble-rush` branch of ../arcade-games, unpushed and
+unreviewed. Shipping it = review + play it, push that repo, then re-pin here
+with "bubble-rush" in the games list.
+
 ## Neon Bid fixes (2026-11-14): pushed to main, sw.js v38
 
 Found by a playthrough at a person's pace, 2 to 8 seats, in all three themes:

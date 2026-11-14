@@ -808,44 +808,36 @@ try {
 		`winner=${state.winner} turn=${state.turn}`,
 	);
 
-	// ---------------------------------------------------------- tug of war
-
-	console.log("\nbots: tug of war pulls its own weight");
-	await startSolo(page, "tug-of-war.html", "PLAY WITH BOTS");
-	G = await gameScope(page, TIMEOUT);
-	await readyToClick(page);
-
-	// Never touch the button: whatever happens is entirely the bot's doing.
-	await sleep(1200);
-	let tug = await debug(page);
-	check("the bot pulls without being prompted", tug.pulls.B > 0, `pulls=${tug.pulls.B}`);
-	check("our side does not pull itself", tug.pulls.A === 0, `pulls=${tug.pulls.A}`);
-	check("the knot moves toward the bot", tug.pos > 0, `pos=${tug.pos}`);
-
-	// ~9s unopposed by the game's impulse tuning; the margin is for a slow CI
-	// frame rate, not for a bot that might or might not get there.
-	const botWon = await G
-		.waitForFunction(() => window.__game.handle.debug().winner === "B", null, {
-			timeout: 20_000,
-		})
-		.then(() => true)
-		.catch(() => false);
-	check("an unopposed bot wins the round", botWon);
+	// The rest of the game, so it ends: we drop wherever there is room and the
+	// bot, searching five plies, finishes it.
+	for (let i = 0; i < 42; i++) {
+		state = await debug(page);
+		if (state.winner !== null || state.board[0].every((v) => v !== 0)) break;
+		if (state.turn !== 1) {
+			await sleep(150);
+			continue;
+		}
+		const discs = state.board.flat().filter((v) => v !== 0).length;
+		await drop(state.board[0].findIndex((v) => v === 0));
+		await botReplies(discs);
+	}
+	state = await debug(page);
+	check("the game plays out to an end", state.winner !== null || state.board[0].every((v) => v !== 0), `winner=${state.winner}`);
 
 	// The result reaches this device's stats (lib/stats.js) through the frame,
 	// once, and the portal says so (lib/portal.js).
-	const tugId = "lokeshmohanty/tug-of-war";
+	const c4Id = "connect4";
 	const mine = await page
-		.waitForFunction((id) => JSON.parse(localStorage.getItem("neon.stats") ?? "{}")[id]?.lost === 1, tugId, { timeout: 5000 })
+		.waitForFunction((id) => JSON.parse(localStorage.getItem("neon.stats") ?? "{}")[id]?.played === 1, c4Id, { timeout: 5000 })
 		.then(() => page.evaluate(() => ({ stats: JSON.parse(localStorage.getItem("neon.stats")), recent: JSON.parse(localStorage.getItem("neon.recent")) })))
 		.catch(() => page.evaluate(() => ({ stats: localStorage.getItem("neon.stats"), recent: localStorage.getItem("neon.recent") })));
-	check("the lost round is in this device's stats, counted once", mine.stats?.[tugId]?.lost === 1 && mine.stats?.[tugId]?.played === 1, JSON.stringify(mine.stats?.[tugId] ?? mine.stats));
-	check("…against a bot", mine.stats?.[tugId]?.vsBots === 1);
-	check("…and it is the most recent game", mine.recent?.[0] === tugId, JSON.stringify(mine.recent));
+	check("the finished game is in this device's stats, counted once", mine.stats?.[c4Id]?.played === 1, JSON.stringify(mine.stats?.[c4Id] ?? mine.stats));
+	check("…against a bot", mine.stats?.[c4Id]?.vsBots === 1);
+	check("…and it is the most recent game", mine.recent?.[0] === c4Id, JSON.stringify(mine.recent));
 	await page.goto(url("index.html"));
-	const portalSays = await page.locator(`.game-card[data-game="${tugId}"] .game-you`).textContent({ timeout: TIMEOUT }).catch(() => "");
-	check("the portal shows it on the game's card", /0 won of 1/.test(portalSays), portalSays);
-	check("…and under Recently played", (await page.locator("[data-recent] .recent-game").first().textContent().catch(() => "")) === "Tug of War");
+	const portalSays = await page.locator(`.game-card[data-game="${c4Id}"] .game-you`).textContent({ timeout: TIMEOUT }).catch(() => "");
+	check("the portal shows it on the game's card", /won of 1/.test(portalSays), portalSays);
+	check("…and under Recently played", (await page.locator("[data-recent] .recent-game").first().textContent().catch(() => "")) === "Connect 4");
 
 	// ------------------------------------------------------ neon survival
 

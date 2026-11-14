@@ -198,9 +198,10 @@ page navigation** — nobody reconnects and nobody re-scans.
   a game runs (Screen Wake Lock), since a phone that dims suspends the page. A
   hidden page publishes `away`: the roster says AWAY and a turn game's banner
   says "switched away". A host out of the app stops its simulation anyway — a
-  hidden page gets no frames — so Tug of War and Neon Survival pause for
-  everyone and say why, refuse pulls meanwhile (they used to land all at once
-  on return), and resume after a 3-2-1. Lokesh's choices, 2026-11-13.
+  hidden page gets no frames — so a game the host simulates (Neon Survival)
+  pauses for everyone and says why, takes no input meanwhile (it used to land
+  all at once on return), and resumes after a 3-2-1. Lokesh's choices,
+  2026-11-13.
 
 ### When the host goes
 
@@ -300,7 +301,6 @@ Where the brains live:
 | Game | Brain | Where |
 |---|---|---|
 | Connect 4 | minimax + alpha-beta, 5 plies, centre-first move ordering | `games/connect4/connect4.js` |
-| Tug of War | a tap rate (~9/s) with jitter, one timer for all bots | `arcade-games: tug-of-war/tug-of-war.js` |
 | Neon Survival | steering: inverse-square flee from enemies, drift to gems, wall push-off, speed-capped | `games/neon-survival-mp/neon-survival-mp.js` |
 | Neon Bid | marginal points (plus a share of the rainbow) + half the leader's gain, scaled by credits per lot it can expect to win, ±15% noise | `games/neon-bid/neon-bid.js` (`NeonArcade.neonBidRules.botBid`) |
 | Draw & Guess | none — `bots: false` in its registration | — |
@@ -608,11 +608,12 @@ code, and JSX needs a compiler that emits ESM, which browsers refuse over
 workflow uploads the repo with `path: '.'`, and `scripts/preview.mjs` drives the
 game HTML directly. `lib/ui.js` is what that analysis recommended instead.
 
-`arcade-games: tug-of-war/tug-of-war.js` was written specifically to test that contract, and is
-worth reading first when adding a game: it is the only one with more than one
-player per side, so it is where `seats("A")` is read as a group rather than as
-`seats("A")[0]`. Adding it needed no change to anything in `lib/` — one file,
-one script tag in `party.html`, one thin page, one recorder scenario.
+No game the platform tests now has more than one player per side of a
+`teams` game: Tug of War was the one (where `seats("A")` was read as a group
+rather than as `seats("A")[0]`), and it was retired on 2026-11-14 (dropped from
+the registry; `tug-of-war.html` now redirects to the portal). Connect 4 reads `seats("A")[0]`; a game with several per side
+would be the first since to exercise the group reading — test it in the
+party with a 2-against-1 roster.
 
 ## Installing it
 
@@ -765,7 +766,7 @@ the icon for exactly this reason. `test-pwa` now parses the file.
   host's seat is held like any lost player's (the turn banner covers a turn
   of theirs), and an old host whose tab survived the blip remounts as a guest.
   What is lost is whatever lived only on the old host, so: Connect 4
-  and Tug of War (its rope's momentum aside) continue where they were; Light
+  continues where it was; Light
   Cycles restarts the round, wins kept; Neon Survival takes the bots' ships
   over from where they were last seen; Draw & Guess goes on if the new host
   knows the word, else restarts the round with a new one; Liar's Dice re-rolls

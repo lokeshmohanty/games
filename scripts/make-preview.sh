@@ -25,9 +25,6 @@ read -r -a GAMES <<< "$(node "$ROOT/scripts/preview.mjs" --list)"
 profile_for() {
   case "$1" in
     neon-survival|neon-survival-mp) echo "480 10 low" ;;
-    # Constant glow and a moving knot defeat inter-frame compression the same
-    # way the survival games do, so it gets the smaller frame too.
-    tug-of-war) echo "480 12 low" ;;
     # The current gem pulses for the whole clip, so the same story: 1.35MB at
     # the default profile.
     neon-bid) echo "480 12 low" ;;

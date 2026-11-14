@@ -519,37 +519,6 @@ const GAMES = {
 		},
 	},
 
-	"tug-of-war": {
-		file: "tug-of-war.html",
-		peers: 2,
-		seconds: 10,
-		async play([a, b], seconds) {
-			// Both sides tap, so the knot fights over the middle instead of
-			// sliding straight off one end — a stalemate broken late reads far
-			// better on a portal card than an instant win.
-			const tap = (page, ms) =>
-				page.evaluate(async (until) => {
-					const btn = document.querySelector("#tug-tap");
-					while (performance.now() < until) {
-						btn.dispatchEvent(
-							new PointerEvent("pointerdown", { bubbles: true, cancelable: true }),
-						);
-						// The loser taps slightly slower, which is what decides it.
-						await new Promise((r) => setTimeout(r, 70));
-					}
-				}, ms);
-			const now = await a.evaluate(() => performance.now());
-			await Promise.all([
-				tap(a, now + seconds * 1000),
-				// b gives up early: matched tap rates are a genuine stalemate, and a
-				// knot quivering on the centre line makes a poor portal card. Leave
-				// a unopposed for long enough to actually haul it over the line.
-				tap(b, now + seconds * 1000 * 0.4),
-			]);
-			await sleep(1500);
-		},
-	},
-
 	"neon-survival-mp": {
 		file: "neon-survival-mp.html",
 		peers: 2,

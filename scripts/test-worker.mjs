@@ -72,7 +72,7 @@ const SITE = await serve(8738);
 const PARTY = SITE.url("party.html");
 // The games that come from lokeshmohanty/arcade-games (registry/) carry
 // their owner in their id.
-const COMMUNITY = ["battleship", "draw-guess", "liars-dice", "light-cycles", "tug-of-war"];
+const COMMUNITY = ["battleship", "draw-guess", "liars-dice", "light-cycles"];
 const gid = (g) => (COMMUNITY.includes(g) ? `lokeshmohanty/${g}` : g);
 /** The page's game frame, once its game is up (scripts/serve.mjs). */
 const inGame = (page) => gameFrame(page, TIMEOUT);

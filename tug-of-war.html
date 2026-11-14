@@ -5,25 +5,19 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Tug of War — Arcade Games</title>
     <!--
-      A shortcut into the party shell with Tug of War picked (Lokesh, 2026-11-13:
-      game pages are party shortcuts). It used to carry its own two-player
-      lobby, with no join by code and no way back after a reload; the party
-      shell has both, and every game is one code path now. This page stays so
-      that links, bookmarks and home-screen shortcuts keep working: it
-      redirects with `location.replace` (no back-button entry), keeping the
-      query (a test's `?mockroom` or loopback `?rs=`) and any `#i=`/`#c=`
-      link, which the party joins instead of starting fresh.
+      Tug of War has been retired (2026-11-14): it is no longer in the
+      registry, so the arcade does not serve it. This page stays so that a
+      bookmark or a home-screen shortcut from before lands on the portal rather
+      than on a 404. A party invite (`#i=`/`#c=`) still goes to the party,
+      which joins it; the host picks a game there. `location.replace`, so it
+      does not sit in the back-button history; the meta refresh covers the
+      case where scripts do not run at all.
     -->
-    <link rel="canonical" href="party.html?game=tug-of-war" />
-    <meta http-equiv="refresh" content="0; url=party.html?game=lokeshmohanty%2Ftug-of-war&amp;fresh=1" />
+    <link rel="canonical" href="index.html" />
+    <meta http-equiv="refresh" content="0; url=index.html" />
     <link rel="manifest" href="manifest.webmanifest" />
-    <meta name="theme-color" content="#0a0a0a" />
     <link rel="icon" href="assets/icon.svg" type="image/svg+xml" />
     <link rel="apple-touch-icon" href="assets/apple-touch-icon.png" />
-    <meta name="mobile-web-app-capable" content="yes" />
-    <meta name="apple-mobile-web-app-capable" content="yes" />
-    <meta name="apple-mobile-web-app-status-bar-style" content="black" />
-    <meta name="apple-mobile-web-app-title" content="Arcade Games" />
     <!-- The theme first: tokens + fonts, and the saved choice before paint. -->
     <link rel="stylesheet" href="lib/theme.css" />
     <script src="lib/theme.js"></script>
@@ -32,19 +26,13 @@
   <body>
     <div class="lobby">
       <h1 class="lobby-title">TUG OF WAR</h1>
-      <p class="lobby-sub">Opening the game…</p>
+      <p class="lobby-sub">Tug of War has been retired. Every other game is a tap away.</p>
       <div class="lobby-row">
-        <a class="neon-btn neon-btn--accent" href="party.html?game=lokeshmohanty%2Ftug-of-war&amp;fresh=1">PLAY TUG OF WAR</a>
-        <a class="neon-btn" href="index.html">ALL GAMES</a>
+        <a class="neon-btn neon-btn--accent" href="index.html">ALL GAMES</a>
       </div>
     </div>
-    <script src="lib/pwa.js"></script>
     <script>
-      const q = new URLSearchParams(location.search);
-      q.set("game", "lokeshmohanty/tug-of-war");
-      // A fresh visit starts a new party; a carried link joins one.
-      if (!location.hash) q.set("fresh", "1");
-      location.replace("party.html?" + q + location.hash);
+      location.replace(location.hash ? "party.html" + location.hash : "index.html");
     </script>
   </body>
 </html>
