@@ -11,7 +11,7 @@ rather than making every session pay for it.*
 act → record → clear the item. This is the single inbox — do not create a
 separate `TODO.md`.*
 
-## Neon Bid fixes (2026-11-14): branch `neon-bid` in worktree ../games-neon-bid, not merged
+## Neon Bid fixes (2026-11-14): pushed to main, sw.js v38
 
 Found by a playthrough at a person's pace, 2 to 8 seats, in all three themes:
 1. **Lots thrown away in every game against bots.** The open-phase fallback
@@ -32,9 +32,8 @@ Found by a playthrough at a person's pace, 2 to 8 seats, in all three themes:
 Tests: test-bots now bids at a person's pace and checks each sealed bid against
 the lot it settled (fails on the old code); test-neon-bid checks 2–8 seats for
 stalls (fails on the old bot). test-neon-bid and test-bots are green.
-sw.js not bumped here: games-99 has an uncommitted bump in the shared tree, so
-bump it when merging.
-Waiting on Lokesh to review before merging and pushing.
+sw.js v38 shipped with this; the Tug of War removal (session games-99, shared
+tree, uncommitted) also bumped to v38 and must take v39.
 
 ## New app mark, "linked players" (2026-11-14): pushed to main, deployed
 
