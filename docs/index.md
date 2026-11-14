@@ -15,6 +15,7 @@ questions about this project from this folder alone.
 - [Rounds and phases](#rounds-and-phases) — the shared clock for timed and simultaneous-turn games
 - [Adding a game](#adding-a-game) — the module contract
 - [Accounts and the social layer](accounts.md) — sign-in, ranked matches, leaderboards, friends, invites, groups, feedback, the public snapshot; what is stored; the one-time setup
+- [The shell is one page](spa.md) — Solid + Vite, the query router, the party kept across views, the build and the generated service worker
 - [The game SDK v2](sdk-v2.md) — the language-neutral message protocol (sdk/v2/protocol.json), shell services, WebAssembly, bindings, examples (branch `platform-v2`)
 - [The game SDK](sdk.md) — framed games: sandbox, bridge protocol, manifest, rules for outside authors (branch `platform`)
 - [Installing it](#installing-it) — the PWA: manifest, icons, service worker, offline
@@ -607,12 +608,17 @@ fixed "← ALL GAMES" link (centring without it puts the status line underneath)
 and the one child that should absorb leftover height takes `.g-fill` rather than
 setting its own full height, which would overflow the stage.
 
-**Vanilla is a decision, not an omission.** Converting to SolidJS was weighed on
-2026-08-10 and again on 2026-08-27: the reactive surface is about a fifth of the
-code, and JSX needs a compiler that emits ESM, which browsers refuse over
-`file://` — a way of running this that the project verifies. The deploy
-workflow uploads the repo with `path: '.'`, and `scripts/preview.mjs` drives the
-game HTML directly. `lib/ui.js` is what that analysis recommended instead.
+**The shell is Solid + Vite since 2026-11-15** ([spa.md](spa.md)). It was
+weighed and rejected on 2026-08-10 and 2026-08-27, when the reactive surface
+was about a fifth of the code and `file://` was a supported way to run the
+arcade. The re-measure of 2026-11-14 found two things changed:
+- **The reactive surface** had grown to 35–40% of the shell.
+- **`file://`** was already gone for games, and Lokesh dropped it for the
+  shell too.
+
+Moving between pages also dropped the party, which only one page can fix.
+The games stay framework-free in their frames, and so do the shell's
+libraries (lib/*.js, bundled as modules).
 
 No game the platform tests now has more than one player per side of a
 `teams` game: Tug of War was the one (where `seats("A")` was read as a group

@@ -1,6 +1,6 @@
 ---
 name: pwa
-description: Use when changing anything about the arcade being installable or working offline — manifest.webmanifest, sw.js, lib/pwa.js, the app icons in assets/, the install button, caching strategy, or when someone reports that the app will not install, will not update, or fails offline. Also use before adding any new page or lib/ file, which must be added to the service worker's precache list.
+description: Use when changing anything about the arcade being installable or working offline — manifest.webmanifest, sw.js, lib/pwa.js, the app icons in assets/, the install button, caching strategy, or when someone reports that the app will not install, will not update, or fails offline. Also use before adding a new page, lib/ file or asset, or changing scripts/assemble.mjs, which writes dist/sw.js and its precache list.
 ---
 
 # PWA (installable + offline)
@@ -32,9 +32,12 @@ refused by Chrome, and nothing visible said so.
 
 ## When you add or rename a page or a lib/ file
 
-Add it to `SHELL` in `sw.js` (`just check-precache` catches a forgotten one),
-then `just sw-version`: `VERSION` is a hash of the precached files, and a stale
-one fails `just test` and CI. Never edit `VERSION` by hand.
+Nothing to list, since 2026-11-15: `just build` (scripts/assemble.mjs) derives
+the precache list from what it built and copied — pages, `lib/`, `games/`, frame
+runtimes, the app's chunks — and writes `dist/sw.js` with a `VERSION` hashed over
+exactly those bytes. Only a file outside those (an icon, a font) goes in the
+template's `SHELL` in `sw.js`; assemble fails the build if a listed file is
+missing. Never edit `VERSION` (the repo's says `arcade-dev`). docs/spa.md.
 
 ## Rules
 

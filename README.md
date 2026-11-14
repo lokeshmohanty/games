@@ -1,8 +1,9 @@
 # Arcade Games
 
 Simple client-side web games. Serverless P2P multiplayer, with bots so you
-never need a second person to play. No build step, no server, no dependencies
-to install. Just open the HTML files or serve the folder over HTTP.
+never need a second person to play. No server: the arcade is a static site,
+one page built with Vite (`just run` for the dev server, `just build` for
+`dist/`; [docs/spa.md](docs/spa.md)).
 
 ## Games
 
@@ -63,7 +64,7 @@ that plays a bot is the side that was refereeing anyway.
 Open any game's page and take the second button — **PLAY A BOT**, or **PLAY
 ALONE** for Neon Survival, which seats one player perfectly well. Add or drop
 bots until it looks like a fair fight, then **START GAME**. Nothing is sent
-anywhere; `file://` works fine.
+anywhere.
 
 ### A party (several people, several games)
 
@@ -90,7 +91,7 @@ first. Use **ADD BOT** to fill the rest of the seats. After the first game it
 is an ordinary party: switch games, add people, reload without losing your
 seat.
 
-`file://` works for testing on the same machine (open two tabs). To serve it:
+To serve it (two tabs on the same machine are enough to test a party):
 
 ```sh
 just run          # http://127.0.0.1:8000
@@ -166,7 +167,10 @@ See [`lib/README.md`](lib/README.md) for full API documentation.
 
 ## Tech stack
 
-- Vanilla HTML/CSS/JS — no framework, no bundler, no build step.
+- The shell: one page, Solid + Vite + TypeScript, pnpm ([docs/spa.md](docs/spa.md)).
+  Its libraries (networking, party, SDK host) are framework-free modules.
+- The games: framework-free, in sandboxed frames, written against a message
+  protocol any language can speak ([docs/sdk-v2.md](docs/sdk-v2.md)).
 - Bots run in the host's browser, alongside the game it is already refereeing.
   No worker, no model, no service — a search function and a timer.
 - Raw WebRTC data channels — no networking library, no CDN, no signaling

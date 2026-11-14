@@ -30,10 +30,14 @@ when the speed refactor started.
 
 Coherence is now structural rather than a network round trip:
 
-- **`VERSION` is a content hash** of every precached file and of sw.js itself
-  (`scripts/sw-version.mjs`). `just test` (`check-sw-version`) and
-  platform-check fail on a stale one, and the deploy rehashes with
-  `--with-community` after fetching the pinned games.
+- **`VERSION` is a content hash** of every precached file and of sw.js itself.
+  Since 2026-11-15 (one-page shell, docs/spa.md) `scripts/assemble.mjs`
+  writes `dist/sw.js` at build time: the precache list is derived from what
+  was built and copied (app/ chunks, pages, lib/, games/, frame runtimes) plus
+  the template's own entries in the repo's `sw.js` (icons, fonts), and
+  VERSION hashes exactly those bytes (with the community files). The repo's
+  sw.js holds `arcade-dev`. This replaced `sw-version.mjs` and
+  `check-precache`: a forgotten file is no longer possible.
 - **A deploy is therefore a new sw.js.** The browser's own update check
   installs the new snapshot beside the old one, then `skipWaiting`. The next
   page load is the new deploy, whole.
