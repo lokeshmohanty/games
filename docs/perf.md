@@ -140,3 +140,32 @@ Not done, on purpose:
   object four times a second and backs the away/reconnecting flags that
   turn-wait banners read. There is nothing to measure there, and a risk to
   those flags.
+
+### Phase 2 — SDK v2 protocol and WebAssembly (2026-11-14)
+
+Phase 2 adds `lib/sdk-host.js` (about 20 KB raw) to party.html and changes
+no v1 game's path. Median of 3 (portal: 5), same harness:
+
+| Scenario | Phase 1 | Phase 2 |
+|---|---|---|
+| bots cold, to frame | 2164 ms | 2190 ms |
+| bots warm, to frame | 287 ms | 355 ms (runs: 323, 459, 355) |
+| bots, JS decoded | 403 KB | 426 KB |
+| portal cold, bytes / load | 471 KB / 2.6 s | 482 KB / 2.6 s |
+
+The bots numbers are within the run-to-run spread. The extra 23 KB decoded
+is sdk-host.js, which loads even when a v1 game is picked. Phase 4's bundle
+splits it out.
+
+**Found by the re-measure, and fixed: the gif fallback.**
+- **What happened:** two of three cold portal runs downloaded 1.9 MB and
+  5.9 MB, not 0.47 MB. `just perf --debug` (new: each run's five largest
+  downloads) showed every preview video failing at once, after which every
+  card's error handler (Phase 1) fell back to the 0.4–1 MB gif.
+- **The fix:** a failed video now shows the card's ~5 KB poster, still.
+  test-portal checks it with every video aborted: posters show, and no gif
+  is requested.
+- **Afterwards:** five cold runs, 198–482 KB, load ≤ 2.6 s.
+- **Not known yet:** why the videos all failed. It may be the throttling
+  proxy, or headless Chrome's media stack. **VERIFY** on a real phone; the
+  poster fallback makes it cheap either way.

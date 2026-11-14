@@ -203,6 +203,28 @@ try {
 	const upd = p.locator(".person-update-out a", { hasText: "Copy the commit" });
 	check("Contributors: CHECK FOR UPDATES offers the same for a moved repo", await upd.waitFor({ timeout: TIMEOUT }).then(() => true, () => false));
 	check("…nobody's pull request is opened for them: every link is GitHub's own page", /github\.com\/lokeshmohanty\/games\/edit\//.test(await upd.getAttribute("href")));
+
+	console.log("\nportal: previews when no video plays");
+	// Every video fails (offline, or a browser that plays neither format):
+	// each card shows its ~5 KB poster, still — never the 0.4–1 MB gif.
+	const vp = await ctx.newPage();
+	const gifs = [];
+	await vp.route(/\.(webm|mp4)$/, (route) => route.abort());
+	vp.on("request", (r) => r.url().endsWith(".gif") && gifs.push(r.url()));
+	await vp.goto(site.url("index.html"));
+	await vp.waitForSelector(".game-card");
+	await vp.evaluate(async () => {
+		for (const c of document.querySelectorAll(".game-card")) {
+			c.scrollIntoView();
+			await new Promise((r) => setTimeout(r, 60));
+		}
+	});
+	const posters = await vp
+		.waitForFunction(() => !document.querySelector("video.card-preview") && [...document.querySelectorAll("img.card-preview")].every((i) => /\.webp$|placeholder/.test(i.src)), null, { timeout: TIMEOUT })
+		.then(() => true, () => false);
+	check("a card whose videos fail shows its poster", posters, await vp.evaluate(() => [...document.querySelectorAll(".card-preview")].map((e) => e.tagName + " " + (e.currentSrc || e.src || "")).slice(0, 4)));
+	check("…and no gif is downloaded instead", !gifs.length, gifs.slice(0, 3).join(", "));
+	await vp.close();
 } catch (err) {
 	check(`unexpected: ${err.message.split("\n")[0]}`, false);
 } finally {

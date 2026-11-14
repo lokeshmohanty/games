@@ -24,6 +24,7 @@
 //
 //   node scripts/perf.mjs [--runs N] [--label name] [--out results.json]
 //                         [--only portal,bots,leaderboard]
+//                         [--debug]  also list each run's five largest downloads
 //
 // Caveat: CPU throttling reaches the page's process only. A game runs in a
 // sandboxed frame, which is its own process, so its own start-up inside
@@ -47,6 +48,7 @@ const LABEL = arg("label", "current");
 const OUT = arg("out", null);
 const LOAD_CAP = 60_000;
 const ONLY = arg("only", null)?.split(","); // e.g. --only portal,leaderboard
+const DEBUG = process.argv.includes("--debug");
 
 const pw = require(
 	[join(homedir(), ".cache", "game-previews", "node_modules", "playwright"), ...globSync(join(homedir(), ".npm", "_npx", "*", "node_modules", "playwright"))].find(existsSync),
@@ -121,7 +123,12 @@ const readVitals = (page) =>
 			bytes: sum(res) + (nav?.transferSize || 0),
 			jsBytes: sum(js),
 			jsDecoded: js.reduce((n, r) => n + (r.decodedBodySize || 0), 0),
+			top: [...res].sort((a, b) => b.transferSize - a.transferSize).slice(0, 5).map((r) => `${new URL(r.name).pathname} ${Math.round(r.transferSize / 1024)} KB`),
 		};
+	}).then((v) => {
+		if (DEBUG) console.log(`    largest: ${v.top.join(", ")}`);
+		delete v.top;
+		return v;
 	});
 
 async function throttle(page) {
