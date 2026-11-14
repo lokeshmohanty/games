@@ -13,7 +13,9 @@
 // network emulation: CDP throttles only the page, so a service worker's own
 // fetches (network-first code) would run at loopback speed and the warm runs
 // would flatter it. The proxy charges every request the same latency and
-// shares one bandwidth budget between them, whoever asks.
+// shares one bandwidth budget between them, whoever asks. Text is gzipped on
+// the way, as GitHub Pages does (python's static server sends it raw, which
+// tripled the bytes a cold run paid for its scripts).
 //
 // The room server and the worker API are real (lokeshmohanty.workers.dev) and
 // are NOT throttled: the bots path probes them before it seats anyone, and
@@ -29,6 +31,7 @@
 
 import { existsSync, globSync, writeFileSync } from "node:fs";
 import { createServer, request } from "node:http";
+import { createGzip } from "node:zlib";
 import { createRequire } from "node:module";
 import { homedir } from "node:os";
 import { join } from "node:path";
@@ -63,8 +66,21 @@ function throttledProxy(target, port) {
 	const server = createServer(async (req, res) => {
 		await sleep(NETWORK.latency);
 		const up = request(target + req.url, { method: req.method, headers: { ...req.headers, host: new URL(target).host } }, async (r) => {
-			res.writeHead(r.statusCode, r.headers);
-			for await (const chunk of r) {
+			const headers = { ...r.headers };
+			const zip =
+				r.statusCode === 200 &&
+				/gzip/.test(req.headers["accept-encoding"] ?? "") &&
+				!headers["content-encoding"] &&
+				/^(text\/|application\/(javascript|json|manifest\+json)|image\/svg)/.test(headers["content-type"] ?? "");
+			let body = r;
+			if (zip) {
+				delete headers["content-length"];
+				headers["content-encoding"] = "gzip";
+				headers.vary = "Accept-Encoding";
+				body = r.pipe(createGzip());
+			}
+			res.writeHead(r.statusCode, headers);
+			for await (const chunk of body) {
 				for (let i = 0; i < chunk.length; i += 16_384) {
 					const part = chunk.subarray(i, i + 16_384);
 					const now = Date.now();
