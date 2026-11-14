@@ -52,6 +52,16 @@ break by credits left; still tied → shared win.
 - **Simultaneous turns** on `lib/rounds.js` with `collect: true`: the round
   ends when everyone has committed (bots via `botSubmit`), with a timer as a
   backstop; an absent player's bid is 0.
+- **The host settles only the lot on screen.** The lot being settled is always
+  the round clock's lot, and only while its bids are opening. Until
+  2026-11-14 the fallback timer for missing openings was armed *after* the
+  host's and bots' openings. Those openings had already settled the lot
+  synchronously, so the timer fired 4 s later into the next lot's bidding and
+  settled it as "everybody passed". From then on the screen was one lot behind
+  the game, so bids were applied to the wrong gems and bots were flagged as
+  "never opened their bid". This happened in every game played against bots.
+  `test-bots` now bids at a person's pace and checks every sealed bid against
+  the lot it settled.
 
 ## Bots
 
@@ -61,10 +71,23 @@ rainbow progress) and what it would deny the current leader, scales by
 credits left per remaining lot, and bids that value plus a little noise. It
 must beat a random bidder clearly (rules test).
 
+**A bot never bids its whole balance.** Its bid is capped a random 0–30%
+below what it holds. At 6–8 seats the valuation runs past the balance; the bots
+still on 100 credits then all bid exactly 100, tie for highest, and the tie
+throws the gem away. That repeated every lot from about lot 4, in every 7–8
+seat game, until the 2026-11-14 fix. `test-neon-bid` now checks every table
+size from 2 to 8: most lots sell and no game stalls on ties.
+
 ## Screens (390×844 first)
 
 - **Top:** the row of twelve gems (current one raised and pulsing; won gems
-  show the winner's colour dot; discarded ones dim).
+  show the winner's mark; discarded ones dim). A player's mark is a ring in
+  their seat colour around their initial (two letters where initials clash).
+  It is never a filled dot, because the seat colours and the gem colours are
+  the same theme tokens (`--p1…--p8` and `--p2…--p5`), and a dot read as a gem.
+- **Gem names follow the theme.** `--p3` is cyan under Neon and blue under
+  Paper, so that gem is "Cyan" under Neon and "Blue" under Paper. It is renamed
+  live when the theme is switched.
 - **Middle:** the current gem, large, with what it's worth to *you* right now
   ("+3 points: completes a pair").
 - **Bottom:** your credits, a bid stepper (−/+ and quick chips: 0, 5, 10,

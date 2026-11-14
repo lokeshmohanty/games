@@ -30,8 +30,10 @@
 // on screen.
 
 (() => {
+	// `--p3` is true cyan only under Neon; Paper draws it blue, and a gem called
+	// Cyan that is plainly blue reads as a mistake. `names` is per theme.
 	const COLOURS = [
-		{ key: "cyan", name: "Cyan", hex: "var(--p3)" },
+		{ key: "cyan", name: "Cyan", names: { paper: "Blue" }, hex: "var(--p3)" },
 		{ key: "magenta", name: "Magenta", hex: "var(--p4)" },
 		{ key: "lime", name: "Lime", hex: "var(--p5)" },
 		{ key: "amber", name: "Amber", hex: "var(--p2)" },
@@ -216,7 +218,13 @@
 		const lotsToWin = Math.max(1, rest.length / bidders);
 		const perLot = me.credits / lotsToWin;
 		const noise = 0.85 + 0.3 * rng();
-		return Math.max(0, Math.min(me.credits, Math.round((value / mean) * perLot * noise)));
+		// Never simply all-in. At a big table the valuation runs past the balance,
+		// and bots with equal balances all bidding everything tie for highest —
+		// which throws the gem away, every lot, for the rest of the game (at 7–8
+		// seats that was most lots in every game, 2026-11-14). A ceiling a random
+		// step below the balance puts them on different numbers.
+		const ceiling = Math.floor(me.credits * (0.7 + 0.3 * rng()));
+		return Math.max(0, Math.min(ceiling, Math.round((value / mean) * perLot * noise)));
 	}
 
 	NeonArcade.neonBidRules = {
@@ -238,9 +246,10 @@ NeonArcade.registerGame({
 		const R = NeonArcade.neonBidRules;
 		const { COLOURS, LOTS } = R;
 
-		// Seat colours, for the winner's dot on a sold gem. Chosen to sit apart
-		// from the four gem colours so a dot never reads as a gem.
-		// Seat colours are the theme's (lib/theme.css --p1…--p8).
+		// Seat colours are the theme's (lib/theme.css --p1…--p8) — and so are the
+		// gems' (--p2…--p5), so four seats share a colour with a gem. A seat is
+		// therefore marked by a ring in its colour around its initial
+		// (`seatMark`), never by a filled dot that could read as a gem.
 		const SEAT_HEX = Array.from({ length: 8 }, (_, i) => `var(--p${i + 1})`);
 		const CHIPS = [0, 5, 10, 25];
 
@@ -265,12 +274,17 @@ NeonArcade.registerGame({
 				.nb-gem { width: 100%; aspect-ratio: 5 / 6; background: linear-gradient(160deg,
 					color-mix(in oklch, var(--gem) 25%, white) 0%, var(--gem) 38%, color-mix(in oklch, var(--gem) 55%, black) 100%);
 					clip-path: polygon(50% 0, 100% 35%, 50% 100%, 0 35%); }
-				.nb-dot { width: 7px; height: 7px; border-radius: 50%; background: transparent; }
+				/* A seat: a ring in its colour around its initial. Under a gem it says who
+				   won it; the empty one holds the row's height. */
+				.nb-mark { box-sizing: border-box; display: inline-grid; place-items: center; min-width: 16px;
+					height: 16px; padding: 0 2px; border: 2px solid var(--seat); border-radius: 8px;
+					background: var(--panel); color: var(--ink); font: 700 9px/1 var(--font-display); }
+				.nb-mark.none { visibility: hidden; }
 				@keyframes nb-pulse { 50% { filter: drop-shadow(0 0 10px var(--gem)) brightness(1.25); } }
 
 				.nb-seats { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 4px 8px;
 					width: 100%; font-size: 0.72rem; }
-				.nb-seat { display: grid; grid-template-columns: 8px minmax(0, 1fr) auto; gap: 2px 6px;
+				.nb-seat { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 2px 6px;
 					align-items: center; padding: 4px 6px; border: 1px solid var(--border);
 					border-radius: 6px; background: var(--panel); }
 				.nb-seat.me { border-color: var(--accent); }
@@ -280,7 +294,6 @@ NeonArcade.registerGame({
 				.nb-seat .gems { grid-column: 2 / 4; display: flex; gap: 8px; color: var(--muted);
 					font-variant-numeric: tabular-nums; }
 				.nb-seat .gems i { font-style: normal; }
-				.nb-swatch { width: 8px; height: 8px; border-radius: 50%; }
 				.nb-tiny { display: inline-block; width: 8px; height: 9px; margin-right: 2px;
 					clip-path: polygon(50% 0, 100% 35%, 50% 100%, 0 35%); background: var(--gem); }
 
@@ -398,6 +411,21 @@ NeonArcade.registerGame({
 		const amPlaying = () => !!mySeat() && !over;
 		const seatHex = (id) => SEAT_HEX[Math.max(0, game?.players.findIndex((p) => p.id === id) ?? 0) % SEAT_HEX.length];
 		const nameOf = (id) => (id === room.selfId ? "You" : ctx.nameOf(id));
+		const themeNow = () => document.documentElement.dataset.theme || "paper";
+		const gemName = (colour) => COLOURS[colour].names?.[themeNow()] ?? COLOURS[colour].name;
+
+		/** One letter per seat, two where two names share a first letter. */
+		function initialOf(id) {
+			const first = (who) => Array.from(nameOf(who).trim() || "?")[0].toUpperCase();
+			const mine = first(id);
+			const clash = (game?.players ?? []).some((p) => p.id !== id && first(p.id) === mine);
+			return clash ? Array.from(nameOf(id).trim()).slice(0, 2).join("") : mine;
+		}
+		function seatMark(id) {
+			const mark = el("span", "nb-mark", initialOf(id));
+			mark.style.setProperty("--seat", seatHex(id));
+			return mark;
+		}
 		// The lot on the table is the round clock's, never `game.lot`: a guest can
 		// receive the settled state (lot already advanced) a moment before the
 		// phase change, and reading `game.lot` then flashes the *next* gem.
@@ -558,6 +586,16 @@ NeonArcade.registerGame({
 		// --------------------------------------------------------------- open
 
 		function beginOpen(info) {
+			if (ctx.isHost) {
+				// An opening that never comes is that player's loss, not the table's.
+				// Armed *before* the openings below: when only the host and bots are
+				// bidding they all open right here and settle the lot synchronously,
+				// and a timer armed after that fired into the next lot's bidding and
+				// settled it as everybody passing (fixed 2026-11-14). It is also tied
+				// to this lot, so it can never settle another.
+				clearTimeout(openTimer);
+				openTimer = setTimeout(() => settle(info.round), 4_000);
+			}
 			if (myCommit && myCommit.lot === info.round) {
 				const payload = { lot: info.round, bid: myCommit.commit.value, nonce: myCommit.commit.nonce };
 				if (ctx.isHost) takeOpen(room.selfId, payload);
@@ -567,9 +605,6 @@ NeonArcade.registerGame({
 			for (const [id, held] of Object.entries(botCommits)) {
 				if (held.lot === info.round) takeOpen(id, { lot: info.round, bid: held.commit.value, nonce: held.commit.nonce });
 			}
-			clearTimeout(openTimer);
-			// An opening that never comes is that player's loss, not the table's.
-			openTimer = setTimeout(() => settle(), 4_000);
 		}
 
 		/** Host side. One player's opened bid. */
@@ -579,11 +614,17 @@ NeonArcade.registerGame({
 			if (Object.keys(digests).every((d) => opened[d])) settle();
 		}
 
-		/** Host side. Audit every opening, then settle the lot. */
-		async function settle() {
+		/**
+		 * Host side. Audit every opening, then settle the lot. Only ever the lot
+		 * the round clock is on, and only once its bids are opening or open: the
+		 * clock is what everybody's screen shows, and settling `game.lot` while
+		 * the clock is still collecting bids for it throws that lot away.
+		 */
+		async function settle(expected = lotNow()) {
 			if (!ctx.isHost || !game || settling) return;
 			const lot = game.lot;
 			if (settledLot >= lot || lot >= LOTS) return;
+			if (lot !== expected || lot !== lotNow() || (phase !== "open" && phase !== "show")) return;
 			settling = true;
 			clearTimeout(openTimer);
 			// Snapshot everything the audit is judged against before the first
@@ -655,10 +696,10 @@ NeonArcade.registerGame({
 					const slot = el("div", "nb-slot");
 					if (i === current) slot.classList.add("now");
 					if (result && i !== current) slot.classList.add(result.kind === "won" ? "won" : "lost");
-					const dot = el("div", "nb-dot");
-					if (result?.kind === "won") dot.style.background = seatHex(result.winner);
-					slot.append(gem(colour), dot);
-					slot.setAttribute("aria-label", `${COLOURS[colour].name}${result ? (result.kind === "won" ? `, won by ${nameOf(result.winner)}` : ", lost") : ""}`);
+					const mark = result?.kind === "won" ? seatMark(result.winner) : el("span", "nb-mark none");
+					mark.setAttribute("aria-hidden", "true");
+					slot.append(gem(colour), mark);
+					slot.setAttribute("aria-label", `${gemName(colour)}${result ? (result.kind === "won" ? `, won by ${nameOf(result.winner)}` : ", lost") : ""}`);
 					return slot;
 				}),
 			);
@@ -673,8 +714,7 @@ NeonArcade.registerGame({
 			seatsEl.replaceChildren(
 				...game.players.map((p) => {
 					const box = el("div", "nb-seat" + (p.id === room.selfId ? " me" : ""));
-					const sw = el("span", "nb-swatch");
-					sw.style.background = seatHex(p.id);
+					const sw = seatMark(p.id);
 					const who = el("span", "who", nameOf(p.id));
 					if (ready.includes(p.id)) who.append(el("span", "ready", " ✓"));
 					const cr = el("span", "cr", `${p.credits} cr`);
@@ -702,7 +742,7 @@ NeonArcade.registerGame({
 			const big = el("div", "nb-big");
 			big.append(gem(colour));
 			const txt = el("div", "txt");
-			txt.append(el("span", "lotno", `LOT ${i + 1} OF ${LOTS}`), el("span", "name", COLOURS[colour].name));
+			txt.append(el("span", "lotno", `LOT ${i + 1} OF ${LOTS}`), el("span", "name", gemName(colour)));
 			const me = mySeat();
 			if (me && phase === "bid") {
 				const w = R.worth(me.hand, colour);
@@ -783,7 +823,7 @@ NeonArcade.registerGame({
 				panel.append(banner);
 				return;
 			}
-			const colour = COLOURS[result.colour].name;
+			const colour = gemName(result.colour);
 			if (result.kind === "won") {
 				banner.textContent = `${nameOf(result.winner)} ${result.winner === room.selfId ? "win" : "wins"} the ${colour} gem`;
 				banner.append(el("small", null, `pays ${result.price} — the second-highest bid${result.price === R.RESERVE && Object.values(result.bids).filter((b) => b > 0).length === 1 ? " (nobody else bid: the reserve)" : ""}`));
@@ -819,12 +859,12 @@ NeonArcade.registerGame({
 		function renderEnd() {
 			const table = el("table", "nb-table");
 			const head = el("tr");
-			head.append(el("th", null, ""), ...COLOURS.map((c) => {
+			head.append(el("th", null, ""), ...COLOURS.map((c, ci) => {
 				const th = el("th");
 				const t = el("span", "nb-tiny");
 				t.style.setProperty("--gem", c.hex);
 				th.append(t);
-				th.setAttribute("aria-label", c.name);
+				th.setAttribute("aria-label", gemName(ci));
 				return th;
 			}), el("th", null, "🌈"), el("th", null, "CR"), el("th", null, "PTS"));
 			table.append(head);
@@ -851,7 +891,7 @@ NeonArcade.registerGame({
 		function renderPanel() {
 			const me = mySeat();
 			const key = JSON.stringify([phase, curLot(), !!over, draft, me?.credits, !!myCommit, committing,
-				phase === "bid" ? stillToBid() : 0, !!game?.results[curLot()], game?.players.length]);
+				phase === "bid" ? stillToBid() : 0, !!game?.results[curLot()], game?.players.length, themeNow()]);
 			if (key === panelKey) return;
 			panelKey = key;
 			panel.replaceChildren();
@@ -915,6 +955,11 @@ NeonArcade.registerGame({
 			rounds.start();
 		}
 
+		// The page tells the frame its theme (sdk client → theme._adopt); a gem's
+		// name follows it, so redraw.
+		const onTheme = () => render();
+		addEventListener("neon:theme", onTheme);
+
 		(async () => {
 			await secrets.ready();
 			if (disposed) return;
@@ -962,6 +1007,9 @@ NeonArcade.registerGame({
 			debug: () => ({
 				phase,
 				lot: game?.lot ?? null,
+				// The round clock's lot: the one on screen. Equal to `lot` while
+				// bidding; the two drifting apart is how lots got thrown away.
+				round: rounds.state().round,
 				order: game ? [...game.order] : [],
 				players: game ? game.players.map((p) => ({ id: p.id, credits: p.credits, hand: [...p.hand] })) : [],
 				results: game ? game.results.map((r) => ({ ...r })) : [],
@@ -973,6 +1021,7 @@ NeonArcade.registerGame({
 			}),
 			unmount() {
 				disposed = true;
+				removeEventListener("neon:theme", onTheme);
 				clearTimeout(openTimer);
 				rounds.dispose();
 				secrets.dispose();

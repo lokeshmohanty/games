@@ -11,6 +11,31 @@ rather than making every session pay for it.*
 act → record → clear the item. This is the single inbox — do not create a
 separate `TODO.md`.*
 
+## Neon Bid fixes (2026-11-14): branch `neon-bid` in worktree ../games-neon-bid, not merged
+
+Found by a playthrough at a person's pace, 2 to 8 seats, in all three themes:
+1. **Lots thrown away in every game against bots.** The open-phase fallback
+   timer was armed after the host's and bots' openings had already settled the
+   lot, so 4 s later it settled the next lot mid-bidding as everybody passing.
+   Screen and game then ran a lot apart: bids landed on the wrong gems, and
+   bots were flagged "never opened their bid". Timer now armed first and tied
+   to its lot; `settle` only settles the clock's lot while bids open.
+2. **Tie deadlock at 6–8 seats.** Bots on 100 credits all bid exactly 100, so
+   every lot tied and was discarded from about lot 4 on (100% of 7–8 seat
+   games). Bot bids are now capped a random 0–30% below the balance. 93–95%
+   of lots sell at every size; strength vs baselines unchanged (~100%).
+3. Seat colours = gem colours since the theme commit (a3bdbb5): seats are now
+   a ring in their colour with an initial. Lokesh picked this 2026-11-14.
+4. The "Cyan" gem is drawn blue under Paper: now named "Blue" under Paper,
+   "Cyan" under Neon, switching live. Lokesh picked this 2026-11-14.
+5. The game frame's `<title>` was "Cyan": now "Neon Bid".
+Tests: test-bots now bids at a person's pace and checks each sealed bid against
+the lot it settled (fails on the old code); test-neon-bid checks 2–8 seats for
+stalls (fails on the old bot). test-neon-bid and test-bots are green.
+sw.js not bumped here: games-99 has an uncommitted bump in the shared tree, so
+bump it when merging.
+Waiting on Lokesh to review before merging and pushing.
+
 ## New app mark, "linked players" (2026-11-14): pushed to main, deployed
 
 Lokesh picked option A from https://claude.ai/artifact/MctQN4fSg3imRQTeYPGooc:

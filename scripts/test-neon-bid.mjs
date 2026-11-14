@@ -301,6 +301,29 @@ function play(kinds, rng) {
 	console.log(`  ·    three bots: ${(sold / 200).toFixed(1)} of 12 lots sold, ${(spent / 200 / 3).toFixed(0)} credits spent each`);
 	check("most lots sell at a bot table", sold / 200 >= 9, `${(sold / 200).toFixed(1)}`);
 	check("and the bots spend their credits", spent / 200 / 3 >= 40, `${(spent / 200 / 3).toFixed(0)}`);
+
+	// Every table size the game seats, not just three. At 7–8 bots the
+	// valuation ran past the balance, the bots still holding 100 all bid 100,
+	// and the tie threw away every gem from about lot 4 on — in every game.
+	const thin = [];
+	for (let seats = 2; seats <= 8; seats++) {
+		let soldHere = 0;
+		let stalled = 0;
+		for (let n = 0; n < 100; n++) {
+			const { game } = play(Array(seats).fill("bot"), rng);
+			soldHere += game.results.filter((r) => r.kind === "won").length;
+			let run = 0;
+			for (const r of game.results) {
+				run = r.kind === "tie" ? run + 1 : 0;
+				if (run >= 4) {
+					stalled++;
+					break;
+				}
+			}
+		}
+		if (soldHere / 100 < 9 || stalled) thin.push(`${seats} seats: ${(soldHere / 100).toFixed(1)} sold, ${stalled} stalled`);
+	}
+	check("at every table size, 2 to 8, most lots sell and no game stalls on ties", !thin.length, thin.join("; "));
 }
 
 console.log(failures ? `\n${failures} neon bid check${failures > 1 ? "s" : ""} failed` : "\nall neon bid checks passed");

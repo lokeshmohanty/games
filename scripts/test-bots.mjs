@@ -439,12 +439,28 @@ try {
 	nb = await debug(page);
 	check("our bid was opened as sealed", nb.results[0]?.bids?.[nb.players[0].id] === 6, JSON.stringify(nb.results[0]?.bids));
 
-	// The rest of the game, as a person would play it.
+	// The rest of the game, as a person would play it. Watched throughout: the
+	// lot being bid on (the round clock, what the screen shows) must be the lot
+	// the game settles next. They once drifted a lot apart after the first
+	// reveal, settling each lot under bidding as "everybody passed" — and every
+	// check below still passed, because those phantom lots add up.
 	const chipsCycle = ["10", "0", "5", "25"];
+	const placed = { 0: 6 };
+	const drift = [];
+	const nbSeen = {};
 	for (let i = 0; i < 400; i++) {
 		const d = await debug(page);
 		if (d.over) break;
-		if (d.phase === "bid" && !d.committed) {
+		if (d.phase === "bid" && (d.lot !== d.round || d.results.length !== d.round)) {
+			drift.push(`bidding lot ${d.round} with lot ${d.lot} next and ${d.results.length} settled`);
+		}
+		// Our sealed bid stays readable through the reveal; the bid phase itself
+		// ends the moment we commit, the last of eight.
+		if (d.committed) placed[d.round] = d.myBid;
+		if (d.phase === "bid") nbSeen[d.round] ??= Date.now();
+		// Bid after a person's pause, not at machine speed: a bid placed within
+		// ~0.8s of the lot opening is exactly what hid that drift.
+		if (d.phase === "bid" && !d.committed && Date.now() - nbSeen[d.round] >= 1_200) {
 			const want = chipsCycle[d.lot % chipsCycle.length];
 			await G.evaluate((want) => {
 				const chip = [...document.querySelectorAll(".nb-chips button")].find((b) => b.textContent === want && !b.disabled)
@@ -459,6 +475,11 @@ try {
 	nb = await debug(page);
 	check("the game reaches the final table", !!nb.over, JSON.stringify({ phase: nb.phase, lot: nb.lot }));
 	check("all twelve lots were settled", nb.results.length === 12, `${nb.results.length}`);
+	check("the lot on screen is always the lot being settled", !drift.length, [...new Set(drift)].slice(0, 3).join("; "));
+	const meBid = nb.players[0].id;
+	const lostBids = Object.entries(placed).filter(([lot, bid]) => nb.results[lot]?.bids?.[meBid] !== bid);
+	check(`every bid we sealed (${Object.keys(placed).length} lots) was the bid settled for that lot`, lostBids.length === 0,
+		lostBids.map(([lot, bid]) => `lot ${lot}: sealed ${bid}, settled ${nb.results[lot]?.bids?.[meBid]}`).join("; "));
 	check("every opening audited clean", nb.results.every((r) => Object.keys(r.problems ?? {}).length === 0),
 		JSON.stringify(nb.results.map((r) => r.problems)));
 	// Second price, summed over the whole game: nobody paid more than they bid,
