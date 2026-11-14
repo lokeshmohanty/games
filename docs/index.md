@@ -17,6 +17,7 @@ questions about this project from this folder alone.
 - [Accounts and the social layer](accounts.md) — sign-in, ranked matches, leaderboards, friends, invites, groups, feedback, the public snapshot; what is stored; the one-time setup
 - [The game SDK](sdk.md) — framed games: sandbox, bridge protocol, manifest, rules for outside authors (branch `platform`)
 - [Installing it](#installing-it) — the PWA: manifest, icons, service worker, offline
+- [Performance](perf.md) — the phone-speed harness (`just perf`), the 2026-11-14 baseline, and each refactor phase measured against it
 - [Testing across real networks](network-testing.md) — the NAT lab: symmetric NAT, network switches, lossy links, a blocked room server
 - [`../lib/README.md`](../lib/README.md) — the P2P core, registry, party, lobby and QR APIs
 - [Neon Bid](neon-bid.md) — the sealed-bid gem auction's design, as approved

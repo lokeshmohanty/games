@@ -228,6 +228,14 @@ test-theme:
 test-portal:
     node scripts/test-portal.mjs
 
+# Not part of `test`: phone-speed numbers (docs/perf.md) — 390x844, 4x CPU, a
+# throttling proxy for Slow 4G; portal, PLAY WITH BOTS, leaderboard, cold and
+# warm. Takes a few minutes; `--runs 1` for a quick look.
+
+# Phone-speed baseline: FCP, LCP, time to a bots game's frame (docs/perf.md).
+perf *args:
+    node scripts/perf.mjs {{args}}
+
 # GitHub's page for proposing a repo's games (new) or a newer commit (pinned
 # and moved), filled in as far as GitHub allows: `just propose owner/repo`.
 propose repo *games:
