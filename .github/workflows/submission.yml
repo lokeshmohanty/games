@@ -27,12 +27,12 @@ jobs:
   submission:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
       - name: The base branch, to compare against
         run: git fetch -q origin "${{ github.base_ref }}"
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
       - name: Install Playwright (driver only; the runner's Chrome is used)
@@ -46,7 +46,7 @@ jobs:
         run: node scripts/check-submission.mjs --base "origin/${{ github.base_ref }}" --out submission
       - name: Keep the result for the report
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: submission
           path: submission/

@@ -33,11 +33,11 @@ jobs:
       contents: read
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           persist-credentials: false
       - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: 22
       # The Python runtime web apps' servers run on, served from this site.
@@ -46,7 +46,7 @@ jobs:
       - name: Fetch and build community games
         run: node scripts/fetch-community.mjs
       - name: Keep what the deploy adds to the site
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: generated
           path: |
@@ -63,16 +63,16 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
       - name: Setup Pages
-        uses: actions/configure-pages@v5
+        uses: actions/configure-pages@v6
       - name: Generated files
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: generated
           path: .
       - name: Upload artifact
-        uses: actions/upload-pages-artifact@v3
+        uses: actions/upload-pages-artifact@v5
         with:
           # Upload entire repository
           path: '.'
