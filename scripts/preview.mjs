@@ -125,27 +125,31 @@ async function dropPiece(page, col, cols = 7) {
  * Play Neon Survival properly: read the live game state and steer toward the
  * safest column, with a mild pull toward gems. A blind sine sweep walks into
  * hazards and the clip ends up showing "You're down! Spectating…", which is a
- * poor portal card. Both games declare `player`/`enemies`/`gems` as top-level
- * bindings in a classic script, so page.evaluate can read them directly.
+ * poor portal card. The game publishes `player`/`enemies`/`gems` on its
+ * frame's window (framed since 2026-11-14 Phase 1, an SDK v2 managed game
+ * since Phase 3), so they are read in the game's scope; the mouse is the
+ * page's, which reaches into the frame.
  */
 async function dodgeLoop(page, seconds, canvasSel = "#gameCanvas") {
-	const box = await page.locator(canvasSel).boundingBox();
+	const scope = await gameScope(page, 20_000).catch(() => page);
+	const box = await scope.locator(canvasSel).boundingBox();
 	if (!box) return;
 	const end = Date.now() + seconds * 1000;
 	// `gameActive` is also false *before* the game starts, so only treat it as
 	// death once we have seen it true — otherwise the loop exits immediately.
 	let started = false;
 	while (Date.now() < end) {
-		const aim = await page
+		const aim = await scope
 			.evaluate((sel) => {
 				const c = document.querySelector(sel);
 				if (!c || typeof player === "undefined") return null;
 				const live =
 					(typeof gameActive === "undefined" || gameActive === true) && player.alive !== false;
 				if (!live) return "idle";
-				const W = c.width;
+				// World units are CSS pixels (the backing store is DPR-scaled).
+				const W = parseFloat(c.style.width) || c.width;
 				const threats = (typeof enemies !== "undefined" ? enemies : []).filter(
-					(e) => e.y < player.y && player.y - e.y < c.height * 0.7,
+					(e) => e.y < player.y && player.y - e.y < (parseFloat(c.style.height) || c.height) * 0.7,
 				);
 				const prizes = typeof gems !== "undefined" ? gems : [];
 				let best = null;
