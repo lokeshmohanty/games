@@ -213,6 +213,8 @@ for (const p of [
 	"draw-guess.html",
 	"neon-survival.html",
 	"neon-survival-mp.html",
+	// Retired 2026-11-14, kept as a redirect to the portal for old shortcuts.
+	"tug-of-war.html",
 ]) {
 	await page.goto(`${BASE}/${p}`);
 	const has = await page.evaluate(() => ({

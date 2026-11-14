@@ -16,8 +16,13 @@
     <link rel="canonical" href="index.html" />
     <meta http-equiv="refresh" content="0; url=index.html" />
     <link rel="manifest" href="manifest.webmanifest" />
+    <meta name="theme-color" content="#0a0a0a" />
     <link rel="icon" href="assets/icon.svg" type="image/svg+xml" />
     <link rel="apple-touch-icon" href="assets/apple-touch-icon.png" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black" />
+    <meta name="apple-mobile-web-app-title" content="Arcade Games" />
     <!-- The theme first: tokens + fonts, and the saved choice before paint. -->
     <link rel="stylesheet" href="lib/theme.css" />
     <script src="lib/theme.js"></script>
@@ -31,6 +36,7 @@
         <a class="neon-btn neon-btn--accent" href="index.html">ALL GAMES</a>
       </div>
     </div>
+    <script src="lib/pwa.js"></script>
     <script>
       location.replace(location.hash ? "party.html" + location.hash : "index.html");
     </script>
