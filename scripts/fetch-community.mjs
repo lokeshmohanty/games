@@ -146,6 +146,8 @@ function main() {
 	const errors = [];
 	const contributors = [];
 	const tools = APP_CACHE && toolsHash();
+	// Made even when no pin is a web app: actions/cache warns about a missing path.
+	if (APP_CACHE) mkdirSync(APP_CACHE, { recursive: true });
 	const usedCache = new Set();
 	let [cacheHits, cacheBuilds] = [0, 0];
 
@@ -259,7 +261,7 @@ function main() {
 		console.error(errors.join("\n"));
 		process.exit(1);
 	}
-	if (APP_CACHE && existsSync(APP_CACHE)) {
+	if (APP_CACHE) {
 		const stale = readdirSync(APP_CACHE).filter((k) => !usedCache.has(k));
 		for (const k of stale) rmSync(join(APP_CACHE, k), { recursive: true, force: true });
 		console.log(`app cache: ${cacheHits} reused, ${cacheBuilds} built, ${stale.length} dropped`);
