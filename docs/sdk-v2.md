@@ -106,7 +106,7 @@ arcade.managed({
   view({ seat }) { return … },                // what this seat may see; seat null = a spectator
   turn() { return [ids…] },                   // whose move it is: drives bots and the turn-wait banner
   bot({ seat }) { return action },            // a bot's move (null: none)
-  result() { return null | { kind, ranking, scores? } },   // sdk.md "Reporting a result"
+  result() { return null | { kind, ranking, scores?, title? } },   // sdk.md "Reporting a result"; title: the end card's (≤ 40)
   snapshot() { return state },                // for the heir
   restore({ snapshot }) { … },
   skip({ seat }) { … return true },           // optional: the host chose SKIP TURN
