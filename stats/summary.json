@@ -1,8 +1,8 @@
 {
- "at": "2026-11-14T10:07:16.203Z",
+ "at": "2026-11-14T14:07:16.285Z",
  "games": {
   "neon-survival-mp": {
-   "played": 7
+   "played": 9
   },
   "lokeshmohanty/tug-of-war": {
    "played": 8
@@ -11,13 +11,22 @@
    "played": 1
   },
   "connect4": {
-   "played": 4
+   "played": 5
   },
   "lokeshmohanty/sudoku": {
    "played": 1
   },
   "neon-bid": {
    "played": 6
+  },
+  "lokeshmohanty/draw-guess": {
+   "played": 1
+  },
+  "lokeshmohanty/light-cycles": {
+   "played": 3
+  },
+  "lokeshmohanty/battleship": {
+   "played": 1
   }
  }
 }
