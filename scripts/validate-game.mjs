@@ -35,7 +35,7 @@ import { createRequire } from "node:module";
 import { homedir } from "node:os";
 import { dirname, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
-import { COLOUR, validateManifest } from "./manifest.mjs";
+import { COLOUR, manifestWarnings, validateManifest } from "./manifest.mjs";
 import { PORT_OFFSET, gameFrame, serve } from "./serve.mjs";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
@@ -105,6 +105,7 @@ function checkStatic(dir) {
 	}
 	const problems = validateManifest(m);
 	if (!check("game.json is valid", !problems.length, problems.join("; "))) return null;
+	for (const w of manifestWarnings(m)) warn("game.json is current", false, w);
 
 	const entry = join(dir, m.entry);
 	if (!check(`the entry page (${m.entry}) exists`, existsSync(entry))) return null;

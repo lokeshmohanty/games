@@ -56,6 +56,17 @@ export function validateApp(a) {
 	return p;
 }
 
+/**
+ * What is allowed but on its way out, as sentences. SDK v1 goes once every
+ * listed game is on v2 (docs/sdk-v2.md); a web app needs nothing (it is
+ * upgraded as it mounts).
+ */
+export function manifestWarnings(m) {
+	const w = [];
+	if (m?.sdk === 1 && m?.kind !== "shared") w.push('"sdk": 1 is deprecated and will be dropped: port the game to "sdk": 2 (docs/sdk-v2.md in lokeshmohanty/games)');
+	return w;
+}
+
 /** Problems with a manifest, as sentences; empty when it is fine. */
 export function validateManifest(m) {
 	const p = [];

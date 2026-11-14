@@ -47,7 +47,7 @@ stalls (fails on the old bot). test-neon-bid and test-bots are green.
 sw.js v38 shipped with this; the Tug of War removal (session games-99, shared
 tree, uncommitted) also bumped to v38 and must take v39.
 
-## Platform v2 refactor — Phases 1 (speed) and 2 (SDK v2) done on branch `platform-v2`, NOT merged (2026-11-14)
+## Platform v2 refactor — Phases 1–2 done, Phase 3 in progress, on branch `platform-v2`, NOT merged (2026-11-14)
 
 Lokesh asked for a fast, slick platform and a language-neutral game contract.
 Plan of record: `~/.claude/plans/ethereal-honking-beaver.md`; decisions in
@@ -68,7 +68,17 @@ host pause and sealing are shell services; WASM allowed (CSP
 every message schema-checked). Cap 10 MB; WebRTC is a static validate-game
 failure. Reviewer pass done, findings fixed. Re-measure caught a Phase 1
 gif-fallback blow-up (fixed). Next: Phase 3 (managed state, adapters, port
-the 10 games, drop v1). Open Rust-adapter notes in sdk-v2.md.
+the 10 games, drop v1).
+Phase 3 so far: managed state (lib/sdk-managed.js, `just test-managed`);
+adapters + conformance in all 7 lanes (js, html, ts, rust, c, go, python —
+`just test-conformance`); web apps on v2 (Locale upgraded at mount);
+Connect 4 ported. Porting now: neon-survival-mp, neon-bid, undercover (here)
+and battleship, draw-guess, liars-dice, light-cycles, sudoku in the worktree
+`../arcade-games-v2` (branch platform-v2, from the pinned a1eeebf; Bubble
+Rush is another session's branch, not pinned, left alone). Order of
+landing: platform-v2 deployed first, then arcade-games' pin moves by its PR
+(`just propose`), only then can sdk/v1 be deleted. validate-game warns on
+sdk 1 meanwhile. **Lokesh to pick the v1 deprecation window.**
 **Awaiting Lokesh's confirmation before merging either phase to main.**
 
 ## New app mark, "linked players" (2026-11-14): pushed to main, deployed
