@@ -187,20 +187,68 @@ NeonArcade.registerGame({
 		 * its id — so every peer works it out for itself, in its own theme,
 		 * whatever colour string a ship's owner happens to send.
 		 */
+		const colors = new Map(); // id -> colour, until the theme changes
 		function colorFor(id) {
+			if (colors.has(id)) return colors.get(id);
 			let h = 0;
 			for (const c of id) h = (h * 31 + c.charCodeAt(0)) >>> 0;
-			return NeonArcade.palette().player(h % 8);
+			const color = NeonArcade.palette().player(h % 8);
+			colors.set(id, color);
+			return color;
 		}
 
+		/**
+		 * A glowing dot or square, drawn once into its own small canvas and then
+		 * stamped with drawImage. shadowBlur on every entity, every frame, was
+		 * the costliest thing on a phone's screen. Keyed by shape, size, colour
+		 * and blur; emptied on a resize (dpr) or a theme change.
+		 */
+		const glows = new Map();
+		function glow(shape, size, color, blur) {
+			const key = `${shape}|${size}|${color}|${blur}`;
+			let g = glows.get(key);
+			if (g) return g;
+			const half = shape === "dot" ? size : size / 2;
+			const pad = Math.ceil(half + blur * 1.5);
+			const c = document.createElement("canvas");
+			c.width = c.height = Math.ceil(pad * 2 * dpr);
+			const x = c.getContext("2d");
+			x.scale(dpr, dpr);
+			x.shadowBlur = blur;
+			x.shadowColor = color;
+			x.fillStyle = color;
+			if (shape === "dot") {
+				x.beginPath();
+				x.arc(pad, pad, size, 0, Math.PI * 2);
+				x.fill();
+			} else x.fillRect(pad - half, pad - half, size, size);
+			g = { c, pad };
+			if (glows.size > 256) glows.clear();
+			glows.set(key, g);
+			return g;
+		}
+		const stamp = (g, x, y) => c2d.drawImage(g.c, x - g.pad, y - g.pad, g.pad * 2, g.pad * 2);
+
+		// The world is W x H CSS pixels, as it always was; the canvas behind it
+		// holds W*dpr x H*dpr so a phone's screen draws it sharp. DPR is capped
+		// at 2: a 3x backing store fills 2.25x the pixels of 2x for little a
+		// player can see, and fill is this game's whole cost.
+		let W = 0;
+		let H = 0;
+		let dpr = 1;
 		function resize() {
-			const w = Math.min(window.innerWidth - 24, 800);
-			const h = Math.min(window.innerHeight - 100, 600);
-			canvas.width = w;
-			canvas.height = h;
+			W = Math.min(window.innerWidth - 24, 800);
+			H = Math.min(window.innerHeight - 100, 600);
+			dpr = Math.min(window.devicePixelRatio || 1, 2);
+			canvas.width = Math.round(W * dpr);
+			canvas.height = Math.round(H * dpr);
+			canvas.style.width = W + "px";
+			canvas.style.height = H + "px";
+			c2d.setTransform(dpr, 0, 0, dpr, 0, 0);
+			glows.clear();
 			if (!gameActive) {
-				player.x = canvas.width / 2;
-				player.y = canvas.height / 2;
+				player.x = W / 2;
+				player.y = H / 2;
 			}
 		}
 		addWindowListener("resize", resize);
@@ -239,17 +287,17 @@ NeonArcade.registerGame({
 			const side = Math.floor(Math.random() * 4);
 			let x, y;
 			if (side === 0) {
-				x = Math.random() * canvas.width;
+				x = Math.random() * W;
 				y = -20;
 			} else if (side === 1) {
-				x = canvas.width + 20;
-				y = Math.random() * canvas.height;
+				x = W + 20;
+				y = Math.random() * H;
 			} else if (side === 2) {
-				x = Math.random() * canvas.width;
-				y = canvas.height + 20;
+				x = Math.random() * W;
+				y = H + 20;
 			} else {
 				x = -20;
-				y = Math.random() * canvas.height;
+				y = Math.random() * H;
 			}
 
 			// Home toward nearest alive player
@@ -273,8 +321,8 @@ NeonArcade.registerGame({
 
 		function spawnGem() {
 			gems.push({
-				x: Math.random() * (canvas.width - 20) + 10,
-				y: Math.random() * (canvas.height - 20) + 10,
+				x: Math.random() * (W - 20) + 10,
+				y: Math.random() * (H - 20) + 10,
 				size: GEM_SIZE,
 			});
 		}
@@ -306,8 +354,8 @@ NeonArcade.registerGame({
 			for (const id of seated) {
 				if (botShips[id]) continue;
 				botShips[id] = {
-					x: Math.random() * (canvas.width - 80) + 40,
-					y: Math.random() * (canvas.height - 80) + 40,
+					x: Math.random() * (W - 80) + 40,
+					y: Math.random() * (H - 80) + 40,
 					alive: true,
 					color: colorFor(id),
 				};
@@ -365,17 +413,17 @@ NeonArcade.registerGame({
 			// corner where there is nowhere left to dodge.
 			const margin = 60;
 			if (ship.x < margin) dx += (margin - ship.x) / margin;
-			if (ship.x > canvas.width - margin) dx -= (ship.x - (canvas.width - margin)) / margin;
+			if (ship.x > W - margin) dx -= (ship.x - (W - margin)) / margin;
 			if (ship.y < margin) dy += (margin - ship.y) / margin;
-			if (ship.y > canvas.height - margin) dy -= (ship.y - (canvas.height - margin)) / margin;
+			if (ship.y > H - margin) dy -= (ship.y - (H - margin)) / margin;
 
 			const len = Math.hypot(dx, dy);
 			if (len > 0.001) {
 				ship.x += (dx / len) * BOT_SPEED;
 				ship.y += (dy / len) * BOT_SPEED;
 			}
-			ship.x = Math.max(PLAYER_SIZE, Math.min(canvas.width - PLAYER_SIZE, ship.x));
-			ship.y = Math.max(PLAYER_SIZE, Math.min(canvas.height - PLAYER_SIZE, ship.y));
+			ship.x = Math.max(PLAYER_SIZE, Math.min(W - PLAYER_SIZE, ship.x));
+			ship.y = Math.max(PLAYER_SIZE, Math.min(H - PLAYER_SIZE, ship.y));
 		}
 
 		/** Host only. Move every bot, then resolve what it ran into. */
@@ -439,13 +487,10 @@ NeonArcade.registerGame({
 				e.y += e.vy;
 			}
 			// Cull off-screen enemies (far gone)
-			enemies = enemies.filter(
-				(e) =>
-					e.x > -100 &&
-					e.x < canvas.width + 100 &&
-					e.y > -100 &&
-					e.y < canvas.height + 100,
-			);
+			// In place: a new array every tick was garbage at 60 Hz.
+			let kept = 0;
+			for (const e of enemies) if (e.x > -100 && e.x < W + 100 && e.y > -100 && e.y < H + 100) enemies[kept++] = e;
+			enemies.length = kept;
 		}
 
 		function checkCollisions() {
@@ -569,8 +614,8 @@ NeonArcade.registerGame({
 
 		function resetGame() {
 			player = {
-				x: canvas.width / 2,
-				y: canvas.height / 2,
+				x: W / 2,
+				y: H / 2,
 				alive: true,
 				id: room ? room.selfId : null,
 			};
@@ -640,56 +685,26 @@ NeonArcade.registerGame({
 			const blur = pal.glows ? 15 : 0; // a halo is the neon theme's, not paper's
 			// Motion trail fade
 			c2d.fillStyle = pal.alpha("bg", 0.3);
-			c2d.fillRect(0, 0, canvas.width, canvas.height);
+			c2d.fillRect(0, 0, W, H);
 
 			// Gems (host-authoritative state, but everyone renders from state)
-			c2d.shadowBlur = blur;
-			c2d.shadowColor = pal.good;
-			c2d.fillStyle = pal.good;
-			for (const g of gems) {
-				c2d.beginPath();
-				c2d.arc(g.x, g.y, g.size, 0, Math.PI * 2);
-				c2d.fill();
-			}
+			for (const g of gems) stamp(glow("dot", g.size, pal.good, blur), g.x, g.y);
 
 			// Enemies
-			c2d.shadowColor = pal.danger;
-			c2d.fillStyle = pal.danger;
-			for (const e of enemies) {
-				c2d.beginPath();
-				c2d.arc(e.x, e.y, e.size, 0, Math.PI * 2);
-				c2d.fill();
-			}
+			for (const e of enemies) stamp(glow("dot", e.size, pal.danger, blur), e.x, e.y);
 
 			// Peers (interpolated)
 			for (const [id, p] of Object.entries(peers)) {
 				if (p.x == null) continue;
 				const alpha = p.alive ? 1 : 0.3;
-				const color = colorFor(id);
 				c2d.globalAlpha = alpha;
-				c2d.shadowBlur = blur;
-				c2d.shadowColor = color;
-				c2d.fillStyle = color;
-				c2d.fillRect(
-					p.x - PLAYER_SIZE / 2,
-					p.y - PLAYER_SIZE / 2,
-					PLAYER_SIZE,
-					PLAYER_SIZE,
-				);
+				stamp(glow("square", PLAYER_SIZE, colorFor(id), blur), p.x, p.y);
 				c2d.globalAlpha = 1;
 			}
 
 			// Self
 			if (player.alive) {
-				c2d.shadowBlur = blur;
-				c2d.shadowColor = myColor;
-				c2d.fillStyle = myColor;
-				c2d.fillRect(
-					player.x - PLAYER_SIZE / 2,
-					player.y - PLAYER_SIZE / 2,
-					PLAYER_SIZE,
-					PLAYER_SIZE,
-				);
+				stamp(glow("square", PLAYER_SIZE, myColor, blur), player.x, player.y);
 			} else {
 				// ghost: dim outline
 				c2d.globalAlpha = 0.3;
@@ -778,6 +793,8 @@ NeonArcade.registerGame({
 		meColorEl.style.background = myColor;
 		// A new theme: our own ship's colour, and the swatch, follow it.
 		addWindowListener("neon:theme", () => {
+			colors.clear();
+			glows.clear();
 			myColor = colorFor(room.selfId);
 			meColorEl.style.color = meColorEl.style.background = myColor;
 		});
@@ -867,8 +884,8 @@ NeonArcade.registerGame({
 			onPeerJoin(peerId) {
 				if (!isPlaying(peerId)) return;
 				peers[peerId] = {
-					x: canvas.width / 2,
-					y: canvas.height / 2,
+					x: W / 2,
+					y: H / 2,
 					color: colorFor(peerId),
 					alive: true,
 				};

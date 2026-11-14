@@ -21,6 +21,11 @@
 // Medians of --runs N (default 3).
 //
 //   node scripts/perf.mjs [--runs N] [--label name] [--out results.json]
+//                         [--only portal,bots,leaderboard]
+//
+// Caveat: CPU throttling reaches the page's process only. A game runs in a
+// sandboxed frame, which is its own process, so its own start-up inside
+// "to frame" runs unthrottled. That part is small; the waits before it are not.
 
 import { existsSync, globSync, writeFileSync } from "node:fs";
 import { createServer, request } from "node:http";
@@ -38,6 +43,7 @@ const RUNS = Number(arg("runs", 3));
 const LABEL = arg("label", "current");
 const OUT = arg("out", null);
 const LOAD_CAP = 60_000;
+const ONLY = arg("only", null)?.split(","); // e.g. --only portal,leaderboard
 
 const pw = require(
 	[join(homedir(), ".cache", "game-previews", "node_modules", "playwright"), ...globSync(join(homedir(), ".npm", "_npx", "*", "node_modules", "playwright"))].find(existsSync),
@@ -197,7 +203,7 @@ const browser = await pw.chromium.launch({ executablePath: chrome, args: ["--no-
 const results = { label: LABEL, date: new Date().toISOString(), runs: RUNS, network: NETWORK, cpu: 4, scenarios: {} };
 
 try {
-	for (const name of Object.keys(scenarios)) {
+	for (const name of Object.keys(scenarios).filter((n) => !ONLY || ONLY.includes(n))) {
 		for (const warm of [false, true]) {
 			const key = `${name} (${warm ? "warm" : "cold"})`;
 			const samples = [];
