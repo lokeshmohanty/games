@@ -200,7 +200,7 @@ const GAMES = {
 		peers: 1,
 		seconds: 18,
 		async play([a], seconds) {
-			await a.locator("button", { hasText: "START" }).first().click();
+			// A one-device game starts by itself (lib/party.js autoStart).
 			await a.waitForFunction(() => window.__game?.handle, null, { timeout: 20_000 });
 			// The game runs in the party's sandboxed frame: find its buttons there.
 			const page = a;

@@ -56,6 +56,18 @@
   src: url("../assets/fonts/cascadia-code.woff2") format("woff2-variations");
 }
 
+/* Same-origin page changes cross-fade instead of flashing white (Chrome,
+ * Safari 18.2+; ignored elsewhere). An interim step: the single-page shell
+ * (plan Phase 4) makes these in-document transitions. */
+@view-transition {
+  navigation: auto;
+}
+@media (prefers-reduced-motion: reduce) {
+  @view-transition {
+    navigation: none;
+  }
+}
+
 :root {
   --font-display: "Space Grotesk Variable", ui-sans-serif, system-ui, sans-serif;
   --font-body: "Nunito Variable", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;

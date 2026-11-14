@@ -37,6 +37,7 @@ const arg = (name, dflt) => {
 const RUNS = Number(arg("runs", 3));
 const LABEL = arg("label", "current");
 const OUT = arg("out", null);
+const LOAD_CAP = 60_000;
 
 const pw = require(
 	[join(homedir(), ".cache", "game-previews", "node_modules", "playwright"), ...globSync(join(homedir(), ".npm", "_npx", "*", "node_modules", "playwright"))].find(existsSync),
@@ -94,7 +95,7 @@ const readVitals = (page) =>
 			fcp: fcp ? fcp.startTime : null,
 			lcp: window.__perf?.lcp || null,
 			dcl: nav ? nav.domContentLoadedEventEnd : null,
-			load: nav ? nav.loadEventEnd : null,
+			load: nav && nav.loadEventEnd > 0 ? nav.loadEventEnd : null,
 			bytes: sum(res) + (nav?.transferSize || 0),
 			jsBytes: sum(js),
 			jsDecoded: js.reduce((n, r) => n + (r.decodedBodySize || 0), 0),
@@ -112,10 +113,14 @@ async function context(browser, warm, url) {
 	const ctx = await browser.newContext(PHONE);
 	await ctx.addInitScript(VITALS);
 	if (warm) {
+		// The warm-up visit pays the same link, so a gif-heavy portal can take
+		// a minute to load; the service worker's install is what is waited for.
 		const p = await ctx.newPage();
-		await p.goto(url, { waitUntil: "load" });
+		await p.goto(url, { waitUntil: "domcontentloaded", timeout: 120_000 });
+		await p.waitForLoadState("load", { timeout: 120_000 }).catch(() => {});
 		await p.evaluate(() => navigator.serviceWorker?.ready);
-		await p.reload({ waitUntil: "load" });
+		await p.reload({ waitUntil: "domcontentloaded", timeout: 120_000 });
+		await p.waitForLoadState("load", { timeout: 120_000 }).catch(() => {});
 		await p.waitForFunction(() => !!navigator.serviceWorker?.controller, null, { timeout: 15_000 }).catch(() => {});
 		await p.close();
 	}
@@ -132,8 +137,11 @@ const scenarios = {
 		const ctx = await context(this.browser, warm, site.url("index.html"));
 		const page = await ctx.newPage();
 		await throttle(page);
-		await page.goto(site.url("index.html"), { waitUntil: "load", timeout: 120_000 });
+		// A cold portal can take minutes to reach `load` (every preview gif
+		// in view); past LOAD_CAP it is reported as "> cap" rather than waited for.
+		await page.goto(site.url("index.html"), { waitUntil: "domcontentloaded", timeout: 120_000 });
 		await page.waitForSelector(".game-card");
+		await page.waitForLoadState("load", { timeout: LOAD_CAP }).catch(() => {});
 		await settle(page);
 		const v = await readVitals(page);
 		await ctx.close();
@@ -168,7 +176,8 @@ const scenarios = {
 		const ctx = await context(this.browser, warm, site.url("leaderboard.html"));
 		const page = await ctx.newPage();
 		await throttle(page);
-		await page.goto(site.url("leaderboard.html"), { waitUntil: "load", timeout: 120_000 });
+		await page.goto(site.url("leaderboard.html"), { waitUntil: "domcontentloaded", timeout: 120_000 });
+		await page.waitForLoadState("load", { timeout: LOAD_CAP }).catch(() => {});
 		await settle(page);
 		const v = await readVitals(page);
 		await ctx.close();
@@ -216,7 +225,7 @@ console.log("| Scenario | FCP | LCP | DCL | load | to START | tap? | to frame | 
 console.log("|---|---|---|---|---|---|---|---|---|---|");
 for (const [k, r] of Object.entries(results.scenarios)) {
 	console.log(
-		`| ${k} | ${ms(r.fcp)} | ${ms(r.lcp)} | ${ms(r.dcl)} | ${ms(r.load)} | ${ms(r.toStart)} | ${r.tapNeeded == null ? "–" : r.tapNeeded ? "yes" : "no"} | ${ms(r.toFrame)} | ${kb(r.bytes)} | ${kb(r.jsBytes)} / ${kb(r.jsDecoded)} |`,
+		`| ${k} | ${ms(r.fcp)} | ${ms(r.lcp)} | ${ms(r.dcl)} | ${r.load == null && r.fcp != null && "dcl" in r ? `> ${LOAD_CAP / 1000} s` : ms(r.load)} | ${ms(r.toStart)} | ${r.tapNeeded == null ? "–" : r.tapNeeded ? "yes" : "no"} | ${ms(r.toFrame)} | ${kb(r.bytes)} | ${kb(r.jsBytes)} / ${kb(r.jsDecoded)} |`,
 	);
 }
 if (OUT) writeFileSync(OUT, JSON.stringify(results, null, 2) + "\n");

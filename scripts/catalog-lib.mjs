@@ -2,8 +2,8 @@
 // site loads. Shared by build-catalog.mjs (first-party, committed) and
 // fetch-community.mjs (pinned outside repos, generated at deploy).
 
-import { readFileSync } from "node:fs";
-import { dirname, relative } from "node:path";
+import { existsSync, readFileSync } from "node:fs";
+import { dirname, join, relative } from "node:path";
 import { validateContributor, validateManifest } from "./manifest.mjs";
 
 /**
@@ -11,6 +11,17 @@ import { validateContributor, validateManifest } from "./manifest.mjs";
  * (<owner>/<id>); `root` is the site root paths are made relative to.
  * Throws with every problem listed when any manifest is invalid.
  */
+/** `{ poster, webm, mp4 }` beside a preview gif, for those that exist on disk. */
+function previewTwins(file, dir, preview) {
+	if (typeof preview !== "string" || !/\.gif$/i.test(preview)) return {};
+	const out = {};
+	for (const [key, ext] of [["poster", ".webp"], ["webm", ".webm"], ["mp4", ".mp4"]]) {
+		const rel = preview.replace(/\.gif$/i, ext);
+		if (existsSync(join(dirname(file), rel))) out[key] = dir + rel;
+	}
+	return out;
+}
+
 export function catalogEntries(files, root) {
 	const games = [];
 	const errors = [];
@@ -43,6 +54,8 @@ export function catalogEntries(files, root) {
 			kind: m.kind,
 			tags: m.tags ?? [],
 			preview: m.preview ? dir + m.preview : null,
+			// Its poster and video twins (scripts/preview-media.mjs), when made.
+			...previewTwins(file, dir, m.preview),
 			path: dir,
 			entry: m.entry,
 			app: m.app ?? null,

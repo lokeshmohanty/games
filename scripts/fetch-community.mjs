@@ -48,6 +48,7 @@ import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { buildApp } from "./app-build.mjs";
 import { catalogEntries, catalogScript, contributorEntry } from "./catalog-lib.mjs";
+import { hasFfmpeg, makeTwins, previewGifs } from "./preview-media.mjs";
 import { COLOUR } from "./manifest.mjs";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
@@ -251,6 +252,18 @@ function main() {
 		}
 	}
 
+	// Poster and video twins of each preview gif (preview-media.mjs): a
+	// tenth of the gif's bytes on the portal. Without ffmpeg the gifs stay.
+	if (hasFfmpeg()) {
+		for (const gif of previewGifs([OUT])) {
+			try {
+				makeTwins(gif);
+			} catch (err) {
+				console.error(`preview media for ${gif}: ${err.message}`);
+			}
+		}
+	} else console.log("preview-media: no ffmpeg — community previews stay gif-only");
+
 	let games = [];
 	try {
 		games = catalogEntries(manifests, ROOT);
@@ -273,7 +286,7 @@ function main() {
 	// Preview gifs stay out, as the first-party ones do (sw.js): large, and
 	// cached on first sight anyway.
 	const precache = walk(OUT)
-		.filter((f) => f !== "precache.js" && !/\.gif$/i.test(f))
+		.filter((f) => f !== "precache.js" && !/\.(gif|webm|mp4)$/i.test(f))
 		.map((f) => "./community/" + f.split("\\").join("/"));
 	writeFileSync(
 		join(OUT, "precache.js"),

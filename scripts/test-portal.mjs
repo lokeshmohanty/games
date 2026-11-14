@@ -77,8 +77,9 @@ try {
 	await p.waitForTimeout(250);
 	check("…and so does keyboard focus", await visible());
 	await c4card.locator(".card-play", { hasText: "PLAY WITH BOTS" }).click();
-	await p.locator("button", { hasText: "START GAME" }).first().waitFor({ timeout: TIMEOUT });
-	check("PLAY WITH BOTS lands with the bots seated: no second choice", (await p.locator(".party-choice").count()) === 0 && (await p.evaluate(() => window.__party.room.getMembers().some((m) => m.id.startsWith("bot_")))));
+	await p.waitForSelector(".game-frame", { timeout: TIMEOUT });
+	check("PLAY WITH BOTS goes straight into the game, bots seated: no second choice, no START", (await p.locator(".party-choice").count()) === 0 && (await p.evaluate(() => window.__party.room.getMembers().some((m) => m.id.startsWith("bot_")))));
+	check("…without waiting on the room server: no party code yet", await p.evaluate(() => !document.querySelector(".party-code-digits")));
 	check("…and the address forgets the mode, for a reload", !new URL(p.url()).searchParams.has("mode"), p.url());
 	await p.goto(site.url("index.html"));
 	await p.waitForSelector(".game-card");

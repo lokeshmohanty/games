@@ -145,19 +145,16 @@ try {
 	// ------------------------------------------------------------- undercover
 	//
 	// The one game here that needs no second device and no bots at all: it is
-	// played by people in the room, on one phone, passed along. So the lobby
-	// must offer a plain START — no invite, no bot controls — and the game's one
-	// real responsibility is that **a word is never on screen for the wrong
-	// person**. Both are asserted; the rest of the game happens between people.
+	// played by people in the room, on one phone, passed along. So opening it
+	// goes straight into the game — no lobby, no START, no invite, no bot
+	// controls (2026-11-14: one-device games start at once) — and the game's
+	// one real responsibility is that **a word is never on screen for the
+	// wrong person**. Both are asserted; the rest happens between people.
 
 	console.log("\nlocal: undercover needs no second device");
 	await page.goto(url("undercover.html"));
-	await page.locator("#party button").first().waitFor({ timeout: TIMEOUT });
-	const lobbyButtons = await page.locator("#party button").allTextContents();
-	check("the lobby asks for nothing but START", lobbyButtons.join() === "START", JSON.stringify(lobbyButtons));
-
-	await page.locator("button", { hasText: "START" }).first().click();
 	await page.waitForFunction(() => window.__game?.handle, null, { timeout: TIMEOUT });
+	check("it opens straight into the game: no lobby button was needed", !(await page.locator("#party:not([hidden]) button", { hasText: "START" }).isVisible().catch(() => false)));
 	G = await gameScope(page, TIMEOUT);
 
 	let uc = await debug(page);

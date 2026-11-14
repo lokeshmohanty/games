@@ -108,6 +108,8 @@ for game in "${targets[@]}"; do
       -loop 0 "$dest" || exit 1
     printf 'converted: %s -> %s\n' "$video" "$dest"
   fi
+  # The portal plays these instead (a tenth of the gif's bytes).
+  node "$ROOT/scripts/preview-media.mjs" --force "$dest" || exit 1
   rm -f "$video"
 done
 

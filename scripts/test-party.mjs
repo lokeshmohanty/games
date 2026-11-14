@@ -905,7 +905,8 @@ try {
 		`scrollWidth ${qr.scroll} > clientWidth ${qr.client}`,
 	);
 	// Read back with the arcade's own decoder, the one SCAN REPLY uses.
-	const qrLink = await leaver.evaluate(() => {
+	const qrLink = await leaver.evaluate(async () => {
+		await NeonArcade.load("qr-decode"); // loaded on first use (lib/load.js)
 		const c = document.querySelector(".party-code-qr");
 		const img = c.getContext("2d").getImageData(0, 0, c.width, c.height);
 		return NeonArcade.qrDecode(img)?.text ?? null;

@@ -16,6 +16,10 @@
     <!-- The shared theme, for the account sheets and buttons (lib/account-ui.js);
          this page's own rules below take precedence. -->
     <!-- The theme first: tokens + fonts, and the saved choice before paint. -->
+    <!-- The two faces every page draws with, asked for before theme.css is
+         parsed, so text does not flash in the fallback font (docs/perf.md). -->
+    <link rel="preload" href="assets/fonts/space-grotesk.woff2" as="font" type="font/woff2" crossorigin />
+    <link rel="preload" href="assets/fonts/nunito.woff2" as="font" type="font/woff2" crossorigin />
     <link rel="stylesheet" href="lib/theme.css" />
     <script src="lib/theme.js"></script>
     <link rel="stylesheet" href="lib/styles.css" />
@@ -217,7 +221,7 @@
         transform: translateY(-10px);
         box-shadow: 0 0 30px var(--glow);
       }
-      .game-card img {
+      .game-card .card-preview {
         width: 100%;
         /* A ratio rather than 200px: the card has to shrink with its column on
            a phone, and a fixed height is what made one card fill the screen. */
@@ -404,7 +408,7 @@
         .game-card {
           border-radius: 10px;
         }
-        .game-card img {
+        .game-card .card-preview {
           aspect-ratio: 16 / 10;
         }
         .game-card h3 {
@@ -581,6 +585,12 @@
         outline-offset: 1px;
       }
     </style>
+    <!-- A card's PLAY link fetches party.html as the finger lands (moderate
+         eagerness: hover or pointerdown). Prefetch, never prerender: a
+         prerendered party page would boot and host a party nobody asked for. -->
+    <script type="speculationrules">
+      { "prefetch": [{ "where": { "href_matches": "/*party.html*" }, "eagerness": "moderate" }] }
+    </script>
   </head>
   <body>
     <!-- lib/nav.js: GitHub, Add your game | theme, account; and the tabs. -->

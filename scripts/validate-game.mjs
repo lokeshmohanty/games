@@ -198,7 +198,7 @@ async function checkBrowser(games) {
 			const q = new URLSearchParams({ dev: `http://127.0.0.1:${p}/`, game: `dev/${m.id}`, fresh: "1", rs: "http://127.0.0.1:1" });
 			await page.goto(`${site.base}/party.html?${q}`);
 			if (m.kind === "local") {
-				await page.locator("#party button", { hasText: "START" }).first().click({ timeout: TIMEOUT });
+				// A one-device game starts by itself (lib/party.js autoStart).
 			} else if (m.kind === "shared") {
 				// One screen, no bots: alone with the friends' controls.
 				await page.locator("button", { hasText: "PLAY WITH FRIENDS" }).first().click({ timeout: TIMEOUT });

@@ -68,6 +68,7 @@ const SHELL = [
 	"./lib/lobby.js",
 	"./lib/party.js",
 	"./lib/pwa.js",
+	"./lib/load.js",
 	"./lib/bridge.js",
 	"./lib/py-server.js",
 	"./lib/stats.js",
@@ -240,6 +241,10 @@ self.addEventListener("fetch", (event) => {
 	// Range requests are the browser asking for a slice of a file; a cached
 	// whole-file response is the wrong answer to that question.
 	if (request.headers.has("range")) return;
+	// Preview videos too (scripts/preview-media.mjs), even when a first request
+	// carries no Range: Safari refuses a whole-file answer to a media request.
+	// Offline, a card shows its cached poster instead.
+	if (/\.(?:webm|mp4)$/i.test(url.pathname)) return;
 
 	event.respondWith(isAsset(url) ? cacheFirst(request) : networkFirst(request));
 });
