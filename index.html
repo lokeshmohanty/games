@@ -44,6 +44,42 @@
         /* Compensate for the trailing letter-spacing so the glyphs sit truly centered. */
         text-indent: 5px;
       }
+      /* The lockup: the app mark (assets/icon.svg's glyph, minus the tile) drawn
+         with live tokens, so it follows every theme the way the icon cannot. */
+      h1.brand {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        justify-content: center;
+        gap: 0.3em;
+        text-indent: 0;
+      }
+      /* Letter-spacing is ~0.1em at both sizes; this takes the trailing one back. */
+      .brand > span {
+        margin-right: -0.1em;
+      }
+      .brand .mark {
+        width: 1.33em;
+        height: 1.2em;
+        flex: none;
+        overflow: visible;
+        filter: drop-shadow(0 0 10px var(--glow));
+      }
+      .mark .p1 {
+        fill: var(--accent);
+        stroke: var(--accent);
+      }
+      .mark .p2 {
+        fill: var(--accent-2);
+        stroke: var(--accent-2);
+      }
+      .mark .wire {
+        fill: none;
+        stroke: var(--ink);
+      }
+      .mark .base {
+        fill: var(--ink-3);
+      }
       /*
         One line under the title, doing the job three section headings used to.
         Every game here is multiplayer and every game here can be played alone
@@ -549,7 +585,20 @@
   <body>
     <!-- lib/nav.js: GitHub, Add your game | theme, account; and the tabs. -->
     <nav class="site-nav" data-nav data-page="games"></nav>
-    <h1>Arcade Games</h1>
+    <h1 class="brand">
+      <svg class="mark" viewBox="96 104 320 288" aria-hidden="true">
+        <g transform="translate(0 9)" stroke-linecap="round">
+          <path class="wire" d="M168 176 C168 100 344 100 344 176" stroke-width="16" />
+          <rect class="base" x="104" y="332" width="128" height="44" rx="22" />
+          <rect class="base" x="280" y="332" width="128" height="44" rx="22" />
+          <path class="p1" d="M168 334 V250" stroke-width="22" />
+          <path class="p2" d="M344 334 V250" stroke-width="22" />
+          <circle class="p1" cx="168" cy="214" r="44" stroke-width="0" />
+          <circle class="p2" cx="344" cy="214" r="44" stroke-width="0" />
+        </g>
+      </svg>
+      <span>Arcade Games</span>
+    </h1>
     <p class="tagline">
       Every game is multiplayer. Play the bots on this device, or send an invite
       and play the people. No accounts, no servers, nothing to sign up for.

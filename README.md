@@ -217,6 +217,9 @@ To change the icon, edit [`assets/icon.svg`](assets/icon.svg) and run:
 node scripts/make-icons.mjs
 ```
 
+The portal header draws the same glyph inline (`index.html`, `h1.brand`) using
+the theme's colours, so redraw it there too.
+
 ## Preview GIFs
 
 Portal preview GIFs are generated headlessly via Playwright:

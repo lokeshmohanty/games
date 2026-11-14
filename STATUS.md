@@ -11,6 +11,18 @@ rather than making every session pay for it.*
 act → record → clear the item. This is the single inbox — do not create a
 separate `TODO.md`.*
 
+## New app mark, "linked players" (2026-11-14): branch `logo`, not merged
+
+Lokesh picked option A from https://claude.ai/artifact/MctQN4fSg3imRQTeYPGooc:
+two joysticks joined by a cable, in Paper's dark-mode colours (slate tile #111419).
+assets/icon.svg redrawn; PNGs rebuilt; manifest background/theme #111419;
+portal h1 is now a lockup (`h1.brand`, inline glyph on theme tokens: follows
+Paper light/dark and Neon). make-icons reads the backing colour from the tile.
+Fixed along the way: the SVG favicon had been invalid XML since 2026-08-16
+(`--` in its comment), so no browser drew it. test-pwa now parses it. sw.js v37.
+test-pwa, test-theme, test-portal green; header checked at 390x844 and 1280x800
+in all three themes. Waiting on Lokesh to confirm before merge or push.
+
 ## Web apps run unchanged; CI on Node 24 (2026-11-14) — pushed to main, deployed
 
 14eeec2: an existing site + Python server joins without a rewrite (docs/sdk.md

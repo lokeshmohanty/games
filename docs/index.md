@@ -664,6 +664,19 @@ every hand-written check still passes. This was caught only by asking Chrome
 through CDP, which `scripts/test-pwa.mjs` now does on every run. The SVG remains
 the favicon via `<link rel="icon">`.
 
+**The app mark is "linked players"**: two joysticks, one per player, joined by
+one cable (2026-11-14). `assets/icon.svg` holds it in the Paper theme's
+dark-mode colours as fixed hex: slate tile `#111419`, player 1 in the accent,
+player 2 in accent-2. An installed icon cannot follow the theme. The manifest's
+`background_color` and `theme_color` match the tile. The portal's title is a
+lockup (`h1.brand` in `index.html`). It draws the same glyph inline, coloured by
+theme tokens, so it follows Paper light, Paper dark and Neon. Change one and you
+must change the other. The SVG must also stay strict XML, because a browser
+loads the favicon as a standalone file and refuses the whole thing over one
+`--` in a comment. `make-icons.mjs` pastes the SVG into HTML, which forgives
+that, so the PNGs give no warning. From 2026-08-16 to 2026-11-14 no tab showed
+the icon for exactly this reason. `test-pwa` now parses the file.
+
 ## Honest gaps
 
 - Per-game design notes and a decision log are still missing.

@@ -63,6 +63,13 @@ function loadPlaywright() {
 }
 
 const svg = readFileSync(join(ROOT, "assets", "icon.svg"), "utf8");
+// The full-bleed backing behind the maskable and iOS icons is the tile's own
+// colour, read from the drawing so a recolour cannot leave a seam of the old one.
+const backing = svg.match(/<g class="tile">\s*<rect[^>]*fill="(#[0-9a-fA-F]{3,8})"/)?.[1];
+if (!backing) {
+	console.error('error: assets/icon.svg has no <g class="tile"> rect with a hex fill');
+	process.exit(1);
+}
 
 // What to produce. `inset` is the fraction of the canvas left empty around the
 // mark; Android's maskable safe zone is the middle 80%, and 0.2 keeps the glyph
@@ -88,7 +95,7 @@ for (const { file, size, inset, frameless } of TARGETS) {
 		 <style>
 		   html,body{margin:0;padding:0;width:${size}px;height:${size}px;overflow:hidden}
 		   /* Full-bleed backing so a launcher crop never exposes the page behind. */
-		   body{background:#0a0a0a;display:grid;place-items:center}
+		   body{background:${backing};display:grid;place-items:center}
 		   svg{width:${inner}px;height:${inner}px;display:block}
 		   ${frameless ? ".tile{display:none}" : ""}
 		 </style>

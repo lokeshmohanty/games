@@ -43,6 +43,12 @@ it simply will not be there offline, and nothing warns you. Then bump `VERSION`.
   Offline is a *separate* capability and does work in Firefox.
 - **Code is network-first, assets are cache-first.** Do not "optimise" this into
   cache-first everywhere — see [[caching-split]] for what that would break.
+- **`assets/icon.svg` must stay strict XML.** It is the favicon, loaded as a
+  standalone SVG, and one `--` inside its header comment makes the browser drop
+  it. `make-icons.mjs` pastes it into HTML, which forgives that, so the PNGs give
+  no warning. `test-pwa` parses it. The header lockup in `index.html` (`.brand`)
+  is the same glyph drawn with theme tokens, so redraw both together
+  ([[app-mark-direction]]).
 - **Nothing here may break `file://`.** `lib/pwa.js` must stay inert without a
   secure context, and no page may depend on it. Games load and run identically
   with the manifest, the worker and the install button all absent.
@@ -62,3 +68,5 @@ it simply will not be there offline, and nothing warns you. Then bump `VERSION`.
 - `memory/install-prompt-is-chromium-only.md` — why no button can ever appear in
   Firefox or Safari, what each browser actually does, and why offline is fine
   there anyway.
+- `memory/app-mark-direction.md` — the icon follows the Paper theme, not Neon;
+  the "linked players" concept and the choices made for the 2026-11-14 redesign.

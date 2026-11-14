@@ -180,6 +180,26 @@ if (m) {
 	}
 }
 
+// The favicon is loaded as a standalone SVG, which means strict XML: one "--"
+// in its header comment and the browser refuses the file. make-icons.mjs pastes
+// it into HTML, which forgives that, so the PNGs looked fine for three months
+// while every tab showed no icon at all.
+{
+	const href = await page.getAttribute('link[rel="icon"]', "href");
+	const error = await page.evaluate(
+		(u) =>
+			fetch(u)
+				.then((r) => r.text())
+				.then((s) => {
+					const doc = new DOMParser().parseFromString(s, "image/svg+xml");
+					return doc.querySelector("parsererror")?.textContent.slice(0, 160) ?? null;
+				})
+				.catch((e) => String(e)),
+		new URL(href, `${BASE}/index.html`).href,
+	);
+	check("the favicon parses as XML, so a browser will draw it", !error, error ?? "");
+}
+
 // Every page, not just the portal — an installed app can be opened at any of
 // them, and a page without the manifest link drops out of the installed app
 // into a browser tab.
