@@ -23,7 +23,7 @@
  */
 import { createRequire } from "node:module";
 import { execFileSync, spawn } from "node:child_process";
-import { existsSync, globSync, mkdtempSync, writeFileSync } from "node:fs";
+import { existsSync, globSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { dirname, join, resolve as resolvePath } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -74,6 +74,12 @@ const check = (label, ok, detail = "") => {
 
 const { chromium } = loadPlaywright();
 const work = mkdtempSync(join(tmpdir(), "scan-test-"));
+// The fake webcam feeds are raw y4m, ~1.5 GB a run. Nothing removed them, and
+// by 2026-11-14 58 runs had left 84 GB in /tmp and filled the disk. `exit`
+// fires on a normal end, on process.exit and after an uncaught error; the
+// signals are routed through it so Ctrl-C cleans up too.
+process.on("exit", () => rmSync(work, { recursive: true, force: true }));
+for (const sig of ["SIGINT", "SIGTERM"]) process.on(sig, () => process.exit(130));
 
 // A reply code the size the real handshake produces on a laptop with more than
 // one interface: mDNS host candidates plus IPv4 and IPv6 reflexive ones.
