@@ -11,7 +11,7 @@ rather than making every session pay for it.*
 act → record → clear the item. This is the single inbox — do not create a
 separate `TODO.md`.*
 
-## New app mark, "linked players" (2026-11-14): branch `logo`, not merged
+## New app mark, "linked players" (2026-11-14): pushed to main, deployed
 
 Lokesh picked option A from https://claude.ai/artifact/MctQN4fSg3imRQTeYPGooc:
 two joysticks joined by a cable, in Paper's dark-mode colours (slate tile #111419).
@@ -21,7 +21,8 @@ Paper light/dark and Neon). make-icons reads the backing colour from the tile.
 Fixed along the way: the SVG favicon had been invalid XML since 2026-08-16
 (`--` in its comment), so no browser drew it. test-pwa now parses it. sw.js v37.
 test-pwa, test-theme, test-portal green; header checked at 390x844 and 1280x800
-in all three themes. Waiting on Lokesh to confirm before merge or push.
+in all three themes. 3dced5f fast-forwarded to main; Pages deploy green; live
+site serves the new icon.svg (image/svg+xml), h1.brand and sw.js v37.
 
 ## Web apps run unchanged; CI on Node 24 (2026-11-14) — pushed to main, deployed
 
