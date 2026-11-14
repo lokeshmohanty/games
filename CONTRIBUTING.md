@@ -100,10 +100,11 @@ git clone https://github.com/lokeshmohanty/games && cd games
 just validate-game ../my-games/laser-chess      # or: node scripts/validate-game.mjs …
 ```
 
-It checks the manifest, that every script is one complete bundle (no
-`import`, no code-splitting), that nothing uses the network, the 5 MB limit,
-and then mounts the game with bots at phone size (390×844) and plays 5 s
-looking for errors and sideways scrolling. The pull-request check runs
+It checks the manifest, the 10 MB limit and (for a WebAssembly game) the
+module, warns about code that looks as if it loads more code or uses the
+network, and then mounts the game with bots at phone size (390×844) and plays
+5 s under the frame's real CSP, failing on any CSP violation, error or
+sideways scrolling. The pull-request check runs
 exactly this.
 
 **The rules** (why: [`docs/sdk.md`](docs/sdk.md)). Rules 1–3 are for games
@@ -172,7 +173,7 @@ workflow, on every PR that touches `registry/`):
 - the entry is well formed and its commit is in your public repo;
 - an update moves your pin forward (never back, never to another branch);
 - every listed game is fetched (and a web app built) at that commit and
-  passes `validate-game` (manifest, one bundle per script, no network, 5 MB,
+  passes `validate-game` (manifest, 10 MB, no CSP violation,
   your `contributor.json`, and a play with bots at phone size — for a web app,
   its server starting and answering; own colours are a warning).
 

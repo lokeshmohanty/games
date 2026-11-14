@@ -53,7 +53,7 @@ import { COLOUR } from "./manifest.mjs";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const OUT = join(ROOT, "community");
-const MAX_GAME_BYTES = 5 * 1024 * 1024;
+const MAX_GAME_BYTES = 10 * 1024 * 1024; // WASM engines welcome (SDK v2); Godot/Unity-sized ones are not
 const MAX_WHEEL_BYTES = 5 * 1024 * 1024; // a web app's server/wheels/, counted apart
 const SHA = /^[0-9a-f]{40}$/;
 const NAME = /^[A-Za-z0-9_.-]+$/;

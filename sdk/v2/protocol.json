@@ -1,0 +1,1346 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://lokeshmohanty.github.io/games/sdk/v2/protocol.json",
+  "title": "Arcade SDK v2 protocol",
+  "description": "Every message between a game's sandboxed frame and the party shell, over one MessagePort. The wire is the API: a game in any language is anything that reads and writes these. Each message is an object { v: 2, t: <type>, ... }. A request carries `id`; its answer is a `reply` with `re` set to that id. Unknown `t` is ignored on both sides, so either side may be newer. docs/sdk-v2.md explains each message; scripts/gen-bindings.mjs turns this file into types for TypeScript, Rust, Go and Python.",
+  "oneOf": [
+    {
+      "$ref": "#/$defs/toShell"
+    },
+    {
+      "$ref": "#/$defs/toFrame"
+    }
+  ],
+  "$defs": {
+    "id": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "A request's number, unique per sender."
+    },
+    "memberId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64,
+      "description": "A party member's id; a bot's starts with `bot_`."
+    },
+    "channel": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64,
+      "description": "A game channel's name. Wired as `g:<name>`, so a game cannot speak on the party's own channels."
+    },
+    "json": {
+      "description": "Any JSON value. An ArrayBuffer anywhere inside travels as binary (frame to shell as a transferable, between phones as `{ \"$bin\": <base64> }`)."
+    },
+    "member": {
+      "type": "object",
+      "required": [
+        "id",
+        "name"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/memberId"
+        },
+        "name": {
+          "type": "string"
+        },
+        "team": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "The seat's side, or `spectator`."
+        },
+        "bot": {
+          "type": "boolean"
+        },
+        "away": {
+          "type": "boolean",
+          "description": "Switched to another app."
+        },
+        "reconnecting": {
+          "type": "number",
+          "description": "Lost connection at this time (ms); the seat is held."
+        }
+      },
+      "additionalProperties": true
+    },
+    "party": {
+      "type": "object",
+      "required": [
+        "self",
+        "host",
+        "members"
+      ],
+      "properties": {
+        "self": {
+          "$ref": "#/$defs/memberId"
+        },
+        "host": {
+          "$ref": "#/$defs/memberId"
+        },
+        "members": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/member"
+          }
+        }
+      }
+    },
+    "theme": {
+      "type": "object",
+      "required": [
+        "name",
+        "mode",
+        "dark",
+        "tokens",
+        "players",
+        "fonts"
+      ],
+      "description": "The page's look as values, so a canvas, WASM or Python game needs no getComputedStyle. DOM games also get the CSS variables (lib/theme.css).",
+      "properties": {
+        "name": {
+          "enum": [
+            "paper",
+            "neon"
+          ]
+        },
+        "mode": {
+          "enum": [
+            "light",
+            "dark",
+            "system"
+          ],
+          "description": "What the player picked; `dark` says what shows now."
+        },
+        "dark": {
+          "type": "boolean",
+          "description": "What shows now."
+        },
+        "tokens": {
+          "type": "object",
+          "description": "Each colour token as `rgba(r, g, b, a)`, camelCased: bg, surface, surface2, ink, ink2, ink3, rule, accent, onAccent, accent2, onAccent2, good, warn, danger, glow.",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "players": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "minItems": 8,
+          "maxItems": 8,
+          "description": "Seat colours in seat order, as rgba()."
+        },
+        "fonts": {
+          "type": "object",
+          "properties": {
+            "display": {
+              "type": "string"
+            },
+            "body": {
+              "type": "string"
+            },
+            "mono": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    },
+    "phase": {
+      "type": "object",
+      "required": [
+        "name"
+      ],
+      "properties": {
+        "name": {
+          "type": "string",
+          "maxLength": 64
+        },
+        "ms": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "How long the phase lasts."
+        },
+        "collect": {
+          "type": "boolean",
+          "description": "Ends early once every seated player has submitted."
+        }
+      }
+    },
+    "timerInfo": {
+      "type": "object",
+      "required": [
+        "round",
+        "rounds",
+        "phase",
+        "index",
+        "msLeft",
+        "secondsLeft",
+        "submitted",
+        "finished"
+      ],
+      "properties": {
+        "round": {
+          "type": "integer"
+        },
+        "rounds": {
+          "type": "integer"
+        },
+        "phase": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "index": {
+          "type": "integer"
+        },
+        "msLeft": {
+          "type": "number"
+        },
+        "secondsLeft": {
+          "type": "integer"
+        },
+        "submitted": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/memberId"
+          }
+        },
+        "finished": {
+          "type": "boolean"
+        }
+      }
+    },
+    "toShell": {
+      "description": "Frame to shell.",
+      "oneOf": [
+        {
+          "$ref": "#/$defs/hello"
+        },
+        {
+          "$ref": "#/$defs/ready"
+        },
+        {
+          "$ref": "#/$defs/reply"
+        },
+        {
+          "$ref": "#/$defs/listen"
+        },
+        {
+          "$ref": "#/$defs/send"
+        },
+        {
+          "$ref": "#/$defs/emitAs"
+        },
+        {
+          "$ref": "#/$defs/meta"
+        },
+        {
+          "$ref": "#/$defs/store.set"
+        },
+        {
+          "$ref": "#/$defs/session.set"
+        },
+        {
+          "$ref": "#/$defs/asset"
+        },
+        {
+          "$ref": "#/$defs/result"
+        },
+        {
+          "$ref": "#/$defs/end"
+        },
+        {
+          "$ref": "#/$defs/hostNew"
+        },
+        {
+          "$ref": "#/$defs/toast"
+        },
+        {
+          "$ref": "#/$defs/ask"
+        },
+        {
+          "$ref": "#/$defs/haptic"
+        },
+        {
+          "$ref": "#/$defs/timer.open"
+        },
+        {
+          "$ref": "#/$defs/timer.do"
+        },
+        {
+          "$ref": "#/$defs/wait.turn"
+        },
+        {
+          "$ref": "#/$defs/wait.pause"
+        },
+        {
+          "$ref": "#/$defs/seal.listen"
+        },
+        {
+          "$ref": "#/$defs/seal.send"
+        },
+        {
+          "$ref": "#/$defs/commit"
+        },
+        {
+          "$ref": "#/$defs/verify"
+        }
+      ]
+    },
+    "toFrame": {
+      "description": "Shell to frame.",
+      "oneOf": [
+        {
+          "$ref": "#/$defs/init"
+        },
+        {
+          "$ref": "#/$defs/roster"
+        },
+        {
+          "$ref": "#/$defs/join"
+        },
+        {
+          "$ref": "#/$defs/leave"
+        },
+        {
+          "$ref": "#/$defs/msg"
+        },
+        {
+          "$ref": "#/$defs/theme.set"
+        },
+        {
+          "$ref": "#/$defs/takeOver"
+        },
+        {
+          "$ref": "#/$defs/unmount"
+        },
+        {
+          "$ref": "#/$defs/reply"
+        },
+        {
+          "$ref": "#/$defs/timer"
+        },
+        {
+          "$ref": "#/$defs/wait"
+        },
+        {
+          "$ref": "#/$defs/paused"
+        },
+        {
+          "$ref": "#/$defs/sealed"
+        }
+      ]
+    },
+    "hello": {
+      "description": "The frame's first message, once it has the port. The shell answers with `init`.",
+      "type": "object",
+      "required": [
+        "v",
+        "t",
+        "sdk"
+      ],
+      "properties": {
+        "v": {
+          "const": 2
+        },
+        "t": {
+          "const": "hello"
+        },
+        "sdk": {
+          "const": 2
+        },
+        "runtime": {
+          "enum": [
+            "js",
+            "wasm",
+            "python"
+          ]
+        },
+        "features": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Services the game will use; informational."
+        }
+      }
+    },
+    "ready": {
+      "description": "The game has drawn its first screen.",
+      "type": "object",
+      "required": [
+        "v",
+        "t"
+      ],
+      "properties": {
+        "v": {
+          "const": 2
+        },
+        "t": {
+          "const": "ready"
+        }
+      }
+    },
+    "reply": {
+      "description": "The answer to a request (either direction). `ok: false` carries `err`; other fields depend on the request.",
+      "type": "object",
+      "required": [
+        "v",
+        "t",
+        "re",
+        "ok"
+      ],
+      "properties": {
+        "v": {
+          "const": 2
+        },
+        "t": {
+          "const": "reply"
+        },
+        "re": {
+          "$ref": "#/$defs/id"
+        },
+        "ok": {
+          "type": "boolean"
+        },
+        "err": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": true
+    },
+    "listen": {
+      "description": "Start hearing a channel. Messages that arrived before are delivered now (up to 500).",
+      "type": "object",
+      "required": [
+        "v",
+        "t",
+        "ch"
+      ],
+      "properties": {
+        "v": {
+          "const": 2
+        },
+        "t": {
+          "const": "listen"
+        },
+        "ch": {
+          "$ref": "#/$defs/channel"
+        }
+      }
+    },
+    "send": {
+      "description": "Send on a channel: to everyone else, or only `to`. Addressed is not private: it may be relayed through another phone (use `seal.send` for that). At most 256 KB.",
+      "type": "object",
+      "required": [
+        "v",
+        "t",
+        "ch",
+        "d"
+      ],
+      "properties": {
+        "v": {
+          "const": 2
+        },
+        "t": {
+          "const": "send"
+        },
+        "ch": {
+          "$ref": "#/$defs/channel"
+        },
+        "d": {
+          "$ref": "#/$defs/json"
+        },
+        "to": {
+          "$ref": "#/$defs/memberId"
+        }
+      }
+    },
+    "emitAs": {
+      "description": "Host only: send as a bot seat it plays, so everyone (the host included) hears it `from` that bot.",
+      "type": "object",
+      "required": [
+        "v",
+        "t",
+        "bot",
+        "ch",
+        "d"
+      ],
+      "properties": {
+        "v": {
+          "const": 2
+        },
+        "t": {
+          "const": "emitAs"
+        },
+        "bot": {
+          "$ref": "#/$defs/memberId"
+        },
+        "ch": {
+          "$ref": "#/$defs/channel"
+        },
+        "d": {
+          "$ref": "#/$defs/json"
+        },
+        "to": {
+          "$ref": "#/$defs/memberId"
+        }
+      }
+    },
+    "meta": {
+      "description": "Merge fields into this player's party record (not id, name, team, bot).",
+      "type": "object",
+      "required": [
+        "v",
+        "t",
+        "patch"
+      ],
+      "properties": {
+        "v": {
+          "const": 2
+        },
+        "t": {
+          "const": "meta"
+        },
+        "patch": {
+          "type": "object"
+        }
+      }
+    },
+    "store.set": {
+      "description": "Keep a value for this game on this device (64 KB of JSON in all). `init.storage` has what was kept. Send `value: null` to clear a key.",
+      "type": "object",
+      "required": [
+        "v",
+        "t",
+        "key",
+        "value"
+      ],
+      "properties": {
+        "v": {
+          "const": 2
+        },
+        "t": {
+          "const": "store.set"
+        },
+        "key": {
+          "type": "string",
+          "maxLength": 200
+        },
+        "value": {
+          "$ref": "#/$defs/json"
+        }
+      }
+    },
+    "session.set": {
+      "description": "Keep a string for this tab, until it closes (survives a reload); null removes it. `init.session` has what was kept.",
+      "type": "object",
+      "required": [
+        "v",
+        "t",
+        "key"
+      ],
+      "properties": {
+        "v": {
+          "const": 2
+        },
+        "t": {
+          "const": "session.set"
+        },
+        "key": {
+          "type": "string",
+          "maxLength": 200
+        },
+        "value": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
+    },
+    "asset": {
+      "description": "Request: a file shipped in the game's folder. Reply `{ bytes: ArrayBuffer, type }`, or `{ text, type }` with `as: \"text\"`.",
+      "type": "object",
+      "required": [
+        "v",
+        "t",
+        "id",
+        "path"
+      ],
+      "properties": {
+        "v": {
+          "const": 2
+        },
+        "t": {
+          "const": "asset"
+        },
+        "id": {
+          "$ref": "#/$defs/id"
+        },
+        "path": {
+          "type": "string",
+          "maxLength": 512
+        },
+        "as": {
+          "enum": [
+            "bytes",
+            "text"
+          ]
+        }
+      }
+    },
+    "result": {
+      "description": "The outcome, for stats and leaderboards (docs/sdk.md, \"Results\"). Every peer may send it; it counts once.",
+      "type": "object",
+      "required": [
+        "v",
+        "t",
+        "r"
+      ],
+      "properties": {
+        "v": {
+          "const": 2
+        },
+        "t": {
+          "const": "result"
+        },
+        "r": {
+          "type": "object"
+        }
+      }
+    },
+    "end": {
+      "description": "Back to the lobby (host).",
+      "type": "object",
+      "required": [
+        "v",
+        "t"
+      ],
+      "properties": {
+        "v": {
+          "const": 2
+        },
+        "t": {
+          "const": "end"
+        }
+      }
+    },
+    "hostNew": {
+      "description": "The player asked to leave and host a new game; the shell asks them first.",
+      "type": "object",
+      "required": [
+        "v",
+        "t"
+      ],
+      "properties": {
+        "v": {
+          "const": 2
+        },
+        "t": {
+          "const": "hostNew"
+        }
+      }
+    },
+    "toast": {
+      "type": "object",
+      "required": [
+        "v",
+        "t",
+        "text"
+      ],
+      "properties": {
+        "v": {
+          "const": 2
+        },
+        "t": {
+          "const": "toast"
+        },
+        "text": {
+          "type": "string",
+          "maxLength": 200
+        },
+        "kind": {
+          "enum": [
+            "",
+            "warn"
+          ]
+        }
+      }
+    },
+    "ask": {
+      "description": "Request: a yes/no question in the shell's own dialog. Reply `{ yes }`.",
+      "type": "object",
+      "required": [
+        "v",
+        "t",
+        "id",
+        "text"
+      ],
+      "properties": {
+        "v": {
+          "const": 2
+        },
+        "t": {
+          "const": "ask"
+        },
+        "id": {
+          "$ref": "#/$defs/id"
+        },
+        "text": {
+          "type": "string",
+          "maxLength": 300
+        },
+        "ok": {
+          "type": "string",
+          "maxLength": 30
+        },
+        "cancel": {
+          "type": "string",
+          "maxLength": 30
+        }
+      }
+    },
+    "haptic": {
+      "description": "A vibration, where the phone has one: ms, or a pattern of on/off ms (at most 10 steps, 1 s each).",
+      "type": "object",
+      "required": [
+        "v",
+        "t",
+        "ms"
+      ],
+      "properties": {
+        "v": {
+          "const": 2
+        },
+        "t": {
+          "const": "haptic"
+        },
+        "ms": {
+          "oneOf": [
+            {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 1000,
+              "title": "Ms"
+            },
+            {
+              "type": "array",
+              "items": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 1000
+              },
+              "maxItems": 10,
+              "title": "Pattern"
+            }
+          ]
+        }
+      }
+    },
+    "timer.open": {
+      "description": "Every peer: open a round-and-phase clock (lib/rounds.js). The host's runs it; everyone hears `timer` events. Collecting phases end early once every seated player submitted; with `bots`, a bot seat's turn arrives as a `timer` `bot` event for the host to answer with `submitFor`.",
+      "type": "object",
+      "required": [
+        "v",
+        "t",
+        "name",
+        "phases"
+      ],
+      "properties": {
+        "v": {
+          "const": 2
+        },
+        "t": {
+          "const": "timer.open"
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 32
+        },
+        "rounds": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "phases": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/phase"
+          },
+          "minItems": 1,
+          "maxItems": 32
+        },
+        "bots": {
+          "type": "boolean"
+        }
+      }
+    },
+    "timer.do": {
+      "description": "Drive an open clock. start, next, adopt, sync, submitFor: host only. submit: anyone, for the phase open now. close: stop hearing it.",
+      "type": "object",
+      "required": [
+        "v",
+        "t",
+        "name",
+        "op"
+      ],
+      "properties": {
+        "v": {
+          "const": 2
+        },
+        "t": {
+          "const": "timer.do"
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 32
+        },
+        "op": {
+          "enum": [
+            "start",
+            "submit",
+            "submitFor",
+            "next",
+            "adopt",
+            "sync",
+            "close"
+          ]
+        },
+        "value": {
+          "$ref": "#/$defs/json"
+        },
+        "bot": {
+          "$ref": "#/$defs/memberId"
+        },
+        "round": {
+          "type": "integer"
+        },
+        "index": {
+          "type": "integer"
+        }
+      }
+    },
+    "wait.turn": {
+      "description": "Whose move it is (null: nobody's, or a bot's). While it is a player who has lost connection or left the app, the shell shows everyone who and for how long, and after 30 s lets the host WAIT, SKIP or END. SKIP arrives as `wait` `skip`.",
+      "type": "object",
+      "required": [
+        "v",
+        "t",
+        "who"
+      ],
+      "properties": {
+        "v": {
+          "const": 2
+        },
+        "t": {
+          "const": "wait.turn"
+        },
+        "who": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/memberId"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    "wait.pause": {
+      "description": "A real-time game: pause everyone while the host is away (it runs the clock), resume after 3-2-1. `paused` events follow.",
+      "type": "object",
+      "required": [
+        "v",
+        "t",
+        "on"
+      ],
+      "properties": {
+        "v": {
+          "const": 2
+        },
+        "t": {
+          "const": "wait.pause"
+        },
+        "on": {
+          "type": "boolean"
+        }
+      }
+    },
+    "seal.listen": {
+      "description": "Start hearing a sealed (end-to-end encrypted) channel.",
+      "type": "object",
+      "required": [
+        "v",
+        "t",
+        "ch"
+      ],
+      "properties": {
+        "v": {
+          "const": 2
+        },
+        "t": {
+          "const": "seal.listen"
+        },
+        "ch": {
+          "$ref": "#/$defs/channel"
+        }
+      }
+    },
+    "seal.send": {
+      "description": "Request: send to one player, encrypted so a phone relaying it cannot read it (lib/secrets.js). Reply ok, or `ok: false` with `err`.",
+      "type": "object",
+      "required": [
+        "v",
+        "t",
+        "id",
+        "ch",
+        "to",
+        "d"
+      ],
+      "properties": {
+        "v": {
+          "const": 2
+        },
+        "t": {
+          "const": "seal.send"
+        },
+        "id": {
+          "$ref": "#/$defs/id"
+        },
+        "ch": {
+          "$ref": "#/$defs/channel"
+        },
+        "to": {
+          "$ref": "#/$defs/memberId"
+        },
+        "d": {
+          "$ref": "#/$defs/json"
+        }
+      }
+    },
+    "commit": {
+      "description": "Request: a commitment to `value`. Reply `{ digest, nonce }`: publish the digest now; reveal value and nonce later, and anyone can `verify`.",
+      "type": "object",
+      "required": [
+        "v",
+        "t",
+        "id",
+        "value"
+      ],
+      "properties": {
+        "v": {
+          "const": 2
+        },
+        "t": {
+          "const": "commit"
+        },
+        "id": {
+          "$ref": "#/$defs/id"
+        },
+        "value": {
+          "$ref": "#/$defs/json"
+        }
+      }
+    },
+    "verify": {
+      "description": "Request: does `value` with `nonce` match `digest`? Reply `{ valid }`.",
+      "type": "object",
+      "required": [
+        "v",
+        "t",
+        "id",
+        "digest",
+        "nonce",
+        "value"
+      ],
+      "properties": {
+        "v": {
+          "const": 2
+        },
+        "t": {
+          "const": "verify"
+        },
+        "id": {
+          "$ref": "#/$defs/id"
+        },
+        "digest": {
+          "type": "string"
+        },
+        "nonce": {
+          "type": "string"
+        },
+        "value": {
+          "$ref": "#/$defs/json"
+        }
+      }
+    },
+    "init": {
+      "description": "Everything the game starts from, answering `hello`.",
+      "type": "object",
+      "required": [
+        "v",
+        "t",
+        "game",
+        "party",
+        "seats",
+        "local",
+        "canEnd",
+        "storage",
+        "session",
+        "theme",
+        "features"
+      ],
+      "properties": {
+        "v": {
+          "const": 2
+        },
+        "t": {
+          "const": "init"
+        },
+        "game": {
+          "type": "object",
+          "required": [
+            "id",
+            "name"
+          ],
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "name": {
+              "type": "string"
+            }
+          }
+        },
+        "party": {
+          "$ref": "#/$defs/party"
+        },
+        "seats": {
+          "type": "object",
+          "required": [
+            "min",
+            "max"
+          ],
+          "properties": {
+            "min": {
+              "type": "integer"
+            },
+            "max": {
+              "type": "integer"
+            }
+          }
+        },
+        "local": {
+          "type": "boolean",
+          "description": "One phone passed around (manifest kind local)."
+        },
+        "canEnd": {
+          "type": "boolean",
+          "description": "Whether `end` does anything here."
+        },
+        "storage": {
+          "type": "object",
+          "description": "What `store.set` kept."
+        },
+        "session": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          },
+          "description": "What `session.set` kept."
+        },
+        "theme": {
+          "$ref": "#/$defs/theme"
+        },
+        "features": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Services this shell answers: timer, wait, seal, haptic, bin."
+        },
+        "wasm": {
+          "$ref": "#/$defs/json",
+          "description": "With manifest `runtime: \"wasm\"`: the module's bytes, an ArrayBuffer, fetched while the frame was built (sdk/v2/runtime.js also puts it on `arcade.wasm`)."
+        }
+      }
+    },
+    "roster": {
+      "description": "The party changed (someone joined, left, switched team, went away or came back, or the crown moved). Sent only on a change.",
+      "type": "object",
+      "required": [
+        "v",
+        "t",
+        "party"
+      ],
+      "properties": {
+        "v": {
+          "const": 2
+        },
+        "t": {
+          "const": "roster"
+        },
+        "party": {
+          "$ref": "#/$defs/party"
+        }
+      }
+    },
+    "join": {
+      "type": "object",
+      "required": [
+        "v",
+        "t",
+        "who"
+      ],
+      "properties": {
+        "v": {
+          "const": 2
+        },
+        "t": {
+          "const": "join"
+        },
+        "who": {
+          "$ref": "#/$defs/memberId"
+        },
+        "info": {
+          "type": "object"
+        }
+      }
+    },
+    "leave": {
+      "type": "object",
+      "required": [
+        "v",
+        "t",
+        "who"
+      ],
+      "properties": {
+        "v": {
+          "const": 2
+        },
+        "t": {
+          "const": "leave"
+        },
+        "who": {
+          "$ref": "#/$defs/memberId"
+        },
+        "info": {
+          "type": "object"
+        }
+      }
+    },
+    "msg": {
+      "description": "A message on a channel the frame listens to.",
+      "type": "object",
+      "required": [
+        "v",
+        "t",
+        "ch",
+        "d",
+        "from"
+      ],
+      "properties": {
+        "v": {
+          "const": 2
+        },
+        "t": {
+          "const": "msg"
+        },
+        "ch": {
+          "$ref": "#/$defs/channel"
+        },
+        "d": {
+          "$ref": "#/$defs/json"
+        },
+        "from": {
+          "$ref": "#/$defs/memberId"
+        }
+      }
+    },
+    "theme.set": {
+      "description": "The page's theme changed: redraw.",
+      "type": "object",
+      "required": [
+        "v",
+        "t",
+        "theme"
+      ],
+      "properties": {
+        "v": {
+          "const": 2
+        },
+        "t": {
+          "const": "theme.set"
+        },
+        "theme": {
+          "$ref": "#/$defs/theme"
+        }
+      }
+    },
+    "takeOver": {
+      "description": "Request: the crown moved to this phone mid-game. Reply ok if the game carries on as host from what it knows, `ok: false` if it cannot (the party goes back to the lobby).",
+      "type": "object",
+      "required": [
+        "v",
+        "t",
+        "id"
+      ],
+      "properties": {
+        "v": {
+          "const": 2
+        },
+        "t": {
+          "const": "takeOver"
+        },
+        "id": {
+          "$ref": "#/$defs/id"
+        }
+      }
+    },
+    "unmount": {
+      "description": "The frame is about to be removed. Best effort: the shell removes the frame straight after posting it, so a game must not rely on finishing work here.",
+      "type": "object",
+      "required": [
+        "v",
+        "t"
+      ],
+      "properties": {
+        "v": {
+          "const": 2
+        },
+        "t": {
+          "const": "unmount"
+        }
+      }
+    },
+    "timer": {
+      "description": "A clock event. phase: a phase began (every peer). tick: about once a second. collect: host only, a collecting phase ended, with `entries` (id → value). bot: host only, a bot seat should submit (answer with `timer.do` submitFor). finish: the last round ended.",
+      "type": "object",
+      "required": [
+        "v",
+        "t",
+        "name",
+        "ev",
+        "info"
+      ],
+      "properties": {
+        "v": {
+          "const": 2
+        },
+        "t": {
+          "const": "timer"
+        },
+        "name": {
+          "type": "string"
+        },
+        "ev": {
+          "enum": [
+            "phase",
+            "tick",
+            "collect",
+            "bot",
+            "finish"
+          ]
+        },
+        "info": {
+          "$ref": "#/$defs/timerInfo"
+        },
+        "entries": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/json"
+          },
+          "description": "With `collect`: each seated player's (or bot's) id → what they submitted."
+        },
+        "bot": {
+          "$ref": "#/$defs/memberId"
+        }
+      }
+    },
+    "wait": {
+      "description": "The host chose SKIP TURN for `who`: apply the game's rule for passing a turn.",
+      "type": "object",
+      "required": [
+        "v",
+        "t",
+        "ev",
+        "who"
+      ],
+      "properties": {
+        "v": {
+          "const": 2
+        },
+        "t": {
+          "const": "wait"
+        },
+        "ev": {
+          "const": "skip"
+        },
+        "who": {
+          "$ref": "#/$defs/memberId"
+        }
+      }
+    },
+    "paused": {
+      "description": "With `wait.pause` on: stop or resume the game's clock and input.",
+      "type": "object",
+      "required": [
+        "v",
+        "t",
+        "on"
+      ],
+      "properties": {
+        "v": {
+          "const": 2
+        },
+        "t": {
+          "const": "paused"
+        },
+        "on": {
+          "type": "boolean"
+        }
+      }
+    },
+    "sealed": {
+      "description": "A sealed message, decrypted.",
+      "type": "object",
+      "required": [
+        "v",
+        "t",
+        "ch",
+        "d",
+        "from"
+      ],
+      "properties": {
+        "v": {
+          "const": 2
+        },
+        "t": {
+          "const": "sealed"
+        },
+        "ch": {
+          "$ref": "#/$defs/channel"
+        },
+        "d": {
+          "$ref": "#/$defs/json"
+        },
+        "from": {
+          "$ref": "#/$defs/memberId"
+        },
+        "to": {
+          "$ref": "#/$defs/memberId",
+          "description": "Set when the host sealed a message to a bot it plays: the bot it was for."
+        }
+      }
+    }
+  }
+}

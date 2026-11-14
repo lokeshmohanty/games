@@ -1,5 +1,9 @@
 # The game SDK (v1) — writing a game for the platform
 
+> **v2 is built** ([sdk-v2.md](sdk-v2.md), 2026-11-14): a message protocol
+> any language can speak, with WebAssembly and shell services. v1 keeps
+> working until every game is ported (Phase 3), then it is dropped.
+
 *Started 2026-11-13 on branch `platform`. Plan of record:
 `~/.claude/plans/1-a-b-2-generic-whistle.md`. Status: the bridge, the frame
 loader, the catalogs and the registry are built; all ten games run framed
@@ -268,9 +272,12 @@ https site — tested only arcade-on-127.0.0.1 so far (`just test-devkit`).
 `just validate-game <folder>…` (`scripts/validate-game.mjs`; `--static`
 skips the browser): manifest; entry page exists; scripts/stylesheets inside
 the folder and present; no runtime code loading (import, `import()`,
-`importScripts`, `new Worker("…")`); no network (fetch, XHR, WebSocket,
-EventSource, remote URLs); ≤ 5 MB; then, through the dev kit, mounted with
-bots at 390×844 for 5 s with no page/console error and no sideways scroll.
+`importScripts`, `new Worker("…")`) and no network (fetch, XHR, WebSocket,
+EventSource) — **warnings since 2026-11-14** (sdk-v2.md: compiler glue carries
+such paths; the frame's CSP is what holds, and a CSP violation fails the
+browser check); no remote URLs; ≤ 10 MB (was 5); then, through the dev kit,
+mounted with bots at 390×844 for 5 s with no page/console error and no
+sideways scroll.
 
 `.github/workflows/registry-check.yml` runs it on every PR touching
 `registry/`, `games/`, `sdk/`, `lib/` or the checking scripts — no secrets,

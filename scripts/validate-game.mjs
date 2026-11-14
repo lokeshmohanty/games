@@ -5,13 +5,17 @@
 //   node scripts/validate-game.mjs --static path/to/game         no browser
 //
 // Static: game.json is valid (scripts/manifest.mjs); the entry page exists;
-// every <script src> and stylesheet is inside the folder and exists; no script
-// loads code at runtime (import, import(), importScripts, new Worker(url)) —
-// the shell inlines each script, so it must be complete (docs/sdk.md rule 1);
-// nothing reaches for the network (fetch, XMLHttpRequest, WebSocket,
-// EventSource, http(s) URLs in src/href) — the frame's CSP would block it
-// anyway; the folder is at most 5 MB. A literal colour is a warning, not a
-// failure: a game may keep its own look (Lokesh, 2026-11-14).
+// every <script src> and stylesheet is inside the folder and exists; the entry
+// page names no remote URL; a WASM game's module is there and is WebAssembly;
+// the folder is at most 10 MB. Warnings, not failures: a literal colour (a
+// game may keep its own look, Lokesh 2026-11-14), and code that looks as if
+// it loads more code or uses the network (import, fetch, new Worker…).
+// Those used to fail, but compiler glue (wasm-bindgen, Emscripten) carries
+// such paths it never takes, and the frame's CSP blocks them at runtime: the
+// browser check below fails on any CSP violation (2026-11-14, SDK v2).
+// WebRTC is still a FAILURE: the CSP does not cover RTCPeerConnection (a
+// sandboxed frame under the bridge's CSP reached a STUN server in the review
+// of 2026-11-14), so nothing at runtime would stop it.
 //
 // A web app (`app`, docs/sdk.md) is checked in its published form — the
 // folder scripts/fetch-community.mjs builds. Its scripts are a bundler's
@@ -22,8 +26,8 @@
 //
 // Browser: the game is served with the dev kit and mounted in the real party
 // at 390x844 with every other seat a bot (or alone, for a local game); it must
-// come up in its sandboxed frame, run 5 s with no page error and no console
-// error, and not scroll sideways.
+// come up in its sandboxed frame, run 5 s under the frame's real CSP with no
+// violation, no page error and no console error, and not scroll sideways.
 
 import { spawn } from "node:child_process";
 import { existsSync, globSync, readdirSync, readFileSync, statSync } from "node:fs";
@@ -35,7 +39,8 @@ import { COLOUR, validateManifest } from "./manifest.mjs";
 import { gameFrame, serve } from "./serve.mjs";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const MAX_BYTES = 5 * 1024 * 1024;
+const MAX_BYTES = 10 * 1024 * 1024;
+const MAX_WHEELS = 5 * 1024 * 1024;
 const TIMEOUT = 30_000;
 
 const args = process.argv.slice(2);
@@ -57,9 +62,12 @@ const warn = (label, ok, detail = "") => {
 	return ok;
 };
 
+// Build output and dependencies an author keeps beside the game but git
+// ignores (cargo's target/, npm's node_modules/) never ship: not counted.
+const UNSHIPPED = new Set(["target", "node_modules", ".git"]);
 const walk = (dir) =>
 	readdirSync(dir, { withFileTypes: true }).flatMap((d) =>
-		d.isDirectory() ? walk(join(dir, d.name)) : [join(dir, d.name)],
+		d.isDirectory() ? (UNSHIPPED.has(d.name) ? [] : walk(join(dir, d.name))) : [join(dir, d.name)],
 	);
 
 // Code that loads more code, or talks to the network. Comments are not
@@ -70,6 +78,11 @@ const RUNTIME_LOAD = [
 	[/\bimport\s*\(/, "a dynamic import()"],
 	[/\bimportScripts\s*\(/, "importScripts()"],
 	[/\bnew\s+(Shared)?Worker\s*\(\s*["'`]/, "a Worker loaded from a file"],
+];
+// What the frame's CSP does not stop, so the static check is all there is.
+const UNCONTAINED = [
+	[/\b(?:webkit)?RTCPeerConnection\b/, "RTCPeerConnection (WebRTC is not covered by the frame's CSP)"],
+	[/\bRTCDataChannel\b/, "RTCDataChannel"],
 ];
 const NETWORK = [
 	[/\bfetch\s*\(/, "fetch()"],
@@ -119,9 +132,11 @@ function checkStatic(dir) {
 	const code = [...scripts.map((p) => [at(p), readFileSync(p, "utf8")]), ...inline.map((c, i) => [`inline script ${i + 1}`, c])];
 	for (const [name, text] of m.app ? [] : code) {
 		const loads = RUNTIME_LOAD.filter(([re]) => re.test(text)).map(([, what]) => what);
-		check(`${name} is one complete bundle`, !loads.length, `found ${[...new Set(loads)].join(", ")} — bundle it into one file`);
+		warn(`${name} looks like one complete bundle`, !loads.length, `found ${[...new Set(loads)].join(", ")} — the shell inlines each script, so it must not load another; fine if that path is never taken`);
+		const rtc = UNCONTAINED.filter(([re]) => re.test(text)).map(([, what]) => what);
+		check(`${name} opens no connection of its own`, !rtc.length, `found ${rtc.join(", ")} — a game talks to other phones through the party's channels`);
 		const net = NETWORK.filter(([re]) => re.test(text)).map(([, what]) => what);
-		check(`${name} does not use the network`, !net.length, `found ${net.join(", ")} — ship files in the folder and use ctx.assets.url()`);
+		warn(`${name} looks as if it does not use the network`, !net.length, `found ${net.join(", ")} — the frame may fetch nothing; ship files in the folder (sdk v2 \`asset\`, v1 ctx.assets.url()); fine if that path is never taken`);
 	}
 	// The arcade's theme (lib/theme.css): colours come from its tokens or
 	// NeonArcade.palette(), so the game follows the player's theme.
@@ -137,10 +152,14 @@ function checkStatic(dir) {
 	const all = walk(dir);
 	const size = (list) => list.reduce((n, f) => n + statSync(f).size, 0);
 	const bytes = size(all.filter((f) => !m.app || !f.startsWith(wheelDir)));
-	check(`the folder is at most 5 MB (${(bytes / 1048576).toFixed(2)} MB)`, bytes <= MAX_BYTES);
+	check(`the folder is at most 10 MB (${(bytes / 1048576).toFixed(2)} MB)`, bytes <= MAX_BYTES);
+	if (m.wasm && check(`its WebAssembly module (${m.wasm}) exists`, existsSync(join(dir, m.wasm)))) {
+		const head = readFileSync(join(dir, m.wasm)).subarray(0, 4);
+		check("…and is WebAssembly", head.equals(Buffer.from([0, 0x61, 0x73, 0x6d])));
+	}
 	if (m.app?.server) {
 		const wheels = size(all.filter((f) => f.startsWith(wheelDir)));
-		check(`its Python wheels are at most 5 MB (${(wheels / 1048576).toFixed(2)} MB)`, wheels <= MAX_BYTES);
+		check(`its Python wheels are at most 5 MB (${(wheels / 1048576).toFixed(2)} MB)`, wheels <= MAX_WHEELS);
 		const files = m.app.server.files ?? [];
 		check("its server's files are all there", files.length > 0 && files.every((f) => existsSync(join(dir, m.app.server.path, f))));
 		warn("every Python package it imports runs in the browser", !m.app.server.stubs?.length, `imported as stubs: ${m.app.server.stubs?.join(", ")}`);
@@ -188,11 +207,13 @@ async function checkBrowser(games) {
 		const ctx = await browser.newContext({ viewport: { width: 390, height: 844 } });
 		const page = await ctx.newPage();
 		const errors = [];
+		const csp = [];
 		page.on("pageerror", (e) => errors.push(e.message));
 		page.on("console", (msg) => {
 			// The party's own room-server probe may fail offline in CI; the game's
 			// errors are what this checks.
-			if (msg.type() === "error" && !/room server|Failed to load resource/i.test(msg.text())) errors.push(msg.text());
+			if (msg.type() !== "error" || /room server|Failed to load resource/i.test(msg.text())) return;
+			(/Content Security Policy|Refused to/i.test(msg.text()) ? csp : errors).push(msg.text());
 		});
 		try {
 			const q = new URLSearchParams({ dev: `http://127.0.0.1:${p}/`, game: `dev/${m.id}`, fresh: "1", rs: "http://127.0.0.1:1" });
@@ -226,6 +247,7 @@ async function checkBrowser(games) {
 			await page.waitForTimeout(5000);
 			const width = await frame.evaluate(() => [document.documentElement.scrollWidth, innerWidth]);
 			check("it does not scroll sideways", width[0] <= width[1], `${width[0]} > ${width[1]}`);
+			check("nothing it does breaks the frame's CSP (no network, no outside code)", !csp.length, csp.slice(0, 3).join(" | "));
 			check("5 s of play with no page or console error", !errors.length, errors.slice(0, 3).join(" | "));
 		} catch (err) {
 			check("it starts", false, err.message.split("\n")[0]);

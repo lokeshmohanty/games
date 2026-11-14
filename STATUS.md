@@ -47,7 +47,7 @@ stalls (fails on the old bot). test-neon-bid and test-bots are green.
 sw.js v38 shipped with this; the Tug of War removal (session games-99, shared
 tree, uncommitted) also bumped to v38 and must take v39.
 
-## Platform v2 refactor — Phase 1 (speed) done on branch `platform-v2`, NOT merged (2026-11-14)
+## Platform v2 refactor — Phases 1 (speed) and 2 (SDK v2) done on branch `platform-v2`, NOT merged (2026-11-14)
 
 Lokesh asked for a fast, slick platform and a language-neutral game contract.
 Plan of record: `~/.claude/plans/ethereal-honking-beaver.md`; decisions in
@@ -58,8 +58,18 @@ Phase 1 (docs/perf.md, `just perf`): cold PLAY WITH BOTS 4.9 s + tap → 2.2 s,
 no tap; warm 1.8 s → 0.29 s; cold portal 5.7 MB / 30 s → 471 KB / 2.6 s; FCP
 unchanged. Code served from one versioned snapshot; VERSION is now a content
 hash (`just sw-version`, checked by `just test`). Full `just test` green.
-**Awaiting Lokesh's confirmation before merging to main.** Not met: party.html
-JS ≤ 300 KB (403 KB) — needs Phase 4's bundling.
+Not met: party.html JS ≤ 300 KB (403 KB, now 426 KB with sdk-host.js) —
+needs Phase 4's bundling.
+Phase 2 (docs/sdk-v2.md): the contract is `sdk/v2/protocol.json`, messages
+over a MessagePort; `lib/sdk-host.js` answers them; the clock, turn-wait,
+host pause and sealing are shell services; WASM allowed (CSP
+'wasm-unsafe-eval', module bytes in `init`); bindings for TS/Rust/Go/Python
+(`just bindings`); examples in JS and Rust; `just test-protocol` (3 peers,
+every message schema-checked). Cap 10 MB; WebRTC is a static validate-game
+failure. Reviewer pass done, findings fixed. Re-measure caught a Phase 1
+gif-fallback blow-up (fixed). Next: Phase 3 (managed state, adapters, port
+the 10 games, drop v1). Open Rust-adapter notes in sdk-v2.md.
+**Awaiting Lokesh's confirmation before merging either phase to main.**
 
 ## New app mark, "linked players" (2026-11-14): pushed to main, deployed
 

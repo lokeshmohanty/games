@@ -117,6 +117,7 @@ repo over `http://127.0.0.1`; `file://` and `http://<lan-ip>` will not do.
 - `memory/room-server.md` — the room server's invariants (mesh is
   authoritative, room server is advisory), the progressive-enhancement rule,
   and the traps that caught two test failures.
+- `memory/frame-csp-gaps.md` — WebRTC and self-navigation escape the game frame's CSP; why validate-game still fails RTCPeerConnection statically.
 - `memory/gaming-platform-vision.md` — the 2026-11-14 refactor directive and
   its decisions (two-layer SDK v2, managed state, WASM, Solid SPA, phase order).
 - `memory/web-apps.md` — web apps run unchanged (manifest `app`): what a

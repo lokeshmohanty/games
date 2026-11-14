@@ -40,7 +40,7 @@ serve-lan:
     python3 -m http.server {{port}}
 
 # Every suite, in the order they get slower.
-test: check-precache check-sw-version check-colours community test-stats test-submission test-codec test-hub test-worker-do test-plumbing test-rules test-room test-party test-scan test-pwa test-bots test-devkit test-webapp test-theme test-portal
+test: check-precache check-sw-version check-bindings check-colours community test-stats test-submission test-codec test-hub test-worker-do test-plumbing test-rules test-room test-party test-scan test-pwa test-bots test-devkit test-protocol test-webapp test-theme test-portal
 
 # No browser needed — the signalling codec round-trip.
 test-codec:
@@ -132,6 +132,10 @@ test-scan:
 test-pwa:
     node scripts/test-pwa.mjs
 
+# SDK v2: three peers play a fixture that uses every service; every message is checked against sdk/v2/protocol.json.
+test-protocol:
+    node scripts/test-protocol.mjs
+
 # Every game playable by one person, and the mobile layouts at 390x844.
 test-bots:
     node scripts/test-bots.mjs
@@ -155,6 +159,17 @@ sw-version:
 check-sw-version:
     node scripts/sw-version.mjs --check
 
+# sdk/v2/bindings/ is generated from sdk/v2/protocol.json: rewrite it after
+# changing the protocol (scripts/gen-bindings.mjs). `just test` checks it.
+
+# Regenerate the SDK v2 bindings (TS, Rust, Go, Python) from protocol.json.
+bindings:
+    node scripts/gen-bindings.mjs
+
+# Fail if the SDK v2 bindings do not match protocol.json.
+check-bindings:
+    node scripts/gen-bindings.mjs --check
+
 # Catches the one mistake sw.js cannot warn about: a page or module added to the
 # repo but not to `SHELL`, which simply is not there offline.
 
@@ -171,6 +186,7 @@ check-precache:
         ...fs.readdirSync("games", { withFileTypes: true }).filter((d) => d.isDirectory()).flatMap((d) => \
           fs.readdirSync("games/" + d.name).filter((f) => /\.(html|js|css|json)$/.test(f) && !f.startsWith("test-")).map((f) => `games/${d.name}/${f}`)), \
         ...fs.readdirSync("sdk/v1").filter((f) => f.endsWith(".js")).map((f) => "sdk/v1/" + f), \
+        ...fs.readdirSync("sdk/v2").filter((f) => f.endsWith(".js")).map((f) => "sdk/v2/" + f), \
       ]; \
       const missing = onDisk.filter((f) => !listed.has(f)); \
       if (missing.length) { console.error("not precached by sw.js:\n  " + missing.join("\n  ")); process.exit(1); } \

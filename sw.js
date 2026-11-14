@@ -38,7 +38,7 @@
 
 // A hash of SHELL's files and this one — written by scripts/sw-version.mjs,
 // never by hand.
-const VERSION = "arcade-9366b9422565";
+const VERSION = "arcade-1f8a957e4535";
 // Network-first for code, for development (see above).
 const DEV = ["localhost", "127.0.0.1", "[::1]"].includes(self.location.hostname) && !new URL(self.location.href).searchParams.has("snapshot");
 
@@ -82,6 +82,7 @@ const SHELL = [
 	"./lib/pwa.js",
 	"./lib/load.js",
 	"./lib/bridge.js",
+	"./lib/sdk-host.js",
 	"./lib/py-server.js",
 	"./lib/stats.js",
 	"./lib/portal.js",
@@ -95,6 +96,7 @@ const SHELL = [
 	"./lib/propose.js",
 	"./lib/catalog.js",
 	"./sdk/v1/client.js",
+	"./sdk/v2/runtime.js",
 	"./sdk/v1/web-shim.js",
 	"./sdk/v1/arcade_server.py",
 	"./games/connect4/index.html",

@@ -1,0 +1,15 @@
+{
+  "sdk": 2,
+  "id": "tic-tac-toe",
+  "name": "TIC TAC TOE",
+  "blurb": "Three in a row. The SDK v2 example, in plain JavaScript.",
+  "entry": "index.html",
+  "kind": "duel",
+  "shape": "teams",
+  "seats": { "min": 2, "max": 2 },
+  "bots": true,
+  "tags": ["alone", "duel", "quick"],
+  "license": "MIT",
+  "author": "lokeshmohanty",
+  "repo": "https://github.com/lokeshmohanty/games"
+}

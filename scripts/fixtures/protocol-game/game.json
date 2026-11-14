@@ -1,0 +1,14 @@
+{
+  "sdk": 2,
+  "id": "protocol-game",
+  "name": "PROTOCOL CHECK",
+  "blurb": "A fixture for scripts/test-protocol.mjs: says every SDK v2 message once.",
+  "entry": "index.html",
+  "kind": "ffa",
+  "shape": "free",
+  "seats": { "min": 1, "max": 6 },
+  "bots": true,
+  "license": "MIT",
+  "author": "lokeshmohanty",
+  "repo": "https://github.com/lokeshmohanty/games"
+}

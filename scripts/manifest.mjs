@@ -5,6 +5,7 @@
 // bots or results.
 export const KINDS = ["duel", "ffa", "teams", "coop", "local", "shared"];
 export const SHAPES = ["teams", "coop", "free"];
+export const RUNTIMES = ["js", "wasm"];
 // Licences that let the platform serve a copy of the game (redistribution).
 export const LICENSES = ["MIT", "Apache-2.0", "BSD-2-Clause", "BSD-3-Clause", "ISC", "MPL-2.0", "GPL-3.0", "AGPL-3.0", "0BSD", "Unlicense"];
 
@@ -59,7 +60,12 @@ export function validateApp(a) {
 export function validateManifest(m) {
 	const p = [];
 	if (!m || typeof m !== "object") return ["not a JSON object"];
-	if (m.sdk !== 1) p.push('"sdk" must be 1');
+	if (m.sdk !== 1 && m.sdk !== 2) p.push('"sdk" must be 1 or 2');
+	// SDK v2 (docs/sdk-v2.md): a game in JavaScript, or compiled to WebAssembly.
+	if (m.runtime != null && (m.sdk !== 2 || !RUNTIMES.includes(m.runtime))) p.push(`"runtime" needs "sdk": 2 and is one of ${RUNTIMES.join(", ")}`);
+	if ((m.runtime === "wasm") !== (m.wasm != null)) p.push('"runtime": "wasm" goes with "wasm", the module\'s path, and only with it');
+	if (m.wasm != null && (typeof m.wasm !== "string" || !PATH.test(m.wasm) || !m.wasm.endsWith(".wasm"))) p.push('"wasm" must be a .wasm path inside the game folder');
+	if (m.sdk === 2 && m.app != null) p.push('a web app ("app") stays on "sdk": 1 for now');
 	if (!ID.test(m.id ?? "")) p.push('"id" must be 2–32 of a-z, 0-9, -');
 	if (typeof m.name !== "string" || !m.name || m.name.length > 40) p.push('"name" must be 1–40 characters');
 	if (m.blurb != null && (typeof m.blurb !== "string" || m.blurb.length > 140)) p.push('"blurb" must be at most 140 characters');

@@ -1,0 +1,3 @@
+# Cargo's build folder. pkg/ (the built module and its glue) is committed:
+# the arcade's CI never builds contributor code.
+target/

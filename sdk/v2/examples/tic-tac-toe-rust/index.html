@@ -1,0 +1,17 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Tic Tac Toe</title>
+    <link rel="stylesheet" href="tic-tac-toe.css" />
+  </head>
+  <body>
+    <!-- Only your own files: the platform inlines sdk/v2/runtime.js first,
+         and hands over pkg/tic_tac_toe_rust_bg.wasm (game.json "wasm") in init. -->
+    <p id="hud" role="status"></p>
+    <div id="ttt"></div>
+    <div id="over" hidden><div class="card"><h2></h2><button class="neon-btn">PLAY AGAIN</button></div></div>
+    <script src="pkg/tic_tac_toe_rust.js"></script>
+    <script src="glue.js"></script>
+  </body>
+</html>
