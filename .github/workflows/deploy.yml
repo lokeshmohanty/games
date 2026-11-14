@@ -87,13 +87,25 @@ jobs:
           path: .
       # The offline snapshot's VERSION, rehashed over the community games too:
       # a new pin is a new deploy for every installed copy (sw.js).
-      - name: Version the offline copy
-        run: node scripts/sw-version.mjs --with-community
+      # The shell is one page built by Vite (docs/spa.md): pnpm build runs the
+      # type check, vite build, and scripts/assemble.mjs, which copies what is
+      # served as-is (games, sdk, lib, assets, the community games fetched
+      # above) beside it and writes sw.js with a VERSION over exactly that.
+      - name: Setup Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+      - name: Install pnpm
+        run: npm install -g pnpm@12.9.0
+      - name: Install the shell's dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Build the site
+        run: pnpm build
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v5
         with:
-          # Upload entire repository
-          path: '.'
+          # The built site (pnpm build), not the repository.
+          path: 'dist'
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v5

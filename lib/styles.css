@@ -1018,3 +1018,17 @@ canvas {
     padding: 6px 10px;
   }
 }
+
+/* The one-page shell (src/App.tsx): a live party behind another view. */
+.back-to-game {
+  position: fixed;
+  left: 50%;
+  bottom: max(16px, env(safe-area-inset-bottom));
+  transform: translateX(-50%);
+  z-index: 47; /* over the views; under the notices (60) */
+  box-shadow: 0 4px 16px var(--scrim);
+}
+.party-leave {
+  justify-content: center;
+  margin-top: 24px;
+}

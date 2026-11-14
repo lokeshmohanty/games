@@ -34,9 +34,17 @@ jobs:
         run: git fetch -q origin "${{ github.base_ref }}"
       - uses: actions/setup-node@v7
         with:
-          node-version: 22
-      - name: Install Playwright (driver only; the runner's Chrome is used)
-        run: npm install --no-save playwright@1.62.1
+          node-version: 24
+      # The shell is built (docs/spa.md): validate-game mounts the games in it.
+      # Playwright is a dev dependency: the driver only, the runner's Chrome.
+      - name: Install pnpm
+        run: npm install -g pnpm@12.9.0
+      - name: Install the shell's dependencies
+        env:
+          PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: "1"
+        run: pnpm install --frozen-lockfile
+      - name: Build the site
+        run: pnpm build
       - name: Fetch Pyodide (web apps' servers)
         run: node scripts/vendor-pyodide.mjs
       # Each web app's build, kept per pinned commit (fetch-community.mjs,

@@ -38,7 +38,7 @@
 
 // A hash of SHELL's files and this one — written by scripts/sw-version.mjs,
 // never by hand.
-const VERSION = "arcade-1c64945ce3df";
+const VERSION = "arcade-dev"; // dist/sw.js: a hash of what it precaches (scripts/assemble.mjs)
 // Network-first for code, for development (see above).
 const DEV = ["localhost", "127.0.0.1", "[::1]"].includes(self.location.hostname) && !new URL(self.location.href).searchParams.has("snapshot");
 
@@ -47,75 +47,12 @@ const DEV = ["localhost", "127.0.0.1", "[::1]"].includes(self.location.hostname)
 // together, which is not a reasonable thing to pull down on mobile data before
 // anybody has asked for them, and they are cached on first sight anyway.
 const SHELL = [
+	// What scripts/assemble.mjs cannot derive. It adds, at build time, every
+	// built chunk (app/), page, lib/ script and stylesheet, game file and frame
+	// runtime, then writes the result into dist/sw.js with its VERSION.
 	"./",
-	"./index.html",
-	"./party.html",
-	"./profile.html",
-	"./leaderboard.html",
-	"./contributors.html",
-	"./contribute.html",
 	"./CONTRIBUTING.md",
-	"./connect4.html",
-	"./light-cycles.html",
-	"./battleship.html",
-	"./undercover.html",
-	"./liars-dice.html",
-	"./neon-bid.html",
-	"./draw-guess.html",
-	"./neon-survival.html",
-	"./neon-survival-mp.html",
-	"./tug-of-war.html",
 	"./manifest.webmanifest",
-	"./lib/theme.css",
-	"./lib/theme.js",
-	"./lib/styles.css",
-	"./lib/qr.js",
-	"./lib/qr-decode.js",
-	"./lib/net.js",
-	"./lib/room-join.js",
-	"./lib/games.js",
-	"./lib/secrets.js",
-	"./lib/rounds.js",
-	"./lib/ui.js",
-	"./lib/lobby.js",
-	"./lib/party.js",
-	"./lib/pwa.js",
-	"./lib/load.js",
-	"./lib/bridge.js",
-	"./lib/sdk-host.js",
-	"./lib/sdk-managed.js",
-	"./lib/py-server.js",
-	"./lib/stats.js",
-	"./lib/portal.js",
-	"./lib/account.js",
-	"./lib/account-ui.js",
-	"./lib/profile.js",
-	"./lib/leaderboard.js",
-	"./lib/nav.js",
-	"./lib/markdown.js",
-	"./lib/contributors.js",
-	"./lib/propose.js",
-	"./lib/catalog.js",
-	"./sdk/v1/client.js",
-	"./sdk/v2/runtime.js",
-	"./sdk/v2/web-shim.js",
-	"./sdk/v1/web-shim.js",
-	"./sdk/v1/arcade_server.py",
-	"./games/connect4/index.html",
-	"./games/connect4/connect4.js",
-	"./games/connect4/game.json",
-	"./games/undercover/index.html",
-	"./games/undercover/words.js",
-	"./games/undercover/undercover.js",
-	"./games/undercover/game.json",
-	"./games/neon-bid/index.html",
-	"./games/neon-bid/neon-bid.js",
-	"./games/neon-bid/rules.js",
-	"./games/neon-bid/neon-bid.css",
-	"./games/neon-bid/game.json",
-	"./games/neon-survival-mp/index.html",
-	"./games/neon-survival-mp/neon-survival-mp.js",
-	"./games/neon-survival-mp/game.json",
 	"./assets/icon.svg",
 	// The three faces (lib/theme.css): ~150 KB, worth it for an offline app
 	// that would otherwise fall back to system fonts with no network.

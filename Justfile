@@ -1,15 +1,18 @@
 # Justfile — the commands this project actually uses.
 #
 # Everything here is a thin wrapper over something already documented in
-# `docs/index.md`; nothing new is invented, and nothing here is required. The
-# repo has no build step and no dependencies, so `just run` is a static file
-# server and that is genuinely all it needs to be.
+# `docs/index.md`; nothing new is invented. Since 2026-11-15 the shell is one
+# page built with Vite and pnpm (docs/spa.md): `just run` is Vite's dev server,
+# `just build` writes dist/ (what is deployed), and the browser suites serve
+# dist/ (scripts/serve.mjs), so `just test` builds first.
 #
 #   just            list the recipes
 #   just run        serve the arcade at http://127.0.0.1:8000
 #   just test       every suite
 
 port := "8000"
+# pnpm, from the system or through Nix (no global install needed on NixOS).
+pnpm := if `command -v pnpm || true` != "" { "pnpm" } else { "nix shell nixpkgs#pnpm nixpkgs#nodejs_24 -c pnpm" }
 
 # List the recipes.
 default:
@@ -24,23 +27,30 @@ default:
 # recipe, so the one-line summary goes immediately before it and anything
 # longer goes above a blank line.)
 
-# Serve the arcade at http://127.0.0.1:{{port}} .
-run:
-    @echo "arcade → http://127.0.0.1:{{port}}   (ctrl-c to stop)"
-    python3 -m http.server {{port}} --bind 127.0.0.1
+# Serve the arcade at http://127.0.0.1:{{port}} (Vite's dev server; edits reload).
+run: install
+    {{pnpm}} dev --host 127.0.0.1 --port {{port}}
+
+# Install the shell's dependencies (pnpm-lock.yaml, exactly).
+install:
+    {{pnpm}} install --frozen-lockfile
+
+# Build the site into dist/: type check, vite build, then scripts/assemble.mjs.
+build: install
+    {{pnpm}} build
 
 # Installing and offline will work over the LAN; **the SCAN REPLY camera will
 # not**, because a plain http:// LAN address is not a secure context and the
 # browser refuses getUserMedia. Use PASTE for the reply code when testing so.
 
 # Serve on every interface, so a phone on the same wifi can reach it.
-serve-lan:
+serve-lan: install
     @ip=$(hostname -I 2>/dev/null | awk '{print $1}'); \
       echo "arcade → http://$ip:{{port}}  (camera scanning will not work; use PASTE)"
-    python3 -m http.server {{port}}
+    {{pnpm}} dev --host 0.0.0.0 --port {{port}}
 
 # Every suite, in the order they get slower.
-test: check-precache check-sw-version check-bindings check-colours community test-stats test-submission test-codec test-hub test-worker-do test-plumbing test-rules test-room test-party test-scan test-pwa test-bots test-devkit test-protocol test-managed test-conformance test-webapp test-theme test-portal
+test: check-bindings check-colours community build test-stats test-submission test-codec test-hub test-worker-do test-plumbing test-rules test-room test-party test-scan test-pwa test-bots test-devkit test-protocol test-managed test-conformance test-webapp test-theme test-portal
 
 # No browser needed — the signalling codec round-trip.
 test-codec:
@@ -157,17 +167,6 @@ preview game:
 icons:
     node scripts/make-icons.mjs
 
-# sw.js's VERSION is a hash of what it precaches: rewrite it after changing
-# any precached file (scripts/sw-version.mjs). `just test` and CI check it.
-
-# Rehash sw.js's VERSION from the files it precaches.
-sw-version:
-    node scripts/sw-version.mjs
-
-# Fail if sw.js's VERSION does not match its precached files.
-check-sw-version:
-    node scripts/sw-version.mjs --check
-
 # sdk/v2/bindings/ is generated from sdk/v2/protocol.json: rewrite it after
 # changing the protocol (scripts/gen-bindings.mjs). `just test` checks it.
 
@@ -178,29 +177,6 @@ bindings:
 # Fail if the SDK v2 bindings do not match protocol.json.
 check-bindings:
     node scripts/gen-bindings.mjs --check
-
-# Catches the one mistake sw.js cannot warn about: a page or module added to the
-# repo but not to `SHELL`, which simply is not there offline.
-
-# Check every page and module is in the sw.js precache list.
-check-precache:
-    @node -e ' \
-      const fs = require("fs"); \
-      const sw = fs.readFileSync("sw.js", "utf8"); \
-      const listed = new Set([...sw.matchAll(/"\.\/([^"]+)"/g)].map((m) => m[1])); \
-      const onDisk = [ \
-        ...fs.readdirSync(".").filter((f) => f.endsWith(".html")), \
-        ...fs.readdirSync("lib").filter((f) => /\.(js|css)$/.test(f)).map((f) => "lib/" + f), \
-        ...fs.readdirSync("games").filter((f) => f.endsWith(".js")).map((f) => "games/" + f), \
-        ...fs.readdirSync("games", { withFileTypes: true }).filter((d) => d.isDirectory()).flatMap((d) => \
-          fs.readdirSync("games/" + d.name).filter((f) => /\.(html|js|css|json)$/.test(f) && !f.startsWith("test-")).map((f) => `games/${d.name}/${f}`)), \
-        ...fs.readdirSync("sdk/v1").filter((f) => f.endsWith(".js")).map((f) => "sdk/v1/" + f), \
-        ...fs.readdirSync("sdk/v2").filter((f) => f.endsWith(".js")).map((f) => "sdk/v2/" + f), \
-      ]; \
-      const missing = onDisk.filter((f) => !listed.has(f)); \
-      if (missing.length) { console.error("not precached by sw.js:\n  " + missing.join("\n  ")); process.exit(1); } \
-      console.log(`all ${onDisk.length} pages and modules are in the sw.js precache`); \
-    '
 
 # Gather every game.json into lib/catalog.js (generated; committed so the
 # site needs no build step). `just catalog --check` fails if it is stale.

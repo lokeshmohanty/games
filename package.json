@@ -1,0 +1,22 @@
+{
+  "name": "neon-arcade",
+  "private": true,
+  "description": "The arcade's shell: one page (Solid + Vite), the party kept across views. Games stay framework-free in sandboxed frames (docs/spa.md).",
+  "license": "MIT",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "check": "tsc --noEmit",
+    "build": "tsc --noEmit && vite build && node scripts/assemble.mjs",
+    "preview": "vite preview --outDir dist"
+  },
+  "dependencies": {
+    "solid-js": "1.9.18"
+  },
+  "devDependencies": {
+    "playwright": "1.62.1",
+    "typescript": "7.0.2",
+    "vite": "8.3.5",
+    "vite-plugin-solid": "2.11.15"
+  }
+}

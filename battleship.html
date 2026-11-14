@@ -14,8 +14,8 @@
       query (a test's `?mockroom` or loopback `?rs=`) and any `#i=`/`#c=`
       link, which the party joins instead of starting fresh.
     -->
-    <link rel="canonical" href="party.html?game=battleship" />
-    <meta http-equiv="refresh" content="0; url=party.html?game=lokeshmohanty%2Fbattleship&amp;fresh=1" />
+    <link rel="canonical" href="./?game=battleship" />
+    <meta http-equiv="refresh" content="0; url=./?game=lokeshmohanty%2Fbattleship&amp;fresh=1" />
     <link rel="manifest" href="manifest.webmanifest" />
     <meta name="theme-color" content="#0a0a0a" />
     <link rel="icon" href="assets/icon.svg" type="image/svg+xml" />
@@ -34,7 +34,7 @@
       <h1 class="lobby-title">BATTLESHIP</h1>
       <p class="lobby-sub">Opening the game…</p>
       <div class="lobby-row">
-        <a class="neon-btn neon-btn--accent" href="party.html?game=lokeshmohanty%2Fbattleship&amp;fresh=1">PLAY BATTLESHIP</a>
+        <a class="neon-btn neon-btn--accent" href="./?game=lokeshmohanty%2Fbattleship&amp;fresh=1">PLAY BATTLESHIP</a>
         <a class="neon-btn" href="index.html">ALL GAMES</a>
       </div>
     </div>
@@ -44,7 +44,7 @@
       q.set("game", "lokeshmohanty/battleship");
       // A fresh visit starts a new party; a carried link joins one.
       if (!location.hash) q.set("fresh", "1");
-      location.replace("party.html?" + q + location.hash);
+      location.replace("./?" + q + location.hash);
     </script>
   </body>
 </html>

@@ -2,190 +2,20 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-    <title>Add your game · Arcade Games</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Add your game — Arcade Games</title>
+    <!-- The arcade is one page since 2026-11-15 (docs/spa.md): this old address
+         forwards there, keeping its query and any invite in the hash. -->
+    <meta http-equiv="refresh" content="0; url=./?page=contribute" />
     <link rel="manifest" href="manifest.webmanifest" />
-    <meta name="theme-color" content="#0a0a0a" />
     <link rel="icon" href="assets/icon.svg" type="image/svg+xml" />
-    <link rel="apple-touch-icon" href="assets/apple-touch-icon.png" />
-    <!-- The theme first: tokens + fonts, and the saved choice before paint. -->
-    <link rel="stylesheet" href="lib/theme.css" />
-    <script src="lib/theme.js"></script>
-    <link rel="stylesheet" href="lib/styles.css" />
-    <style>
-      main {
-        max-width: 42rem;
-        margin: 0 auto;
-        padding: 16px 16px 56px;
-        line-height: 1.6;
-      }
-      main h1 {
-        color: var(--accent);
-        font-size: 1.7rem;
-        margin: 8px 0 12px;
-      }
-      main h2 {
-        font-size: 1.15rem;
-        margin: 28px 0 8px;
-        color: var(--ink);
-      }
-      main p,
-      main li {
-        color: var(--ink);
-      }
-      main a {
-        color: var(--accent);
-      }
-      main code {
-        font-family: var(--font-mono);
-        font-size: 0.88em;
-        background: var(--surface-2);
-        border-radius: 4px;
-        padding: 1px 5px;
-        overflow-wrap: anywhere;
-      }
-      main pre {
-        background: var(--surface);
-        border: 1px solid var(--rule);
-        border-radius: 8px;
-        padding: 12px 14px;
-        overflow-x: auto;
-        font-size: 0.85rem;
-        line-height: 1.5;
-      }
-      main pre code {
-        background: none;
-        padding: 0;
-      }
-      .muted {
-        color: var(--ink-2);
-      }
-      .propose {
-        border: 1px solid var(--rule);
-        border-radius: 12px;
-        background: var(--surface);
-        padding: 14px 16px;
-        margin: 8px 0 20px;
-      }
-      .propose h2 {
-        margin: 0 0 6px;
-      }
-      .propose-row {
-        display: flex;
-        gap: 8px;
-        flex-wrap: wrap;
-      }
-      .propose-row input {
-        flex: 1 1 12rem;
-        min-width: 0;
-        min-height: 44px;
-        box-sizing: border-box;
-        padding: 8px 12px;
-        border: 1px solid var(--rule);
-        border-radius: 8px;
-        background: var(--bg);
-        color: var(--ink);
-        font-family: var(--font-mono);
-        font-size: 16px;
-      }
-      [data-propose-out] .neon-btn {
-        display: inline-flex;
-        text-decoration: none;
-      }
-      .propose-steps {
-        margin: 12px 0 0;
-        padding-left: 1.3em;
-        color: var(--ink);
-      }
-      .propose {
-        margin-top: 28px;
-      }
-    </style>
   </head>
   <body>
-    <nav class="site-nav" data-nav data-page="contribute"></nav>
-    <main>
-      <div data-guide><p class="muted">Loading the guide…</p></div>
-      <!-- lib/propose.js: GitHub's own page, filled in. The pull request is
-           yours to open; once it is merged the site deploys itself. -->
-      <section class="propose">
-        <h2>Propose your games</h2>
-        <p class="muted">
-          Your public repo, <code>owner/name</code>. This opens GitHub's page for the registry
-          file, filled in — commit it there and GitHub offers the pull request.
-        </p>
-        <form class="propose-row" data-propose>
-          <input type="text" data-repo placeholder="your-github/your-games" aria-label="Your games repository, owner/name" autocomplete="off" spellcheck="false" />
-          <button class="neon-btn neon-btn--accent" type="submit">PROPOSE</button>
-        </form>
-        <div data-propose-out></div>
-      </section>
-    </main>
-
-    <script src="lib/pwa.js"></script>
-    <script src="lib/stats.js"></script>
-    <script src="lib/account.js"></script>
-    <script src="lib/account-ui.js"></script>
-    <script src="lib/nav.js"></script>
-    <script src="lib/markdown.js"></script>
-    <script src="lib/catalog.js"></script>
-    <script src="community/catalog.js"></script>
-    <script src="lib/propose.js"></script>
+    <p><a href="./?page=contribute">Add your game</a></p>
     <script>
-      // Propose: new repo → the filled "new file" page; pinned and moved →
-      // the pin's edit page and the commit to paste.
-      document.querySelector("[data-propose]").addEventListener("submit", async (e) => {
-        e.preventDefault();
-        const out = document.querySelector("[data-propose-out]");
-        const repo = document.querySelector("[data-repo]").value;
-        out.textContent = "Asking GitHub…";
-        try {
-          const clean = repo.trim().replace(/^https:\/\/github\.com\//, "").replace(/\.git$|\/$/g, "");
-          const p = await NeonArcade.propose.plan(clean, NeonArcade.propose.pinnedOf(clean));
-          out.replaceChildren();
-          const note = (t) => Object.assign(document.createElement("p"), { className: "muted", textContent: t });
-          const link = (t, href) => Object.assign(document.createElement("a"), { className: "neon-btn neon-btn--accent", textContent: t, href, target: "_blank", rel: "noopener" });
-          if (p.kind === "current") return out.append(note(`${p.repo} is already listed at its latest commit (${p.at.slice(0, 7)}).`));
-          if (p.kind === "update") {
-            // GitHub can fill a new file but not an edit: copy the commit on
-            // the same tap that opens the pin, and say where to paste it.
-            const sha = Object.assign(document.createElement("pre"), { textContent: p.to });
-            const go = link("COPY THE COMMIT & OPEN THE PIN ↗", p.url);
-            go.addEventListener("click", () => {
-              navigator.clipboard?.writeText(p.to).then(
-                () => NeonArcade.toast?.("New commit copied.", "good"),
-                () => {},
-              );
-            });
-            const steps = document.createElement("ol");
-            steps.className = "propose-steps";
-            for (const t of [
-              `In the "commit" line, select the old commit ${p.from.slice(0, 7)}… (the 40 characters between the quotes).`,
-              "Paste — the new commit is on your clipboard.",
-              "Commit changes → \"Create a new branch… and start a pull request\" → Propose changes.",
-            ]) steps.append(Object.assign(document.createElement("li"), { textContent: t }));
-            out.append(note(`${p.repo} is listed at ${p.from.slice(0, 7)}; its newest commit is ${p.to.slice(0, 7)}.`), go, steps, note("The new commit, if the copy did not work:"), sha);
-            return;
-          }
-          const pre = Object.assign(document.createElement("pre"), { textContent: p.text });
-          out.append(note(`registry/${p.repo}.json — ${p.games.length} game${p.games.length === 1 ? "" : "s"} at ${p.to.slice(0, 7)}:`), pre, link("OPEN ON GITHUB ↗", p.url));
-        } catch (err) {
-          out.textContent = err.message;
-        }
-      });
-
-      // The guide is CONTRIBUTING.md itself (one source), drawn here.
-      fetch("CONTRIBUTING.md")
-        .then((r) => (r.ok ? r.text() : Promise.reject(new Error(r.status))))
-        .then((md) => {
-          document.querySelector("[data-guide]").innerHTML = NeonArcade.markdown.render(md, {
-            base: "https://github.com/lokeshmohanty/games/blob/main/",
-          });
-        })
-        .catch(() => {
-          document.querySelector("[data-guide]").innerHTML =
-            '<p>The guide could not be loaded. It is <a href="https://github.com/lokeshmohanty/games/blob/main/CONTRIBUTING.md">CONTRIBUTING.md on GitHub</a>.</p>';
-        });
+      const q = new URLSearchParams(location.search);
+      q.set("page", "contribute");
+      location.replace("./?" + q.toString().replace(/=(&|$)/g, "$1") + location.hash);
     </script>
   </body>
 </html>

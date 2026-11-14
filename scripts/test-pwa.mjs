@@ -24,7 +24,7 @@ import { cpSync, existsSync, globSync, mkdtempSync, readFileSync, rmSync, writeF
 import { homedir, tmpdir } from "node:os";
 import { dirname, join, resolve as resolvePath } from "node:path";
 import { fileURLToPath } from "node:url";
-import { gameFrame } from "./serve.mjs";
+import { SITE_DIR, gameFrame } from "./serve.mjs";
 
 const require = createRequire(import.meta.url);
 const ROOT = resolvePath(dirname(fileURLToPath(import.meta.url)), "..");
@@ -78,7 +78,8 @@ const { chromium } = loadPlaywright();
 // (Faking responses through Playwright's routing did not reach the install of
 // a worker that update() brings in.)
 const SITE = mkdtempSync(join(tmpdir(), "pwa-site-"));
-cpSync(ROOT, SITE, { recursive: true, filter: (src) => !/[\\/](\.git|node_modules|\.wrangler)$/.test(src) });
+// The built site (dist/, docs/spa.md) — what is deployed.
+cpSync(SITE_DIR, SITE, { recursive: true, filter: (src) => !/[\\/](\.git|node_modules|\.wrangler)$/.test(src) });
 const server = spawn("python3", ["-m", "http.server", String(PORT), "--bind", "127.0.0.1"], {
 	cwd: SITE,
 	stdio: "ignore",
@@ -431,7 +432,7 @@ console.log("\npwa: with the network gone");
 // the plug — a fixed pause was too short on a cold first run, once the shell
 // grew past 40 files (framed games, the SDK).
 {
-	const sw = readFileSync(join(ROOT, "sw.js"), "utf8");
+	const sw = readFileSync(join(SITE, "sw.js"), "utf8"); // as built (scripts/assemble.mjs)
 	const version = sw.match(/const VERSION = "([^"]+)"/)[1];
 	const shell = [...sw.match(/const SHELL = \[([\s\S]*?)\];/)[1].matchAll(/"(\.\/[^"]*)"/g)].length;
 	// Polled from here: page.waitForFunction resolves at once on an async
@@ -556,7 +557,7 @@ console.log("\npwa: an update reaches a player who already has the old copy");
 	writeFileSync(join(SITE, "lib", "games.js"), "// redeployed\n");
 	check("one file changed alone is not mixed into the deploy the page runs (the snapshot holds)", (await text("lib/games.js")) === before);
 
-	// A real deploy changes sw.js too (scripts/sw-version.mjs).
+	// A real deploy changes sw.js too (scripts/assemble.mjs rehashes VERSION).
 	const newVersion = oldVersion + "-next";
 	writeFileSync(swFile, swText.replace(oldVersion, newVersion));
 	await update();

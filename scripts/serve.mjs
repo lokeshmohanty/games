@@ -5,10 +5,17 @@
 // the way `just run` does. Same python3 server test-pwa.mjs uses.
 
 import { spawn } from "node:child_process";
-import { dirname, resolve } from "node:path";
+import { existsSync } from "node:fs";
+import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+/**
+ * What is served: the built site (pnpm build → dist/, docs/spa.md) — the
+ * shell is one page bundled by Vite since 2026-11-15, so the repo itself no
+ * longer runs as it stands. NEON_SERVE_SRC=1 serves the repo instead.
+ */
+export const SITE_DIR = !process.env.NEON_SERVE_SRC && existsSync(join(ROOT, "dist", "index.html")) ? join(ROOT, "dist") : ROOT;
 
 /**
  * Added to every test's fixed ports (NEON_PORT_OFFSET=100 …), so two test
@@ -20,7 +27,7 @@ export const PORT_OFFSET = Number(process.env.NEON_PORT_OFFSET ?? 0) || 0;
 export async function serve(port) {
 	port += PORT_OFFSET;
 	const server = spawn("python3", ["-m", "http.server", String(port), "--bind", "127.0.0.1"], {
-		cwd: ROOT,
+		cwd: SITE_DIR,
 		stdio: "ignore",
 	});
 	const stop = () => {

@@ -2,71 +2,20 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta
-      name="viewport"
-      content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"
-    />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Party — Arcade Games</title>
-    <!-- Installable: manifest + icons, registered by lib/pwa.js. -->
+    <!-- The arcade is one page since 2026-11-15 (docs/spa.md): this old address
+         forwards there, keeping its query and any invite in the hash. -->
+    <meta http-equiv="refresh" content="0; url=./?party" />
     <link rel="manifest" href="manifest.webmanifest" />
-    <meta name="theme-color" content="#0a0a0a" />
     <link rel="icon" href="assets/icon.svg" type="image/svg+xml" />
-    <link rel="apple-touch-icon" href="assets/apple-touch-icon.png" />
-    <meta name="mobile-web-app-capable" content="yes" />
-    <meta name="apple-mobile-web-app-capable" content="yes" />
-    <meta name="apple-mobile-web-app-status-bar-style" content="black" />
-    <meta name="apple-mobile-web-app-title" content="Arcade Games" />
-    <!-- The theme first: tokens + fonts, and the saved choice before paint. -->
-    <link rel="stylesheet" href="lib/theme.css" />
-    <script src="lib/theme.js"></script>
-    <link rel="stylesheet" href="lib/styles.css" />
   </head>
   <body>
-    <a class="portal-link" href="index.html">&#8592; All games</a>
-    <div id="party"></div>
-    <div id="stage" hidden></div>
-
-    <script src="lib/pwa.js"></script>
-    <!-- ui.js, secrets.js and rounds.js run inside game frames only (lib/bridge.js
-         inlines them there); qr-decode.js and py-server.js load on first use
-         (lib/load.js): SCAN REPLY, a web app with a server. -->
-    <script src="lib/load.js"></script>
-    <script src="lib/qr.js"></script>
-    <script src="lib/net.js"></script>
-    <script src="lib/room-join.js"></script>
-    <script src="lib/games.js"></script>
-    <script src="lib/lobby.js"></script>
-    <script src="lib/stats.js"></script>
-    <script src="lib/account.js"></script>
-    <script src="lib/account-ui.js"></script>
-    <script src="lib/party.js"></script>
-    <script src="lib/bridge.js"></script>
-    <script src="lib/sdk-managed.js"></script>
-    <script src="lib/sdk-host.js"></script>
-
-    <!--
-      Every game is one file that registers itself. Adding a game to the party
-      is this line and nothing else — the switcher lists whatever registered.
-    -->
-    <script src="lib/catalog.js"></script>
-    <!-- Outside repos' games, pinned in registry/ and fetched at deploy
-         (scripts/fetch-community.mjs). Absent until fetched: nothing breaks. -->
-    <script src="community/catalog.js"></script>
-
+    <p><a href="./?party">Open the party</a></p>
     <script>
-      // Exposed so the tests can inspect the live room and game. `__game` is
-      // the name the game pages used to publish; they are party shortcuts now.
-      const start = () => {
-        window.__party = window.__game = NeonArcade.mountParty(
-          document.getElementById("party"),
-          document.getElementById("stage"),
-        );
-        if (NeonArcade.devError) NeonArcade.toast(NeonArcade.devError, "warn");
-      };
-      // ?dev= (the game dev kit, lib/bridge.js): its game must be registered
-      // before the party reads ?game=.
-      if (NeonArcade.devGame) NeonArcade.devGame.then(start);
-      else start();
+      const q = new URLSearchParams(location.search);
+      if (![...q.keys()].length) q.set("party", "");
+      location.replace("./?" + q.toString().replace(/=(&|$)/g, "$1") + location.hash);
     </script>
   </body>
 </html>

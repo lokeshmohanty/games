@@ -41,3 +41,7 @@ community/
 
 # The Python runtime for web apps' servers, fetched by scripts/vendor-pyodide.mjs (~15 MB).
 sdk/v1/pyodide/
+
+# The shell's build (pnpm build → dist/, docs/spa.md) and its dependencies.
+node_modules/
+dist/
