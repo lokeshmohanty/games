@@ -531,43 +531,52 @@ console.log("\npwa: an update reaches a player who already has the old copy");
 	const swFile = join(SITE, "sw.js");
 	const swText = readFileSync(swFile, "utf8");
 	const oldVersion = swText.match(/const VERSION = "([^"]+)"/)[1];
-	const newVersion = oldVersion + "-next";
-	const before = await page.evaluate(async () => (await (await fetch("lib/games.js")).text()).trim());
+	const text = (path) => page.evaluate(async (p) => (await (await fetch(p)).text()).trim(), path);
+	const keys = () => page.evaluate(() => caches.keys());
+	const settle = async (ok, ms = 30_000) => {
+		for (const end = Date.now() + ms; Date.now() < end; await new Promise((r) => setTimeout(r, 300))) if (await ok()) return true;
+		return false;
+	};
+	const update = () => page.evaluate(async () => (await navigator.serviceWorker.getRegistration())?.update().catch(() => {}));
+	const before = await text("lib/games.js");
+
+	// A deploy that cannot be fetched whole (a file gone mid-deploy) must not
+	// replace the snapshot this player has.
+	const broken = oldVersion + "-broken";
+	const markdown = join(SITE, "lib", "markdown.js");
+	const markdownText = readFileSync(markdown, "utf8");
+	rmSync(markdown);
+	writeFileSync(swFile, swText.replace(oldVersion, broken));
+	await update();
+	await settle(async () => !(await page.evaluate(async () => !!(await navigator.serviceWorker.getRegistration())?.installing)), 15_000);
+	const afterBroken = await keys();
+	check("a deploy that cannot be fetched whole does not install", !afterBroken.includes(broken) && afterBroken.includes(oldVersion), afterBroken.join());
+	writeFileSync(markdown, markdownText);
+
 	writeFileSync(join(SITE, "lib", "games.js"), "// redeployed\n");
-	const mixed = await page.evaluate(async () => (await (await fetch("lib/games.js")).text()).trim());
-	check("one file changed alone is not mixed into the deploy the page runs (the snapshot holds)", mixed === before);
-	// A real deploy changes sw.js too (scripts/sw-version.mjs): the browser's
-	// update check installs the new snapshot beside the old and activates it.
+	check("one file changed alone is not mixed into the deploy the page runs (the snapshot holds)", (await text("lib/games.js")) === before);
+
+	// A real deploy changes sw.js too (scripts/sw-version.mjs).
+	const newVersion = oldVersion + "-next";
 	writeFileSync(swFile, swText.replace(oldVersion, newVersion));
-	await page.evaluate(async () => (await navigator.serviceWorker.getRegistration())?.update());
-	// Installing the whole new snapshot takes a few seconds; what a player sees
-	// is the new file arriving once it has, and nothing mixed before then.
-	// Polled from here: a waitForFunction with an async predicate passed at once.
-	const seen = [];
-	let arrived = false;
-	for (const end = Date.now() + 30_000; Date.now() < end && !arrived; ) {
-		const got = await page.evaluate(async () => (await (await fetch("lib/games.js")).text()).trim());
-		const reg = await page.evaluate(async () => !!(await navigator.serviceWorker.getRegistration())?.installing);
-		if (got === "// redeployed") arrived = true;
-		else seen.push(reg ? "installing" : "idle");
-		if (got === "// redeployed" && reg) seen.push("MIXED");
-		if (!arrived) await new Promise((r) => setTimeout(r, 300));
-	}
-	const state = await page.evaluate(async (v) => {
-		const reg = await navigator.serviceWorker.getRegistration();
-		const cache = await caches.open(v);
-		return { installing: !!reg?.installing, waiting: !!reg?.waiting, entries: (await cache.keys()).length, keys: await caches.keys() };
-	}, newVersion);
-	check("a new deploy reaches the page once its snapshot is in", arrived);
-	check("…and never while it is still installing", !seen.includes("MIXED"), seen.join(" "));
-	check("…as one whole new snapshot", !state.installing && !state.waiting && state.entries >= 60, JSON.stringify(state));
-	// activate deletes it just after the new worker takes over.
-	let keys = state.keys;
-	for (const end = Date.now() + 5000; Date.now() < end && !(keys.length === 1 && keys[0] === newVersion); ) {
-		await new Promise((r) => setTimeout(r, 200));
-		keys = await page.evaluate(() => caches.keys());
-	}
-	check("…and the old snapshot is dropped", keys.length === 1 && keys[0] === newVersion, keys.join());
+	await update();
+	const installed = await settle(async () => {
+		const st = await page.evaluate(async () => {
+			const reg = await navigator.serviceWorker.getRegistration();
+			return { busy: !!(reg?.installing || reg?.waiting), keys: await caches.keys() };
+		});
+		return !st.busy && st.keys.includes(newVersion);
+	});
+	check("a new deploy installs as a whole new snapshot", installed);
+	check("…while the open page keeps the deploy it was loaded from", (await text("lib/games.js")) === before && (await keys()).includes(oldVersion));
+	await page.reload({ waitUntil: "domcontentloaded" });
+	check("…and the next page load is the new deploy", (await text("lib/games.js")) === "// redeployed");
+	// Pruned on a navigation once no open page uses it and its pins are past
+	// their grace (sw.js PIN_GRACE_MS, 10 s).
+	await new Promise((r) => setTimeout(r, 11_000));
+	await page.reload({ waitUntil: "domcontentloaded" });
+	const dropped = await settle(async () => !(await keys()).includes(oldVersion), 10_000);
+	check("…after which the old snapshot is dropped", dropped, (await keys()).join());
 }
 
 await browser.close();

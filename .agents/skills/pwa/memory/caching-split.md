@@ -35,29 +35,52 @@ Coherence is now structural rather than a network round trip:
   platform-check fail on a stale one, and the deploy rehashes with
   `--with-community` after fetching the pinned games.
 - **A deploy is therefore a new sw.js.** The browser's own update check
-  installs the new snapshot beside the old one, `skipWaiting`, then `activate`
-  deletes the old cache, and the next page load is the new deploy, whole.
+  installs the new snapshot beside the old one, then `skipWaiting`. The next
+  page load is the new deploy, whole.
+- **The install is all or nothing.** One failed fetch deletes the half-built
+  cache and rejects, so the old worker stays and the browser retries on its
+  next update check. Swallowing failures (the 2026-08 code did this, "so one
+  404 doesn't lose everything") let a hollow snapshot replace a whole one;
+  sw-version.mjs now catches a listed-but-missing file before deploy instead.
+- **A page keeps its deploy (pins).** After `skipWaiting` the new worker
+  serves pages already open, and those pages still load files *later*:
+  qr-decode.js on a first scan (lib/load.js) and every game frame build
+  (lib/bridge.js). So each navigation records `clientId → VERSION` in the
+  `arcade-pins` cache (worker memory does not survive the worker stopping),
+  and a page's later fetches come from its own snapshot. `prune()` (on
+  activate and after each navigation) drops snapshots no open page uses. A
+  pin younger than `PIN_GRACE_MS` (10 s) is kept even when its page is not
+  yet among the clients: the page is only listed once the navigation commits.
+  The first version pruned the brand-new pin straight away, which test-pwa
+  caught.
 - Install uses `fetch(…, {cache: "no-cache"}) + cache.put`. "no-cache" turns
-  files the first page just loaded into 304s. It is fetch + put rather than
-  `cache.add` so a test can see the request.
+  files the first page just loaded into 304s. A miss is refilled with
+  `no-cache` too, so an HTTP-cached copy from an older deploy (Pages sends
+  max-age=600) is never kept under the new VERSION.
 
-The one window where two deploys meet: an open page that loads a file *later*
-(qr-decode.js on a first scan, a game frame's files) after the new worker has
-activated. It was the same under network-first.
+Found by an adversarial review on 2026-11-14, after the first snapshot version
+had passed every test. It had swallowed install failures and let open pages
+read the new deploy.
 
 ## Testing an update: stage a real deploy
 
-`test-pwa` serves a **temporary copy of the site** and changes real files in it
-(`lib/games.js`, then `sw.js`'s VERSION). It checks three things: the page
-still gets the old file (the snapshot holds), the new file arrives once the
-new snapshot is in, and it never arrives while that snapshot is still
-installing.
+`test-pwa` serves a **temporary copy of the site** and changes real files in
+it. It checks four things:
+
+- A deploy with a file missing does not install.
+- A lone changed file is not mixed in.
+- After a real deploy (new VERSION) installs, the open page still reads its
+  old snapshot.
+- A reload gets the new deploy, and the old snapshot is pruned once its pins
+  pass their grace.
 
 What did not work, so don't retry it:
 
-- **Playwright `ctx.route` fulfilling `sw.js` and `lib/games.js`.** The worker
-  that `update()` brought in installed only a fragment, or never fetched the
-  routed script at all. Interception of a worker's own install is unreliable.
+- **Playwright `ctx.route` fulfilling `sw.js` and `lib/games.js`.** It
+  looked as though the worker `update()` brought in installed only a
+  fragment. The likelier cause was the vacuous wait below: the cache was read
+  while the install was still running. Staging real files stays because it is
+  what a deploy is. Routing is not proven broken, and not proven reliable.
 - **`page.waitForFunction(async () => …)`.** In Playwright 1.62 it resolves at
   once, because its Promise is truthy. It had made an existing check ("the
   precache holds all N shell files") pass without waiting, and it made the

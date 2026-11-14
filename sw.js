@@ -23,8 +23,10 @@
 // What makes a deploy arrive: VERSION is a hash of every precached file
 // (scripts/sw-version.mjs, checked by `just test` and CI; the deploy rehashes
 // with the community games). A new deploy therefore means a new sw.js, which
-// the browser finds on its own update check, installs beside the old snapshot,
-// and activates — the next page load is the new deploy, whole.
+// the browser finds on its own update check and installs beside the old
+// snapshot — all of it, or not at all. The next page load is the new deploy,
+// whole; a page already open stays on the snapshot it was loaded from until it
+// closes ("a page keeps its deploy", below).
 //
 // Assets (icons, fonts, posters, gifs) are cache-first, and are not
 // re-downloaded behind each hit: they change with a deploy, so with VERSION.
@@ -36,7 +38,7 @@
 
 // A hash of SHELL's files and this one — written by scripts/sw-version.mjs,
 // never by hand.
-const VERSION = "arcade-31bc4bb3f8d0";
+const VERSION = "arcade-9366b9422565";
 // Network-first for code, for development (see above).
 const DEV = ["localhost", "127.0.0.1", "[::1]"].includes(self.location.hostname) && !new URL(self.location.href).searchParams.has("snapshot");
 
@@ -142,9 +144,12 @@ self.addEventListener("install", (event) => {
 	event.waitUntil(
 		(async () => {
 			const cache = await caches.open(VERSION);
-			// One at a time rather than cache.addAll: addAll rejects as a unit, so a
-			// single 404 (a page removed but left in this list) would throw away the
-			// whole offline copy.
+			// All or nothing: a snapshot missing files must never activate — it
+			// would replace a whole one, leave holes offline, and refill them
+			// from whatever the network hands back. A failed install keeps the
+			// old worker, and the browser tries again on its next update check.
+			// (A file listed but absent fails scripts/sw-version.mjs, so a 404
+			// here is a network problem, not a stale list.)
 			//
 			// `no-cache`, not `reload`: the browser revalidates what its HTTP cache
 			// holds (ETag / Last-Modified), so the files the first page just loaded
@@ -153,15 +158,21 @@ self.addEventListener("install", (event) => {
 			//
 			// fetch + put rather than cache.add: the same request, but through the
 			// worker's own fetch, which test-pwa can intercept to fake a deploy.
-			await Promise.all(
-				SHELL.map((url) =>
-					fetch(new Request(url, { cache: "no-cache" }))
-						.then((res) => (res.ok ? cache.put(url, res) : null))
-						.catch(() => {}),
-				),
-			);
-			// Take over as soon as this version is ready: the worker holds no state
-			// a page depends on, and a page already open keeps the files it loaded.
+			try {
+				await Promise.all(
+					SHELL.map(async (url) => {
+						const res = await fetch(new Request(url, { cache: "no-cache" }));
+						if (!res.ok) throw new Error(`${url}: ${res.status}`);
+						await cache.put(url, res);
+					}),
+				);
+			} catch (err) {
+				await caches.delete(VERSION);
+				throw err;
+			}
+			// Take over as soon as this version is ready. Pages already open stay
+			// on the snapshot they were loaded from (pinned, below), so taking
+			// over mixes nothing.
 			await self.skipWaiting();
 		})(),
 	);
@@ -170,12 +181,61 @@ self.addEventListener("install", (event) => {
 self.addEventListener("activate", (event) => {
 	event.waitUntil(
 		(async () => {
-			const names = await caches.keys();
-			await Promise.all(names.filter((n) => n !== VERSION).map((n) => caches.delete(n)));
+			await prune();
 			await self.clients.claim();
 		})(),
 	);
 });
+
+// ------------------------------------------------- a page keeps its deploy
+//
+// A page loaded from one snapshot keeps reading that snapshot until it
+// closes, even after a newer worker takes over: the files it fetches later —
+// qr-decode.js on a first scan (lib/load.js), a game frame's files
+// (lib/bridge.js) — must agree with the files it already runs. Each
+// navigation records which VERSION served it; the record lives in a cache of
+// its own, because a worker's memory does not survive it being stopped.
+
+const PINS = "arcade-pins";
+// How long a fresh pin outlives a page not yet among the clients. Pruned early,
+// a page would only read the current snapshot for what it loads later.
+const PIN_GRACE_MS = 10_000;
+const pinKey = (clientId) => `./__pin/${clientId}`;
+
+async function pin(clientId) {
+	if (!clientId) return;
+	try {
+		await (await caches.open(PINS)).put(pinKey(clientId), new Response(`${VERSION} ${Date.now()}`));
+	} catch {}
+}
+
+/** The snapshot a page was loaded from, when it is an older one still kept. */
+async function pinnedCache(clientId) {
+	if (!clientId) return null;
+	const hit = await (await caches.open(PINS)).match(pinKey(clientId));
+	const version = hit && (await hit.text()).split(" ")[0];
+	if (!version || version === VERSION || !(await caches.has(version))) return null;
+	return caches.open(version);
+}
+
+/**
+ * Drop every snapshot no open page was loaded from, and the pins of pages that
+ * have gone. Run when this worker activates and after each navigation. A pin
+ * younger than PIN_GRACE_MS is kept whether or not its page shows up yet: the
+ * page a navigation is loading is not among the clients until it commits.
+ */
+async function prune() {
+	const open = new Set((await self.clients.matchAll({ includeUncontrolled: true })).map((c) => c.id));
+	const pins = await caches.open(PINS);
+	const keep = new Set([VERSION, PINS]);
+	for (const req of await pins.keys()) {
+		const id = new URL(req.url).pathname.split("/__pin/")[1];
+		const [version, at] = (await (await pins.match(req)).text()).split(" ");
+		if (open.has(id) || Date.now() - Number(at) < PIN_GRACE_MS) keep.add(version);
+		else await pins.delete(req);
+	}
+	await Promise.all((await caches.keys()).filter((n) => !keep.has(n)).map((n) => caches.delete(n)));
+}
 
 /**
  * Assets are big and stable; code is small and must agree with its siblings.
@@ -220,11 +280,23 @@ async function cacheFirst(request) {
  * network, kept for offline. A navigation with a query (party.html?game=…) is
  * the precached page — the query only steers its script.
  */
-async function snapshot(request) {
+async function snapshot(request, event) {
+	const navigating = request.mode === "navigate";
+	if (navigating) {
+		// This page is this VERSION's from now on; older snapshots may go.
+		event.waitUntil(pin(event.resultingClientId).then(prune).catch(() => {}));
+	} else {
+		const older = await pinnedCache(event.clientId);
+		const old = older && (await older.match(request));
+		if (old) return old;
+	}
 	const cache = await caches.open(VERSION);
-	const hit = (await cache.match(request)) ?? (request.mode === "navigate" ? await cache.match(request, { ignoreSearch: true }) : null);
+	const hit = (await cache.match(request)) ?? (navigating ? await cache.match(request, { ignoreSearch: true }) : null);
 	if (hit) return hit;
-	const res = await fetch(request)
+	// Not in the snapshot. `no-cache`: an HTTP-cached copy from an older deploy
+	// must not be kept under this VERSION. (A navigation's mode forbids
+	// re-making the request; pages are all in SHELL anyway.)
+	const res = await fetch(navigating ? request : new Request(request, { cache: "no-cache" }))
 		.then((r) => store(request, r))
 		.catch(() => null);
 	if (res) return res;
@@ -287,5 +359,5 @@ self.addEventListener("fetch", (event) => {
 	// Offline, a card shows its cached poster instead.
 	if (/\.(?:webm|mp4)$/i.test(url.pathname)) return;
 
-	event.respondWith(isAsset(url) ? cacheFirst(request) : DEV ? networkFirst(request) : snapshot(request));
+	event.respondWith(isAsset(url) ? cacheFirst(request) : DEV ? networkFirst(request) : snapshot(request, event));
 });

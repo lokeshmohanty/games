@@ -5,7 +5,7 @@
 // 2026-11-14, docs/perf.md). Beside each `<name>.gif` this writes
 // `<name>.webp` (poster), `<name>.webm` and `<name>.mp4`; the catalog
 // (catalog-lib.mjs) lists whichever exist, and the portal plays the video
-// with the gif as the fallback.
+// with the gif as the fallback when no video plays (offline, or neither format).
 //
 //   node scripts/preview-media.mjs [file.gif ...]   (default: every preview
 //                                                    gif a game.json names)
@@ -65,6 +65,9 @@ export function previewGifs(dirs) {
 				const m = JSON.parse(readFileSync(join(dir, file), "utf8"));
 				if (typeof m.preview !== "string" || !/\.gif$/i.test(m.preview)) continue;
 				const gif = resolve(dir, dirname(file), m.preview);
+				// Never outside the folder scanned: an outside repo's manifest
+				// must not steer ffmpeg's output anywhere else.
+				if (!gif.startsWith(resolve(dir) + "/")) continue;
 				if (existsSync(gif)) gifs.add(gif);
 			} catch {}
 		}

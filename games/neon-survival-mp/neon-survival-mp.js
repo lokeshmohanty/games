@@ -205,6 +205,7 @@ NeonArcade.registerGame({
 		 */
 		const glows = new Map();
 		function glow(shape, size, color, blur) {
+			size = Math.min(Math.max(+size || 1, 1), 64); // sizes come over the wire
 			const key = `${shape}|${size}|${color}|${blur}`;
 			let g = glows.get(key);
 			if (g) return g;
@@ -214,7 +215,7 @@ NeonArcade.registerGame({
 			c.width = c.height = Math.ceil(pad * 2 * dpr);
 			const x = c.getContext("2d");
 			x.scale(dpr, dpr);
-			x.shadowBlur = blur;
+			x.shadowBlur = blur * dpr; // shadowBlur ignores the transform (canvas spec)
 			x.shadowColor = color;
 			x.fillStyle = color;
 			if (shape === "dot") {
@@ -237,8 +238,10 @@ NeonArcade.registerGame({
 		let H = 0;
 		let dpr = 1;
 		function resize() {
-			W = Math.min(window.innerWidth - 24, 800);
-			H = Math.min(window.innerHeight - 100, 600);
+			// Inside the canvas's CSS limits (max-width 95vw, max-height 80vh), so
+			// the browser never squeezes one axis of the world.
+			W = Math.floor(Math.min(window.innerWidth - 24, 800, window.innerWidth * 0.95));
+			H = Math.floor(Math.min(window.innerHeight - 100, 600, window.innerHeight * 0.8));
 			dpr = Math.min(window.devicePixelRatio || 1, 2);
 			canvas.width = Math.round(W * dpr);
 			canvas.height = Math.round(H * dpr);
@@ -256,8 +259,9 @@ NeonArcade.registerGame({
 		function handleInput(clientX, clientY) {
 			if (!gameActive || !player.alive) return;
 			const rect = canvas.getBoundingClientRect();
-			player.x = clientX - rect.left;
-			player.y = clientY - rect.top;
+			// CSS pixels to world units (equal unless something scaled the canvas).
+			player.x = ((clientX - rect.left) * W) / (rect.width || W);
+			player.y = ((clientY - rect.top) * H) / (rect.height || H);
 		}
 
 		addWindowListener("mousemove", (e) =>
@@ -708,7 +712,7 @@ NeonArcade.registerGame({
 			} else {
 				// ghost: dim outline
 				c2d.globalAlpha = 0.3;
-				c2d.shadowBlur = pal.glows ? 5 : 0;
+				c2d.shadowBlur = pal.glows ? 5 * dpr : 0;
 				c2d.shadowColor = myColor;
 				c2d.strokeStyle = myColor;
 				c2d.lineWidth = 1;

@@ -651,8 +651,12 @@ and is always one coherent deploy. `VERSION` is a content hash of every
 precached file (`scripts/sw-version.mjs`; `just test` and CI fail on a stale
 one; the deploy rehashes over the community games), so a deploy is a new
 `sw.js`, which the browser's own update check installs beside the old snapshot
-and activates — the next page load is the new deploy, whole. `test-pwa` checks
-both halves: a changed file alone is not mixed in, and a new deploy arrives.
+and activates — the next page load is the new deploy, whole. The install is
+all or nothing: a deploy that cannot be fetched whole leaves the old snapshot in
+place. A page already open stays on the snapshot it was loaded from until it
+closes, lazy loads and game frames included: each navigation records which
+VERSION served it ("pins"), and old snapshots are pruned once no open page uses
+them. `test-pwa` checks each of those against a staged deploy.
 
 Until 2026-11-14 code was **network-first** for the same coherence reason, at a
 round trip per file and a 3 s wait for any file on a bad link (docs/perf.md).
@@ -830,8 +834,6 @@ the icon for exactly this reason. `test-pwa` now parses the file.
   phone has been asked to install it, and iOS in particular is unverified: it
   ignores the manifest's icons, gets no install event, and Safari's service
   worker eviction rules are its own.
-- A deploy reaches an open page only on its next load: the browser installs the
-  new snapshot in the background and the page already running keeps the files
-  it loaded. A file that page loads *later* (qr-decode.js on a first scan, a
-  game's frame) comes from the new snapshot — the one window where two deploys
-  meet. It was the same under network-first.
+- A deploy reaches an open page only on its next load; an installed app left
+  open for days stays on the deploy it opened with. Nothing tells the player a
+  newer one is waiting.
