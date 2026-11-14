@@ -53,84 +53,9 @@ Undercover: a new phone starts on the 9 everyday topics (`simple: true` in
 words.js) at EASY; EVERYDAY button on WORDS; names, undercovers and blank are
 saved per device like the words (`players`). test-undercover + test-bots green.
 
-## Undercover topics, no-repeat deal, scores (2026-11-13) — pushed to main
-
-`games/undercover/words.js`: 754 pairs in 14 topics × easy/hard; WORDS screen
-(topics multi-select + EASY/MIXED/HARD, saved per device); deal avoids pairs
-already dealt on this phone (`ctx.storage` "seen"); topic shown on reveal;
-running scores (civ 1 / undercover 3 / blank 4), saved per device, with RESET SCORES. sw.js v32
-precaches words.js. test-undercover + test-bots green. Preview gif re-recorded (preview.mjs now
-serves over http so framed games load, and exits explicitly).
-
-## Themes, search, contributors, PR-only pins (2026-11-13) — live (9f3c0bd)
-
-Built and green (every `just test` suite + accounts + social): lib/theme.css
-+ theme.js (Paper default from lokeshmohanty.github.io, Neon; fonts
-self-hosted; frames follow; check-colours lint), two-choice game pages
-(PLAY WITH BOTS / PLAY WITH FRIENDS, code only for friends), portal search
-(author: type: tag: players: from:), lib/nav.js (GitHub + Add your game top
-left, tabs), contribute.html (CONTRIBUTING.md rendered), contributors.html
-(contributor.json), registry-bump.yml (pins move only by PR; trusted owners
-auto-merged). arcade-games branch `themes`: palette + contributor.json.
-Published 2026-11-13: games main 9f3c0bd (site deployed, checked live in
-both themes), arcade-games main 4ae4d37. The site still pins arcade-games
-efabb70 (old colours).
-Then (branch `propose`, not pushed): Lokesh dropped the bump workflow — PRs
-are the contributor's; `just propose` / the site's Propose form and Check
-for updates open GitHub's page filled in; merge → deploy.yml. Cards: PLAY
-WITH BOTS / PLAY WITH FRIENDS on hover or tap, no PLAY NOW.
-Live 2026-11-13 (a6fb6bf): propose + cards, verified on a phone.
-Then (branch `submissions`): submission.yml + submission-report.yml check and
-label every PR touching registry/ (rules in check-submission.mjs, tested;
-the full check passed on a trial bump of arcade-games to 4ae4d37 and refused
-it from another author). platform-check.yml is the old registry-check.
-Next: Lokesh opens the arcade-games pin PR himself (edit link from `just
-propose lokeshmohanty/arcade-games`) — the first live run of the check.
-
-## Phases 1–6 (2026-11-13) — merged, site and Worker deployed (b35232de)
-
-Built and green locally: stats/favourites/recents + portal from catalogs
-(Phase 1); accounts, ranked matches, leaderboards, hourly GitHub snapshot,
-feedback, friends + presence + invites, groups (worker/api/, D1, UserLive;
-lib/account*.js, profile.html, leaderboard.html) — docs/accounts.md.
-test-worker converted to frames: it caught that sandboxed games lost
-`secrets.keep` across a reload (no sessionStorage in the frame) — **live on
-main since b597fb6**; fixed here (NeonArcade.sessionStore via the bridge).
-Green 2026-11-13: every `just test` suite + test-accounts (100) + test-social
-+ test-worker. arcade-games: branch `platform-2` (titles, reportResult),
-registry pinned to its local commit — push + re-pin before merging.
-Setup done 2026-11-13: D1 `arcade` (APAC), all secrets, OAuth apps, GitHub
-App, Worker deployed; live API/redirects/room server verified.
-Identities live 2026-11-13 (main 16c0777, D1 migration 0002 applied, Worker
-ff2ca98d): one account connects Google + GitHub; GitHub sign-in is the GitHub
-App (client Iv23…); its user token kept AES-GCM encrypted; feedback requires
-GitHub and posts as the player's own comment. The one live Google account was
-copied into `identities`. Old OAuth app secrets (GITHUB_CLIENT_ID/SECRET)
-still set — delete them and the OAuth app (GitHub sign-in now verified).
-Seen live 2026-11-13: GitHub connected to the Google account, and feedback
-posted as the player's own comment (undercover thread, author lokeshmohanty).
-Still to see live: a ranked game between two real accounts, the first
-`stats` snapshot commit; real-phone check (sandbox wake lock / audio /
-fullscreen; dev kit from Safari).
-
-## Platform rework (2026-11-13) — merged to main on Lokesh's confirmation
-
-Plan: `~/.claude/plans/1-a-b-2-generic-whistle.md`; design: docs/sdk.md;
-author workflow: CONTRIBUTING.md. All games framed: four in `games/<id>/`,
-five from `lokeshmohanty/arcade-games` (pushed, main 24eeffe) via
-`registry/lokeshmohanty/arcade-games.json`. Onitama removed everywhere
-(Lokesh: "leave onitama out" — a recreation of a published game); a local
-branch `backup/import-with-onitama` in ../arcade-games keeps the old import.
-Dev kit, example game, `validate-game`, PR check, deploy fetch step built.
-Green 2026-11-13: full `just test` incl. devkit; validate-game on all games.
-Next: portal cards from the catalogs; then Phases 1–6 (stats → accounts → …).
-Not yet: test-worker (wrangler) still drives games in-page — needs the
-frame rewrite test-party got; real-phone check of wake lock / audio /
-fullscreen in the sandbox; dev kit from Safari / Chrome LNA prompt.
-
 ## Archive
 
-Finished work from 2026-11-12 and earlier is in `STATUS-archive.md`.
+Finished work from 2026-11-13 and earlier is in `STATUS-archive.md`.
 
 ## Next actions
 
