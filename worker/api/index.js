@@ -7,6 +7,7 @@
 // public, open to every origin.
 
 import { auth, requireAccount, sessionOf, accountForToken } from "./auth.js";
+import { botWinsOf } from "./bots.js";
 import { getFeedback, postFeedback } from "./feedback.js";
 import { HttpError, fail, json, preflight } from "./http.js";
 import { leaderboard } from "./lb.js";
@@ -57,7 +58,8 @@ export async function api(request, env, { gate = async () => true } = {}) {
 			const scope = url.searchParams.get("scope") ?? "global";
 			// ?me=1 on the global board: add where you stand (personal, so not cached).
 			const who = scope === "global" && !url.searchParams.has("me") ? null : await me();
-			const lb = await leaderboard(env, who, game, scope);
+			// ?vs=bots: the game's board of wins against bots (worker/api/bots.js).
+			const lb = await leaderboard(env, who, game, scope, url.searchParams.get("vs"));
 			return who ? send(lb) : open(lb, "public, max-age=60");
 		}
 		if (method === "GET" && a === "u" && b) return open(await publicProfile(env, b), "public, max-age=60");
@@ -85,7 +87,7 @@ export async function api(request, env, { gate = async () => true } = {}) {
 		if (a === "me" && b === "identities" && c && method === "DELETE") return send(await unlink(env, await me(), c));
 		if (a === "me" && b === "matches" && method === "GET") {
 			const m = await me();
-			return send({ matches: await matchesOf(env, m.id), ratings: await ratingsOf(env, m.id) });
+			return send({ matches: await matchesOf(env, m.id), ratings: await ratingsOf(env, m.id), botWins: await botWinsOf(env, m.id) });
 		}
 		if (a === "match" && b === "report" && method === "POST") return send(await report(env, await me(), request));
 		if (a === "run" && b === "start" && method === "POST") return send(await startRun(env, await me(), request));
