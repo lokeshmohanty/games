@@ -119,43 +119,59 @@ counted in `ratings` but a best-score board does not show them. Sudoku's
 `/api/lb/lokeshmohanty/sudoku` (and each level's) answers with `levels`, and
 the leaderboard view shows a strip: Races · Easy · alone · … (`?level=`).
 
-**Sudoku, verified.** The game deals a new puzzle with `puzzleFor(seed,
-level)` from the init seed (arcade-games `sudoku/sudoku-rules.js`, commit
-d05ae1d) and its solo result carries `proof: { start, level, daily, grid }`
-— the 81-digit solved grid. `worker/api/sudoku.js` holds a **copy** of the
-generator (named source and commit at its top). It checks, cheapest first,
-generating the puzzle last:
+**Sudoku, verified — within the free plan's 10 ms.** The game deals attempt
+k of a puzzle from its own random stream (`streamOf(key, k)`): its full grid
+first, `solutionFor(key, k)`, then the cells it takes away while the puzzle
+keeps exactly one solution (arcade-games `sudoku/sudoku-rules.js`, commit
+b90aafb; the key is `seedKey(seed, level)`, or `dailyKey(date, level)`). Its
+solo result carries `proof: { start, level, daily, attempt, grid }`. The
+puzzle having one solution, the only grid that solves it is its full grid,
+so the server needs no removal and no uniqueness search: `worker/api/sudoku.js`
+holds a **copy** of only the grid code, the seeded streams and the
+randomized full-grid search, up to `solutionFor` (source lines and commit at
+its top), and checks, cheapest first:
 - the difficulty, how it was dealt (`new`, or `daily` for a date within 36 h
-  of now; a resumed puzzle is not ranked), the grid's format;
+  of now; a resumed puzzle is not ranked), `attempt` a whole number 0–11,
+  the grid's format;
 - the server's time since the run began and the reported time are at least
   the difficulty's fastest plausible solve: easy 30 s, medium 45 s, hard
   60 s, expert 90 s (`MIN_SOLVE_S`);
-- the grid is a valid solution (every row, column and box);
 - a daily puzzle: **one ranked per account per day per difficulty** (unique
   index `runs_daily`, so racing reports cannot both count);
-- then the puzzle, regenerated from the run's seed (or the date): the grid
-  keeps every clue.
+- then the grid equals `solutionFor(key, attempt)`.
+
+A player could name another attempt of the same seed than the one dealt;
+every such grid is computable from the seed anyway, so it changes nothing —
+the bound, as everywhere here, is the clock.
 
 The time recorded is **max(reported, server time since the run began −
 60 s)** (`CLOCK_SLACK_S`: the run begins before the puzzle is picked, and
 the first-open rules sheet may sit in between), in seconds, lowest best. If
 the game's generator changes, the copy must change with it: `just
-test-accounts` compares both for ten seeds at every difficulty when
+test-accounts` compares the server's `solutionFor` with the grid the game's
+`generate()` deals, for the attempt it used, for 236 puzzles (seeds and
+dailies at every difficulty) and every attempt of one seed, when
 `../arcade-games-v2` is checked out.
 
-**CPU.** Regenerating a puzzle is the costly step. Measured with
-`puzzleFor` in warm Node, 280 seeds per level (2026-11-15), avg / p95 / max
-ms: easy 0.7 / 0.8 / 1.3, medium 1.1 / 1.6 / 2.5, hard 3.5 / 8.6 / 16,
-expert 7.4 / 18 / 65 (an earlier review measured 0.8/10, 1.3/3, 3.8/21,
-7.9/38 avg/max). The Workers free plan allows 10 ms of CPU per request:
-hard and expert reports would often exceed it. **VERIFY the account's
-plan** (a paid plan allows 30 s). A report cut off by the limit does not use
-up its run.
+**CPU (Lokesh, 2026-11-15: everything within the Workers free plan, 10 ms of
+CPU per request and per cron run).** Measured in Node, warm (JIT), and with
+`--jitless` as a stand-in for a cold isolate; D1 and fetches are I/O, not
+CPU, and are not in these:
+
+| Path | Cost | Bound |
+|---|---|---|
+| Sudoku check, `solutionFor` | 2000 seeds per level: avg 0.08 ms, p95 0.10, p99.9 0.5, max 1.1 (warm); avg 3.0, max 4.9 (jitless); module load ~1.7 ms + first call ~2.5 ms on a fresh process | — |
+| Hourly snapshot | 12 boards × 100 rows + summary/index of 300 games, built, digested and all sent: median 2.0, max 5.5 ms; nothing changed: ~1.1; the App JWT on a cold isolate (RSA-2048 import + sign): 2–4 ms more | `BOARDS_PER_RUN` = 12, longest-unchecked first; only changed files are sent, over the last tree (`base_tree`); a board nobody is ranked on any more is deleted. Before: every board every run, ~4.8 ms at 30 boards and 17.5 at 120 |
+| A group's board (replays its matches) | ~1.7 ms per 1000 matches warm, ~2.2 jitless; 20 000 matches was 16.5 / 41 ms | the most recent `GROUP_REPLAY` = 2000 matches (worker/api/lb.js) |
+| Export | ~0.75 ms per 1000 matches | `EXPORT_PAGE` = 2000 matches a page, `?page=`, `matchesNext`; the profile's EXPORT gathers every page |
+| Room server relay (hub) | a 1 MiB message (the WebSocket limit) parsed and relayed to one member: ~3 ms; rooms hold ≤ 8 | — |
+| Sign-in, sessions, vault | HMAC and AES-GCM on short strings: well under 1 ms | — |
 
 **Until the Sudoku pin moves.** The arcade serves the pinned Sudoku
 (registry `lokeshmohanty/arcade-games.json`, commit 2997566), which ignores
 the seed and sends no proof, so a solo Sudoku is refused ("…has none")
-until arcade-games d05ae1d is pushed and the pin moves to it.
+until arcade-games b90aafb is pushed and the pin moves to it. That commit
+also changes every puzzle generate() deals, today's daily included.
 
 **What it does not stop.** A player who waits out the clock and then
 reports an invented score under the ceiling, up to 50 times a day. Runs
@@ -175,7 +191,7 @@ address per 5-minute window (IpGate `api`).
 |---|---|---|
 | `GET /auth/{github,google}/start?back=` → `…/callback` | anyone | sign in; back to `back#token=` |
 | `GET /auth/test?name=&uid=&back=` | tests only (`AUTH_TEST=1`, loopback host) | |
-| `GET/PATCH/DELETE /api/me`, `GET /api/me/export`, `POST /api/me/signout` | signed in | profile, settings, delete, export |
+| `GET/PATCH/DELETE /api/me`, `GET /api/me/export[?page=]`, `POST /api/me/signout` | signed in | profile, settings, delete, export (matches 2000 a page; `matchesNext`) |
 | `GET/PUT /api/me/favs`, `GET /api/me/matches` | signed in | favs: game ids, `contributor:<login>`, `collection:<owner>/<repo>` (2026-11-15; same table, no migration) |
 | `POST /api/stats/played`, `GET /api/stats/summary` | anyone | counts |
 | `POST /api/match/report` | signed in | ranked results; played alone: `run` is the server's, plus the game's `proof` |

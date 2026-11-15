@@ -109,16 +109,25 @@ async function standing(env, game, kind, me, rows, { only = null, includeHidden 
 }
 
 /** A group: replay the matches played only among its members. */
+/**
+ * The most recent matches a group's board replays. Replaying is CPU on the
+ * Worker (~1 ms a thousand, more on a cold isolate; docs/accounts.md "CPU"),
+ * and the free plan allows 10 ms a request: past this, the oldest drop out.
+ */
+export const GROUP_REPLAY = 2000;
+
 async function forGroup(env, game, kind, members) {
 	if (!members.length) return [];
 	const set = new Set(members);
-	const matches = await all(
-		env.DB.prepare(
-			`SELECT m.id, m.kind, m.ranking, m.scores FROM matches m WHERE m.game = ? AND m.id IN (
-				SELECT p.match FROM match_players p GROUP BY p.match HAVING SUM(CASE WHEN p.account IN (${members.map(() => "?").join(",")}) THEN 0 ELSE 1 END) = 0
-			) ORDER BY m.at ASC`,
-		).bind(game, ...members),
-	);
+	const matches = (
+		await all(
+			env.DB.prepare(
+				`SELECT m.id, m.kind, m.ranking, m.scores FROM matches m WHERE m.game = ? AND m.id IN (
+					SELECT p.match FROM match_players p GROUP BY p.match HAVING SUM(CASE WHEN p.account IN (${members.map(() => "?").join(",")}) THEN 0 ELSE 1 END) = 0
+				) ORDER BY m.at DESC LIMIT ?`,
+			).bind(game, ...members, GROUP_REPLAY),
+		)
+	).reverse();
 	const st = new Map();
 	const get = (a) => st.get(a) ?? st.set(a, { account: a, elo: ELO_START, games: 0, wins: 0, best: null }).get(a);
 	for (const m of matches) {
@@ -189,9 +198,14 @@ export async function leaderboard(env, me, game, scope = "global") {
 	return out({ game, kind, scope, group: { id: grp, name: g?.name }, rows, me: rows.find((r) => r.id === me.id) ?? null });
 }
 
-/** The top of every game, for the public snapshot (snapshot.js). */
-export async function topOfEveryGame(env, limit = 100) {
-	const games = (await all(env.DB.prepare("SELECT DISTINCT game FROM ratings"))).map((r) => r.game);
+/** Every board with a ranked player (snapshot.js). */
+export async function boardsWithRatings(env) {
+	return (await all(env.DB.prepare("SELECT DISTINCT game FROM ratings"))).map((r) => r.game);
+}
+
+/** The top of each of `games` (default: every board), for the public snapshot. */
+export async function topOfEveryGame(env, limit = 100, games = null) {
+	games ??= await boardsWithRatings(env);
 	const out = {};
 	const min = Number(env.LB_MIN_GAMES ?? MIN_GAMES);
 	for (const game of games) {

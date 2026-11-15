@@ -105,8 +105,22 @@ export async function deleteMe(env, me) {
 	return { deleted: true };
 }
 
-export async function exportMe(env, me) {
+/**
+ * Matches per export page: turning D1's rows into JSON and back is CPU on the
+ * Worker (~0.75 ms a thousand, docs/accounts.md "CPU"), and the free plan
+ * allows 10 ms a request. `matchesNext` names the next page, or is null.
+ */
+export const EXPORT_PAGE = 2000;
+
+export async function exportMe(env, me, page = 0) {
 	const q = (sql, ...a) => all(env.DB.prepare(sql).bind(...a));
+	page = Number.isInteger(page) && page >= 0 ? page : 0;
+	const matches = await q(
+		"SELECT m.id, m.game, m.kind, m.ranking, m.scores, m.at, p.place FROM match_players p JOIN matches m ON m.id = p.match WHERE p.account = ? ORDER BY m.at DESC, m.id LIMIT ? OFFSET ?",
+		me.id,
+		EXPORT_PAGE + 1,
+		page * EXPORT_PAGE,
+	);
 	return {
 		exported: new Date().toISOString(),
 		account: { ...profile(me, await identitiesOf(env, me.id)), created: new Date(me.created).toISOString() },
@@ -114,10 +128,9 @@ export async function exportMe(env, me) {
 		identities: (await q("SELECT provider, login, linked, token_enc IS NOT NULL AS githubTokenKept FROM identities WHERE account = ?", me.id)),
 		favourites: (await q("SELECT game FROM favs WHERE account = ?", me.id)).map((r) => r.game),
 		ratings: await q("SELECT game, elo, games, wins, best FROM ratings WHERE account = ?", me.id),
-		matches: await q(
-			"SELECT m.id, m.game, m.kind, m.ranking, m.scores, m.at, p.place FROM match_players p JOIN matches m ON m.id = p.match WHERE p.account = ? ORDER BY m.at DESC",
-			me.id,
-		),
+		matches: matches.slice(0, EXPORT_PAGE),
+		matchesPage: page,
+		matchesNext: matches.length > EXPORT_PAGE ? page + 1 : null,
 		friends: await q("SELECT a, b, state, at FROM friends WHERE a = ? OR b = ?", me.id, me.id),
 		groups: await q(
 			"SELECT g.id, g.name, g.owner = ? AS owner, gm.joined FROM group_members gm JOIN groups g ON g.id = gm.grp WHERE gm.account = ?",

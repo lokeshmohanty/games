@@ -72,7 +72,7 @@ export async function api(request, env, { gate = async () => true } = {}) {
 			if (method === "PATCH") return send(await patchMe(env, await me(), request));
 			if (method === "DELETE") return send(await deleteMe(env, await me()));
 		}
-		if (a === "me" && b === "export" && method === "GET") return send(await exportMe(env, await me()));
+		if (a === "me" && b === "export" && method === "GET") return send(await exportMe(env, await me(), Number(url.searchParams.get("page") ?? 0)));
 		if (a === "me" && b === "signout" && method === "POST") {
 			await signOut(env, await me());
 			return send({ signedOut: true });

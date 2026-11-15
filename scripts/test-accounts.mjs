@@ -19,7 +19,7 @@ const check = (label, ok, detail = "") => {
 
 // ------------------------------------------------------------- fake GitHub
 
-const fake = { discussions: new Map(), comments: [], authors: [], commits: [], refs: new Map(), trees: new Map(), graphql: 0, refreshed: 0, ghUser: { id: 42, login: "octo", name: "Octo Cat" } };
+const fake = { treePosts: [], discussions: new Map(), comments: [], authors: [], commits: [], refs: new Map(), trees: new Map(), graphql: 0, refreshed: 0, ghUser: { id: 42, login: "octo", name: "Octo Cat" } };
 const fakePort = await freePort();
 const FAKE = `http://127.0.0.1:${fakePort}`;
 const server = createServer(async (req, res) => {
@@ -99,10 +99,18 @@ const server = createServer(async (req, res) => {
 			const sha = fake.refs.get(git.slice(4));
 			return sha ? send(200, { object: { sha } }) : send(404, { message: "Not Found" });
 		}
+		if (req.method === "GET" && git.startsWith("commits/")) {
+			const c = fake.commits.find((x) => x.sha === git.slice(8));
+			return c ? send(200, { sha: c.sha, tree: { sha: c.tree } }) : send(404, { message: "Not Found" });
+		}
 		const b = raw ? JSON.parse(raw) : {};
 		if (git === "trees") {
+			// base_tree: the files not sent stay; `sha: null` deletes one.
 			const sha = `t${fake.trees.size + 1}`;
-			fake.trees.set(sha, b.tree);
+			const files = new Map((b.base_tree ? fake.trees.get(b.base_tree) ?? [] : []).map((x) => [x.path, x]));
+			for (const x of b.tree) x.sha === null ? files.delete(x.path) : files.set(x.path, x);
+			fake.trees.set(sha, [...files.values()]);
+			fake.treePosts.push(b);
 			return send(201, { sha });
 		}
 		if (git === "commits") {
@@ -450,22 +458,32 @@ try {
 
 	console.log("\naccounts: Sudoku, verified on the server");
 	{
-		// The server's generator is a copy of the game's (worker/api/sudoku.js):
-		// the same seed must deal the same puzzle in both.
+		// The server's solutionFor is a copy of the game's (worker/api/sudoku.js):
+		// the grid the game deals must be the one the server computes, for the
+		// attempt the game actually used.
 		const RULES = new URL("../../arcade-games-v2/sudoku/sudoku-rules.js", import.meta.url);
 		if (existsSync(RULES)) {
 			new Function(readFileSync(RULES, "utf8"))();
 			const G = globalThis.sudokuRules;
-			const seeds = [0, 1, 2, 7, 99, 12345, 2 ** 31 - 1, 1_000_003, 424242, 31337];
 			const diff = [];
+			const attempts = new Set();
+			let n = 0;
 			for (const level of SU.LEVEL_IDS) {
-				for (const seed of seeds) {
-					const [a, b] = [G.puzzleFor(seed, level), SU.puzzleFor(seed, level)];
-					if (a.puzzle.join("") !== b.puzzle.join("") || a.solution.join("") !== b.solution.join("")) diff.push(`${level}/${seed}`);
+				for (let seed = 0; seed < (level === "expert" ? 40 : 60); seed++) {
+					const g = G.puzzleFor(seed * 104729 + 7, level);
+					attempts.add(g.attempt);
+					n++;
+					if (SU.solutionFor(SU.seedKey(seed * 104729 + 7, level), g.attempt).join("") !== g.solution.join("")) diff.push(`${level}/${seed}`);
 				}
-				if (G.dailyPuzzle("2026-11-15", level).puzzle.join("") !== SU.dailyPuzzle("2026-11-15", level).puzzle.join("")) diff.push(`${level}/daily`);
+				for (const date of ["2026-11-14", "2026-11-15", "2026-11-16", "2027-02-28"]) {
+					const g = G.dailyPuzzle(date, level);
+					n++;
+					if (SU.solutionFor(SU.dailyKey(date, level), g.attempt).join("") !== g.solution.join("")) diff.push(`${level}/${date}`);
+				}
+				for (let k = 0; k < SU.ATTEMPTS; k++) if (G.solutionFor(G.seedKey(12345, level), k).join("") !== SU.solutionFor(SU.seedKey(12345, level), k).join("")) diff.push(`${level}/attempt ${k}`);
 			}
-			check(`the server's generator deals the game's puzzles (${seeds.length} seeds × ${SU.LEVEL_IDS.length} levels, and a daily)`, diff.length === 0, diff.join(" "));
+			check(`the server's solutionFor is the grid the game deals (${n} puzzles, attempts ${[...attempts].sort((x, y) => x - y).join(",")} used; every attempt of one seed)`, diff.length === 0, diff.join(" "));
+			check("…and the game's ATTEMPTS is the server's", G.ATTEMPTS === SU.ATTEMPTS, G.ATTEMPTS);
 		} else console.log("  skip the server's generator against the game's: ../arcade-games-v2 is not checked out");
 
 		const GAME = "lokeshmohanty/sudoku";
@@ -479,7 +497,7 @@ try {
 		const text = (g) => g.join("");
 		const solved = (run, secs, proof, who = "pa", acct = A) => ({ game: GAME, run, match: 1, kind: "coop", ranking: [[who]], roster: { [who]: acct }, scores: { [who]: secs }, proof });
 		const report = (token, body) => call("POST", "/api/match/report", { token, body });
-		const fresh = (seed, level) => ({ start: "new", level, daily: null, grid: text(SU.puzzleFor(seed, level).solution) });
+		const fresh = (seed, level, attempt = 0) => ({ start: "new", level, daily: null, attempt, grid: text(SU.solutionFor(SU.seedKey(seed, level), attempt)) });
 		const ratings = async (token) => (await call("GET", "/api/me/matches", { token })).body.ratings;
 
 		let run = await start(ana, 100);
@@ -501,7 +519,7 @@ try {
 		check("a reported time is raised to the server's clock less 60 s (100 reported, run 300 s old → 240)", r.body.counted === true && medium?.best === 240, { r: r.body, medium });
 
 		const today = new Date().toISOString().slice(0, 10);
-		const daily = (level) => ({ start: "daily", level, daily: today, grid: text(SU.dailyPuzzle(today, level).solution) });
+		const daily = (level) => ({ start: "daily", level, daily: today, attempt: 0, grid: text(SU.solutionFor(SU.dailyKey(today, level), 0)) });
 		run = await start(bo, 75);
 		r = await report(bo, solved(run.run, 70, daily("easy"), "pb", Bo));
 		check("today's puzzle counts too", r.body.counted === true, r.body);
@@ -529,12 +547,20 @@ try {
 		check("a level that is not one is not a board", (await call("GET", `/api/lb/${GAME}@nope`)).status === 400 && (await call("GET", "/api/lb/connect4@easy")).status === 400);
 
 		run = await start(ana, 600);
-		const swapped = SU.puzzleFor(run.seed, "easy").solution.slice();
+		const swapped = SU.solutionFor(SU.seedKey(run.seed, "easy"), 0).slice();
 		[swapped[0], swapped[1]] = [swapped[1], swapped[0]];
-		r = await report(ana, solved(run.run, 590, { start: "new", level: "easy", daily: null, grid: text(swapped) }));
-		check("a grid that is not a solution is refused", r.body.counted === false && /not a solution/.test(r.body.why), r.body);
+		r = await report(ana, solved(run.run, 590, { ...fresh(run.seed, "easy"), grid: text(swapped) }));
+		check("a grid that is not the solution is refused", r.body.counted === false && /not the solution/.test(r.body.why), r.body);
 		r = await report(ana, solved(run.run, 590, fresh(run.seed + 1, "easy")));
-		check("a valid solution of another puzzle is refused (the clues do not match)", r.body.counted === false && /clues/.test(r.body.why), r.body);
+		check("a valid solution of another puzzle is refused", r.body.counted === false && /not the solution/.test(r.body.why), r.body);
+		r = await report(ana, solved(run.run, 590, { ...fresh(run.seed, "easy", 3), attempt: 2 }));
+		check("…so is another attempt's grid under the wrong attempt", r.body.counted === false && /not the solution/.test(r.body.why), r.body);
+		const badAttempts = [];
+		for (const bad of [12, -1, 1.5, null]) {
+			r = await report(ana, solved(run.run, 590, { ...fresh(run.seed, "easy"), attempt: bad }));
+			if (!(r.body.counted === false && /which puzzle/.test(r.body.why))) badAttempts.push([bad, r.body]);
+		}
+		check("an attempt outside 0–11 (or not a whole number) is refused", badAttempts.length === 0, badAttempts);
 		run = await start(ana, 40);
 		r = await report(ana, solved(run.run, 39, fresh(run.seed, "expert")));
 		check("a solve sooner than the difficulty allows is refused (the server's clock)", r.body.counted === false && /too fast/.test(r.body.why), r.body);
@@ -545,7 +571,7 @@ try {
 		check("a Sudoku report without its grid is refused", r.body.counted === false && /grid/.test(r.body.why), r.body);
 		r = await report(ana, solved(run.run, 45, { ...fresh(run.seed, "easy"), start: "resume" }));
 		check("…and so is a resumed puzzle (not dealt in this run)", r.body.counted === false && /resumed/.test(r.body.why), r.body);
-		r = await report(ana, solved(run.run, 45, { start: "daily", level: "easy", daily: "2020-01-01", grid: text(SU.dailyPuzzle("2020-01-01", "easy").solution) }));
+		r = await report(ana, solved(run.run, 45, { start: "daily", level: "easy", daily: "2020-01-01", attempt: 0, grid: text(SU.solutionFor(SU.dailyKey("2020-01-01", "easy"), 0)) }));
 		check("…and an old day's puzzle", r.body.counted === false && /today/.test(r.body.why), r.body);
 		check("none of those moved the bests", (await ratings(ana)).find((x) => x.game === `${GAME}@easy`)?.best === 95);
 	}
@@ -676,6 +702,10 @@ try {
 		await call("POST", "/api/stats/played", { body: { game: "neon-bid" } });
 		r = await call("POST", "/api/admin/snapshot");
 		check("a changed one is, on top of the last", fake.commits.length === 2 && fake.commits[1].parents[0] === fake.commits[0].sha, r.body);
+		const post = fake.treePosts.at(-1);
+		check("…sending only what changed, over the last tree (base_tree)", post.base_tree === fake.commits[0].tree && post.tree.length === 1 && post.tree[0].path === "stats/summary.json", post);
+		const kept = fake.trees.get(fake.commits[1].tree);
+		check("…the boards it did not send are still in the commit", kept.some((x) => x.path === "stats/lb/connect4.json") && JSON.parse(kept.find((x) => x.path === "stats/summary.json").content).games["neon-bid"].played >= 1, kept.map((x) => x.path));
 		await call("PATCH", "/api/me", { token: cy, body: { hidePublic: false } });
 	}
 
@@ -683,6 +713,8 @@ try {
 	{
 		const ex = await call("GET", "/api/me/export", { token: ana });
 		check("export: the account, favourites, ratings, matches, friends", ex.body.account.id === A && ex.body.favourites.length === 2 && ex.body.ratings.length >= 2 && ex.body.matches.length >= 2 && ex.body.friends.length === 1, Object.keys(ex.body));
+		check("…its matches in pages, this one the last", ex.body.matchesPage === 0 && ex.body.matchesNext === null, { page: ex.body.matchesPage, next: ex.body.matchesNext });
+		check("…and a page past the end is empty", (await call("GET", "/api/me/export?page=3", { token: ana })).body.matches.length === 0);
 		const del = await call("DELETE", "/api/me", { token: ana });
 		check("delete: done at once", del.body.deleted === true);
 		check("…the session is gone", (await call("GET", "/api/me", { token: ana })).status === 401);
