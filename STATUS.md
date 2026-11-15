@@ -11,6 +11,18 @@ rather than making every session pay for it.*
 act → record → clear the item. This is the single inbox — do not create a
 separate `TODO.md`.*
 
+## Solo boards: Light Cycles alone, wins against bots (2026-11-15) — branch, not merged
+
+Lokesh: "ensure that games which allow singleplayer have leaderboard like
+neon survival" — both (a) score boards alone and (b) a separate board of
+wins against bots. Branch `solo-boards` (worktree ../games-boards) and
+web-games `light-cycles-solo` 4cc6e1a (worktree ../web-games-lc); neither
+pushed. docs/accounts.md "Solo runs" (Light Cycles) and "Against bots".
+**Awaiting Lokesh:** review; merge; push web-games and move the pin by PR;
+migration 0004 then deploy (docs/accounts.md "Migrations"; 0003 first if
+still pending). Bubble Rush's solo board is one SOLO entry once its v2
+port lands.
+
 ## Tug of War retired (2026-11-14)
 
 Lokesh chose "remove only": dropped from registry/lokeshmohanty/web-games.json

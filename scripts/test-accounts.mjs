@@ -8,6 +8,7 @@
 import { generateKeyPairSync } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import { createServer } from "node:http";
+import { BOTS } from "../worker/api/bots.js";
 import * as SU from "../worker/api/sudoku.js";
 import { freePort, startWrangler } from "./wrangler.mjs";
 
@@ -139,6 +140,7 @@ const w = await startWrangler({
 	SESSION_KEY: "test-session-key-0123456789",
 	LB_MIN_GAMES: "1",
 	SOLO_PER_DAY: "8",
+	BOTS_PER_DAY: "3",
 	GH_APP_CLIENT_ID: "app-client",
 	GH_APP_CLIENT_SECRET: "app-secret",
 	GITHUB_OAUTH_URL: FAKE,
@@ -574,6 +576,121 @@ try {
 		r = await report(ana, solved(run.run, 45, { start: "daily", level: "easy", daily: "2020-01-01", attempt: 0, grid: text(SU.solutionFor(SU.dailyKey("2020-01-01", "easy"), 0)) }));
 		check("…and an old day's puzzle", r.body.counted === false && /today/.test(r.body.why), r.body);
 		check("none of those moved the bests", (await ratings(ana)).find((x) => x.game === `${GAME}@easy`)?.best === 95);
+	}
+
+	console.log("\naccounts: Light Cycles alone, a time bounded by the server's clock");
+	{
+		const GAME = "lokeshmohanty/light-cycles";
+		const start = async (token, ms) => {
+			const s = (await call("POST", "/api/run/start", { token, body: { game: GAME } })).body;
+			if (ms) await call("POST", "/api/admin/age-run", { body: { run: s.run, ms } });
+			return s;
+		};
+		const ride = (run, secs, extra = {}) => ({ game: GAME, run, match: 1, kind: "ffa", ranking: [["pa"]], roster: { pa: A }, scores: { pa: secs }, ...extra });
+		const report = (token, body) => call("POST", "/api/match/report", { token, body });
+		// Ana is near the day's solo runs (SOLO_PER_DAY 8 here): refusals first.
+		let run = await start(ana, 0);
+		let r = await report(ana, ride(run.run, 0.4));
+		check("a round reported sooner than the countdown allows is refused", r.body.counted === false && /too fast/.test(r.body.why), r.body);
+		run = await start(ana, 60_000);
+		r = await report(ana, ride(run.run, 42.3));
+		check("a round alone, its time survived under the time since its run began, counts", r.body.counted === true, r.body);
+		const alone = await call("GET", `/api/lb/${GAME}@alone`);
+		check("…on the game's solo board, best score, in seconds", alone.body.kind === "coop" && alone.body.unit === "s" && alone.body.rows[0]?.id === A && alone.body.rows[0].best === 42.3, alone.body);
+		const races = await call("GET", `/api/lb/${GAME}`);
+		check("…beside its races (wins), which name the solo board and the one against bots", races.body.kind === "ffa" && races.body.levels?.join() === "alone" && races.body.botsBoard === true && !races.body.rows.some((x) => x.id === A), races.body);
+		run = await start(ana, 10_000);
+		r = await report(ana, ride(run.run, 12));
+		check("a time over the seconds since the run began (plus 1 s) is refused", r.body.counted === false && /more than a 10-second run/.test(r.body.why), r.body);
+		r = await report(ana, ride(run.run, 10.55));
+		check("…so is one that is not in tenths", r.body.counted === false && /score/.test(r.body.why), r.body);
+		r = await report(ana, ride(run.run, 10.9));
+		check("…while 10.9 s after 10 s counts (the same run: a refusal does not use it up)", r.body.counted === true, r.body);
+		check("…and a lower time does not lower the best", (await call("GET", `/api/lb/${GAME}@alone`)).body.rows[0].best === 42.3);
+	}
+
+	console.log("\naccounts: wins against bots, on a board of their own");
+	{
+		const eve = await testLogin("Eve");
+		const fay = await testLogin("Fay");
+		const E = await id(eve);
+		const F = await id(fay);
+		const start = async (token, game, ms = BOTS[game]?.minMs + 500, vs = "bots") => {
+			const res = await call("POST", "/api/run/start", { token, body: vs ? { game, vs } : { game } });
+			if (res.status === 200 && ms) await call("POST", "/api/admin/age-run", { body: { run: res.body.run, ms } });
+			return res;
+		};
+		const report = (token, body) => call("POST", "/api/match/report", { token, body });
+		const win = (run, who = "pe", acct = E, extra = {}) => ({ game: "connect4", run, match: 1, kind: "duel", ranking: [[who], ["bot_1"]], roster: { [who]: acct }, ...extra });
+		const ratingsOf = async (token) => (await call("GET", "/api/me/matches", { token })).body.ratings;
+
+		let s = await start(eve, "neon-survival-mp");
+		check("a run against bots is only for a game with that board (not co-op Neon Survival)", s.status === 400 && /against bots/.test(s.body.error), s.body);
+		s = await start(null, "connect4");
+		check("…and needs a sign-in", s.status === 401);
+		s = (await start(eve, "connect4")).body;
+		check("a run against bots: an id, a seed, the server's clock", typeof s.run === "string" && Number.isInteger(s.seed), s);
+		let r = await report(eve, win(s.run));
+		check("a win against a bot, the one person in the match, under its run, counts", r.body.counted === true && r.body.board === "bots" && r.body.wins === 1, r.body);
+		r = await report(eve, win(s.run, "pe", E, { match: 2 }));
+		check("…once: the run is used up", r.body.counted === false && /already reported/.test(r.body.why), r.body);
+		check("…and it is not a rating: no connect4 rating, Elo or ranked match for Eve", !(await ratingsOf(eve)).some((x) => x.game === "connect4") && (await call("GET", "/api/me/matches", { token: eve })).body.matches.length === 0);
+		check("…nor on the ranked board", !(await call("GET", "/api/lb/connect4")).body.rows.some((x) => x.id === E));
+		let bb = await call("GET", "/api/lb/connect4?vs=bots");
+		check("…but on the board of wins against bots", bb.body.kind === "bots" && bb.body.vs === "bots" && bb.body.rows[0]?.id === E && bb.body.rows[0].wins === 1 && bb.body.perDay === 3, bb.body);
+
+		s = (await start(eve, "connect4", 0)).body;
+		r = await report(eve, win(s.run));
+		check(`a win sooner than the game's fastest legal one (${BOTS.connect4.minMs / 1000} s) is refused`, r.body.counted === false && /too fast/.test(r.body.why), r.body);
+		s = (await start(eve, "connect4")).body;
+		r = await report(eve, win(s.run, "pe", E, { ranking: [["bot_1"], ["pe"]] }));
+		check("a loss does not count", r.body.counted === false && /only a win/.test(r.body.why), r.body);
+		r = await report(eve, win(s.run, "pe", E, { ranking: [["pe", "bot_1"]] }));
+		check("…nor a draw", r.body.counted === false && /only a win/.test(r.body.why), r.body);
+		const nf = (await start(eve, "neon-fission")).body;
+		r = await report(eve, { game: "neon-fission", run: nf.run, match: 1, kind: "ffa", ranking: [["pe"], ["pf"], ["bot_1"]], roster: { pe: E, pf: F } });
+		check("a match with another person in it does not count against bots", r.body.counted === false && /one person/.test(r.body.why), r.body);
+		check("…and is not on that board", !(await call("GET", "/api/lb/neon-fission?vs=bots")).body.rows.some((x) => x.id === E));
+		r = await report(eve, win("party-run-id"));
+		check("a win without a run from the server is refused", r.body.counted === false && /run the server issued/.test(r.body.why), r.body);
+		const fays = (await start(fay, "connect4")).body;
+		r = await report(eve, win(fays.run));
+		check("…so is another player's run", r.body.counted === false && /another player/.test(r.body.why), r.body);
+		const solo = (await start(eve, "lokeshmohanty/light-cycles", 60_000, null)).body;
+		r = await report(eve, { ...win(solo.run), game: "lokeshmohanty/light-cycles", kind: "ffa" });
+		check("…and a solo run used for a win against bots", r.body.counted === false && /played alone/.test(r.body.why), r.body);
+		const vb = (await start(eve, "lokeshmohanty/light-cycles", 60_000)).body;
+		r = await report(eve, { game: "lokeshmohanty/light-cycles", run: vb.run, match: 1, kind: "ffa", ranking: [["pe"]], roster: { pe: E }, scores: { pe: 3 } });
+		check("…and a run against bots used for a round alone", r.body.counted === false && /against bots/.test(r.body.why), r.body);
+		r = await report(eve, { ...win(s.run), game: "connect4", kind: "coop" });
+		check("a kind of game with no winner does not count", r.body.counted === false && /no winner/.test(r.body.why), r.body);
+
+		// BOTS_PER_DAY is 3 here (20 deployed): Eve has 1 connect4 win.
+		for (let i = 0; i < 2; i++) await report(eve, win((await start(eve, "connect4")).body.run));
+		s = (await start(eve, "connect4")).body;
+		r = await report(eve, win(s.run));
+		check("past the day's wins against bots in a game, a win does not count, and says why", r.body.counted === false && /3 wins against bots count a day/.test(r.body.why), r.body);
+		const tt = (await start(eve, "tic-tac-toe-js")).body;
+		r = await report(eve, { ...win(tt.run), game: "tic-tac-toe-js" });
+		check("…in that game only: another game's still counts", r.body.counted === true && r.body.wins === 1, r.body);
+
+		// Fay reaches three later: the tie goes to whoever got there first.
+		for (let i = 0; i < 3; i++) await report(fay, win((await start(fay, "connect4")).body.run, "pf", F));
+		bb = await call("GET", "/api/lb/connect4?vs=bots");
+		check("ranked by wins; a tie goes to whoever reached it first", bb.body.rows.map((x) => `${x.id === E ? "E" : x.id === F ? "F" : "?"}${x.wins}`).join() === "E3,F3" && bb.body.rows[0].at < bb.body.rows[1].at, bb.body.rows);
+		const mine = await call("GET", "/api/lb/connect4?vs=bots&me=1", { token: fay });
+		check("?me=1: where you stand on it", mine.body.me?.id === F && mine.body.me.rank === 2, mine.body.me);
+		check("friends' board against bots needs a sign-in", (await call("GET", "/api/lb/connect4?vs=bots&scope=friends")).status === 401);
+		check("…and holds only you and your friends", (await call("GET", "/api/lb/connect4?vs=bots&scope=friends", { token: fay })).body.rows.map((x) => x.id).join() === F);
+		check("a game with no such board says so", (await call("GET", "/api/lb/neon-survival-mp?vs=bots")).status === 400);
+		check("Fay's ratings are untouched by all of it", (await ratingsOf(fay)).length === 0, await ratingsOf(fay));
+		const mm = (await call("GET", "/api/me/matches", { token: eve })).body;
+		check("your matches answer carries the wins against bots, apart from the ratings", mm.botWins?.map((x) => `${x.game}:${x.wins}`).join() === "connect4:3,tic-tac-toe-js:1" && !mm.ratings.some((x) => x.game === "connect4"), mm);
+		check("…and so does the public profile", (await call("GET", `/api/u/${E}`)).body.botWins?.length === 2);
+		const ex = await call("GET", "/api/me/export", { token: eve });
+		check("export: the wins against bots", ex.body.winsAgainstBots?.find((x) => x.game === "connect4")?.wins === 3, ex.body.winsAgainstBots);
+		await call("DELETE", "/api/me", { token: eve });
+		check("delete: gone from the board", !(await call("GET", "/api/lb/connect4?vs=bots")).body.rows.some((x) => x.id === E));
 	}
 
 	console.log("\naccounts: friends, presence and invites");

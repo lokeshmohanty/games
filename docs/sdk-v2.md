@@ -138,7 +138,16 @@ How it runs:
   server can deal the same. A result may carry `proof` (any JSON) for a
   server-side check of the run; Sudoku sends its solved grid. Offline or
   signed out, `seed` is local and the run does not rank. docs/accounts.md
-  "Solo runs".
+  "Solo runs". A game that ranks alone by a score sends it in `scores`
+  (Light Cycles: the seconds survived, to the tenth).
+- **Won against bots, counted apart.** When a signed-in player is the only
+  person in a match and every other seat is a bot, the shell asks the
+  server for a run as the match begins (not waited for; a game that runs
+  its own matches gets one at its start and after each result), and a win
+  goes to the game's board of wins against bots — never a rating. Nothing
+  for a game to do, with one exception: bot seats that are really people
+  on this phone must be named in the result's `names` (below), and then
+  the win does not count against bots. docs/accounts.md "Against bots".
 - **The end card** (Lokesh, 2026-11-15: everything, with the extra
   information behind a toggle so the screen stays simple). Always shown:
   - the title: `title` (≤ 40 characters) if the result has one, else YOU

@@ -26,9 +26,15 @@
 // "time" board the lowest; Sudoku on one board per difficulty), never a win
 // over anybody, and never Elo.
 //
+// A ranking with a bot in it never reaches the ratings either. If its one
+// person won, under a run the server issued for a match against bots, the
+// win goes to the game's separate board of wins against bots
+// (worker/api/bots.js; Lokesh, 2026-11-15) — and nowhere else.
+//
 // Ratings, per account per game: duel → Elo (K 32, from 1200); every kind →
 // games and wins (first place); coop → best score.
 
+import { botWinsOf, reportBotsWin } from "./bots.js";
 import { GAME_ID, HttpError, body, now, randomId, sha256 } from "./http.js";
 import { boardOf, checkSoloRun, claimRun } from "./runs.js";
 
@@ -106,7 +112,8 @@ export async function report(env, me, request) {
 	const match = Number.isInteger(b.match) ? b.match : 1;
 	if (b.kind === "local") return { counted: false, why: "one-phone games are not ranked" };
 	const r = toAccounts(b);
-	if (r.bots) return { counted: false, why: "games with bots are not ranked" };
+	// Never ranked: at most a win on the game's board against bots.
+	if (r.bots) return reportBotsWin(env, me, b, now());
 	if (!r.accounts.includes(me.id)) throw new HttpError(400, "you can only report a match you played");
 	const solo = b.ranking.flat().length === 1 && r.accounts.length === 1;
 	if (r.accounts.length < 2 && !solo) return { counted: false, why: "a ranked match needs two signed-in players" };
@@ -233,7 +240,15 @@ export async function ratingsOf(env, account) {
 export async function publicProfile(env, id) {
 	const a = await env.DB.prepare("SELECT id, name, avatar, created, hide_public FROM accounts WHERE id = ?").bind(id).first();
 	if (!a || a.hide_public) throw new HttpError(404, "no such player");
-	return { id: a.id, name: a.name, avatar: a.avatar, since: a.created, ratings: await ratingsOf(env, a.id), matches: await matchesOf(env, a.id, 20) };
+	return {
+		id: a.id,
+		name: a.name,
+		avatar: a.avatar,
+		since: a.created,
+		ratings: await ratingsOf(env, a.id),
+		matches: await matchesOf(env, a.id, 20),
+		botWins: await botWinsOf(env, a.id),
+	};
 }
 
 export const newRun = () => randomId(8);
