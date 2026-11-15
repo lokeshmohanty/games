@@ -8,11 +8,14 @@
 // on first visit.
 import { createEffect, createSignal, lazy, Match, onCleanup, Show, Switch } from "solid-js";
 import { currentUrl, currentView, navigate, type View } from "./router";
+// The start page, in the main bundle: a lazy chunk was one more round trip
+// before the first paint.
+import Portal from "./views/Portal";
 
 const A = (window as any).NeonArcade;
 
 const views: Record<Exclude<View, "party">, ReturnType<typeof lazy>> = {
-	portal: lazy(() => import("./views/Portal")),
+	portal: Portal as any,
 	leaderboard: lazy(() => import("./views/Leaderboard")),
 	profile: lazy(() => import("./views/Profile")),
 	contribute: lazy(() => import("./views/Contribute")),
@@ -38,6 +41,12 @@ export default function App() {
 	const layer = document.getElementById("party-layer")!;
 	const [party, setParty] = createSignal<any>(null);
 	const [playing, setPlaying] = createSignal<string | null>(null);
+	let mounting = false;
+	// The catalogs (src/main.tsx): only the portal draws before them (and
+	// redraws after); the other views read them as they mount — the
+	// contributors view drew without the community repos, now and then.
+	const [catalogsIn, setCatalogsIn] = createSignal(false);
+	A.catalogs.then(() => setCatalogsIn(true));
 
 	createEffect(() => {
 		const v = currentView();
@@ -45,12 +54,17 @@ export default function App() {
 		viewport?.setAttribute("content", v === "party" ? FIXED : ZOOMABLE);
 		layer.hidden = v !== "party";
 		document.body.dataset.view = v;
-		if (v === "party" && !party()) {
-			// Tests reach the live room and game through these (as on party.html).
-			const p = A.mountParty(document.getElementById("party"), document.getElementById("stage"));
-			(window as any).__party = (window as any).__game = p;
-			setParty(p);
-			if (A.devError) A.toast(A.devError, "warn");
+		if (v === "party" && !party() && !mounting) {
+			// After the catalogs (src/main.tsx): the party reads ?game= against
+			// every registered game. Tests reach the live room and game through
+			// these, as on party.html.
+			mounting = true;
+			A.catalogs.then(() => {
+				const p = A.mountParty(document.getElementById("party"), document.getElementById("stage"));
+				(window as any).__party = (window as any).__game = p;
+				setParty(p);
+				if (A.devError) A.toast(A.devError, "warn");
+			});
 		}
 	});
 	// A live party behind another view (its game, if one runs): for the pill.
@@ -64,7 +78,7 @@ export default function App() {
 	return (
 		<>
 			<Switch>
-				<Match when={currentView() !== "party"}>
+				<Match when={currentView() !== "party" && (currentView() === "portal" || catalogsIn())}>
 					{(() => {
 						const V = views[currentView() as Exclude<View, "party">];
 						return <V />;

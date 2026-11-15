@@ -14,7 +14,8 @@
     <p><a href="./?party">Open the party</a></p>
     <script>
       const q = new URLSearchParams(location.search);
-      if (![...q.keys()].length) q.set("party", "");
+      // The party, whatever else rides along (?mockroom, ?rs…): src/router.ts reads these.
+      if (!["game", "mode", "fresh", "dev", "party", "rs"].some((k) => q.has(k))) q.set("party", "");
       location.replace("./?" + q.toString().replace(/=(&|$)/g, "$1") + location.hash);
     </script>
   </body>

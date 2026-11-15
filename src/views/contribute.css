@@ -1,0 +1,89 @@
+/* src/views/contribute.css — the "Add your game" view (was contribute.html's
+   inline style). One document now: every rule is under .view-contribute, so
+   the guide's bare-element rules (h1, a, code, pre) reach no other view.
+   :where() keeps each rule's old specificity: a scoped "main a" outranked
+   .neon-btn--accent and painted the buttons' text in the accent. */
+:where(.view-contribute) main {
+  max-width: 42rem;
+  margin: 0 auto;
+  padding: 16px 16px 56px;
+  line-height: 1.6;
+}
+:where(.view-contribute) main h1 {
+  color: var(--accent);
+  font-size: 1.7rem;
+  margin: 8px 0 12px;
+}
+:where(.view-contribute) main h2 {
+  font-size: 1.15rem;
+  margin: 28px 0 8px;
+  color: var(--ink);
+}
+:where(.view-contribute) main p,
+:where(.view-contribute) main li {
+  color: var(--ink);
+}
+:where(.view-contribute) main a {
+  color: var(--accent);
+}
+:where(.view-contribute) main code {
+  font-family: var(--font-mono);
+  font-size: 0.88em;
+  background: var(--surface-2);
+  border-radius: 4px;
+  padding: 1px 5px;
+  overflow-wrap: anywhere;
+}
+:where(.view-contribute) main pre {
+  background: var(--surface);
+  border: 1px solid var(--rule);
+  border-radius: 8px;
+  padding: 12px 14px;
+  overflow-x: auto;
+  font-size: 0.85rem;
+  line-height: 1.5;
+}
+:where(.view-contribute) main pre code {
+  background: none;
+  padding: 0;
+}
+:where(.view-contribute) .muted {
+  color: var(--ink-2);
+}
+:where(.view-contribute) .propose {
+  border: 1px solid var(--rule);
+  border-radius: 12px;
+  background: var(--surface);
+  padding: 14px 16px;
+  margin: 28px 0 20px;
+}
+:where(.view-contribute) .propose h2 {
+  margin: 0 0 6px;
+}
+:where(.view-contribute) .propose-row {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+:where(.view-contribute) .propose-row input {
+  flex: 1 1 12rem;
+  min-width: 0;
+  min-height: 44px;
+  box-sizing: border-box;
+  padding: 8px 12px;
+  border: 1px solid var(--rule);
+  border-radius: 8px;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--font-mono);
+  font-size: 16px;
+}
+:where(.view-contribute) [data-propose-out] .neon-btn {
+  display: inline-flex;
+  text-decoration: none;
+}
+:where(.view-contribute) .propose-steps {
+  margin: 12px 0 0;
+  padding-left: 1.3em;
+  color: var(--ink);
+}

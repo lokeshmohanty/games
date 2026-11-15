@@ -227,12 +227,16 @@ for (const p of [
 	// Retired 2026-11-14, kept as a redirect to the portal for old shortcuts.
 	"tug-of-war.html",
 ]) {
+	// The old pages forward into the one-page shell (docs/spa.md): what is
+	// checked is where they land, once the shell's code (pwa.js among it,
+	// bundled) has run.
 	await page.goto(`${BASE}/${p}`);
+	await page.waitForFunction(() => !!window.NeonArcade?.isInstalled, null, { timeout: 15_000 }).catch(() => {});
 	const has = await page.evaluate(() => ({
 		manifest: !!document.querySelector('link[rel="manifest"]'),
 		theme: !!document.querySelector('meta[name="theme-color"]'),
 		icon: !!document.querySelector('link[rel="icon"]'),
-		pwa: !!document.querySelector('script[src$="lib/pwa.js"]'),
+		pwa: typeof window.NeonArcade?.isInstalled === "function",
 	}));
 	check(`${p} carries the manifest, theme colour, icon and pwa.js`,
 		has.manifest && has.theme && has.icon && has.pwa,
@@ -544,7 +548,11 @@ console.log("\npwa: an update reaches a player who already has the old copy");
 	// A deploy that cannot be fetched whole (a file gone mid-deploy) must not
 	// replace the snapshot this player has.
 	const broken = oldVersion + "-broken";
-	const markdown = join(SITE, "lib", "markdown.js");
+	// A built chunk of a view the page has not opened yet (one the deploy
+	// really ships: lib/ copies of bundled code are leftovers nothing loads).
+	const chunk = globSync("app/Contribute-*.js", { cwd: SITE })[0];
+	if (!chunk) throw new Error("no app/Contribute-*.js in the built site");
+	const markdown = join(SITE, chunk);
 	const markdownText = readFileSync(markdown, "utf8");
 	rmSync(markdown);
 	writeFileSync(swFile, swText.replace(oldVersion, broken));

@@ -16,7 +16,7 @@ groups with their own leaderboards, and feedback on games.
 | Portal cards, stars, counts, account bar | the page | `lib/portal.js` |
 | Token, API calls, favourites sync, match reports, live socket | the page | `lib/account.js` |
 | Sign-in chooser, ADD FRIEND, INVITE, feedback sheet | the page | `lib/account-ui.js` |
-| Profile, leaderboards pages | the page | `profile.html` + `lib/profile.js`, `leaderboard.html` + `lib/leaderboard.js` |
+| Profile, leaderboards views | the page | `./?page=profile` (`src/views/Profile.tsx` + `lib/profile.js`), `./?page=leaderboard` (`src/views/Leaderboard.tsx` + `lib/leaderboard.js`); docs/spa.md |
 | The API | the room server (Cloudflare Worker) | `worker/api/*.js` |
 | Accounts, matches, ratings, friends, groups | D1 database `arcade` | `worker/migrations/0001_accounts.sql` |
 | Presence and pushed invites | Durable Object `UserLive`, one per account | `worker/api/live.js` |

@@ -19,7 +19,7 @@ const SKIP = new Set(["lib/theme.css", "lib/catalog.js"]);
 
 function* files(dir) {
 	for (const name of readdirSync(dir)) {
-		if (name.startsWith(".") || name === "node_modules" || name === "community" || name === "worker" || name === "scripts" || name === "assets") continue;
+		if (name.startsWith(".") || name === "node_modules" || name === "dist" || name.startsWith("dist-") || name === "community" || name === "worker" || name === "scripts" || name === "assets") continue;
 		const p = join(dir, name);
 		if (statSync(p).isDirectory()) yield* files(p);
 		else if (/\.(css|html|js)$/.test(name) && !/^test-/.test(name)) yield p;

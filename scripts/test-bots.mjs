@@ -1033,16 +1033,25 @@ try {
 			.catch(() => false);
 		check("…and the new reply connects", linked);
 
-		// A game page opens a party: walking off it with somebody else in it
-		// asks first, and they are told.
+		// One page (docs/spa.md): "← All games" only moves to the portal — the
+		// party stays, and BACK TO PARTY returns to it, nobody asked or told.
 		const guestName = await replier.evaluate(() => window.__game.room.self().name);
 		await replier.locator("a.portal-link").click();
+		const kept = await replier
+			.waitForFunction(() => document.body.dataset.view === "portal" && !window.__party.room.closed, null, { timeout: TIMEOUT })
+			.then(() => true, () => false);
+		check("← All games moves to the portal and keeps the party", kept && (await replier.locator("dialog.neon-ask[open]").count()) === 0);
+		await replier.locator(".back-to-game").click();
+		await replier.waitForFunction(() => document.body.dataset.view === "party", null, { timeout: TIMEOUT });
+		// LEAVE PARTY walks out: with somebody else in it, it asks first, and
+		// they are told.
+		await replier.locator("a[data-leaves]", { hasText: "LEAVE PARTY" }).click();
 		const asked = await replier
 			.locator("dialog.neon-ask[open]")
 			.waitFor({ timeout: 5000 })
 			.then(() => true)
 			.catch(() => false);
-		check("a game page asks before ← All games walks out on the other player", asked);
+		check("LEAVE PARTY asks before it walks out on the other player", asked);
 		await Promise.all([
 			replier.waitForURL(/index\.html/, { timeout: TIMEOUT }),
 			replier.locator('dialog.neon-ask[open] [data-ask="yes"]').click(),
@@ -1129,8 +1138,11 @@ try {
 	{
 		const lone = await context.newPage();
 		await startSolo(lone, "connect4.html", "PLAY WITH BOTS");
-		await Promise.all([lone.waitForURL(/index\.html/, { timeout: TIMEOUT }), lone.locator("a.portal-link").click()]);
-		check("← All games from a bots-only game goes straight to the portal", (await lone.locator("dialog.neon-ask").count()) === 0);
+		// LEAVE PARTY with only bots in it: nobody to walk out on, so no question.
+		// Mid-game it is on the party screen, pulled up over the game (PARTY).
+		await lone.locator(".party-pill").click({ timeout: TIMEOUT });
+		await Promise.all([lone.waitForURL(/index\.html/, { timeout: TIMEOUT }), lone.locator("a[data-leaves]", { hasText: "LEAVE PARTY" }).click()]);
+		check("LEAVE PARTY from a bots-only game goes straight to the portal", (await lone.locator("dialog.neon-ask").count()) === 0);
 		await lone.close();
 	}
 

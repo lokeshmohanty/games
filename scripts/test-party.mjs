@@ -377,7 +377,7 @@ try {
 	);
 	check(
 		"declining the confirmation leaves the host where they were",
-		host.url().startsWith(PARTY) &&
+		(await host.evaluate(() => document.body.dataset.view)) === "party" &&
 			(await host.evaluate(() => !window.__party.room.closed && window.__party.room.isHost())),
 	);
 
@@ -595,16 +595,18 @@ try {
 	check("the host is told who joined", await toastOn(host, `${p4Name} joined the party.`));
 	const stillIn = (page) => page.evaluate(() => !!window.__party.room && !window.__party.room.closed);
 
-	// "← All games", the fixed link on every page — it used to just navigate.
+	// LEAVE PARTY (one page, docs/spa.md: "← All games" only moves to the
+	// portal and keeps the party; this is the way out).
+	const leaveLink = p4.locator("a[data-leaves]", { hasText: "LEAVE PARTY" });
 	let q = nextDialog(p4, false);
-	await p4.locator("a.portal-link").click();
+	await leaveLink.click();
 	q = await q;
-	check("← All games asks before leaving", /Leave the party/.test(q), q);
+	check("LEAVE PARTY asks before leaving", /Leave the party/.test(q), q);
 	check("…says the others will be told", /others will be told/.test(q), q);
-	check("…and STAY keeps the player in the party", p4.url().startsWith(PARTY) && (await stillIn(p4)));
+	check("…and STAY keeps the player in the party", (await p4.evaluate(() => document.body.dataset.view)) === "party" && (await stillIn(p4)));
 
 	// The question fits the phone, safe answer first.
-	await p4.locator("a.portal-link").click();
+	await leaveLink.click();
 	const askBox = await p4.evaluate(() => {
 		const r = document.querySelector("dialog.neon-ask[open] .neon-ask-box")?.getBoundingClientRect();
 		const focused = document.activeElement?.dataset?.ask ?? null;
@@ -645,7 +647,8 @@ try {
 
 	// Now really leave: the others are told, and how.
 	q = nextDialog(p4, true);
-	await Promise.all([p4.waitForURL(/index\.html/, { timeout: TIMEOUT }), p4.locator("a.portal-link").click()]);
+	// One page (docs/spa.md): "← All games" keeps the party; LEAVE PARTY leaves.
+	await Promise.all([p4.waitForURL(/index\.html/, { timeout: TIMEOUT }), p4.locator("a[data-leaves]", { hasText: "LEAVE PARTY" }).click()]);
 	await q;
 	check("LEAVE leaves for the portal", /index\.html/.test(p4.url()));
 	check("the host is told who left", await toastOn(host, `${p4Name} left the party.`));

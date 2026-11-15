@@ -188,13 +188,15 @@ async function runInPage({ game, script }) {
 
 const want = process.argv.slice(2);
 const lanes = LANES.filter((l) => existsSync(join(EXAMPLES, `tic-tac-toe-${l}`, "game.json")) && (!want.length || want.includes(l) || l === REFERENCE));
-const site = await serve(8742);
+// The repo itself, not the built site: the examples are not deployed. The
+// frame builder comes from a harness page (scripts/fixtures/frame-harness.html).
+const site = await serve(8742, ROOT);
 const { chromium } = loadPlaywright();
 const browser = await chromium.launch({ executablePath: chromePath(), args: ["--no-sandbox"] });
 const page = await (await browser.newContext({ viewport: { width: 390, height: 844 } })).newPage();
 const consoleErrors = [];
 page.on("console", (m) => m.type() === "error" && !/room server|Failed to load resource/i.test(m.text()) && consoleErrors.push(m.text()));
-await page.goto(site.url("party.html?fresh=1&rs=http://127.0.0.1:1"));
+await page.goto(site.url("scripts/fixtures/frame-harness.html"));
 await page.waitForFunction(() => !!window.NeonArcade?.buildFrameDoc);
 
 const results = {};

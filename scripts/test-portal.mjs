@@ -53,6 +53,33 @@ try {
 		return (await shown()).every((t) => ["Battleship", "Connect 4"].includes(t));
 	})());
 
+	console.log("\nportal: one page (src/views/Portal.tsx)");
+	await p.goto(site.url("index.html"));
+	await p.waitForSelector(".game-card");
+	await p.evaluate(() => (window.__samePage = true));
+	p.once("dialog", (d) => d.accept("12-34-56"));
+	await p.locator(".join-code-btn").click();
+	await p.waitForFunction(() => document.body.dataset.view === "party", null, { timeout: TIMEOUT });
+	check("JOIN WITH A CODE opens the party in the page, with the code", (await p.evaluate(() => window.__samePage)) && new URL(p.url()).hash === "#c=123456", p.url());
+	await p.goto(site.url("index.html"));
+	await p.waitForSelector(".game-card");
+	await p.evaluate(() => (window.__samePage = true));
+	await p.locator(".party-banner a.play-btn").click();
+	await p.waitForFunction(() => window.__party?.room, null, { timeout: TIMEOUT });
+	check("START A PARTY hosts one, in the page", await p.evaluate(() => window.__samePage && document.body.dataset.view === "party"), p.url());
+	await p.evaluate(() => history.back());
+	await p.waitForSelector(".view-portal .game-card");
+	await p.locator(".back-to-game").waitFor({ timeout: TIMEOUT });
+	await p.locator('.filter[data-filter="duel"]').click();
+	check("back on the portal, the chips work again (drawn anew)", JSON.stringify((await shown()).sort()) === JSON.stringify(["Battleship", "Connect 4"]), await shown());
+	await p.locator('.filter[data-filter="all"]').click();
+	const clear = await p.evaluate(() => {
+		scrollTo(0, document.documentElement.scrollHeight);
+		const last = Math.max(...[...document.querySelectorAll(".game-card")].map((c) => c.getBoundingClientRect().bottom));
+		return { last: Math.round(last), pill: Math.round(document.querySelector(".back-to-game").getBoundingClientRect().top) };
+	});
+	check("…and BACK TO PARTY never sits over the last cards", clear.last <= clear.pill, clear);
+
 	console.log("\nportal: a card's two ways to play");
 	await p.goto(site.url("index.html"));
 	await p.waitForSelector(".game-card");
@@ -161,6 +188,14 @@ try {
 		NeonArcade.markdown.render('<img src=x onerror=alert(1)> [x](javascript:alert(1)) **b** `<b>`\n\n```\n<script>\n```'),
 	);
 	check("the renderer lets no HTML or javascript: link through", !/<img|<script|javascript:/i.test(unsafe) && /<strong>b<\/strong>/.test(unsafe), unsafe);
+	// One page (docs/spa.md): the guide's site link moves in-app, and Back
+	// draws the guide again in the same document.
+	await p.evaluate(() => (window.__samePage = true));
+	await p.locator('[data-guide] a[href="contributors.html"]').first().click();
+	await p.locator(".person").first().waitFor({ timeout: TIMEOUT });
+	await p.goBack();
+	await p.locator("[data-guide] h1").waitFor({ timeout: TIMEOUT });
+	check("…its link to Contributors and Back again never reload the page", await p.evaluate(() => window.__samePage === true && new URLSearchParams(location.search).get("page") === "contribute"));
 	console.log("\nportal: proposing games (GitHub's own page, filled in)");
 	// GitHub's API, played here: a new repo with two games, and arcade-games
 	// moved past its pin.

@@ -99,6 +99,26 @@ builds first, and the browser suites serve `dist/` (scripts/serve.mjs).
 `NEON_SERVE_SRC=1` serves the repo instead, and `NEON_DIST=dist-x` builds
 and serves another folder, for parallel runs.
 
+## Writing a view
+
+A view is `src/views/<Name>.tsx` (a Solid component, root `.view-<name>`) and
+`src/views/<name>.css`. Converted 2026-11-15: portal, leaderboard, profile,
+contribute, contributors.
+- **Its library keeps the logic.** The page's library stays vanilla and
+  exposes `mount(root) → cleanup`; the view calls it in `onMount` and
+  `onCleanup`. A view mounts many times now, so every listener, observer
+  and late answer is undone or ignored after cleanup.
+- **The CSS is scoped with `:where(.view-<name>)`**, which adds no
+  specificity, so the old rules weigh against lib/styles.css exactly as
+  they did on their own page. A plain `.view-x a` prefix outranked
+  `.neon-btn--accent` and turned button text the colour of its background.
+- **The site nav** is lib/nav.js, drawn into `nav[data-nav]` in `onMount`.
+- **Room for the pill:** a live party's BACK TO GAME pill gets room at the
+  bottom from one rule in lib/styles.css. The party's own top buttons
+  (`.top-actions`) hide on every other view.
+- **Query parameters** ride alongside `page=` (`?page=profile&u=…`). A view
+  that rewrites them uses `history.replaceState`, keeping `page`.
+
 ## What stays framework-free, and why
 
 - **The games** stay framework-free in their sandboxed frames: the SDK is a

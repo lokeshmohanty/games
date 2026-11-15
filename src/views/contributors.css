@@ -1,0 +1,106 @@
+/* src/views/contributors.css — the Contributors view (was contributors.html's
+   own <style>). Scoped under .view-contributors, its <main>: one document now. */
+.view-contributors {
+  max-width: 42rem;
+  margin: 0 auto;
+  padding: 16px 16px 56px;
+}
+.view-contributors > h1 {
+  color: var(--accent);
+  font-size: 1.6rem;
+  margin: 8px 0 4px;
+}
+.view-contributors .muted {
+  color: var(--ink-2);
+  font-size: 0.9rem;
+  margin: 0 0 16px;
+}
+.view-contributors .muted a {
+  color: var(--accent);
+}
+.view-contributors .person {
+  border: 1px solid var(--rule);
+  border-radius: 12px;
+  background: var(--surface);
+  padding: 14px 16px;
+  margin-bottom: 12px;
+}
+.view-contributors .person-head {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+.view-contributors .person-avatar {
+  width: 56px;
+  height: 56px;
+  flex: none;
+  border-radius: 50%;
+  border: 2px solid var(--accent);
+  background: var(--surface-2);
+}
+.view-contributors .person-initial {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--font-display);
+  font-size: 1.4rem;
+  color: var(--accent);
+  box-sizing: border-box;
+}
+.view-contributors .person-who {
+  min-width: 0;
+}
+.view-contributors .person-who h2 {
+  margin: 0;
+  font-size: 1.15rem;
+  color: var(--ink);
+  overflow-wrap: anywhere;
+}
+.view-contributors .person-login {
+  color: var(--accent);
+  font-family: var(--font-mono);
+  font-size: 0.82rem;
+  text-decoration: none;
+}
+.view-contributors .person-meta {
+  color: var(--ink-2);
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  margin-top: 4px;
+}
+.view-contributors .person-bio {
+  margin: 10px 0 0;
+  color: var(--ink);
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+.view-contributors .person-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+.view-contributors .person-links .neon-btn {
+  min-height: 40px;
+  padding: 8px 14px;
+  font-size: 0.8rem;
+  text-decoration: none;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.view-contributors .person-update {
+  margin-top: 10px;
+}
+.view-contributors .person-update-out a {
+  color: var(--accent);
+}
+.view-contributors .person-sha {
+  display: block;
+  margin-top: 4px;
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  overflow-wrap: anywhere;
+  color: var(--ink-2);
+}

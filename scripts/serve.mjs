@@ -24,11 +24,14 @@ export const SITE_DIR = !process.env.NEON_SERVE_SRC && existsSync(join(DIST, "in
  */
 export const PORT_OFFSET = Number(process.env.NEON_PORT_OFFSET ?? 0) || 0;
 
-/** Start serving; returns { base, url(path), stop() } once it answers. */
-export async function serve(port) {
+/**
+ * Start serving SITE_DIR (or `dir`); returns { base, url(path), stop() } once
+ * it answers.
+ */
+export async function serve(port, dir = SITE_DIR) {
 	port += PORT_OFFSET;
 	const server = spawn("python3", ["-m", "http.server", String(port), "--bind", "127.0.0.1"], {
-		cwd: SITE_DIR,
+		cwd: dir,
 		stdio: "ignore",
 	});
 	const stop = () => {

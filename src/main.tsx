@@ -41,7 +41,16 @@ const script = (src: string) =>
 		document.head.append(s);
 	});
 
-await script("community/catalog.js");
-// ?dev= (the game dev kit, lib/bridge.js): its game registers first.
-await (window as any).NeonArcade.devGame;
-render(() => <App />, document.getElementById("app")!);
+// Drawn at once, the catalogs behind: holding the first paint for the
+// community catalog (and a lazy portal chunk) took cold FCP from 0.47 s to
+// 1.21 s (perf, 2026-11-15). The party waits for them (App: `catalogs`): it
+// needs every game registered. ?dev= (lib/bridge.js) registers its game first.
+export const catalogs: Promise<void> = script("community/catalog.js")
+	.then(() => NA.devGame)
+	.then(() => {
+		NA.portal?.draw?.(); // the community games' cards, on a portal already drawn
+	});
+NA.catalogs = catalogs;
+const app = document.getElementById("app")!;
+app.replaceChildren(); // the static first frame (index.html) goes
+render(() => <App />, app);

@@ -42,7 +42,8 @@ full run takes a few minutes.
     - It times the START GAME button appearing, taps it if needed (and
       records that a tap was needed), then times until the game's sandboxed
       frame is up (`gameFrame()`: `window.__game.handle` exists).
-  - **leaderboard**: `leaderboard.html` until `load`.
+  - **leaderboard**: `leaderboard.html` until `load` (since 2026-11-15 a
+    redirect stub into the one-page shell's `./?page=leaderboard`).
 - **Columns:** medians of N runs. FCP and LCP come from the Performance API.
   *to START* and *to frame* are wall-clock times from navigation start.
   *transferred* sums the `transferSize` of the navigation and every resource.
@@ -186,3 +187,29 @@ each enemy along its velocity between views. Method:
 
 v2 was faster in all 8 pairs. Both profiles are dominated by raster and
 `drawImage`; messaging is about 3%.
+
+### Phase 4 — one page, Solid + Vite (2026-11-15, docs/spa.md)
+
+Median of 3, same harness:
+
+| Scenario | Phase 2 | Phase 4 |
+|---|---|---|
+| portal cold FCP | ~0.47 s | **0.44 s** |
+| portal cold load | 2.6 s | 2.4 s |
+| bots cold, to frame | 2.19 s | **2.05 s** |
+| bots warm, to frame | 0.36 s | 0.35 s |
+| bots path, JS decoded | 426 KB | **194 KB** (70 KB gzipped) |
+
+The ≤ 300 KB target from Phase 1 is met.
+
+**First paint went wrong, then got fixed:**
+1. **1.21 s.** At first the page painted nothing until a chain finished:
+   the bundle, then the community catalog, then the render, then a lazy
+   portal chunk.
+2. **0.80 s.** Rendering at once, with the portal in the main bundle and
+   the catalogs loading behind (the party and the other views wait for
+   them), got it this far.
+3. **0.44 s.** index.html now carries the portal's first lines as plain
+   HTML, which paints as the page arrives and is replaced when the app
+   renders. A tiny inline script drops it when the address names another
+   view.

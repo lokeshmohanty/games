@@ -61,7 +61,7 @@ try {
 	check("the name is saved on the server", (await ana.p.evaluate(() => NeonArcade.account.api("/api/me"))).name === "Ana Lima");
 	const methods = await ana.p.evaluate(() => [...document.querySelectorAll("[data-method]")].map((r) => `${r.dataset.method}:${r.querySelector("button")?.textContent}`));
 	check("the profile lists its sign-in methods, each to connect", methods.join() === "github:CONNECT,google:CONNECT", methods);
-	check("…and a friend code with a QR is shown", (await ana.p.locator("canvas.qr").count()) === 1 && (await ana.p.locator(".code").first().textContent()).includes(`?u=${anaId}`));
+	check("…and a friend code with a QR is shown", (await ana.p.locator("canvas.qr").count()) === 1 && (await ana.p.locator(".code").first().textContent()).includes(`?page=profile&u=${anaId}`));
 
 	console.log("\nsocial: the portal and favourites on two devices");
 	await ana.p.goto(page("index.html"));

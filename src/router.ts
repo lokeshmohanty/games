@@ -74,6 +74,9 @@ document.addEventListener("click", (e) => {
 	if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
 	const a = (e.target as Element | null)?.closest?.("a[href]") as HTMLAnchorElement | null;
 	if (!a || a.target === "_blank" || a.hasAttribute("download")) return;
+	// A jump within this view (#section) is the browser's to do.
+	const here = new URL(location.href);
+	if (a.hash && a.pathname === here.pathname && a.search === here.search) return;
 	const to = shellUrl(a.href);
 	if (!to) return;
 	e.preventDefault();

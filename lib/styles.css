@@ -1032,3 +1032,12 @@ canvas {
   justify-content: center;
   margin-top: 24px;
 }
+/* The party's own chrome (lib/party.js .top-actions: feedback, favourite,
+   PARTY) is the party view's: hidden while another view shows. */
+body[data-view]:not([data-view="party"]) > .top-actions {
+  display: none;
+}
+/* Room below every view for the BACK TO GAME pill while a party is live. */
+body:has(.back-to-game) #app {
+  padding-bottom: calc(88px + env(safe-area-inset-bottom));
+}

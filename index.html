@@ -21,8 +21,38 @@
     <link rel="stylesheet" href="lib/styles.css" vite-ignore />
   </head>
   <body>
-    <!-- The views (src/App.tsx). -->
-    <div id="app"></div>
+    <!-- The views (src/App.tsx). Until the shell's code has run, the portal's
+         first lines as plain HTML, so something paints as the page arrives
+         (cold FCP 0.80 s without it, perf 2026-11-15); dropped at once when the
+         address names another view, replaced when the app renders. -->
+    <div id="app">
+      <main class="view-portal boot">
+        <nav class="site-nav"></nav>
+        <h1 class="brand">
+          <svg class="mark" viewBox="96 104 320 288" aria-hidden="true">
+            <g transform="translate(0 9)" stroke-linecap="round">
+              <path class="wire" d="M168 176 C168 100 344 100 344 176" stroke-width="16" />
+              <rect class="base" x="104" y="332" width="128" height="44" rx="22" />
+              <rect class="base" x="280" y="332" width="128" height="44" rx="22" />
+              <path class="p1" d="M168 334 V250" stroke-width="22" />
+              <path class="p2" d="M344 334 V250" stroke-width="22" />
+              <circle class="p1" cx="168" cy="214" r="44" stroke-width="0" />
+              <circle class="p2" cx="344" cy="214" r="44" stroke-width="0" />
+            </g>
+          </svg>
+          <span>Arcade Games</span>
+        </h1>
+        <p class="tagline">
+          Every game is multiplayer. Play the bots on this device, or send an invite and play the people. No accounts, no servers,
+          nothing to sign up for.
+        </p>
+      </main>
+    </div>
+    <script>
+      // Another view (src/router.ts's words): no portal heading flashing first.
+      if (/[?&](page|game|mode|fresh|dev|party|rs)(=|&|$)/.test(location.search) || /[#&](i|c|a)=/.test(location.hash))
+        document.querySelector("#app .boot")?.remove();
+    </script>
     <!-- The party: mounted once, kept across views (src/App.tsx). -->
     <div id="party-layer" hidden>
       <a class="portal-link" href="index.html">&#8592; All games</a>

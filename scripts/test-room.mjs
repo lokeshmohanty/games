@@ -20,6 +20,7 @@
  * The server-side rules (claims, rate limits, TTLs) are not tested here;
  * scripts/test-hub.mjs covers them against the real hub logic.
  */
+import { serve } from "./serve.mjs";
 import { createRequire } from "node:module";
 import { execFileSync } from "node:child_process";
 import { existsSync, globSync } from "node:fs";
@@ -1940,11 +1941,16 @@ try {
 
 	// -------------------------------------------------- 7. the UI
 	console.log("\nroom: the screens");
+	// The screens are the one-page shell's (docs/spa.md), which runs from the
+	// built site over http, not file://; the harness sections above still do.
+	const site = await serve(8745);
+	process.on("exit", () => site.stop());
+	const SERVED = (name, query = "") => `${site.base}/${name}${query}`;
 	const ui = await context.newPage();
 	// The earlier sections left a rejoin token in localStorage; without this
 	// the boot would try to reconnect into a room this page's mock never had.
 	await ui.addInitScript(() => localStorage.removeItem("neon.room"));
-	await ui.goto(PAGE("party.html", "?mockroom=1"));
+	await ui.goto(SERVED("party.html", "?mockroom=1"));
 	// The boot itself hosts through the room server, which writes the token;
 	// let it finish, then clear the token and reload, so the reloaded page is
 	// a FRESH host rather than a reconnect into this page's now-orphaned one.
@@ -1962,7 +1968,7 @@ try {
 	// A code link into a fresh page joins straight away — and a code no room
 	// is meeting answers with an explicit error, never a silent wait.
 	const bad = await context.newPage();
-	await bad.goto(PAGE("party.html", "?mockroom=1#c=123456"));
+	await bad.goto(SERVED("party.html", "?mockroom=1#c=123456"));
 	await bad.locator(".lobby-status").first().waitFor({ timeout: TIMEOUT });
 	check(
 		"a dead code says so explicitly",
@@ -2034,13 +2040,13 @@ try {
 	// A game page opens the party shell; with no room server it offers the
 	// classic invite, and no code that nobody could use.
 	const plain = await context.newPage();
-	await plain.goto(PAGE("connect4.html", "?rs=http://localhost:1"));
+	await plain.goto(SERVED("connect4.html", "?rs=http://localhost:1"));
 	await plain.locator("button", { hasText: "PLAY WITH FRIENDS" }).click({ timeout: TIMEOUT });
 	await plain.locator("button", { hasText: "INVITE A FRIEND" }).waitFor({ timeout: TIMEOUT });
 	check("a game page still offers the classic invite", true);
 	check("…and shows no party code without the room server", (await plain.locator(".party-code-digits").count()) === 0);
 	const plainParty = await context.newPage();
-	await plainParty.goto(PAGE("party.html", "?rs=http://localhost:1"));
+	await plainParty.goto(SERVED("party.html", "?rs=http://localhost:1"));
 	await plainParty.evaluate(() => localStorage.removeItem("neon.room"));
 	await plainParty.reload();
 	await plainParty.locator(".party-member").first().waitFor({ timeout: TIMEOUT });

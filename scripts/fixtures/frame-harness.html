@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Frame harness</title>
+    <!-- The repo's root, as the shell's: bridge.js resolves its runtime files
+         (sdk/v2/runtime.js, lib/theme.css…) against document.baseURI. -->
+    <base href="../../" />
+    <!-- For scripts/test-conformance.mjs: the shell's frame builder
+         (lib/bridge.js buildFrameDoc), served from the repo itself, so the
+         SDK examples (left out of the built site) are reachable. Classic
+         scripts, as the frames inline them. -->
+    <link rel="stylesheet" href="lib/theme.css" />
+    <script src="lib/theme.js"></script>
+  </head>
+  <body>
+    <script src="lib/games.js"></script>
+    <script src="lib/bridge.js"></script>
+  </body>
+</html>
