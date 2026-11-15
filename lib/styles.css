@@ -1033,9 +1033,18 @@ canvas {
   margin-top: 24px;
 }
 /* The party's own chrome (lib/party.js .top-actions: feedback, favourite,
-   PARTY) is the party view's: hidden while another view shows. */
-body[data-view]:not([data-view="party"]) > .top-actions {
+   PARTY; the shell's turn-wait bar and host-pause card) is the party view's:
+   hidden while another view shows. */
+body[data-view]:not([data-view="party"]) > :is(.top-actions, .turn-wait, .host-pause) {
   display: none;
+}
+/* A view whose code a deploy removed since the page loaded (src/App.tsx). */
+.view-error {
+  display: grid;
+  justify-items: center;
+  gap: 16px;
+  padding: 96px 16px;
+  text-align: center;
 }
 /* Room below every view for the BACK TO GAME pill while a party is live. */
 body:has(.back-to-game) #app {

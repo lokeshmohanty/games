@@ -125,6 +125,14 @@ self.addEventListener("activate", (event) => {
 	event.waitUntil(
 		(async () => {
 			await prune();
+			// The pages this worker is about to claim that no worker pinned —
+			// a first visit, which loaded from the network, i.e. this deploy —
+			// are this snapshot's from now on. Unpinned, the next deploy pruned
+			// the snapshot their lazy chunks come from (review, 2026-11-15).
+			const pins = await caches.open(PINS);
+			for (const c of await self.clients.matchAll({ type: "window", includeUncontrolled: true })) {
+				if (!(await pins.match(pinKey(c.id)))) await pin(c.id);
+			}
 			await self.clients.claim();
 		})(),
 	);

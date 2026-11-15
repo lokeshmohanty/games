@@ -6,8 +6,8 @@
 // that layer: the connections and the game keep running, and BACK TO GAME
 // (or Back) shows it again. Every other view is a Solid component, loaded
 // on first visit.
-import { createEffect, createSignal, lazy, Match, onCleanup, Show, Switch } from "solid-js";
-import { currentUrl, currentView, navigate, type View } from "./router";
+import { createEffect, createSignal, ErrorBoundary, lazy, Match, onCleanup, Show, Switch } from "solid-js";
+import { currentUrl, currentView, navigate, setNavigationGuard, viewOf, type View } from "./router";
 // The start page, in the main bundle: a lazy chunk was one more round trip
 // before the first paint.
 import Portal from "./views/Portal";
@@ -48,6 +48,23 @@ export default function App() {
 	const [catalogsIn, setCatalogsIn] = createSignal(false);
 	A.catalogs.then(() => setCatalogsIn(true));
 
+	// A NEW party asked for while one is mounted (START A PARTY, a card's
+	// PLAY, Recently played, JOIN WITH A CODE, an invite): mountParty runs
+	// once per page, so it is a fresh page — after the leave question when
+	// the old party is live. Without this the address said "new party" while
+	// the old one showed (review, 2026-11-15).
+	setNavigationGuard((next) => {
+		const p = party();
+		if (!p || viewOf(next) !== "party") return true;
+		const q = next.searchParams;
+		const wantsNew = q.has("fresh") || q.has("dev") || /[#&](i|c|a)=/.test(next.hash) || (q.has("game") && q.get("game") !== p.game);
+		if (!wantsNew) return true; // BACK TO GAME, ./?party: the same party
+		const live = p.room && !p.room.closed;
+		if (!live) return void location.assign(next.href), false;
+		A.leaveParty?.("Leave this party for another?").then((go: boolean) => go && location.assign(next.href));
+		return false;
+	});
+
 	createEffect(() => {
 		const v = currentView();
 		document.title = TITLES[v];
@@ -79,10 +96,37 @@ export default function App() {
 		<>
 			<Switch>
 				<Match when={currentView() !== "party" && (currentView() === "portal" || catalogsIn())}>
-					{(() => {
-						const V = views[currentView() as Exclude<View, "party">];
-						return <V />;
-					})()}
+					{/* A view's chunk that cannot load (a deploy since this page
+					    loaded removed its hashed name): a fresh page, or with a
+					    live party, a word and a button rather than nothing. */}
+					<ErrorBoundary
+						fallback={(err) => {
+							console.error(err);
+							const p = party();
+							// Only a chunk that failed to load, and once: a view that
+							// throws as it draws must not reload the page forever.
+							const chunk = /dynamically imported module|Importing a module script failed|error loading dynamically/i.test(String((err as Error)?.message ?? err));
+							let first = false;
+							try {
+								first = !sessionStorage.getItem("neon.chunkReload");
+								sessionStorage.setItem("neon.chunkReload", "1");
+							} catch {}
+							if (chunk && first && !(p?.room && !p.room.closed)) location.reload();
+							return (
+								<main class="view-error">
+									<p>The arcade was updated while this page was open.</p>
+									<button type="button" class="neon-btn neon-btn--accent" onClick={() => location.reload()}>
+										RELOAD
+									</button>
+								</main>
+							);
+						}}
+					>
+						{(() => {
+							const V = views[currentView() as Exclude<View, "party">];
+							return <V />;
+						})()}
+					</ErrorBoundary>
 				</Match>
 			</Switch>
 			<Show when={currentView() !== "party" && playing() !== null}>

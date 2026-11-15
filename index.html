@@ -50,7 +50,7 @@
     </div>
     <script>
       // Another view (src/router.ts's words): no portal heading flashing first.
-      if (/[?&](page|game|mode|fresh|dev|party|rs)(=|&|$)/.test(location.search) || /[#&](i|c|a)=/.test(location.hash))
+      if (/[?&](page|game|mode|fresh|dev|party)(=|&|$)/.test(location.search) || /[#&](i|c|a)=/.test(location.hash))
         document.querySelector("#app .boot")?.remove();
     </script>
     <!-- The party: mounted once, kept across views (src/App.tsx). -->

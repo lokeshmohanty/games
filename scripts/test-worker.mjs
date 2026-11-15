@@ -1180,7 +1180,8 @@ try {
 			url: location.pathname.split("/").pop() + location.search,
 		}));
 		check("connect4.html opens a party with a code, Connect 4 up front", quick && head.title === "CONNECT 4" && head.buttons.includes("INVITE A FRIEND") && head.buttons.includes("ADD BOT"), JSON.stringify(head));
-		check("…and leaves no `fresh` in the URL to break a reload", head.url === "party.html?game=connect4", head.url);
+		// One page (docs/spa.md): the party is the shell at ./?game=…
+		check("…and leaves no `fresh` in the URL to break a reload", head.url === "?game=connect4", head.url);
 		const t = await token(h);
 		check("(the friend joins by its code)", await joinByCode(g, t.code));
 		await h.locator("button", { hasText: "INVITE A FRIEND" }).first().waitFor({ timeout: TIMEOUT });

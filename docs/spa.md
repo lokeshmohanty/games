@@ -52,8 +52,23 @@ stage.
 - **Leaving.** In the shell, "← All games" moves to the portal, and the
   party screen's **LEAVE PARTY** is the way out (lib/lobby.js asks first,
   as before).
-- **Back** asks only when it would leave the arcade, not when it goes to
-  another of its views.
+- **Back.** The guard entry is pushed only on the party view. Back from the
+  party to an earlier view of the arcade keeps the party: src/router.ts
+  counts the arcade's entries in `history.state.arcadeDepth`, and
+  lib/lobby.js goes on silently when one lies behind. Only Back that would
+  leave the arcade asks.
+- **A new party while one is mounted** (START A PARTY, a card's PLAY,
+  Recently played, JOIN WITH A CODE, an invite): `mountParty` runs once per
+  page, so the router's guard (App) asks the leave question when the old
+  party is live, then does a full load of the new address.
+- **Share links** (invite, code, QR) are built on `party.html` with the
+  query, minus `page=` (`NeonArcade.shareBase`). A phone whose service
+  worker predates the shell then gets its old, working party page, and a
+  link made while the host looks at another view still opens the party.
+- **A view's chunk gone after a deploy** (hashed names): the view's
+  ErrorBoundary reloads once, or shows RELOAD when a party is live. The
+  service worker pins every page it takes over, a first visit included, so
+  this is rare.
 - **Viewport.** It is fixed (no zoom) only while the party view shows.
 
 ## The build
@@ -108,9 +123,10 @@ contribute, contributors.
   exposes `mount(root) → cleanup`; the view calls it in `onMount` and
   `onCleanup`. A view mounts many times now, so every listener, observer
   and late answer is undone or ignored after cleanup.
-- **The CSS is scoped with `:where(.view-<name>)`**, which adds no
-  specificity, so the old rules weigh against lib/styles.css exactly as
-  they did on their own page. A plain `.view-x a` prefix outranked
+- **Scope the CSS with `:where(.view-<name>)`** (portal and contribute do;
+  profile, leaderboard and contributors use a plain `.view-<name>` prefix,
+  which works for them). `:where()` adds no specificity, so the old rules
+  weigh against lib/styles.css exactly as they did on their own page. A plain `.view-x a` prefix outranked
   `.neon-btn--accent` and turned button text the colour of its background.
 - **The site nav** is lib/nav.js, drawn into `nav[data-nav]` in `onMount`.
 - **Room for the pill:** a live party's BACK TO GAME pill gets room at the

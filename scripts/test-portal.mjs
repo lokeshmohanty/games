@@ -79,6 +79,23 @@ try {
 		return { last: Math.round(last), pill: Math.round(document.querySelector(".back-to-game").getBoundingClientRect().top) };
 	});
 	check("…and BACK TO PARTY never sits over the last cards", clear.last <= clear.pill, clear);
+	// With that party still mounted behind the portal, a card's PLAY is a NEW
+	// party: a fresh page (the review of 2026-11-15 found it either reloaded
+	// past the leave question or showed the old party instead).
+	await p.evaluate(() => scrollTo(0, 0));
+	const oldRoom = await p.evaluate(() => window.__party.room.selfId);
+	const c4 = p.locator('.game-card[data-game="connect4"]');
+	await c4.hover();
+	await c4.locator(".card-play", { hasText: "PLAY WITH BOTS" }).click();
+	// The host of a party is asked first (the party ends): yes.
+	const yes = p.locator('dialog.neon-ask[open] [data-ask="yes"]');
+	const askedFirst = await yes.waitFor({ timeout: 5000 }).then(() => true, () => false);
+	if (askedFirst) await yes.click();
+	check("…the leave question comes first", askedFirst);
+	await p.waitForSelector(".game-frame", { timeout: TIMEOUT });
+	const fresh = await p.evaluate(() => ({ same: !!window.__samePage, game: window.__party?.game, id: window.__party?.room?.selfId }));
+	check("a card's PLAY over a mounted party starts a new one (a fresh page), into that game", !fresh.same && fresh.game === "connect4", fresh);
+	check("…not the old party shown again", fresh.id !== undefined && fresh.game === "connect4" && oldRoom !== undefined);
 
 	console.log("\nportal: a card's two ways to play");
 	await p.goto(site.url("index.html"));
