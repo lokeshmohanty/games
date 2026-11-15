@@ -18,13 +18,13 @@ flows peer-to-peer over WebRTC data channels. See
 
 ## Read these first, do not re-derive them
 
-- [`lib/README.md`](../../../lib/README.md) — every lib/ file in a line, and
-  the API: room controller, `mountParty` (and its `?game=` quick start, what
-  a game's link `./?game=<id>` opens), `scanQr`, the topology, the
-  connectivity rules.
+- [`lib/README.md`](../../../lib/README.md) — every lib/ file in a line.
 - [`docs/index.md`](../../../docs/index.md) — how a handshake is paid once per
-  person, parties and succession, and the **Honest gaps** section, which is the
-  authoritative list of what is *not* verified.
+  person, `scanQr` and **Connectivity** (relaying, STUN, `classifyNat`, no
+  TURN) under Connecting players; parties and succession; **The party API**
+  (the room controller, `mountParty` and its `?game=` quick start — what a
+  game's link `./?game=<id>` opens — and lib/lobby.js); and the **Honest
+  gaps** section, which is the authoritative list of what is *not* verified.
 
 Neither file is a summary of the code — they record decisions the code cannot
 tell you. Read them before changing anything here.

@@ -585,3 +585,98 @@ whether to start Phase 4 (Solid + Vite SPA, a build step; npm or pnpm?).**
 Known: the Neon Survival preview clip ends early (recorder steering);
 Pyodide's cache is per deploy (re-downloaded after each deploy).
 **Awaiting Lokesh's confirmation before merging either phase to main.**
+
+## Moved out of STATUS.md on 2026-11-15
+
+*Verbatim, as they stood in STATUS.md on branch `cleanup-v1` (the Platform v2
+block as updated on main by b8909c6). The Tug of War block was the owner's
+inbox item, processed 2026-11-15: its Bubble Rush note is superseded — Bubble
+Rush is being ported to SDK v2 on web-games `bubble-rush-v2`.*
+
+### Tug of War retired (2026-11-14)
+
+Lokesh chose "remove only": dropped from registry/lokeshmohanty/web-games.json
+(the pin stays a1eeebf, the published commit); its gif, recorder scenario, bots
+and party tests and doc mentions are gone; `tug-of-war.html` redirects to the
+portal (an invite hash goes to the party); sw.js v39. Started by the ended
+session games-99, finished by games-e1.
+**Pending, not shipped:** Bubble Rush, games-99's replacement game, is commit
+0d0c40b on the local `bubble-rush` branch of ../web-games, unpushed and
+unreviewed. Shipping it = review + play it, push that repo, then re-pin here
+with "bubble-rush" in the games list.
+
+### Platform v2 + features + Neon Fission — all merged and live (2026-11-15)
+
+main 2955872, deployed. SDK v2 (docs/sdk-v2.md), one-page Solid shell
+(docs/spa.md), features round (home sections, collections, RULES.md, richer
+end card, offline single player, server-issued solo runs, Sudoku verified on
+the server), the worker on the free plan (f3282c2), the arcade-games repo
+renamed lokeshmohanty/web-games and re-pinned at 63360fd (PR #5), and Neon
+Fission (games/neon-fission: chain reaction, bots, same-device PLAYER seats,
+multi-device; reviewed, two fixes in 1d19659).
+Worker deployed 2026-11-15 from 3510c58 (migration 0003 applied remotely,
+version b112bde4): solo runs and Sudoku verification are live.
+**Known leftovers:** the local clones are still ../arcade-games and
+../arcade-games-v2 (the Sudoku cross-check in test-accounts skips until they
+are ../web-games-v2); adapters' result types lack title/details/names; the
+end card shows no rating change; the Neon Survival preview ends early;
+Neon Fission is untested on a real phone and at 8 seats in a browser; a
+pass-the-phone game counts as a game against bots in the owner's stats.
+
+### New app mark, "linked players" (2026-11-14): pushed to main, deployed
+
+Lokesh picked option A from https://claude.ai/artifact/MctQN4fSg3imRQTeYPGooc:
+two joysticks joined by a cable, in Paper's dark-mode colours (slate tile #111419).
+assets/icon.svg redrawn; PNGs rebuilt; manifest background/theme #111419;
+portal h1 is now a lockup (`h1.brand`, inline glyph on theme tokens: follows
+Paper light/dark and Neon). make-icons reads the backing colour from the tile.
+Fixed along the way: the SVG favicon had been invalid XML since 2026-08-16
+(`--` in its comment), so no browser drew it. test-pwa now parses it. sw.js v37.
+test-pwa, test-theme, test-portal green; header checked at 390x844 and 1280x800
+in all three themes. 3dced5f fast-forwarded to main; Pages deploy green; live
+site serves the new icon.svg (image/svg+xml), h1.brand and sw.js v37.
+
+### Web apps run unchanged; CI on Node 24 (2026-11-14) — pushed to main, deployed
+
+14eeec2: an existing site + Python server joins without a rewrite (docs/platform.md
+"Web apps", CONTRIBUTING "Already have a web app?"). Manifest `app` +
+`kind: "shared"` (seatless, no bots/results); the arcade builds the site in a
+no-secrets container (`scripts/app-build.mjs`; deploy.yml's read-only
+`build-community` job); the ASGI/WSGI server runs in Pyodide 314.0.7 on the
+host (`lib/py-server.js`, `sdk/arcade_server.py`, runtime vendored by
+`just pyodide` into git-ignored `sdk/pyodide/`; both under sdk/v1/ until
+2026-11-15); `sdk/v2/web-shim.js` forwards fetch/XHR, shares the address, serves images and `window.open`.
+Own colours warn, not fail. sw.js v36. test-webapp + full suite green.
+Live: the deploy serves the runtime; **the container build has not yet run on
+Actions** — no app is in the registry yet.
+Locale (rajarshi99/locale-chess): his PR #1 (branch `arcade`: game.json + MIT
+LICENSE) is open; after he merges, he proposes his own registry pin — its
+submission check is the first real container build.
+ac106f3: actions bumped to Node 24 (checkout/setup-node/upload-artifact v7,
+download-artifact v8, configure-pages v6, upload-pages-artifact v5).
+f557928: every job pinned to `ubuntu-24.04`. Deploys now run warning-free.
+Build caching per pinned commit (NEON_APP_CACHE, actions/cache in deploy,
+platform-check, submission; docs/platform.md "Web apps"): Locale cold 42 s → 0.2 s
+reused locally, output byte-identical; tooling change rebuilds, removed pin
+drops its entry. Follow-up: start-up time on a real phone.
+
+### In-game FEEDBACK / FAVOURITE (2026-11-14) — pushed to main
+
+The ☆ and 💬 left the portal cards (lib/portal.js, index.html). Inside a game,
+party.html's top right now holds 💬 FEEDBACK, ☆ FAVOURITE and PARTY
+(`.top-actions`, lib/party.js + styles.css), across from ← All games; on a
+phone (<560px) the two are icons only. The ★ FAVOURITES filter on the portal
+stays. sw.js v35. test-party, test-social, test-portal, test-pwa green.
+
+### Leaderboard UI; Undercover starts easy (2026-11-14) — pushed to main
+
+leaderboard.html + lib/leaderboard.js: game cards (with what each ranks by),
+podium for the top 3, avatar rows, win %, skeleton while loading, a sticky
+"you" bar (sign-in ask when signed out). worker/api/lb.js: boards carry `me`
+(rank past the top 100, or `need`/`hidden`); global takes `&me=1`, uncached.
+test-accounts + test-social green; past-100 rank checked against a JS sort.
+Worker deployed 2026-11-14 (version 2dd27a0a): `&me=1` live — 401 without a
+token, public board still `max-age=60`.
+Undercover: a new phone starts on the 9 everyday topics (`simple: true` in
+words.js) at EASY; EVERYDAY button on WORDS; names, undercovers and blank are
+saved per device like the words (`players`). test-undercover + test-bots green.

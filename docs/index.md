@@ -1,6 +1,6 @@
 # games — Documentation
 
-*Last synced: 2026-11-15 (SDK v1 and the old pages removed; docs/platform.md).*
+*Last synced: 2026-11-15 (SDK v1 and the old pages removed; docs/platform.md; lib/README.md's API and connectivity moved here).*
 
 Entry point for all project documentation. Any LLM should be able to answer
 questions about this project from this folder alone.
@@ -8,8 +8,8 @@ questions about this project from this folder alone.
 ## Contents
 
 - [The portal](#the-portal) — the home screen's sections, the phone layout and the search
-- [Connecting players](#connecting-players) — the serverless handshake, paid once per person
-- [Parties](#parties) — the persistent group, teams, switching games, host succession
+- [Connecting players](#connecting-players) — the serverless handshake, paid once per person; `scanQr`; connectivity (relaying, STUN, NAT classification, no TURN)
+- [Parties](#parties) — the persistent group, teams, switching games, host succession; the party API (`mountParty`, the room controller, lib/lobby.js)
 - [Bots](#bots) — why there is no single-player section, and what a bot actually is
 - [Hidden information](#hidden-information) — sealed private state, and commit-reveal
 - [Rounds and phases](#rounds-and-phases) — the shared clock for timed and simultaneous-turn games
@@ -24,7 +24,7 @@ questions about this project from this folder alone.
 - [Installing it](#installing-it) — the PWA: manifest, icons, service worker, offline
 - [Performance](perf.md) — the phone-speed harness (`just perf`), the 2026-11-14 baseline, and each refactor phase measured against it
 - [Testing across real networks](network-testing.md) — the NAT lab: symmetric NAT, network switches, lossy links, a blocked room server
-- [`../lib/README.md`](../lib/README.md) — every lib/ file in a line, and the P2P core, party, lobby and QR APIs
+- [`../lib/README.md`](../lib/README.md) — every lib/ file in a line, with pointers here for depth
 - [Neon Bid](neon-bid.md) — the sealed-bid gem auction's design, as approved
 - Neon Fission (`games/neon-fission/`, rules in its `RULES.md`) — the chain-reaction grid for 2–8: a managed ffa game; one person with bots can hand bot seats to people on the same phone before the first move (those seats' turns are reported as the person's, so no bot plays them; the end card names them via the result's `names`, docs/sdk-v2.md)
 - (still missing: design notes for the other games, decision log)
@@ -240,6 +240,62 @@ working:
 `scripts/test-scan.mjs` covers both, including the aiming that precedes a real
 scan and a CPU throttled to phone speed.
 
+`NeonArcade.scanQr({ onResult, onError })` returns `{ video, stop }`: mount
+`video`, and always call `stop()`. `onError` is always delivered
+asynchronously, so `scanner = scanQr({ ... })` has finished assigning before
+any callback can try to clean `scanner` up. Camera access needs a secure
+context, so scanning works on the deployed `https://` site and on loopback but
+not over a plain `http://` LAN address; the lobby says so and falls back to
+pasting.
+
+### Connectivity
+
+Moved here from lib/README.md on 2026-11-15; net.js is the code.
+
+- **Relayed signalling.** Once any link exists, offers and answers for every
+  further pair travel over it (`_openRelayed` in `net.js`), which is why the
+  mesh costs a player nothing the star did not. The host is a field in the
+  party record, not the shape of the network.
+- **Relayed messages.** A pair that cannot connect directly is not fatal:
+  messages to it are relayed through a member who can reach both, capped at two
+  hops and deduplicated by envelope id. A relayed negotiation that has not
+  opened after 15 s is abandoned and, the first time, tried once more the other
+  way round ([Honest gaps](#honest-gaps)). Nobody offers to a seat held for a reconnect until
+  its owner is back.
+- **Big messages.** Anything over ~12 KB is chunked and reassembled, and sends
+  pause when the channel's buffer fills, so per-frame broadcasts cannot grow it
+  without bound.
+- **STUN is the only outside contact** (`stun.cloudflare.com`,
+  `stun.l.google.com`), used to discover each peer's public IP:port; it never
+  sees game data. Pass `iceServers` to `createHost`/`createGuest` to override,
+  or set `localStorage["neon.stun"] = "host:port"` (or two, comma-separated)
+  for a whole session — the NAT lab's hook (`scripts/test-nat.mjs`), STUN only.
+  Deliberately not a query param: a link anyone can send must not choose a
+  player's STUN server.
+- **NAT classification.** `NeonArcade.classifyNat(iceServers?, { fresh }?)`
+  asks those two STUN servers (two hosts, two ports) where one local socket
+  appears from, remembered per set of servers unless `fresh`. Two public ports
+  for one base mean a **hard** NAT (endpoint/port-dependent mapping), which
+  connects only as the ICE offerer. Resolves `true` (two ports for one base, at
+  once), `false` (an address family with one mapping and no STUN error of its
+  own, 2 s after its first mapping or at gathering complete — another family's
+  timeouts do not veto it), or `null` (fewer than two servers, every mapped
+  family erroring, nothing by 5 s). No traffic but STUN to servers already
+  configured. room-join stores it as `room.natHard`, marks that side's offers
+  `h.`, and its glare rule lets a hard offer stand over a plain one
+  ([room-server.md](room-server.md), "Who offers to whom").
+- **Gathering** stops shortly after the first server-reflexive candidate rather
+  than waiting for `complete` (the rest is usually redundant interfaces), which
+  is what makes the invite QR appear promptly. Candidates are otherwise kept,
+  including `.local` mDNS ones: peers resolve them over multicast DNS, and on a
+  LAN with no route to STUN they are the only way two browsers connect. The one
+  exception is the ICE-TCP `tcptype active` placeholder, which two browsers can
+  never pair.
+- **No TURN server**, deliberately: running one would reintroduce the
+  dependency this design removes. Networks that block direct connections
+  surface as an explicit error rather than an indefinite wait. To cover them
+  anyway, pass a TURN entry in `iceServers`.
+
 ## Parties
 
 The party (`./?party`, lib/party.js) is the shell that keeps a group together. Because every game is a
@@ -333,6 +389,102 @@ the grace and 11 s with it. A deliberate `leave()` is not affected.
 A page reload is the one case that cannot be rescued: WebRTC credentials are
 per-connection, so a reloaded browser must handshake again — though any member
 can invite them straight back in, and a room-server member does so on its own.
+
+### The party API
+
+Moved here from lib/README.md on 2026-11-15. The shell's internal contract:
+games never call it (they speak [sdk-v2.md](sdk-v2.md) from a frame).
+
+**`NeonArcade.mountParty(container, stage)`** (lib/party.js) mounts the party
+screen in `container`; mounted games build themselves into `stage`. It handles
+joining (`#i=` / `#c=` in the URL), recruiting, teams, switching and
+succession.
+
+**A game's address is a shortcut into it** (2026-11-13): `./?game=<id>&fresh=1`,
+a portal card's link ([spa.md](spa.md)). With `?game=` the host of a fresh
+party gets a **quick start** first: the game's name as the title, INVITE A
+FRIEND and PLAY A BOT / PLAY ALONE (enough bots to make it legal), then ADD
+BOT / REMOVE BOT and START GAME (START alone for a local game, which shows
+nothing else). START seats people by the rule the old game pages had — host on
+A; a one-against-one game puts the first other member on B and the rest watch;
+a bigger team game deals the others out alternately, B first; any other game
+seats everyone on one side; past the game's seats, the rest watch. After the
+first game it is an ordinary party. A party opened this way does not ask a
+lone host before leaving.
+
+**The room controller** (lib/net.js `createHost` / `createGuest`):
+
+| method | description |
+| --- | --- |
+| `selfId` | this peer's random id |
+| `peerCount()` | number of other members |
+| `getMembers()` | `[{ id, name, team, joined, bot? }]`, in join order |
+| `getMember(id)` / `self()` | one member record |
+| `isHost()` / `hostId()` | who holds the crown |
+| `directPeers()` | peers this browser has an actual connection to |
+| `getGame()` | the mounted game's id, or null |
+| `makeAction(name)` | `{ send(data, { target }?), onMessage }` — broadcast or targeted |
+| `setName(name)` | change your display name |
+| `setTeam(id, team)` | host only: `"A"`, `"B"` or `"spectator"` |
+| `setGame(id)` | host only: everyone mounts it; `null` returns to the party |
+| `transferHost(id)` | host only: hand over the crown (never to a bot) |
+| `heir()` | who would take the crown if we left now; skips us, bots and reconnecting seats; `null` if nobody |
+| `removeMember(id)` | host only: remove someone (a bot included) |
+| `addBot(team?)` | host only: seat a simulated member; defaults to the emptier side. Returns its id |
+| `bots()` | every bot in the roster (readable by anyone) |
+| `emitAs(botId, action, data, opts?)` | host only: send as a bot, and deliver locally too |
+| `NeonArcade.isBotId(id)` | a bot's id is prefixed `bot_`, so routing can tell without the record |
+| `deleteParty()` | host only: end it for everyone |
+| `leave()` | tell the party we are going (the seat drops at once), then close every connection. Never called on reload/unload |
+| `detach()` | close every connection *without* telling anyone, as a reload would — the seat is held as RECONNECTING. For when the same member id is reconnecting from elsewhere (another tab took the seat; room-join's "displaced") |
+| `createInvite({ forPeer, retry, hard }?)` | mint an invite (any member). Refuses with `err.reason === "full"` at `maxMembers` — unless `forPeer` names a member who already holds a seat (a reload coming back), whose own seat is not counted against them. `retry` marks the role-swapped second try (below); `NeonArcade._codec.isRetrySignal(code)` reads that mark synchronously. `hard` marks an offer from a hard-NAT network (`natHard`, below; `h.` prefix, `isHardSignal`) for the far side's glare rule. Rejects with `reason: "withdrawn"` if the invite was dropped while it gathered. Resolves `{ code, link, withdraw }`: `withdraw()` closes the invite's PeerConnection unless an answer already took it — call it when the invite is cancelled or replaced |
+| `natHard` | this network's NAT maps one local port to different public ports per destination (`true`), does not (`false`), or unknown (`null`). Set by room-join from `NeonArcade.classifyNat()` — in parallel with the dial, never awaited, and asked again on isolation and on `online` / `navigator.connection` `change`; pin it with the `natHard` option |
+| `dropInvites(forPeer)` | close every invite minted `forPeer` that no answer has taken — an invite never expires on its own, so whoever knows it will not be answered (the far side's glare rule set it aside, the peer went away) drops it. One that took an answer is left to finish. Returns how many it closed |
+
+`makeAction` is idempotent: calling it twice with one name returns the same
+channel, so `room.makeAction("state").send(...)` inside a helper is fine.
+
+`createHost`/`createGuest` take `onLeave(reason)`, called once on every exit:
+`"left"` (`leave()`), `"evicted"` (the host removed us), `"closed"` (the
+party was deleted) or `"detached"` (`detach()`). `lib/room-join.js` uses it to
+release the room-server claim — on every reason but `"detached"`.
+
+`onError(message, info?)` carries `info.reason === "no-route"` when a link
+failed ICE and we hold no other — the pair has no path (no TURN).
+`onRouteFailed(peerId, { offered, message })` comes first, for a link made
+with `createInvite`/`answerInvite` on its first try: return true when you can
+still signal that peer, and swap the roles — offer back with
+`createInvite({ forPeer, retry: true })` if we answered, or expect their offer
+if we offered (the no-route verdict then waits 8 s for it). room-join does
+this over the room server. And `onIsolated()` fires when the *last* link
+closes while the roster still has people: the mesh has nothing left to
+renegotiate over, so room-join re-dials the room server to be offered to again
+([network-testing.md](network-testing.md)).
+
+A direct link both ends have described that has not opened 20 s later
+(`room.openTimeoutMs`) is failed as ICE `failed` would be — once ICE is up
+(DTLS/SCTP still retrying) it gets one more period first. The offerer's clock
+starts in `acceptAnswer`. The answerer's starts only with
+`answerInvite(code, { watch: true })`, which is for an answer a machine
+delivers (room-join passes it). The scan/paste flows (party.js, lobby.js) call
+`answerInvite(code)` without it: a person carries that reply back, for as long
+as it takes.
+
+**Shared handshake pieces** (lib/lobby.js; `party.js` requires it to be loaded
+first, which `src/main.tsx`'s import order does):
+
+| export | description |
+| --- | --- |
+| `NeonArcade.el(tag, props)` | the small DOM builder the party screen uses |
+| `NeonArcade.savedName()` / `rememberName(name)` | the display name remembered in `localStorage` (`neon.name`) |
+| `NeonArcade.shareBlock({ label, hint, value, qrValue, linkValue, title })` | a code box with a copy button and a QR; a labelled `.share` card when `label` is given. `linkValue` adds a second copy-as-link button so the QR stays small |
+| `NeonArcade.replyEntry({ room, setStatus, placeholder, scanPrompt, onConnected })` | the inviter's reply box with CONNECT / PASTE / SCAN REPLY. Returns `{ nodes, row, close }` — place `nodes`, add buttons to `row`, and always call `close()` on teardown (it stops the camera) |
+| `NeonArcade.ask(question, { ok, cancel })` | a yes/no question in the page's own `<dialog class="neon-ask">` (buttons `[data-ask="yes"]` / `[data-ask="no"]`); resolves `true` for yes. Never `confirm()`: it freezes the page's JS — the host's game loop and the mesh's relaying with it. Escape and a tap outside mean no; a second question dismisses the first |
+| `NeonArcade.toast(text, kind)` | a notice over whatever is on screen (`.neon-toasts`, under the portal link), `kind` `"good"` / `"warn"`; takes no taps, gone after 4.5 s, at most 3 |
+| `NeonArcade.presence()` | `{ sync(room), left(room, id, info) }`: feed it every roster callback and it toasts what changed — joined, left (with the reason), lost connection (after 2.5 s still lost) and back, the crown moving (after 1.2 s still moved). The first sync with a room is silent |
+| `NeonArcade.guardParty({ room, askAlone })` | register the page's party: `room()` returns the live room or null. From then on "← All games" (and any `a[data-leaves]`), back / swipe-back (a history entry pushed on the first tap) and `beforeunload` (only with another person present) all go through `leaveParty`. `askAlone` (boolean or function): ask even with nobody else here (the party shell, except a party a game's address opened) |
+| `NeonArcade.leaveParty(question)` / `leaveQuestion(room, question)` | ask (naming the heir, for a host), then `leave()` and wait for `roomSettled()`; resolves `true` once it may navigate, `false` if they stayed. Not asked, it still leaves — that is what drops the rejoin token |
+| `NeonArcade.REPLY_NOW` / `NeonArcade.replyFailed(setStatus)` | the replier's side of a hand-carried reply: the "do it right away" sentence for the reply screen (between some networks a reply works for ~15 s — [Honest gaps](#honest-gaps)), and, on a `no-route` before the link ever opened, the error status plus `{ hint, again }` — a hint node and a MAKE A NEW REPLY button (a reload: the same `#i=` invite answered afresh) for the caller to place |
 
 ## Bots
 
@@ -444,7 +596,7 @@ still being collected, when the host already counts them in). Battleship
 also re-sends a returner the last volley, whose answer they owed while away.
 The re-sync itself comes from the party shell: a member who mounts a running
 game says so, and the host's game re-sends its state (`onPeerJoin(id,
-{ back: true })`, lib/README.md). Draw & Guess replays the canvas so far.
+{ back: true })`, lib/party.js). Draw & Guess replays the canvas so far.
 test-worker section 10 reloads a guest mid-game in six games.
 
 The digest is taken over a **canonical** serialisation — object keys sorted at
@@ -659,7 +811,7 @@ the author's own repository, pinned in `registry/`.
 A game's address, `./?game=<id>&fresh=1`, is a **shortcut into the party
 shell** (since 2026-11-13): the host gets a quick start for that game (INVITE
 A FRIEND, PLAY A BOT, START GAME) before the ordinary party screen
-(lib/README.md, `mountParty`). There used to be a separate two-player lobby on
+([The party API](#the-party-api), `mountParty`). There used to be a separate two-player lobby on
 each game's own page, without join by code, rejoin after a reload, PARTY, END
 GAME or the turn banner's choices; Lokesh chose one connection path over
 teaching it all that, and the pages themselves were deleted on 2026-11-15. A
