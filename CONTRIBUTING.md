@@ -24,7 +24,7 @@ repository and propose it (step 4):
 
 ```json
 {
-  "sdk": 1, "id": "my-game", "name": "My Game", "blurb": "…",
+  "sdk": 2, "id": "my-game", "name": "My Game", "blurb": "…",
   "kind": "shared", "seats": { "min": 1, "max": 8 }, "bots": false,
   "entry": "index.html", "license": "MIT",
   "author": "<your-github-user>", "repo": "https://github.com/<you>/<repo>",
@@ -125,7 +125,7 @@ own, and your game keeps running under it, for them and for everyone else.
 ## 2. Play it in the real arcade, from your machine
 
 ```sh
-curl -fsSLO https://www.lokeshmohanty.in/games/sdk/v1/dev-server.mjs
+curl -fsSLO https://www.lokeshmohanty.in/games/sdk/dev-server.mjs
 node dev-server.mjs          # serves this folder on http://127.0.0.1:5174
 ```
 
@@ -174,7 +174,7 @@ tooling, it copies the folder at the pinned commit.
 ## Your card on the Contributors page
 
 Optional: a `contributor.json` at the root of your repository says how you
-appear on the [Contributors](contributors.html) page — your GitHub avatar
+appear on the [Contributors](./?page=contributors) page — your GitHub avatar
 and login are shown anyway.
 
 ```json
@@ -192,7 +192,7 @@ pin bump.
 
 ## 4. Open a pull request
 
-On the [Add your game](contribute.html) page, type your repository
+On the [Add your game](./?page=contribute) page, type your repository
 (`owner/name`) under **Propose your games**: it opens GitHub's page for your
 registry file, filled in with your latest commit and every folder holding a
 `game.json`. Commit it there and GitHub offers the pull request. (From a
@@ -225,7 +225,7 @@ it is checked again. Once a maintainer merges it, the site deploys by itself
 and lists your games as `<your-github-user>/<id>`.
 
 **To update**, push to your repo, then press **Check for updates** on your
-card on the [Contributors](contributors.html) page (or use Propose your games
+card on the [Contributors](./?page=contributors) page (or use Propose your games
 again, or `just propose`). One tap copies your new commit and opens your
 pin's edit page: select the old commit in the `"commit"` line, paste, then
 *Commit changes → Create a new branch… and start a pull request*. (GitHub can
