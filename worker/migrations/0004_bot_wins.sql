@@ -10,6 +10,10 @@
 -- never move a rating or a ranked board.
 
 ALTER TABLE runs ADD COLUMN vs TEXT NOT NULL DEFAULT 'solo';
+-- A random nonce, set by the report whose claim used the run up: a win
+-- against bots is added in the same batch only where `claim` is that
+-- report's own (worker/api/bots.js), never by reading `changes()`.
+ALTER TABLE runs ADD COLUMN claim TEXT;
 -- The per-game daily cap counts a player's counted runs of one kind and game.
 CREATE INDEX runs_vs ON runs (account, vs, game, counted, used);
 

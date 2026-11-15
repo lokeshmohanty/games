@@ -29,7 +29,7 @@
 // make them lose. The daily cap and the minimum match length bound how fast a
 // board can be climbed; they do not prove a game was played.
 
-import { HttpError } from "./http.js";
+import { HttpError, randomId } from "./http.js";
 import { RUN_TTL_MS, claimStatement, countedToday, unclaimedWhy } from "./runs.js";
 
 /** Counted wins against bots per account, per game, per day (env BOTS_PER_DAY). */
@@ -112,15 +112,18 @@ export async function reportBotsWin(env, me, b, t) {
 	const elapsed = t - row.at;
 	if (elapsed < rule.minMs) return refuse(`too fast: a win takes at least ${rule.minMs / 1000} s, and this one took ${(elapsed / 1000).toFixed(1)} s`);
 	// One batch (one transaction): the claim — unused, and under the day's cap,
-	// in a single conditional UPDATE — and the win, added only if that UPDATE
-	// changed the run (changes(), the same connection). A failure spends no
-	// run without its win, and no win is added without its run.
+	// in a single conditional UPDATE that stamps this report's own nonce — and
+	// the win, added only where the run carries that nonce. Not `changes()`
+	// (undocumented across a D1 batch) and not `used = t` (two reports in the
+	// same millisecond): only the report that claimed the run adds its win. A
+	// failure spends no run without its win, and no win is added without it.
+	const nonce = randomId(12);
 	const [claim, added] = await env.DB.batch([
-		claimStatement(env, { run: b.run, t, account: me.id, vs: "bots", game: b.game, perDay }),
+		claimStatement(env, { run: b.run, t, account: me.id, vs: "bots", game: b.game, perDay, claim: nonce }),
 		env.DB.prepare(
-			`INSERT INTO bot_wins (account, game, wins, first, at) SELECT ?, ?, 1, ?, ? WHERE changes() = 1
+			`INSERT INTO bot_wins (account, game, wins, first, at) SELECT ?, ?, 1, ?, ? WHERE EXISTS (SELECT 1 FROM runs WHERE id = ? AND claim = ?)
 			 ON CONFLICT (account, game) DO UPDATE SET wins = wins + 1, at = excluded.at RETURNING wins`,
-		).bind(me.id, b.game, t, t),
+		).bind(me.id, b.game, t, t, b.run, nonce),
 	]);
 	if (!claim.meta?.changes) return refuse(await unclaimedWhy(env, b.run, capWhy));
 	return { counted: true, board: "bots", wins: added.results?.[0]?.wins ?? null };

@@ -727,6 +727,12 @@ try {
 		const gb = (await call("GET", "/api/lb/neon-fission?vs=bots&me=1", { token: gus })).body.me;
 		check("…and the board has exactly those wins (the claim and the win in one batch)", gb?.wins === 3, gb);
 		check("…a refused run is still unused, and says the cap, not \"already reported\"", !raced.some((x) => /already reported/.test(x.body.why ?? "")));
+		// One run posted five times at once: one win, however the posts land
+		// (the win is added only where the run carries this report's claim).
+		const one = (await start(gus, "tic-tac-toe-js")).body.run;
+		const same = await Promise.all(Array.from({ length: 5 }, () => report(gus, win(one, "pg", G, { game: "tic-tac-toe-js" }))));
+		const tw = (await call("GET", "/api/lb/tic-tac-toe-js?vs=bots&me=1", { token: gus })).body.me;
+		check("the same run posted five times at once counts once, and adds one win", same.filter((x) => x.body.counted).length === 1 && same.filter((x) => /already reported/.test(x.body.why ?? "")).length === 4 && tw?.wins === 1, { got: same.map((x) => x.body.counted || x.body.why), wins: tw?.wins });
 
 		// Fay reaches three later: the tie goes to whoever got there first.
 		for (let i = 0; i < 3; i++) await report(fay, win((await start(fay, "connect4")).body.run, "pf", F));

@@ -282,11 +282,14 @@ and unused; fewer than **20 counted wins against bots per account per game
 in the last day** (`BOTS_PER_DAY`); and at least the game's `minMs` since
 the run began (server clock). Then one batch — one transaction — holds the
 claim and the win: the same conditional UPDATE as a solo run's (unused and
-under the cap, so parallel posts stop at the cap), and the `bot_wins`
-upsert only `WHERE changes() = 1`, so a failure can neither spend a run
-without its win nor add a win without its run. (`changes()` in a D1 batch
-was checked under wrangler's local D1; VERIFY once on the deployed one:
-win once, see 1 on the board.)
+under the cap, so parallel posts stop at the cap), which also stamps the
+run with a random nonce of this report's (`runs.claim`), and the
+`bot_wins` upsert only `WHERE EXISTS (… runs WHERE id = ? AND claim =
+<that nonce>)`. Only the report that claimed the run adds its win — not
+another posted in the same millisecond (so not `used = t`), and without
+relying on `changes()` across a D1 batch, which is undocumented — and a
+failure can neither spend a run without its win nor add a win without
+its run.
 
 `minMs` is the measured floor below, less about 1 s: a run against bots is
 not waited for, so the server stamps it up to a request's latency *after*
@@ -449,8 +452,9 @@ and sends no solo report — and would refuse one anyway ("a ranked match
 needs two signed-in players").
 
 `worker/migrations/0004_bot_wins.sql` (branch `solo-boards`, 2026-11-15)
-adds `runs.vs` ('solo' for every existing row, or 'bots'), the index
-`runs_vs`, and `bot_wins`. **Not applied or deployed.** It needs 0003
+adds `runs.vs` ('solo' for every existing row, or 'bots'), `runs.claim`
+(the nonce of the report that used a run up), the index `runs_vs`, and
+`bot_wins`. **Not applied or deployed.** It needs 0003
 first (it alters `runs`), and the Worker that reads `runs.vs` must not be
 deployed before it — every run start and solo report would fail. So, from
 `worker/`, once the branch is merged:

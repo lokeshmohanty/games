@@ -198,14 +198,16 @@ export async function countedToday(env, account, vs, game, t) {
  * unused AND the account has fewer than `perDay` counted runs of this kind
  * and game in the last day. One conditional UPDATE, so reports posted in
  * parallel cannot all pass a count read before any of them claimed (review,
- * 2026-11-15: ten parallel posts beat a cap of three). bots.js batches it
- * with the win it records.
+ * 2026-11-15: ten parallel posts beat a cap of three). It also writes
+ * `claim`, a random nonce of this report's, so a statement batched after it
+ * can tell whether this report — and not another one in the same
+ * millisecond — got the run (bots.js adds its win only then).
  */
-export function claimStatement(env, { run, t, daily = null, account, vs, game, perDay }) {
+export function claimStatement(env, { run, t, daily = null, account, vs, game, perDay, claim = randomId(12) }) {
 	return env.DB.prepare(
-		`UPDATE runs SET used = ?, counted = 1, daily = ? WHERE id = ? AND used IS NULL
+		`UPDATE runs SET used = ?, counted = 1, daily = ?, claim = ? WHERE id = ? AND used IS NULL
 		 AND (SELECT COUNT(*) FROM runs WHERE account = ? AND vs = ? AND game = ? AND counted = 1 AND used > ?) < ?`,
-	).bind(t, daily, run, account, vs, game, t - DAY_MS, perDay);
+	).bind(t, daily, claim, run, account, vs, game, t - DAY_MS, perDay);
 }
 
 /** Why a claim changed nothing: the run was used, or the day's cap was reached. */
