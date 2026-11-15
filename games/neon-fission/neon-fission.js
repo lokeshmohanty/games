@@ -166,8 +166,12 @@ const reduced = matchMedia("(prefers-reduced-motion: reduce)");
 
 let view = null;
 let cell = 40; // CSS px per cell
-let anim = null; // the chain being shown: { frames, waves, seat, cell, t0, placeMs, waveMs, n }
+let anim = null; // the chain being shown: { frames, waves, seat, cell, t0, placeMs, waveMs, settleMs, total, taken, final, timer }
 let shownMove = -1; // the move whose chain has been shown (or skipped)
+let painted = null; // the owners last drawn, for the tests
+
+// How fast a chain replays is rules.js `pace`. The platform keeps the end
+// card back until `arcade.idle()` says the winning one has been shown.
 
 const seatVar = (i) => `var(--p${(i % 8) + 1})`;
 const alpha = (rgba, a) => rgba.replace(/,\s*[\d.]+\)$/, `, ${a})`);
@@ -208,6 +212,7 @@ function orb(x, y, colour, r) {
 
 /** One board: `owner`/`count` arrays; `hide`: cells drawn empty (mid-burst). */
 function board(owner, count, { hide = null, lastCell = -1 } = {}) {
+	painted = owner;
 	const { tokens, players } = arcade.theme;
 	const { cols, rows } = view;
 	const W = cols * cell;
@@ -271,16 +276,22 @@ const again = () => {
 function paint(now = performance.now()) {
 	if (!view || !arcade.theme) return;
 	if (!anim) return board(view.owner, view.count, { lastCell: view.last?.cell ?? -1 });
-	const { frames, waves, seat, t0, placeMs, waveMs } = anim;
+	const { frames, waves, seat, t0, placeMs, waveMs, settleMs, total } = anim;
 	const t = now - t0;
+	if (t >= total) return finish();
 	if (t < placeMs) {
 		board(frames[0].owner, frames[0].count, { lastCell: anim.cell });
 		return again();
 	}
 	const k = Math.floor((t - placeMs) / waveMs);
 	if (k >= waves.length) {
-		anim = null;
-		return board(view.owner, view.count, { lastCell: view.last?.cell ?? -1 });
+		// The settle: the final board, each cell this move took ringed, fading.
+		board(view.owner, view.count, { lastCell: anim.cell });
+		const p = (t - placeMs - waves.length * waveMs) / settleMs;
+		c2d.strokeStyle = alpha(arcade.theme.players[seat % 8], 0.9 * (1 - p));
+		c2d.lineWidth = 3;
+		for (const i of anim.taken) c2d.strokeRect((i % view.cols) * cell + 3.5, Math.floor(i / view.cols) * cell + 3.5, cell - 7, cell - 7);
+		return again();
 	}
 	const p = (t - placeMs - k * waveMs) / waveMs;
 	const e = 1 - (1 - p) * (1 - p);
@@ -307,9 +318,22 @@ function paint(now = performance.now()) {
 	again();
 }
 
+/**
+ * The chain is over (played out, tapped past, or replaced): the board as it
+ * is, and the platform told this phone is idle, so a held end card shows.
+ */
+function finish() {
+	if (anim) clearTimeout(anim.timer);
+	anim = null;
+	hud();
+	paint();
+	// `?.`: a shell from before `idle` (2026-11-15) has no such call.
+	arcade.idle?.();
+}
+
 /** Start showing the chain of `last` (a move this phone has not shown yet). */
 function animate(last) {
-	if (reduced.matches || !last?.before) return;
+	if (reduced.matches || !last?.before || !last.waves.length) return;
 	const { cols, rows } = view;
 	const sh = R.shape(cols, rows);
 	const o = [...last.before.owner];
@@ -331,10 +355,13 @@ function animate(last) {
 		}
 		frames.push({ owner: [...o], count: [...c] });
 	}
-	// Short whatever the chain: a long one runs faster, never past ~1.5 s.
-	const waveMs = Math.min(170, 1400 / Math.max(1, last.waves.length));
-	anim = { frames, waves: last.waves, seat: last.seat, cell: last.cell, t0: performance.now(), placeMs: last.waves.length ? 120 : 0, waveMs };
-	if (!last.waves.length) anim = null;
+	// A long chain runs faster, within its budget (rules.js `pace`).
+	const final = view.winner !== null;
+	const { placeMs, waveMs, settleMs, total } = R.pace(last.waves.length, final);
+	const taken = view.owner.flatMap((o, i) => (o === last.seat && last.before.owner[i] !== last.seat ? [i] : []));
+	anim = { frames, waves: last.waves, seat: last.seat, cell: last.cell, t0: performance.now(), placeMs, waveMs, settleMs, total, taken, final };
+	// Frames stop in a hidden tab; this does not, so the end card is not held for nothing.
+	anim.timer = setTimeout(() => anim && performance.now() - anim.t0 >= anim.total && finish(), total + 50);
 }
 
 const canPlay = () =>
@@ -451,9 +478,7 @@ function setup() {
 canvas.addEventListener("click", (e) => {
 	if (anim) {
 		// A tap during a chain skips it to the end; it is not a move.
-		anim = null;
-		paint();
-		return;
+		return finish();
 	}
 	if (!canPlay()) return;
 	const rect = canvas.getBoundingClientRect();
@@ -474,7 +499,6 @@ arcade.on("view", ({ state }) => {
 	const fresh = view && state.match !== view.match;
 	view = state;
 	if (fresh) shownMove = -1;
-	hud();
 	setup();
 	if (reshaped) resize();
 	const last = state.last;
@@ -482,13 +506,22 @@ arcade.on("view", ({ state }) => {
 		// A phone that (re)joins mid-game draws the board as it is.
 		const showIt = !first && last.n === state.moves;
 		shownMove = last.n;
+		if (anim) clearTimeout(anim.timer);
 		anim = null;
 		if (showIt) animate(last);
-	} else if (!last) anim = null;
+	} else if (!last && anim) {
+		clearTimeout(anim.timer);
+		anim = null;
+	}
+	// The turn line and chips wait for a winning chain to play out, so they
+	// do not announce the winner over it (finish() draws them).
+	if (!anim?.final) hud();
 	paint();
+	// Nothing to replay: this view is shown (else finish() says so).
+	if (!anim) arcade.idle?.();
 });
 arcade.on("rejected", (m) => arcade.toast(m.reason, "warn"));
 arcade.init.then(resize);
 
 /** The game as this phone sees it, for the tests. */
-arcade.debug = () => (view ? { ...view, canPlay: canPlay(), animating: !!anim, cell } : { phase: null });
+arcade.debug = () => (view ? { ...view, canPlay: canPlay(), animating: !!anim, replayMs: anim ? Math.round(anim.total) : 0, painted, cell } : { phase: null });

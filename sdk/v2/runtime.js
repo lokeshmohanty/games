@@ -25,8 +25,9 @@
 //   arcade.isHost()  arcade.ready()  arcade.result(r)  arcade.toast(text)
 //
 // Layer 2, managed state: `arcade.managed(rules)`, `arcade.act(a)`,
-// `arcade.input(i)`, `arcade.on("view", …)`, and data-arcade-* bindings for a
-// game written as markup (lib/sdk-managed.js runs the rest).
+// `arcade.input(i)`, `arcade.on("view", …)`, `arcade.idle()`, and
+// data-arcade-* bindings for a game written as markup (lib/sdk-managed.js
+// runs the rest).
 //
 // Messages the game posts before the port arrives wait in an outbox. A
 // handler added after `init` arrived still gets `init` (on("init") replays it).
@@ -38,6 +39,7 @@
 	let port = null;
 	let seq = 0;
 	let initMsg = null;
+	let viewSeq = 0; // the newest view's `seq`, for `idle`
 	const outbox = [];
 	const handlers = new Map(); // t -> Set(fn)
 	const answers = new Map(); // t -> fn, for the shell's requests
@@ -200,6 +202,12 @@
 		input: (i) => post({ t: "input", i }),
 		/** The last view this phone was sent (null before the first). */
 		view: null,
+		/**
+		 * This phone has finished showing the latest view (its animation is
+		 * over, or there was none). Once a game says it, the end card waits
+		 * for it after the final move, at most a few seconds.
+		 */
+		idle: () => post({ t: "idle", seq: viewSeq }),
 	};
 	window.arcade = arcade;
 
@@ -239,6 +247,7 @@
 	};
 	arcade.on("view", (m) => {
 		arcade.view = m.state;
+		if (Number.isInteger(m.seq)) viewSeq = m.seq;
 		bind(m.state);
 	});
 	addEventListener("click", (e) => {
