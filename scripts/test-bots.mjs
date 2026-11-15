@@ -861,11 +861,14 @@ try {
 	check("the finished game is in this device's stats, counted once", mine.stats?.[c4Id]?.played === 1, JSON.stringify(mine.stats?.[c4Id] ?? mine.stats));
 	check("…against a bot", mine.stats?.[c4Id]?.vsBots === 1);
 	check("…and it is the most recent game", mine.recent?.[0] === c4Id, JSON.stringify(mine.recent));
+	// A game played: ./ opens on My Games now, with Recently played; the
+	// cards with your record are All Games' (lib/portal.js).
 	await page.goto(url("index.html"));
+	check("…and under Recently played, on My Games", (await page.locator("[data-recent] .recent-game").first().textContent({ timeout: TIMEOUT }).catch(() => "")) === "Connect 4" && new URL(page.url()).searchParams.get("tab") === "mine", page.url());
+	await page.goto(url("index.html?page=games&tab=all"));
 	// A game has a card in every home-screen section it is in: the first will do.
 	const portalSays = await page.locator(`.game-card[data-game="${c4Id}"] .game-you`).first().textContent({ timeout: TIMEOUT }).catch(() => "");
 	check("the portal shows it on the game's card", /won of 1/.test(portalSays), portalSays);
-	check("…and under Recently played", (await page.locator("[data-recent] .recent-game").first().textContent().catch(() => "")) === "Connect 4");
 
 	// ------------------------------------------------------ neon fission
 	//

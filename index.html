@@ -19,6 +19,33 @@
     <link rel="stylesheet" href="lib/theme.css" vite-ignore />
     <script src="lib/theme.js" vite-ignore></script>
     <link rel="stylesheet" href="lib/styles.css" vite-ignore />
+    <script>
+      // The Games tab's two sub-tabs, My Games and All Games (docs/spa.md
+      // "The portal's sub-tabs"). The home screen opens on My Games once this
+      // device has a favourite or a recently played game, else on All Games.
+      // Decided here, before the first paint, from localStorage (synchronous),
+      // so the static first frame below already shows the right sub-tab; the
+      // router (src/router.ts) asks the same function for every portal
+      // address that names no sub-tab. The view test mirrors src/router.ts's.
+      (() => {
+        const A = (window.NeonArcade = window.NeonArcade || {});
+        const count = (key) => {
+          try {
+            const v = JSON.parse(localStorage.getItem(key));
+            return Array.isArray(v) ? v.length : 0;
+          } catch {
+            return 0;
+          }
+        };
+        A.homeTab = () => (count("neon.favs") || count("neon.recent") ? "mine" : "all");
+        const q = new URLSearchParams(location.search);
+        const page = q.get("page");
+        const other = (page !== null && page !== "games") || ["game", "mode", "fresh", "dev", "party"].some((k) => q.has(k)) || /[#&](i|c|a)=/.test(location.hash);
+        if (other) return;
+        const tab = q.get("tab");
+        document.documentElement.dataset.home = tab === "mine" || tab === "all" ? tab : q.has("q") ? "all" : A.homeTab();
+      })();
+    </script>
   </head>
   <body>
     <!-- The views (src/App.tsx). Until the shell's code has run, the portal's
@@ -27,7 +54,23 @@
          address names another view, replaced when the app renders. -->
     <div id="app">
       <main class="view-portal boot">
-        <nav class="site-nav"></nav>
+        <!-- lib/nav.js's row as it will be drawn, so nothing moves when it is:
+             the tabs, the ☰ button's place, and the Games sub-tabs, the one
+             decided above lit (lib/styles.css). test-portal compares the two. -->
+        <nav class="site-nav" aria-label="Arcade">
+          <div class="site-row">
+            <div class="site-tabs" role="list">
+              <a class="site-tab is-on" role="listitem" href="./">Games</a>
+              <a class="site-tab" role="listitem" href="./?page=leaderboard">Leaderboards</a>
+              <a class="site-tab" role="listitem" href="./?page=collections">Community</a>
+            </div>
+            <div class="site-menu"><span class="site-menu-btn" aria-hidden="true"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 7h16M4 12h16M4 17h16" /></svg></span></div>
+          </div>
+          <div class="site-subtabs" role="list">
+            <a class="site-subtab" role="listitem" data-tab="mine" href="./?page=games&amp;tab=mine">My Games</a>
+            <a class="site-subtab" role="listitem" data-tab="all" href="./?page=games&amp;tab=all">All Games</a>
+          </div>
+        </nav>
         <h1 class="brand">
           <svg class="mark" viewBox="96 104 320 288" aria-hidden="true">
             <g transform="translate(0 9)" stroke-linecap="round">
@@ -49,9 +92,8 @@
       </main>
     </div>
     <script>
-      // Another view (src/router.ts's words): no portal heading flashing first.
-      if (/[?&](page|game|mode|fresh|dev|party)(=|&|$)/.test(location.search) || /[#&](i|c|a)=/.test(location.hash))
-        document.querySelector("#app .boot")?.remove();
+      // Another view (the head's test): no portal heading flashing first.
+      if (!document.documentElement.dataset.home) document.querySelector("#app .boot")?.remove();
     </script>
     <!-- The party: mounted once, kept across views (src/App.tsx). -->
     <div id="party-layer" hidden>

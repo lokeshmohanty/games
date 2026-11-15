@@ -13,7 +13,9 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  justify-content: center;
+  /* From the top: a short screen (My Games with little in it, the static
+     first frame) must not float to the middle and jump when it fills. */
+  justify-content: flex-start;
   min-height: 100vh;
 }
 :where(.view-portal) h1 {
@@ -251,8 +253,14 @@
 :where(.view-portal) .game-card .game-meta .no-bots {
   color: var(--accent-2);
 }
+/* START A PARTY and JOIN WITH A CODE: 44px tall, the least for a tap
+   (they were 34px on Lokesh's phone, 2026-11-15). */
 :where(.view-portal) .play-btn {
-  display: inline-block;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  min-height: 44px;
   padding: 10px 25px;
   background: var(--accent);
   color: var(--on-accent);
@@ -322,6 +330,52 @@
   can be installed, and a fixed element that appears from nowhere would
   land on top of the first row of cards on a phone.
 */
+/* Recently played (lib/portal.js) and the search: before the phone rules,
+   which narrow them like everything else. (After them, they kept 80% on a
+   phone: Lokesh's OnePlus, 2026-11-15.) */
+:where(.view-portal) .recent {
+  width: 80%;
+  max-width: 1200px;
+  margin-bottom: 18px;
+}
+:where(.view-portal) .recent h2 {
+  font-size: 0.8rem;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  color: var(--ink-2);
+  margin: 0 0 8px;
+}
+:where(.view-portal) .recent-list {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  padding-bottom: 4px;
+}
+:where(.view-portal) .search {
+  width: 80%;
+  max-width: 1200px;
+  margin: 0 auto 12px;
+}
+:where(.view-portal) .search input {
+  width: 100%;
+  box-sizing: border-box;
+  min-height: 44px;
+  padding: 10px 14px;
+  border: 1px solid var(--rule);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--ink);
+  font-family: var(--font-body);
+  font-size: 0.95rem;
+}
+:where(.view-portal) .search input::placeholder {
+  color: var(--ink-3);
+}
+:where(.view-portal) .search input:focus {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
 /*
   Phones. The portal used to show one card at a time: a 300px minimum
   column at 80% width is a single column on a 390px screen, and a 200px
@@ -358,22 +412,21 @@
     gap: 10px;
     flex-wrap: wrap;
   }
-  :where(.view-portal) .party-banner h3 {
-    font-size: 1.05rem;
-    margin: 0;
-  }
-  /* The pitch is three lines of prose about reconnecting. On a phone the
-     heading and the button say enough. */
-  :where(.view-portal) .party-banner p {
+  /* The pitch is three lines of prose about reconnecting, and the heading
+     says what START A PARTY says. On a phone the two buttons are the
+     banner (the room went to the sub-tabs' row, 2026-11-15). */
+  :where(.view-portal) .party-banner > div {
     display: none;
   }
   :where(.view-portal) .party-banner .play-btn {
+    flex: 1 1 0;
     margin: 0;
-    padding: 9px 14px;
+    padding: 0 14px;
     font-size: 0.75rem;
     white-space: nowrap;
   }
 
+  /* One column for everything under the banner, the cards' (94%). */
   :where(.view-portal) .games-grid,
   :where(.view-portal) .recent,
   :where(.view-portal) .search {
@@ -390,9 +443,9 @@
     gap: 12px;
   }
   :where(.view-portal) .game-card p.game-you,
-  :where(.view-portal) .game-card p.game-by {
-    margin: -2px 6px 6px;
-    font-size: 0.62rem;
+  :where(.view-portal) .game-card p.game-by,
+  :where(.view-portal) .game-card p.game-plays {
+    margin: -2px 4px 6px;
   }
   :where(.view-portal) .game-card {
     border-radius: 10px;
@@ -407,12 +460,13 @@
   :where(.view-portal) .game-card p:not(.game-meta) {
     display: none;
   }
+  /* 12px at the least (a 9.9px line was unreadable on Lokesh's phone,
+     2026-11-15), and still "1–8 PLAYERS · BOTS" on one line at 354px:
+     no letter-spacing, and the card's side margins at 4px. */
   :where(.view-portal) .game-card .game-meta {
-    margin: 0 6px 8px;
-    /* Small enough to keep "1–8 PLAYERS · BOTS" on one line at this
-       column width; wrapping it cost every card a second line. */
-    font-size: 0.62rem;
-    letter-spacing: 0.3px;
+    margin: 0 4px 8px;
+    font-size: 0.75rem;
+    letter-spacing: 0;
   }
   :where(.view-portal) .card-actions {
     padding: 10px;
@@ -420,7 +474,7 @@
   }
   :where(.view-portal) .card-play {
     min-height: 44px;
-    font-size: 0.72rem;
+    font-size: 0.75rem;
     padding: 6px 8px;
   }
   /* Lifting a card on hover is a mouse gesture; on a touch screen it just
@@ -438,6 +492,23 @@
     font-size: 0.9rem;
     letter-spacing: 1.5px;
     margin: 0 0 8px;
+  }
+  :where(.view-portal) .section-head {
+    margin-bottom: 8px;
+  }
+  /* The rows reach the screen's edges as they scroll (the 3vw beside the
+     94% column), while their first card lines up with everything above:
+     the cards' rows and Recently played alike. Percentages of margin and
+     padding are of the column's width, so 50% - 50vw is the gutter. */
+  :where(.view-portal) .section-row,
+  :where(.view-portal) .recent-list {
+    margin-inline: calc(50% - 50vw);
+    padding-inline: calc(50vw - 50%);
+    scroll-padding-inline: 3vw;
+    scrollbar-width: none;
+  }
+  :where(.view-portal) .recent-list::-webkit-scrollbar {
+    display: none;
   }
   :where(.view-portal) .section-row {
     grid-template-columns: none;
@@ -501,6 +572,7 @@
 :where(.view-portal) .game-card p.game-by {
   display: block;
 }
+/* 12px, the least a card says anything in (2026-11-15). */
 :where(.view-portal) .game-card p.game-you {
   color: var(--accent);
   font-size: 0.75rem;
@@ -508,27 +580,10 @@
 }
 :where(.view-portal) .game-card p.game-by {
   color: var(--ink-3);
-  font-size: 0.7rem;
+  font-size: 0.75rem;
   margin-top: -6px;
 }
-:where(.view-portal) .recent {
-  width: 80%;
-  max-width: 1200px;
-  margin-bottom: 18px;
-}
-:where(.view-portal) .recent h2 {
-  font-size: 0.8rem;
-  letter-spacing: 2px;
-  text-transform: uppercase;
-  color: var(--ink-2);
-  margin: 0 0 8px;
-}
-:where(.view-portal) .recent-list {
-  display: flex;
-  gap: 8px;
-  overflow-x: auto;
-  padding-bottom: 4px;
-}
+
 :where(.view-portal) .recent-game,
 :where(.view-portal) .fav-more-item {
   flex: none;
@@ -550,32 +605,128 @@
 }
 :where(.view-portal) .game-card p.game-plays {
   color: var(--ink-3);
-  font-size: 0.7rem;
+  font-size: 0.75rem;
   margin-top: -6px;
 }
 
-:where(.view-portal) .search {
-  width: 80%;
-  max-width: 1200px;
-  margin: 0 auto 12px;
+/* ☆ on a card (lib/portal.js): over the preview's corner, above the card's
+   two choices; the glyph small, the tap 44px. */
+:where(.view-portal) .card-fav {
+  position: absolute;
+  top: 0;
+  right: 0;
+  z-index: 2;
+  width: 44px;
+  height: 44px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--ink);
+  font-size: 1.1rem;
+  line-height: 1;
+  cursor: pointer;
 }
-:where(.view-portal) .search input {
-  width: 100%;
+/* The glyph on a disc of the page's colour, so it reads over any preview. */
+:where(.view-portal) .card-fav::before {
+  content: "";
+  position: absolute;
+  inset: 7px;
+  z-index: -1;
+  border-radius: 50%;
+  background: color-mix(in oklch, var(--bg) 72%, transparent);
+}
+:where(.view-portal) .card-fav[aria-pressed="true"] {
+  color: var(--accent);
+}
+
+/* Popular's heading, with PLAY SOMETHING at its right. */
+:where(.view-portal) .section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+:where(.view-portal) .section-head .section-title {
+  margin: 0;
+}
+/* PLAY SOMETHING (lib/portal.js quickPick): a popular game, single player,
+   at once. A modest pill, not a banner. */
+:where(.view-portal) .quick-play-btn {
+  display: inline-flex;
+  align-items: center;
+  flex: none;
   box-sizing: border-box;
   min-height: 44px;
-  padding: 10px 14px;
-  border: 1px solid var(--rule);
+  padding: 0 16px;
   border-radius: 999px;
-  background: var(--surface);
-  color: var(--ink);
+  background: var(--accent);
+  color: var(--on-accent);
   font-family: var(--font-body);
+  font-size: 0.8rem;
+  font-weight: bold;
+  letter-spacing: 0.5px;
+  text-decoration: none;
+  white-space: nowrap;
+}
+/* ▶ drawn, not typed: phones paint U+25B6 as a coloured emoji. */
+:where(.view-portal) .quick-play-btn::before {
+  content: "";
+  width: 0;
+  height: 0;
+  margin-right: 8px;
+  border-style: solid;
+  border-width: 5px 0 5px 8px;
+  border-color: transparent transparent transparent currentColor;
+}
+:where(.view-portal) .quick-play-btn[hidden],
+:where(.view-portal) .my-empty[hidden] {
+  display: none;
+}
+
+/* My Games with nothing in it yet. */
+:where(.view-portal) .my-empty {
+  width: 80%;
+  max-width: 1200px;
+  box-sizing: border-box;
+  margin: 8px 0 24px;
+  padding: 18px;
+  border: 1px dashed var(--rule);
+  border-radius: 15px;
+  text-align: center;
+}
+@media (max-width: 560px) {
+  :where(.view-portal) .my-empty {
+    width: 94%; /* the cards' column; after the base rule, unlike the block above */
+  }
+}
+:where(.view-portal) .my-empty p {
+  margin: 0 0 14px;
+  color: var(--ink-2);
   font-size: 0.95rem;
+  line-height: 1.5;
 }
-:where(.view-portal) .search input::placeholder {
-  color: var(--ink-3);
+:where(.view-portal) .my-empty-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 10px;
 }
-:where(.view-portal) .search input:focus {
-  outline: 2px solid var(--accent);
-  outline-offset: 1px;
+:where(.view-portal) .my-empty-all {
+  display: inline-flex;
+  align-items: center;
+  box-sizing: border-box;
+  min-height: 44px;
+  padding: 0 16px;
+  border: 1px solid var(--accent);
+  border-radius: 999px;
+  color: var(--accent);
+  font-size: 0.8rem;
+  font-weight: bold;
+  letter-spacing: 0.5px;
+  text-decoration: none;
 }
+
 

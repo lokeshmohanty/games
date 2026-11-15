@@ -1116,9 +1116,10 @@ canvas {
 }
 
 /* lib/nav.js: one row, the tabs (Games · Leaderboards · Community) and the
-   ☰ menu (Add your game, Theme, account, GitHub); Community's own tabs
-   under it. The row's height is held so the static first frame
-   (index.html) does not jump when the nav is drawn. */
+   ☰ menu (Add your game, Theme, account, GitHub); the sub-tabs of Games
+   (My Games · All Games) or Community under it. The row's height is held
+   so the static first frame (index.html) does not jump when the nav is
+   drawn; on the portal that frame draws the same row itself. */
 .site-nav {
   width: 100%;
   max-width: 1200px;
@@ -1169,15 +1170,20 @@ canvas {
   gap: 6px;
   padding-top: 8px;
 }
+/* A tap target like every other (44px; Lokesh's phone, 2026-11-15). */
 .site-subtab {
-  min-height: 36px;
+  min-height: 44px;
   padding: 0 14px;
   border: 1px solid var(--rule);
   border-radius: 999px;
   margin: 0;
   font-size: 0.85rem;
 }
-.site-subtab.is-on {
+/* The static first frame (index.html) lights the sub-tab its head script
+   chose, before lib/nav.js has run. */
+.site-subtab.is-on,
+html[data-home="mine"] .boot .site-subtab[data-tab="mine"],
+html[data-home="all"] .boot .site-subtab[data-tab="all"] {
   color: var(--on-accent);
   background: var(--accent);
   border-color: var(--accent);

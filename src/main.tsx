@@ -28,12 +28,14 @@ import "../lib/catalog.js";
 import "../lib/nav.js";
 import { render } from "solid-js/web";
 import App from "./App";
-import { viewOf } from "./router";
+import { navigate, viewOf } from "./router";
 
-// For the shell's vanilla code: it is one page now (lib/lobby.js, party.js).
+// For the shell's vanilla code: it is one page now (lib/lobby.js, party.js,
+// portal.js).
 const NA = (window as any).NeonArcade;
 NA.shell = true;
 NA.shellView = (href: string) => viewOf(new URL(href, location.href));
+NA.navigate = (href: string) => navigate(href);
 
 /** A classic script, once (the community catalog: generated, not bundled). */
 const script = (src: string) =>

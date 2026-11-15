@@ -67,7 +67,9 @@ try {
 	await ana.p.goto(page("index.html"));
 	check("the portal names you", (await ana.p.locator(".site-menu .acct-me").textContent({ timeout: TIMEOUT })).includes("Ana Lima"));
 	check("…and still fits the phone", await noSideScroll(ana.p));
-	check("…with no star or feedback on the cards any more", (await ana.p.locator(".game-card .fav, .game-card .fb").count()) === 0);
+	// Feedback only from inside a game; a star on the card too since
+	// 2026-11-15 (☆ → My Games), beside the one inside the game.
+	check("…with no feedback on the cards, and ☆ on each", (await ana.p.locator(".game-card .fb").count()) === 0 && (await ana.p.locator(".game-card").count()) === (await ana.p.locator(".game-card .card-fav").count()));
 	// Starred from inside the game now (party.js, top right).
 	await ana.p.goto(page("?party", "&game=connect4"));
 	await ana.p.locator(".top-fav").click({ timeout: TIMEOUT });
@@ -78,7 +80,7 @@ try {
 	// That game hosted a party of its own; forget it, so the party below is new.
 	await ana.p.evaluate(() => localStorage.removeItem("neon.room"));
 	const tablet = await device("Ana", "Ana"); // the same account elsewhere
-	await tablet.p.goto(page("index.html"));
+	await tablet.p.goto(page("index.html?page=games&tab=mine"));
 	const starred = await tablet.p
 		.locator('[data-section="favs"] .game-card[data-game="connect4"]')
 		.waitFor({ state: "attached", timeout: TIMEOUT })
