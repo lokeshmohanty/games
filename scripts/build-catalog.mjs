@@ -3,7 +3,7 @@
 // The party shell has to know a game's name, seats and shape before it loads
 // the game (to list it, check the roster, offer bots), and a static site cannot
 // list a folder at runtime. So games/<id>/game.json are gathered here into
-// lib/catalog.js, committed, which party.html loads like any other lib file.
+// lib/catalog.js, committed, which the shell bundles like any other lib file.
 // Outside repos' games get their own generated catalog at deploy:
 // scripts/fetch-community.mjs → community/catalog.js.
 //

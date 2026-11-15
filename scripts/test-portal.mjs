@@ -2,7 +2,7 @@
 // and tabs on every page, the Contributors and Collections pages and the
 // add-your-game guide, at 390x844.
 
-import { existsSync, globSync } from "node:fs";
+import { existsSync, globSync, readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { homedir } from "node:os";
 import { join } from "node:path";
@@ -427,6 +427,11 @@ try {
 	}));
 	check("the guide is CONTRIBUTING.md, rendered", guide.h1 === "Putting your game in the arcade" && guide.h2.length >= 4 && guide.code >= 3, guide);
 	check("…repo files link to GitHub, site pages stay here", guide.sdk === "https://github.com/lokeshmohanty/games/blob/main/docs/sdk-v2.md" && guide.local, guide);
+	// Read on GitHub, "./?page=…" would resolve to github.com/…/blob/main/?page=…;
+	// so the source names site pages by the live address, which the renderer
+	// turns back into this site's own view (lib/markdown.js).
+	const contributing = readFileSync(new URL("../CONTRIBUTING.md", import.meta.url), "utf8");
+	check("…and CONTRIBUTING.md writes site pages as live addresses, so they work on GitHub", !/\]\(\.?\/?\?page=/.test(contributing) && contributing.includes("](https://www.lokeshmohanty.in/games/?page=contributors)"));
 	check("…and it lists the seven examples: each one's code on GitHub and a link to play it", guide.examples.join() === "js,html,ts,rust,c,go,python" && guide.plays.join() === "tic-tac-toe-js,tic-tac-toe-html,tic-tac-toe-ts,tic-tac-toe-rust,tic-tac-toe-c,tic-tac-toe-go,tic-tac-toe-python", guide);
 	const unsafe = await p.evaluate(() =>
 		NeonArcade.markdown.render('<img src=x onerror=alert(1)> [x](javascript:alert(1)) **b** `<b>`\n\n```\n<script>\n```'),

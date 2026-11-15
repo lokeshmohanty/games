@@ -33,11 +33,19 @@ These are the only addresses. The old pages (`party.html`,
 `leaderboard.html`, `connect4.html`, …) were redirect stubs into them until
 2026-11-15, when they were deleted (Lokesh's decision): every link in the
 shell, the manifest's `start_url` (`./`) and shortcut (`./?party`), and the
-dev kit's printed links use the addresses above. **An invite, code or
-bookmark made on an old page (`party.html#i=…`) now 404s**, which was
-accepted. A phone whose service worker is older than the shell
-(2026-11-14's snapshot) may show the old portal for a new invite once, until
-its worker updates.
+dev kit's printed links use the addresses above. **Every `party.html` link
+now 404s**, which Lokesh accepted on 2026-11-15. That covers:
+
+- invites, codes and bookmarks made on an old page (`party.html#i=…`);
+- invites, party codes and friend JOIN links made *after* the deploy by a
+  phone still running the previous version, until it reloads — an installed
+  app's first session after a deploy runs the old snapshot;
+- an old installed app's "Party" shortcut;
+- a dev kit downloaded before the deploy, which prints `party.html?dev=`
+  links.
+
+A phone whose service worker is older than the shell (2026-11-14's snapshot)
+may show the old portal for a new invite once, until its worker updates.
 
 Every same-origin link to the shell (`./` or `index.html`, with any query
 and hash), including those in the shell's vanilla code, is caught by one

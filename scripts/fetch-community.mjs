@@ -14,7 +14,7 @@
 // builds in a throwaway container and lays out (docs/platform.md, "Web apps").
 // Then:
 //
-//   community/catalog.js   registers the games (party.html loads it)
+//   community/catalog.js   registers the games (the shell loads it)
 //   community/precache.js  their files, for the service worker's offline copy
 //
 // community/ is generated and git-ignored.
