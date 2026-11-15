@@ -1,13 +1,16 @@
 #!/usr/bin/env bash
-# make-preview.sh — regenerate a game's portal preview gif, end to end.
+# make-preview.sh — regenerate a game's portal preview, end to end.
 #
 #   scripts/make-preview.sh connect4
 #   scripts/make-preview.sh all --width 600
 #
-# Drives the game in a real browser (scripts/preview.mjs), then converts the
-# recording to assets/<game>.gif, which index.html already references. No human
-# has to play the game and nothing takes over the screen — the browser runs
-# headless, so this is safe to run while you work.
+# Drives the game in a real browser (scripts/preview.mjs), converts the
+# recording to a gif in a temporary folder, and writes the portal's files from
+# it: assets/<game>.webp (poster), .webm and .mp4 (scripts/preview-media.mjs),
+# which the game's game.json already names. The gif is then deleted: the
+# portal never shows it, and committing them cost ~3.5 MB (2026-11-15). No
+# human has to play the game and nothing takes over the screen — the browser
+# runs headless, so this is safe to run while you work.
 #
 # Conversion goes through the `screen-rec` CLI (from the nix harness) so gif
 # encoding settings stay in one place; plain ffmpeg is used if it is absent.
@@ -94,9 +97,11 @@ for game in "${targets[@]}"; do
     printf '   trimming last %ss (%ss -> %ss)\n' "$TRIM_END" "$played" "$dur" >&2
   fi
 
-  dest="$ROOT/assets/$game.gif"
+  # The gif is only the source of the portal's files: made in a temporary
+  # folder, gone once they are written.
+  gifdir="$(mktemp -d)"
+  dest="$gifdir/$game.gif"
   mkdir -p "$ROOT/assets"
-  rm -f "$dest"   # index.html references a fixed name; replace in place
 
   if command -v screen-rec >/dev/null 2>&1; then
     screen-rec convert "$video" --format gif --width "$width" --fps "$fps" \
@@ -108,9 +113,9 @@ for game in "${targets[@]}"; do
       -loop 0 "$dest" || exit 1
     printf 'converted: %s -> %s\n' "$video" "$dest"
   fi
-  # The portal plays these instead (a tenth of the gif's bytes).
-  node "$ROOT/scripts/preview-media.mjs" --force "$dest" || exit 1
-  rm -f "$video"
+  # What the portal shows: a tenth of the gif's bytes.
+  node "$ROOT/scripts/preview-media.mjs" --force --out "$ROOT/assets/$game" "$dest" || exit 1
+  rm -rf "$video" "$gifdir"
 done
 
 printf '\nassets:\n' >&2

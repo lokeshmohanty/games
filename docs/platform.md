@@ -73,7 +73,7 @@ game's own scripts and stylesheets.
 | `seats` | `{ min, max }`, 1 ≤ min ≤ max ≤ 16 |
 | `players` | `{ min, max }`: the people at the table, for a `local` game |
 | `bots` | `true`/`false`: can the host fill seats with bots |
-| `tags`, `categories`, `preview` | portal filters; sections (`arcade` · `party` · `strategy` · `puzzle` · `examples`); preview gif path |
+| `tags`, `categories`, `preview` | portal filters; sections (`arcade` · `party` · `strategy` · `puzzle` · `examples`); the preview: a gif, or a `.webp` poster; a `.webm`/`.mp4`/`.webp` of the same name beside it is played/shown instead (scripts/catalog-lib.mjs) |
 | `license` | an OSI licence that allows redistribution (the list is in `scripts/manifest.mjs`) |
 | `author`, `repo` | GitHub user, `https://github.com/…` |
 
