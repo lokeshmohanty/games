@@ -36,7 +36,7 @@
 
 import { botWinsOf, reportBotsWin } from "./bots.js";
 import { GAME_ID, HttpError, body, now, randomId, sha256 } from "./http.js";
-import { boardOf, checkSoloRun, claimRun } from "./runs.js";
+import { SOLO_PER_DAY, boardOf, checkSoloRun, claimRun } from "./runs.js";
 
 export const REPORT_TTL_MS = 15 * 60_000;
 export const ELO_START = 1200;
@@ -130,8 +130,8 @@ export async function report(env, me, request) {
 		// to the board the check names (Sudoku: one per difficulty), with the
 		// score it names (Sudoku's: raised to the server's clock).
 		const v = await checkSoloRun(env, me, b, r.scores?.[me.id], t);
-		if (!v.ok) return { counted: false, why: v.why };
-		const claimed = await claimRun(env, b.run, t, v.daily);
+		if (!v.ok) return { counted: false, why: v.why, ...(v.code ? { code: v.code } : {}) };
+		const claimed = await claimRun(env, { run: b.run, t, daily: v.daily, account: me.id, game: b.game, perDay: Number(env.SOLO_PER_DAY ?? SOLO_PER_DAY) });
 		if (claimed !== true) return { counted: false, why: claimed };
 		await commit(env, key, v.game, "coop", { ...r, scores: { [me.id]: v.score } }, t, { low: v.low });
 		return { counted: true };

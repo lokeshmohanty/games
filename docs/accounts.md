@@ -95,29 +95,42 @@ not count. Adding a game means adding its limits there.
 1. A signed-in player starts a managed game **alone** (one seat, theirs, no
    bots). Before the rules' `init`, `lib/sdk-managed.js` asks
    `NeonArcade.account.startRun(game)` → `POST /api/run/start { game }` →
-   `{ run, seed, at }` (400 for a game not in `SOLO`; 429 past 200 runs a
-   day). The server keeps the run with the account, the game, the seed and
+   `{ run, seed, at }` (400 for a game not in `SOLO`; 429 past 200 runs of
+   that game a day). The server keeps the run with the account, the game, the seed and
    its own clock (D1 `runs`). The game's `init` gets that `seed`. Signed
    out, offline, not a `SOLO` game, or no answer within 2.5 s: a local
-   seed, and the run simply does not rank (the leaderboard says so).
+   seed, and the run simply does not rank (the leaderboard says so). A game
+   whose result this session carried nothing to rank by — no score of the
+   player's and no `proof`, e.g. Light Cycles before its pin moves — is not
+   reported and gets no more runs this session (no request, no wait); the
+   server's refusal for it carries `code: "unrankable"`, which does the
+   same. Any other refusal is toasted once per game and reason per session,
+   then only logged.
 2. At the end, `lib/account.js` reports it with `run` = the server's run (not
    the party's) and the game's `proof`, if the result has one.
 3. The server checks, and refuses with `{ counted: false, why }`: a game not
    in `SOLO`; a run unknown (a party run id, a forged one), another
    account's, another game's, older than **6 h**, or already counted; past
-   **50 counted solo runs per account per day** (`SOLO_PER_DAY`); a score
-   that is not a finite number from 0 up to the game's ceiling; then the
-   game's own limits (below). **Only then is the run claimed** — late, so a
-   refused report (or a Worker that runs out of CPU mid-check) leaves the run
-   usable, and conditionally (`UPDATE … WHERE used IS NULL`), so two reports
-   racing with one run cannot both count. The cost: a refused score can be
-   re-sent lower; the ceilings are public anyway.
+   **50 counted solo runs per account per game per day** (`SOLO_PER_DAY`;
+   per game since 2026-11-15, so quick Light Cycles rounds cannot use up the
+   day's Sudoku and Neon Survival); a score that is not a finite number
+   from 0 up to the game's ceiling (and its `max`); then the game's own
+   limits (below). **Only then is the run claimed** — late, so a refused
+   report (or a Worker that runs out of CPU mid-check) leaves the run
+   usable — and in **one conditional UPDATE**: `… WHERE id = ? AND used IS
+   NULL AND (SELECT COUNT(*) of the account's counted runs of this game in
+   the last day) < cap`. Two reports racing with one run cannot both count,
+   and reports posted in parallel cannot all pass a count read before any
+   claimed (an adversarial review, 2026-11-15, had ten parallel posts all
+   count against a cap of three). When nothing changed, the run is read
+   again to say which: already reported, or the cap. The cost: a refused
+   score can be re-sent lower; the ceilings are public anyway.
 
 | Game | Board (pinned) | Shortest run (server clock) | Score |
 |---|---|---|---|
 | `neon-survival-mp` | best score — every run, alone or with others | 1 s (an unsteered ship can die 2 s in) | whole gems, 0 to 5 + 2 × seconds (at most 1.2 spawn a second) |
 | `lokeshmohanty/sudoku` | races: wins (`ffa`); alone: **one time board per difficulty**, `lokeshmohanty/sudoku@<level>` | by difficulty, below | checked on the server, below |
-| `lokeshmohanty/light-cycles` | races: wins (`ffa`); alone: best score, `lokeshmohanty/light-cycles@alone`, in seconds (`unit` "s") | 3 s (the 3.2 s countdown; the fastest crash alone is 4 squares after GO: 3.6 s of ticks, a 0.4 s score) | the time survived, seconds to the tenth, 0 to 1 + seconds since the run began |
+| `lokeshmohanty/light-cycles` | races: wins (`ffa`); alone: best score, `lokeshmohanty/light-cycles@alone`, in seconds (`unit` "s") | 3 s (the 3.2 s countdown; the fastest crash alone is 4 squares after GO: 3.6 s of ticks, a 0.4 s score) | the time survived, seconds to the tenth, 0 to (seconds since the run began − 3.2 + 1), and never over 108 |
 
 **Boards are pinned.** A `SOLO` game's board kind comes from `SOLO`, never
 from its latest match, so a solo run and a multi-player match cannot flip
@@ -134,11 +147,18 @@ race time ridden before the crash, **in tenths of a second**, rounded down
 (23.4) — and the end card's details (time survived, squares ridden).
 Tenths, not steps, because a step shortens from 100 to 60 ms as a round goes
 on: a count of steps is not a time, and only a time can be bounded by the
-server's clock. The bound is the strong check: the score may not pass 1 s
-plus the seconds since the run was issued — and since the countdown (3.2 s)
-is in that time but never in the score, a real round has more in hand. The
-race time also stops while the host's tab is hidden; the server's clock
-does not. Light Cycles' races keep the game's own board (wins), so solo
+server's clock. The bound is the strong check: the page waits for the run
+before the rules' `init` (`lib/sdk-managed.js` `start`: `await
+startRun`, then `init`), and the server stamps the run before it answers,
+so the whole countdown — 4 beats of 0.8 s, on 20 Hz ticks, which never run
+faster than real time — lies inside the server's time but never in the
+score. A score may be at most the seconds since the run was issued, less
+3.2, plus 1 s of slack (SOLO `leadMs`, `base`). And the arena caps it
+outright (SOLO `max`): 40 × 40 cells allow 1599 steps at most — 120 each at
+100, 90, 80 and 70 ms, the remaining 1119 at 60 ms — 107.9 s, so nothing
+over 108 counts however long a run was kept (the review found 21 000 s
+accepted after waiting out a 6-hour run). The race time also stops while
+the host's tab is hidden; the server's clock does not. Light Cycles' races keep the game's own board (wins), so solo
 rounds rank on a level of their own, `@alone` (SOLO `levels: ["alone"]`,
 `plain: "ffa"`), and the view's strip reads Races · Alone. Its rows say
 "3.5 s" (the board's `unit`). A score must be a whole number of tenths.
@@ -227,9 +247,10 @@ have no bots. Adding a game is one entry (its `minMs`).
 **Who counts as "the only person".** The device decides, then the server
 re-checks what it can see:
 - the page reports only when it is the one person in the result's ranking
-  and every other id is a bot (`bot_…`), it won (first place alone; in a
-  team game, with bot teammates), and the run was issued for this game
-  against bots;
+  and every other id is a bot (`bot_…`), it won (first place alone, in
+  every kind: bot teammates sharing first place could have done the
+  winning, and no game in `BOTS` mixes people and bots on a team), and the
+  run was issued for this game against bots;
 - not when the game names a bot seat as a person (result `names`): Neon
   Fission's PLAYER seats are people passing the host's phone, which the
   platform sees as bot seats. A pass-the-phone game is a game among
@@ -240,7 +261,7 @@ re-checks what it can see:
   removed (Connect 4, Battleship, Liar's Dice, Light Cycles, Neon Fission),
   so REMOVE BOT would otherwise be a free win (found measuring, 2026-11-15);
 - the server refuses a ranking without exactly one person, a person who is
-  not the reporter, no bot, or a reporter who did not win outright.
+  not the reporter, no bot, or a reporter not alone in first place.
 
 **The run.** As a managed match begins with this player alone among bots,
 `lib/sdk-managed.js` asks `POST /api/run/start { game, vs: "bots" }` —
@@ -254,28 +275,36 @@ replaces it, and a late answer to an older start is dropped — so a
 rematch's result can never post twice, and the old match is stopped
 before the new run is asked for (`start()` stops ticker and bots first).
 
-**The checks** (cheapest first; the run is claimed only after all pass,
-conditionally, as for solo runs): a game in `BOTS`; a kind with a winner;
+**The checks** (cheapest first): a game in `BOTS`; a kind with a winner;
 the people and the win, above; the run exists, is the reporter's, for this
 game, a run against bots (not a solo run — nor the reverse), under 6 h old
 and unused; fewer than **20 counted wins against bots per account per game
 in the last day** (`BOTS_PER_DAY`); and at least the game's `minMs` since
-the run began (server clock). Then `bot_wins` gains one, `at` the time.
+the run began (server clock). Then one batch — one transaction — holds the
+claim and the win: the same conditional UPDATE as a solo run's (unused and
+under the cap, so parallel posts stop at the cap), and the `bot_wins`
+upsert only `WHERE changes() = 1`, so a failure can neither spend a run
+without its win nor add a win without its run. (`changes()` in a D1 batch
+was checked under wrangler's local D1; VERIFY once on the deployed one:
+win once, see 1 on the board.)
+
+`minMs` is the measured floor below, less about 1 s: a run against bots is
+not waited for, so the server stamps it up to a request's latency *after*
+the match began, and its time can be that much shorter than the match. The
+report's own trip adds back time, but nothing guarantees it.
 
 | Game | `minMs` | The fastest legal win, and how it was found |
 |---|---|---|
-| `tic-tac-toe-js` | 1.8 s | the bot (win, block, centre, first free) is deterministic: every human line searched, a win needs at least 3 bot moves × 600 ms (4 moving second); 15 of 505 lines win. Played in the browser: a 4-move fork took 3.8–4.3 s from the run |
-| `connect4` | 3.6 s | depth-5 minimax, deterministic: an exhaustive search proved no win within 6 human moves (first) or 5 (second), so at least 6 bot moves × 600 ms; a depth-8 human searcher's fastest of 8 wins in 20 games took 11 bot moves (6.6 s) |
-| `neon-fission` | 1.8 s | the rules allow a win after one bot move (0.6 s: load a corner, burst it into the bot's cell); a search over the 54 cells found none within 3 human moves for 3 bot seeds, so 1.8 s — searched, not proven for every seed; a greedy human's fastest of 153 wins in 300 games took 27 s |
-| `neon-bid` | 38 s | fixed: 12 lots, each ending with a 3.2 s show, and the result only after the last (lib/rounds.js onFinish) — 38.4 s whatever anyone bids |
-| `lokeshmohanty/battleship` | 9.5 s | 12 fleet cells, one shot a volley, 0.9 s resolve between volleys: 11 × 0.9 = 9.9 s; fastest of 9640 simulated wins: 14 volleys, 11.7 s |
-| `lokeshmohanty/liars-dice` | 17.5 s | 5 dice; the bot loses one only in a round where it acts (a 750 ms pause), with a 3.5 s reveal between rounds: 5 × 0.75 + 4 × 3.5 = 17.75 s, met exactly in 20 000 simulated games (one bot; 42 s against two) |
-| `lokeshmohanty/light-cycles` | 3.5 s | the 3.2 s countdown, then a step every 100 ms; no bot can crash before step 7 (six bots: 3.9 s; one bot: step 20, 5.2 s); fastest simulated win 5.3 s against three bots |
-| `lokeshmohanty/sudoku` | 30 s | a race: the bot fills a cell every few seconds (≥ 180 s for an easy puzzle), so the human's own solve sets the pace — the solo floor for an easy puzzle (`MIN_SOLVE_S`) |
+| `tic-tac-toe-js` | 0.8 s (floor 1.8) | the bot (win, block, centre, first free) is deterministic: every human line searched, a win needs at least 3 bot moves × 600 ms (4 moving second); 15 of 505 lines win. Played in the browser: a 4-move fork took 3.8–4.3 s from the run |
+| `connect4` | 2.6 s (floor 3.6) | depth-5 minimax, deterministic: an exhaustive search proved no win within 6 human moves (first) or 5 (second), so at least 6 bot moves × 600 ms; a depth-8 human searcher's fastest of 8 wins in 20 games took 11 bot moves (6.6 s) |
+| `neon-fission` | 1.2 s | the rules allow a win after one bot move (0.6 s: load a corner, burst it into the bot's cell); a search over the 54 cells found none within 3 human moves for 3 bot seeds (1.8 s, searched, not proven for every seed), so two bot moves, 1.2 s, refuses no real win; a greedy human's fastest of 153 wins in 300 games took 27 s |
+| `neon-bid` | 37 s (floor 38.4) | fixed: 12 lots, each ending with a 3.2 s show, and the result only after the last (lib/rounds.js onFinish) — 38.4 s whatever anyone bids |
+| `lokeshmohanty/battleship` | 8.5 s (floor 9.9) | 12 fleet cells, one shot a volley, 0.9 s resolve between volleys: 11 × 0.9 = 9.9 s; fastest of 9640 simulated wins: 14 volleys, 11.7 s |
+| `lokeshmohanty/liars-dice` | 16.5 s (floor 17.75) | 5 dice; the bot loses one only in a round where it acts (a 750 ms pause), with a 3.5 s reveal between rounds: 5 × 0.75 + 4 × 3.5 = 17.75 s, met exactly in 20 000 simulated games (one bot; 42 s against two) |
+| `lokeshmohanty/light-cycles` | 2.9 s (floor 3.9) | the 3.2 s countdown, then a step every 100 ms; no bot can crash before step 7 (six bots: 3.9 s; one bot: step 20, 5.2 s); fastest simulated win 5.3 s against three bots |
+| `lokeshmohanty/sudoku` | 29 s (floor 30) | a race: the bot fills a cell every few seconds (≥ 180 s for an easy puzzle), so the human's own solve sets the pace — the solo floor for an easy puzzle (`MIN_SOLVE_S`) |
 
-Times run from the match's `init`; the server measures from the run's
-issue (just before) to the report (just after the result), so its time is
-never shorter. The scripts are not in the repo (they drove the rules in
+Floors run from the match's `init`. The scripts are not in the repo (they drove the rules in
 Node with the real bots); re-measure when a game's pace changes.
 
 **The board** (`GET /api/lb/<game>?vs=bots`, `bot_wins`): wins, all time;
@@ -283,8 +312,11 @@ a tie goes to whoever reached the count first. Everyone (minus hidden
 players), friends, or a group's members; your own row and rank (`me`).
 On the leaderboard page a game with this board gets a switch under the
 games, **Ranked · Against bots** (`?vs=bots`): the same podium and rows,
-"Wins vs bots", each row saying when the count was reached, and a note that
-it is kept apart. The profile lists the wins under the ratings, not in
+"Wins vs bots" (the game's chip says so too while it shows), each row
+saying when the count was reached, and a note that it is kept apart;
+signed out, the bar says to sign in and beat the bots alone. A `?vs=bots`
+link for a game without the board shows its Ranked board instead. The
+empty board's SINGLE PLAYER goes to `./?game=<id>&fresh=1&mode=bots`. The profile lists the wins under the ratings, not in
 them ("Wins against bots: Tic Tac Toe 1"); a counted win's toast says
 "Counted: 3 wins against bots." Not in the hourly snapshot, so no offline
 copy.

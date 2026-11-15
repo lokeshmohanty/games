@@ -14,11 +14,12 @@
 // comes here, never to the confirmed matches, the ratings or Elo.
 // checkBotsWin() refuses, with a `why`, a game not in BOTS; a kind with no
 // winner (co-op, one-phone); a match with another person in it, or with no
-// bot; a result the reporter did not win outright; a run that is missing,
+// bot; a result the reporter did not win alone in first place; a run that is missing,
 // unknown, another account's, another game's, a solo run, expired or already
 // used; the account's BOTS_PER_DAY counted wins of that game in the last day;
 // and a win sooner after the run began than the game's `minMs`. Only then is
-// the run claimed (runs.js claimRun: once, conditionally) and the win added.
+// the run claimed — once, and under the cap, in one conditional UPDATE
+// (runs.js claimStatement) — and the win added, in the same batch.
 //
 // The board ranks by wins, all time; a tie goes to whoever reached that count
 // first (`at`). It has the same scopes as the ranked boards: everyone (not
@@ -29,7 +30,7 @@
 // board can be climbed; they do not prove a game was played.
 
 import { HttpError } from "./http.js";
-import { DAY_MS, RUN_TTL_MS, claimRun } from "./runs.js";
+import { RUN_TTL_MS, claimStatement, countedToday, unclaimedWhy } from "./runs.js";
 
 /** Counted wins against bots per account, per game, per day (env BOTS_PER_DAY). */
 export const BOTS_PER_DAY = 20;
@@ -39,33 +40,35 @@ export const BOTS_PER_DAY = 20;
  * each, `minMs`: from the run's start (just before the match's) to the
  * report (just after its result), on the server's clock. Each is the game's
  * fastest possible win against its bots' delays — searched or simulated
- * with the real rules and bots, 2026-11-15, and rounded down
- * (docs/accounts.md "Against bots" has how). A managed turn-based bot waits
+ * with the real rules and bots, 2026-11-15 (docs/accounts.md "Against
+ * bots" has how) — less about 1 s: the page does not wait for this run, so
+ * the server stamps it up to a request's latency after the match began. A managed turn-based bot waits
  * at least 600 ms a move (lib/sdk-managed.js BOT_MS). Adding a game is one
  * entry here.
  */
 export const BOTS = {
 	// The bot (win, block, centre, first free) is deterministic: every line
 	// searched, the fewest bot moves before a win is 3 (4 moving second).
-	"tic-tac-toe-js": { minMs: 1_800 },
+	"tic-tac-toe-js": { minMs: 800 },
 	// Depth-5 minimax, deterministic: no win in under 6 bot moves, either seat.
-	connect4: { minMs: 3_600 },
-	// The rules allow a win after one bot move (600 ms); none was found within
-	// 3 human moves (3 bot moves) for any bot seed searched.
-	"neon-fission": { minMs: 1_800 },
+	connect4: { minMs: 2_600 },
+	// The rules allow a win after one bot move (600 ms), though none was found
+	// within 3 human moves for any bot seed searched: two bot moves, 1.2 s, so
+	// no real win is refused (here the margin is the bot's own slowness).
+	"neon-fission": { minMs: 1_200 },
 	// 12 lots, each with a 3.2 s show, and the result only after the last.
-	"neon-bid": { minMs: 38_000 },
+	"neon-bid": { minMs: 37_000 },
 	// 12 fleet cells, one shot a volley, 0.9 s between volleys: 11 × 0.9 s.
-	"lokeshmohanty/battleship": { minMs: 9_500 },
+	"lokeshmohanty/battleship": { minMs: 8_500 },
 	// 5 dice; the bot loses one only in a round where it acts (0.75 s), with a
 	// 3.5 s reveal between rounds: 5 × 0.75 + 4 × 3.5 s.
-	"lokeshmohanty/liars-dice": { minMs: 17_500 },
+	"lokeshmohanty/liars-dice": { minMs: 16_500 },
 	// The 3.2 s countdown, then a step every 100 ms: no bot can be made to
 	// crash before step 7 (six bots; step 20 against one).
-	"lokeshmohanty/light-cycles": { minMs: 3_500 },
+	"lokeshmohanty/light-cycles": { minMs: 2_900 },
 	// A race: the human's own solve sets the pace (the bot fills a cell every
 	// few seconds), so the solo floor for the easiest puzzle (sudoku.js).
-	"lokeshmohanty/sudoku": { minMs: 30_000 },
+	"lokeshmohanty/sudoku": { minMs: 29_000 },
 };
 
 const KINDS = ["duel", "ffa", "teams"]; // a kind with a winner
@@ -87,9 +90,11 @@ export async function reportBotsWin(env, me, b, t) {
 	if (people.length !== 1 || people.length === ids.length || b.roster?.[people[0]] !== me.id) {
 		return refuse("a win against bots counts only when you are the one person playing");
 	}
-	// Outright: first place alone — or, in a team game, with bot teammates.
+	// Outright: first place alone, whatever the kind — bot teammates sharing
+	// it could do the winning (review, 2026-11-15), and no game in BOTS has
+	// teams of people and bots.
 	const first = b.ranking[0];
-	if (b.ranking.length < 2 || !first.includes(people[0]) || (b.kind !== "teams" && first.length !== 1)) {
+	if (b.ranking.length < 2 || first.length !== 1 || first[0] !== people[0]) {
 		return refuse("only a win against bots counts");
 	}
 	if (typeof b.run !== "string") return refuse("a win against bots counts only with a run the server issued as the match began");
@@ -101,21 +106,24 @@ export async function reportBotsWin(env, me, b, t) {
 	if (t - row.at > RUN_TTL_MS) return refuse("that run expired");
 	if (row.used != null) return refuse("that run was already reported");
 	const perDay = Number(env.BOTS_PER_DAY ?? BOTS_PER_DAY);
-	const today = await env.DB.prepare("SELECT COUNT(*) AS n FROM runs WHERE account = ? AND vs = 'bots' AND game = ? AND counted = 1 AND used > ?")
-		.bind(me.id, b.game, t - DAY_MS)
-		.first();
-	if ((today?.n ?? 0) >= perDay) return refuse(`${perDay} wins against bots count a day in each game; this one does not`);
+	const capWhy = `${perDay} wins against bots count a day in each game; this one does not`;
+	// Refused early here; the claim below is what holds against parallel posts.
+	if ((await countedToday(env, me.id, "bots", b.game, t)) >= perDay) return refuse(capWhy);
 	const elapsed = t - row.at;
 	if (elapsed < rule.minMs) return refuse(`too fast: a win takes at least ${rule.minMs / 1000} s, and this one took ${(elapsed / 1000).toFixed(1)} s`);
-	const claimed = await claimRun(env, b.run, t, null);
-	if (claimed !== true) return refuse(claimed);
-	const w = await env.DB.prepare(
-		`INSERT INTO bot_wins (account, game, wins, first, at) VALUES (?, ?, 1, ?, ?)
-		 ON CONFLICT (account, game) DO UPDATE SET wins = wins + 1, at = excluded.at RETURNING wins`,
-	)
-		.bind(me.id, b.game, t, t)
-		.first();
-	return { counted: true, board: "bots", wins: w?.wins ?? null };
+	// One batch (one transaction): the claim — unused, and under the day's cap,
+	// in a single conditional UPDATE — and the win, added only if that UPDATE
+	// changed the run (changes(), the same connection). A failure spends no
+	// run without its win, and no win is added without its run.
+	const [claim, added] = await env.DB.batch([
+		claimStatement(env, { run: b.run, t, account: me.id, vs: "bots", game: b.game, perDay }),
+		env.DB.prepare(
+			`INSERT INTO bot_wins (account, game, wins, first, at) SELECT ?, ?, 1, ?, ? WHERE changes() = 1
+			 ON CONFLICT (account, game) DO UPDATE SET wins = wins + 1, at = excluded.at RETURNING wins`,
+		).bind(me.id, b.game, t, t),
+	]);
+	if (!claim.meta?.changes) return refuse(await unclaimedWhy(env, b.run, capWhy));
+	return { counted: true, board: "bots", wins: added.results?.[0]?.wins ?? null };
 }
 
 const all = async (stmt) => (await stmt.all()).results ?? [];
