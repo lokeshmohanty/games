@@ -55,6 +55,8 @@ export interface Arcade {
 	managedJson(dispatch: (json: string) => string): void;
 	act(a: Json): void;
 	input(i: Json): void;
+	/** This phone has shown the latest view (its animation is over): a held end card may show. */
+	idle(): void;
 }
 
 declare global {

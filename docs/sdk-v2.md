@@ -112,7 +112,7 @@ arcade.managed({
 });
 arcade.on("view", ({ state }) => draw(state));  // every phone, on change only
 button.onclick = () => arcade.act({ i: 4 });    // your move; a refusal comes back as "rejected"
-arcade.idle();                                  // optional: this view is shown (its animation is over)
+arcade.idle?.();                                // optional: this view is shown (its animation is over)
 ```
 
 How it runs:
@@ -146,6 +146,10 @@ How it runs:
   - Only the card waits: the result is reported, counted and sent to the
     heir at once, as before.
   - A game that never calls `idle` gets its card at once, as before.
+  - Call it as `arcade.idle?.()`. A phone may still run a cached shell from
+    before 2026-11-15, whose runtime has no `idle`, and a community game
+    must not throw there.
+  - A takeover keeps the hold: the heir's card waits for its own frame.
   - Under `prefers-reduced-motion` a game should not animate, so it says
     `idle` at once and the card is not held.
 - **Played alone, ranked.** When a signed-in player starts a game alone

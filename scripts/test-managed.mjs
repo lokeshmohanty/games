@@ -496,8 +496,8 @@ try {
 			const out = [];
 			while (Date.now() - t0 < ms) {
 				const page = await nf.evaluate(() => ({ card: !!document.querySelector(".managed-over"), played: JSON.parse(localStorage.getItem("neon.stats") ?? "{}")["neon-fission"]?.played ?? 0 }));
-				const v = await dbg();
-				out.push({ at: Date.now() - t0, ...page, animating: v.animating, over: v.winner !== null, replayMs: v.replayMs });
+				const v = await F.evaluate(() => ({ ...window.__game.handle.debug(), line: document.getElementById("turn").textContent }));
+				out.push({ at: Date.now() - t0, ...page, animating: v.animating, over: v.winner !== null, replayMs: v.replayMs, line: v.line });
 				if (stopWhenCard && page.card) break;
 				await new Promise((r) => setTimeout(r, 60));
 			}
@@ -514,6 +514,8 @@ try {
 		const longest = Math.max(0, ...replay.map((x) => x.replayMs));
 		check("the winning chain is replayed, longer than an ordinary move's 1.5 s", replay.length > 3 && longest > 1500, { samples: replay.length, longest });
 		check("…and the end card stays back while it plays", !seen.some((x) => x.card && x.animating), seen.filter((x) => x.card).slice(0, 2));
+		const lineAfter = await F.evaluate(() => document.getElementById("turn").textContent);
+		check("…nor does the turn line announce the winner over it, until it ends", replay.length > 0 && !replay.some((x) => /win/i.test(x.line)) && /You win/.test(lineAfter), { during: [...new Set(replay.map((x) => x.line))], after: lineAfter });
 		check("…then shows as it ends", endAt !== undefined && cardAt !== undefined && cardAt - endAt <= 500, { endAt, cardAt });
 		check("the result is reported at once: in this device's stats while the card is held", seen.some((x) => x.animating && !x.card && x.played > playedBefore), seen.slice(0, 3));
 		const fin = await F.evaluate(() => {

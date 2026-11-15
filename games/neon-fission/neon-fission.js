@@ -166,21 +166,12 @@ const reduced = matchMedia("(prefers-reduced-motion: reduce)");
 
 let view = null;
 let cell = 40; // CSS px per cell
-let anim = null; // the chain being shown: { frames, waves, seat, cell, t0, placeMs, waveMs, settleMs, total, taken, timer }
+let anim = null; // the chain being shown: { frames, waves, seat, cell, t0, placeMs, waveMs, settleMs, total, taken, final, timer }
 let shownMove = -1; // the move whose chain has been shown (or skipped)
 let painted = null; // the owners last drawn, for the tests
 
-// How a chain is replayed. An ordinary move stays snappy: ~1.5 s at most,
-// however long. The move that ends the game is the one the loser most needs
-// to read (Lokesh, 2026-11-15: a winning chain flipped half the board and the
-// end card came at once), so it runs wave by wave in up to ~4.3 s, then holds
-// the final board with the cells it took marked. The platform keeps the end
-// card back until `arcade.idle()` (lib/sdk-managed.js HOLD_MS caps the wait,
-// so the whole of PACE.final must fit well inside it).
-const PACE = {
-	move: { placeMs: 120, budget: 1400, maxWave: 170, minWave: 0, settleMs: 0 },
-	final: { placeMs: 250, budget: 4300, maxWave: 300, minWave: 70, settleMs: 700 },
-};
+// How fast a chain replays is rules.js `pace`. The platform keeps the end
+// card back until `arcade.idle()` says the winning one has been shown.
 
 const seatVar = (i) => `var(--p${(i % 8) + 1})`;
 const alpha = (rgba, a) => rgba.replace(/,\s*[\d.]+\)$/, `, ${a})`);
@@ -334,8 +325,10 @@ function paint(now = performance.now()) {
 function finish() {
 	if (anim) clearTimeout(anim.timer);
 	anim = null;
+	hud();
 	paint();
-	arcade.idle();
+	// `?.`: a shell from before `idle` (2026-11-15) has no such call.
+	arcade.idle?.();
 }
 
 /** Start showing the chain of `last` (a move this phone has not shown yet). */
@@ -362,12 +355,11 @@ function animate(last) {
 		}
 		frames.push({ owner: [...o], count: [...c] });
 	}
-	// A long chain runs faster, within the pace's budget (PACE).
-	const pace = view.winner !== null ? PACE.final : PACE.move;
-	const waveMs = Math.max(pace.minWave, Math.min(pace.maxWave, pace.budget / last.waves.length));
-	const total = pace.placeMs + last.waves.length * waveMs + pace.settleMs;
+	// A long chain runs faster, within its budget (rules.js `pace`).
+	const final = view.winner !== null;
+	const { placeMs, waveMs, settleMs, total } = R.pace(last.waves.length, final);
 	const taken = view.owner.flatMap((o, i) => (o === last.seat && last.before.owner[i] !== last.seat ? [i] : []));
-	anim = { frames, waves: last.waves, seat: last.seat, cell: last.cell, t0: performance.now(), placeMs: pace.placeMs, waveMs, settleMs: pace.settleMs, total, taken };
+	anim = { frames, waves: last.waves, seat: last.seat, cell: last.cell, t0: performance.now(), placeMs, waveMs, settleMs, total, taken, final };
 	// Frames stop in a hidden tab; this does not, so the end card is not held for nothing.
 	anim.timer = setTimeout(() => anim && performance.now() - anim.t0 >= anim.total && finish(), total + 50);
 }
@@ -507,7 +499,6 @@ arcade.on("view", ({ state }) => {
 	const fresh = view && state.match !== view.match;
 	view = state;
 	if (fresh) shownMove = -1;
-	hud();
 	setup();
 	if (reshaped) resize();
 	const last = state.last;
@@ -522,9 +513,12 @@ arcade.on("view", ({ state }) => {
 		clearTimeout(anim.timer);
 		anim = null;
 	}
+	// The turn line and chips wait for a winning chain to play out, so they
+	// do not announce the winner over it (finish() draws them).
+	if (!anim?.final) hud();
 	paint();
 	// Nothing to replay: this view is shown (else finish() says so).
-	if (!anim) arcade.idle();
+	if (!anim) arcade.idle?.();
 });
 arcade.on("rejected", (m) => arcade.toast(m.reason, "warn"));
 arcade.init.then(resize);
