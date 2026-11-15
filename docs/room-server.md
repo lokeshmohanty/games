@@ -472,7 +472,7 @@ a reconnect uses this before navigating away.
 **A leave lands before the page goes.** Every `leave` is acknowledged by the
 server closing the socket; `NeonArcade.roomSettled()` resolves once every
 leave this page sent has been acknowledged, or after 1.5 s
-(`LEAVE_ACK_MS`). NEW PARTY, ALL GAMES, START A NEW PARTY, and accepting a
+(`LEAVE_ACK_MS`). NEW PARTY, GAMES, START A NEW PARTY, and accepting a
 `#c=`/`#i=` link into a live party all await it before navigating, and
 `releaseRejoin()` awaits its own. Without it an unload could take the frame
 down with it, and the old party would keep a seat for a browser that is
@@ -673,7 +673,7 @@ from the worker; it was removed before the first deploy.)
 - `scripts/test-worker.mjs` (`just test-worker`, not in `just test`: it needs
   wrangler) — starts `wrangler dev` itself and drives it with node sockets
   and real browser contexts: the cross-room guess limit (a second IP
-  unaffected), NEW PARTY / ALL GAMES releasing the seat before navigating,
+  unaffected), NEW PARTY / GAMES releasing the seat before navigating,
   the reconnect screen's RETRY and START A NEW PARTY after a no-answer, a
   `#c=` link into a live party asking first, a classic invite dropping an old
   token, a reconnect with the server unreachable keeping the token and

@@ -34,7 +34,8 @@ const PW_CACHE = join(homedir(), ".cache", "game-previews");
 const SITE = await serve(8734);
 const url = SITE.url;
 // The portal's address (LEAVE PARTY goes there): the shell with no query.
-const PORTAL = (u) => u.pathname === "/" && !u.search;
+// The portal: ./, or ./ with its sub-tab named (src/router.ts portalAddress).
+const PORTAL = (u) => u.pathname === "/" && /^(\?page=games&tab=(mine|all))?$/.test(u.search);
 const TIMEOUT = 30_000;
 
 function chromePath() {
@@ -982,11 +983,14 @@ try {
 	check("the finished game is in this device's stats, counted once", mine.stats?.[c4Id]?.played === 1, JSON.stringify(mine.stats?.[c4Id] ?? mine.stats));
 	check("…against a bot", mine.stats?.[c4Id]?.vsBots === 1);
 	check("…and it is the most recent game", mine.recent?.[0] === c4Id, JSON.stringify(mine.recent));
+	// A game played: ./ opens on My Games now, with Recently played; the
+	// cards with your record are All Games' (lib/portal.js).
 	await page.goto(url("index.html"));
+	check("…and under Recently played, on My Games", (await page.locator("[data-recent] .recent-game").first().textContent({ timeout: TIMEOUT }).catch(() => "")) === "Connect 4" && new URL(page.url()).searchParams.get("tab") === "mine", page.url());
+	await page.goto(url("index.html?page=games&tab=all"));
 	// A game has a card in every home-screen section it is in: the first will do.
 	const portalSays = await page.locator(`.game-card[data-game="${c4Id}"] .game-you`).first().textContent({ timeout: TIMEOUT }).catch(() => "");
 	check("the portal shows it on the game's card", /won of 1/.test(portalSays), portalSays);
-	check("…and under Recently played", (await page.locator("[data-recent] .recent-game").first().textContent().catch(() => "")) === "Connect 4");
 
 	// ------------------------------------------------------ neon fission
 	//
@@ -1283,14 +1287,14 @@ try {
 			.catch(() => false);
 		check("…and the new reply connects", linked);
 
-		// One page (docs/spa.md): "← All games" only moves to the portal — the
+		// One page (docs/spa.md): "← Games" only moves to the portal — the
 		// party stays, and BACK TO PARTY returns to it, nobody asked or told.
 		const guestName = await replier.evaluate(() => window.__game.room.self().name);
 		await replier.locator("a.portal-link").click();
 		const kept = await replier
 			.waitForFunction(() => document.body.dataset.view === "portal" && !window.__party.room.closed, null, { timeout: TIMEOUT })
 			.then(() => true, () => false);
-		check("← All games moves to the portal and keeps the party", kept && (await replier.locator("dialog.neon-ask[open]").count()) === 0);
+		check("← Games moves to the portal and keeps the party", kept && (await replier.locator("dialog.neon-ask[open]").count()) === 0);
 		await replier.locator(".back-to-game").click();
 		await replier.waitForFunction(() => document.body.dataset.view === "party", null, { timeout: TIMEOUT });
 		// LEAVE PARTY walks out: with somebody else in it, it asks first, and
