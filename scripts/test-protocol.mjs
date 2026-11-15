@@ -29,7 +29,7 @@ const DEV_PORT = 5190 + PORT_OFFSET;
 // http, address: a web app's (test-webapp).
 const NOT_EXERCISED = new Set(["join", "leave", "hostNew", "runtime.file", "http", "address"]);
 // Layer 2 (managed state) has its own run: scripts/test-managed.mjs.
-const LAYER2 = new Set(["act", "input", "rules", "view", "rejected"]);
+const LAYER2 = new Set(["act", "input", "idle", "rules", "view", "rejected"]);
 // What each peer's fixture must report, named here so a step whose event
 // never comes fails instead of going missing from the report.
 const EVERYONE = ["init", "theme", "theme.set", "roster", "ready", "channels+bin+emitAs", "meta", "fire-and-forget", "asset", "asset outside the folder is refused", "commit+verify", "timer", "paused", "done"];
