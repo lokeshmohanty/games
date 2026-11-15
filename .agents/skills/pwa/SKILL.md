@@ -60,8 +60,9 @@ missing. Never edit `VERSION` (the repo's says `arcade-dev`). docs/spa.md.
   no warning. `test-pwa` parses it. The header lockup in `index.html` (`.brand`)
   is the same glyph drawn with theme tokens, so redraw both together
   ([[app-mark-direction]]).
-- **Nothing here may break `file://`.** `lib/pwa.js` must stay inert without a
-  secure context, and no page may depend on it. Games load and run identically
+- **Nothing here may break a page without a service worker.** `lib/pwa.js`
+  must stay inert without a secure context (a plain `http://` LAN address),
+  and no page may depend on it. Games load and run identically
   with the manifest, the worker and the install button all absent.
 - **Never add a fixed-position install affordance.** The offer appears only when
   the browser says so, i.e. after layout; the slot sits in the flow under the

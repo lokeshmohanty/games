@@ -10,9 +10,8 @@ make contributing games modular, "invariant of the language used", through an
 API "not the traditional sense, rather the way that would suite it" so any game
 joins with "minor modifications". He offered "solidJS or wasm with rust" as
 candidates and asked for detailed information and a proper plan before any
-code. Plan of record: `~/.claude/plans/ethereal-honking-beaver.md`. Work runs
-in the worktree `../games-platform-v2` (branch `platform-v2`) because the
-shared checkout carried another session's live work.
+code. Work ran in the worktree `../games-platform-v2` (branch `platform-v2`)
+because the shared checkout carried another session's live work.
 
 Decisions he took (AskUserQuestion, 2026-11-14), so don't re-ask them:
 
@@ -31,8 +30,9 @@ Decisions he took (AskUserQuestion, 2026-11-14), so don't re-ask them:
 - **Adapters and examples** for JS, HTML/CSS, TS (+Solid), Rust, C/C++
   (Emscripten), Go (TinyGo) and Python.
 - **v1 is migrated, then dropped.** All 10 games port to v2. Web apps
-  ([[web-apps]]) keep working through an `sdk: 1` → 2 auto-upgrade for
-  `kind: shared`.
+  ([[web-apps]]) kept working through an `sdk: 1` → 2 auto-upgrade for
+  `kind: shared` until 2026-11-15, when `"sdk": 2` became required for
+  everything (Lokesh; Locale's open PR then fails its check, accepted).
 - **Shell:** measured speed fixes first, then a Solid + Vite single-page
   shell. `file://` is dropped for the shell too. Rust/WASM *for the shell*
   was not chosen: the shell is bound by I/O and the DOM.
@@ -53,7 +53,11 @@ non-JS games could not exist at all (the CSP blocked WebAssembly).
   everything they hold.
 - **Landing order is forced:** the platform must deploy v2 support before
   web-games' pin moves to v2 games (by its own PR), and sdk/v1 can only be
-  deleted after that pin moves. Test unmerged contributor commits with
+  deleted after that pin moves. **Done 2026-11-15:** the pin had moved, and
+  sdk/v1/ was removed (branch `cleanup-v1`): Pyodide, `arcade_server.py` and
+  `dev-server.mjs` moved up to `sdk/`, the v1 guide (sdk.md) became docs/platform.md,
+  and the build publishes a copy of the dev kit at the old
+  `sdk/v1/dev-server.mjs` until 2027-02-15. Test unmerged contributor commits with
   `NEON_PIN_OVERRIDE`, never by editing registry/.
 - **Managed-state races** are the hard part, not the protocol: epochs per
   start, acts tagged with their match, the heir's copy sent the moment a

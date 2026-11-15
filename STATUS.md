@@ -57,14 +57,14 @@ site serves the new icon.svg (image/svg+xml), h1.brand and sw.js v37.
 
 ## Web apps run unchanged; CI on Node 24 (2026-11-14) — pushed to main, deployed
 
-14eeec2: an existing site + Python server joins without a rewrite (docs/sdk.md
+14eeec2: an existing site + Python server joins without a rewrite (docs/platform.md
 "Web apps", CONTRIBUTING "Already have a web app?"). Manifest `app` +
 `kind: "shared"` (seatless, no bots/results); the arcade builds the site in a
 no-secrets container (`scripts/app-build.mjs`; deploy.yml's read-only
 `build-community` job); the ASGI/WSGI server runs in Pyodide 314.0.7 on the
-host (`lib/py-server.js`, `sdk/v1/arcade_server.py`, runtime vendored by
-`just pyodide` into git-ignored `sdk/v1/pyodide/`); `sdk/v1/web-shim.js`
-forwards fetch/XHR, shares the address, serves images and `window.open`.
+host (`lib/py-server.js`, `sdk/arcade_server.py`, runtime vendored by
+`just pyodide` into git-ignored `sdk/pyodide/`; both under sdk/v1/ until
+2026-11-15); `sdk/v2/web-shim.js` forwards fetch/XHR, shares the address, serves images and `window.open`.
 Own colours warn, not fail. sw.js v36. test-webapp + full suite green.
 Live: the deploy serves the runtime; **the container build has not yet run on
 Actions** — no app is in the registry yet.
@@ -75,7 +75,7 @@ ac106f3: actions bumped to Node 24 (checkout/setup-node/upload-artifact v7,
 download-artifact v8, configure-pages v6, upload-pages-artifact v5).
 f557928: every job pinned to `ubuntu-24.04`. Deploys now run warning-free.
 Build caching per pinned commit (NEON_APP_CACHE, actions/cache in deploy,
-platform-check, submission; docs/sdk.md "Build"): Locale cold 42 s → 0.2 s
+platform-check, submission; docs/platform.md "Web apps"): Locale cold 42 s → 0.2 s
 reused locally, output byte-identical; tooling change rebuilds, removed pin
 drops its entry. Follow-up: start-up time on a real phone.
 
@@ -106,6 +106,12 @@ Finished work is in `STATUS-archive.md`.
 
 ## Next actions
 
+- [ ] **2027-02-15: remove the dev kit's transition copy.** `scripts/assemble.mjs`
+      publishes `sdk/dev-server.mjs` at the old address `sdk/v1/dev-server.mjs`
+      (SDK v1 removed 2026-11-15, branch `cleanup-v1`; docs/platform.md "The dev
+      kit"). Then drop its copy step, the check in `scripts/test-devkit.mjs`,
+      and the notes in docs/platform.md, docs/spa.md, docs/sdk-v2.md,
+      docs/development.md and the Justfile.
 - [ ] **More one-device party games.** `local: true` makes them cheap now, and
       the category is the one the arcade was missing. Candidates, roughly in
       order of how different they are from Undercover: a **hot-potato word

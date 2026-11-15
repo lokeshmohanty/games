@@ -18,9 +18,9 @@ flows peer-to-peer over WebRTC data channels. See
 
 ## Read these first, do not re-derive them
 
-- [`lib/README.md`](../../../lib/README.md) — the API: room controller,
-  `registerGame`, `mountParty` (and its `?game=` quick start, which game
-  pages redirect to), `scanQr`, the topology, the
+- [`lib/README.md`](../../../lib/README.md) — every lib/ file in a line, and
+  the API: room controller, `mountParty` (and its `?game=` quick start, what
+  a game's link `./?game=<id>` opens), `scanQr`, the topology, the
   connectivity rules.
 - [`docs/index.md`](../../../docs/index.md) — how a handshake is paid once per
   person, parties and succession, and the **Honest gaps** section, which is the
@@ -58,9 +58,11 @@ node scripts/test-plumbing.mjs # sealed private channels, commit-reveal and the
                                # transport (no browser)
 ```
 
-`test-scan.mjs` and `test-pwa.mjs` need a **secure context**, so they serve the
-repo over `http://127.0.0.1`; `file://` and `http://<lan-ip>` will not do.
-`test-party.mjs` runs on `file://` deliberately.
+The browser suites serve the built site (`dist/`, scripts/serve.mjs) over
+`http://127.0.0.1`: the one-page shell does not run from `file://`, and
+`test-scan.mjs` and `test-pwa.mjs` need a **secure context**, which
+`http://<lan-ip>` is not. Run them with `NEON_DIST=dist-<name>` and
+`NEON_PORT_OFFSET` beside another run.
 
 ## Rules that hold across this subsystem
 
@@ -109,8 +111,9 @@ repo over `http://127.0.0.1`; `file://` and `http://<lan-ip>` will not do.
   popstate on fragment links, Playwright skipping `beforeunload`).
 - `memory/handover.md` — how a running game survives its host leaving: the
   per-game `takeOver`, `rounds.adopt` and its epoch, and what each game loses.
-- `memory/game-pages-are-party-shortcuts.md` — why game pages redirect into
-  `party.html?game=`, the quick start, and keeping tests off production.
+- `memory/game-pages-are-party-shortcuts.md` — why a game's link is the party
+  (`./?game=`; the old pages were deleted 2026-11-15), the quick start, and
+  keeping tests off production.
 - `memory/reload-mid-game.md` — how a returner gets the running game back
   (the party shell's mounted notice, `secrets.keep/kept` checked against the
   published digest), and why net.js's own re-announce cannot be relied on.

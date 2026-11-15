@@ -14,8 +14,8 @@ masked the bug that prompted the rewrite (see below).
 `scripts/preview.mjs` drives the same steps a human does:
 
 1. Page 0 (always the **host**, always the recorded page) clicks `INVITE A FRIEND`
-   — every time: since 2026-11-13 a game page redirects into the party shell's
-   quick start (`party.html?game=<id>&fresh=1`), which offers it again once
+   — every time: since 2026-11-13 a game's address opens the party shell's
+   quick start (`./?game=<id>&fresh=1`; `party.html?game=` until 2026-11-15), which offers it again once
    the last invite has connected.
 2. Read the invite link out of the first `textarea.share-code`.
 3. Guest opens the link, produces a reply code in *its* first

@@ -25,7 +25,7 @@ when the speed refactor started.
 |---|---|
 | pages, `lib/`, `games/`, `sdk/` | **from this VERSION's precache, as-is**. The network only for a file outside SHELL, which is then kept. |
 | icons, fonts, posters, gifs | **cache-first**, nothing downloaded behind a hit |
-| Pyodide (`sdk/v1/pyodide/`) | **cache-first into its own cache**, `RUNTIME` = `arcade-pyodide-<hash of the folder>`, which `prune()` keeps: it survives deploys that leave Pyodide alone |
+| Pyodide (`sdk/pyodide/`) | **cache-first into its own cache**, `RUNTIME` = `arcade-pyodide-<hash of the folder's path, file names and bytes>`, which `prune()` keeps: it survives deploys that leave Pyodide alone. The path joined the hash on 2026-11-15, when the folder moved from `sdk/v1/pyodide/`: a new name is what makes prune drop the old ~13 MB cache (test-pwa checks it) |
 | preview videos (`.webm`, `.mp4`) and Range requests | **not handled**: Safari refuses a whole cached file for a media request |
 | loopback (`just run`) | code **network-first**, so an edit shows on reload. Tests opt in to the snapshot with localStorage `neon.sw=snapshot`, which makes lib/pwa.js register `sw.js?snapshot`. |
 
