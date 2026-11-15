@@ -26,7 +26,7 @@ questions about this project from this folder alone.
 - [Testing across real networks](network-testing.md) — the NAT lab: symmetric NAT, network switches, lossy links, a blocked room server
 - [`../lib/README.md`](../lib/README.md) — every lib/ file in a line, with pointers here for depth
 - [Neon Bid](neon-bid.md) — the sealed-bid gem auction's design, as approved
-- Neon Fission (`games/neon-fission/`, rules in its `RULES.md`) — the chain-reaction grid for 2–8: a managed ffa game; one person with bots can hand bot seats to people on the same phone before the first move (those seats' turns are reported as the person's, so no bot plays them; the end card names them via the result's `names`, docs/sdk-v2.md)
+- Neon Fission (`games/neon-fission/`, rules in its `RULES.md`) — the chain-reaction grid for 2–8: a managed ffa game; one person with bots can hand bot seats to people on the same phone before the first move (those seats' turns are reported as the person's, so no bot plays them; the end card names them via the result's `names`, docs/sdk-v2.md). Each move's chain is replayed on every phone, about 1.5 s at most, and a tap skips it. The move that ends the game plays wave by wave, in up to about 5 s, and then marks the cells it took. The end card waits for it (`arcade.idle()`, docs/sdk-v2.md). Under reduced motion nothing animates
 - (still missing: design notes for the other games, decision log)
 
 ## How-to (verified commands)

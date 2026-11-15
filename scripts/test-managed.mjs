@@ -22,6 +22,11 @@
 //      across PLAY AGAIN), your stats and the game's own `details` (capped
 //      at 8 rows); Connect 4's and Neon Survival's details; eight players
 //      fit without scrolling, clear of the fixed chrome, in every theme.
+//   4. PLAY AGAIN alone while the server's run is slow.
+//   5. The end card waits for the last move's replay (Neon Fission, whose
+//      frame says `idle`): held while the winning chain plays, at once on a
+//      tap, at most HOLD_MS when the frame goes quiet, at once under reduced
+//      motion; the result is reported before the card shows.
 //
 // Every message across a frame is checked against sdk/v2/protocol.json, and
 // every Layer 2 message type must have been seen.
@@ -38,7 +43,9 @@ import { PORT_OFFSET, gameFrame, readyToClick, serve } from "./serve.mjs";
 const require = createRequire(import.meta.url);
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const TIMEOUT = 40_000;
-const LAYER2 = ["act", "input", "rules", "view", "rejected"];
+const LAYER2 = ["act", "input", "idle", "rules", "view", "rejected"];
+// lib/sdk-managed.js HOLD_MS: the longest an end card waits for `idle`.
+const HOLD_MS = 6000;
 
 let failures = 0;
 const check = (label, ok, detail = "") => {
@@ -205,6 +212,9 @@ try {
 	await play(host, fh, 1, 3);
 	await play(p2, f2, 4, 4);
 	const last = await play(host, fh, 2, 5);
+	// Tic Tac Toe never says `idle`: nothing holds its card back.
+	const tttCard = await host.locator(".managed-over").waitFor({ timeout: 1000 }).then(() => true, () => false);
+	check("a game that never says idle gets its end card at once", tttCard);
 	check("guests' moves travel to the host and every view follows", JSON.stringify(last?.board) === JSON.stringify([1, 1, 1, 2, 2, 0, 0, 0, 0]) && last?.winner === 1, last);
 	const hostName = await host.evaluate(() => window.__party.room.self().name);
 	const titles = await Promise.all([host, p2, p3].map(cardText));
@@ -441,6 +451,132 @@ try {
 		await S.collect();
 		await S.context.close();
 		solo.stop();
+	}
+
+	// ---------------------------------------------------------------- 5
+	console.log("\nmanaged: the end card waits for the last move's replay (Neon Fission)");
+	// Lokesh, 2026-11-15: a winning chain flipped half his cells in one turn,
+	// and the end card covered it at once. A frame that says `idle` keeps the
+	// card back until it has shown the move that ended the match; the result
+	// is still reported at once. The board is set from a known game
+	// (rules.js, two seats): its last move, ours, bursts in 9 waves and takes
+	// the bot's last 8 cells.
+	{
+		const GAME = [53, 28, 48, 44, 0, 15, 5, 31, 11, 22, 24, 52, 23, 50, 23, 33, 23, 1, 18, 42, 30, 37, 3, 31, 6, 25, 0, 44, 0, 45, 29, 46, 29, 37, 41, 51, 12, 33, 30, 10, 30, 44, 31, 27, 48, 39, 48, 46, 36, 20, 24, 51, 22, 20, 22, 29, 23, 24, 18, 23, 17, 27, 23, 43, 27, 15, 22, 4, 21, 45, 5, 44, 24];
+		const fx5 = await devServer("scripts/fixtures", 5198, "tick-game");
+		const E = await party(fx5.base, 1);
+		const [nf] = E.pages;
+		const nfId = (await ids(E.pages))[0];
+		await nf.locator("button", { hasText: "ADD BOT" }).first().click({ timeout: TIMEOUT });
+		await nf.locator(".party-member").nth(1).waitFor({ timeout: TIMEOUT });
+		await nf.evaluate((me) => {
+			const r = window.__party.room;
+			for (const m of r.getMembers()) r.setTeam(m.id, m.id === me ? "A" : "B");
+			r.setGame("neon-fission");
+		}, nfId);
+		const F = await gameFrame(nf, TIMEOUT);
+		const dbg = () => F.evaluate(() => window.__game.handle.debug());
+		/**
+		 * Match `m`: set the table, play the game up to its last move on the
+		 * host's rules, then make the last move. Its board is set as Connect
+		 * 4's is above (the frame's own state).
+		 */
+		const lastMove = async (m) => {
+			await F.waitForFunction((m) => window.arcade.view?.match === m && window.arcade.view.phase === "setup", m, { timeout: TIMEOUT });
+			await F.evaluate(() => window.arcade.act({ start: true }));
+			await F.waitForFunction(() => window.arcade.view?.phase === "play" && window.arcade.view.turn === window.arcade.view.you, null, { timeout: TIMEOUT });
+			await F.evaluate((game) => {
+				for (const c of game.slice(0, -1)) R.play(s.g, c);
+				window.arcade.act({ cell: game.at(-1), n: s.g.moves });
+			}, GAME);
+			return Date.now();
+		};
+		/** What the phone shows, every ~60 ms until `ms` after `t0`: the card (shell) first, then the frame. */
+		const watch = async (t0, ms, stopWhenCard = true) => {
+			const out = [];
+			while (Date.now() - t0 < ms) {
+				const page = await nf.evaluate(() => ({ card: !!document.querySelector(".managed-over"), played: JSON.parse(localStorage.getItem("neon.stats") ?? "{}")["neon-fission"]?.played ?? 0 }));
+				const v = await dbg();
+				out.push({ at: Date.now() - t0, ...page, animating: v.animating, over: v.winner !== null, replayMs: v.replayMs });
+				if (stopWhenCard && page.card) break;
+				await new Promise((r) => setTimeout(r, 60));
+			}
+			return out;
+		};
+		const playedBefore = await nf.evaluate(() => JSON.parse(localStorage.getItem("neon.stats") ?? "{}")["neon-fission"]?.played ?? 0);
+
+		// Match 1: the winning chain plays out, then the card.
+		let t0 = await lastMove(1);
+		let seen = await watch(t0, 12_000);
+		const replay = seen.filter((x) => x.over && x.animating);
+		const endAt = seen.find((x, i) => i > 0 && seen[i - 1].animating && !x.animating)?.at;
+		const cardAt = seen.find((x) => x.card)?.at;
+		const longest = Math.max(0, ...replay.map((x) => x.replayMs));
+		check("the winning chain is replayed, longer than an ordinary move's 1.5 s", replay.length > 3 && longest > 1500, { samples: replay.length, longest });
+		check("…and the end card stays back while it plays", !seen.some((x) => x.card && x.animating), seen.filter((x) => x.card).slice(0, 2));
+		check("…then shows as it ends", endAt !== undefined && cardAt !== undefined && cardAt - endAt <= 500, { endAt, cardAt });
+		check("the result is reported at once: in this device's stats while the card is held", seen.some((x) => x.animating && !x.card && x.played > playedBefore), seen.slice(0, 3));
+		const fin = await F.evaluate(() => {
+			const v = window.__game.handle.debug();
+			return { drawn: JSON.stringify(v.painted) === JSON.stringify(v.owner), bot: v.players[1].cells, me: v.players[0].cells, winner: v.winner, shown: getComputedStyle(document.getElementById("board")).visibility };
+		});
+		check("the final board is drawn behind the card: every cell ours, the bot's gone", fin.drawn && fin.winner === 0 && fin.bot === 0 && fin.me === 42 && fin.shown === "visible", fin);
+		await nf.locator(".managed-over button", { hasText: "SEE THE BOARD" }).click();
+		const peek = await nf.evaluate(() => {
+			const c = document.querySelector(".managed-over");
+			return { peek: c?.classList.contains("is-peek"), box: c?.firstElementChild.getBoundingClientRect().height ?? -1, hidden: getComputedStyle(c.firstElementChild).visibility === "hidden" || getComputedStyle(c.firstElementChild).display === "none" || getComputedStyle(c).display === "none" };
+		});
+		const still = await F.evaluate(() => {
+			const v = window.__game.handle.debug();
+			return JSON.stringify(v.painted) === JSON.stringify(v.owner) && !v.animating;
+		});
+		check("SEE THE BOARD tucks the card away over the final position", peek.peek && still, { ...peek, still });
+		await nf.locator(".managed-over button", { hasText: "SHOW RESULT" }).click();
+
+		// Match 2: a tap during the replay skips it, and the card comes with it.
+		await nf.locator(".managed-over button", { hasText: "PLAY AGAIN" }).click();
+		t0 = await lastMove(2);
+		await F.waitForFunction(() => window.__game.handle.debug().animating && window.__game.handle.debug().winner !== null, null, { timeout: 5000 }).catch(() => {});
+		await new Promise((r) => setTimeout(r, 400));
+		const beforeTap = await nf.locator(".managed-over").count();
+		await readyToClick(nf);
+		const box = await F.locator("#board").boundingBox();
+		const tapAt = Date.now();
+		await nf.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
+		const tapped = await nf.locator(".managed-over").waitFor({ timeout: 2000 }).then(() => Date.now() - tapAt, () => null);
+		const afterTap = await dbg();
+		check("a tap during the replay brings the card straight away", beforeTap === 0 && tapped !== null && tapped < 600 && !afterTap.animating && afterTap.moves === GAME.length, { beforeTap, tapped, animating: afterTap.animating, moves: afterTap.moves });
+
+		// Match 3: a frame that goes quiet (here: says `idle` no more) still
+		// gets its card, after HOLD_MS at most.
+		await nf.locator(".managed-over button", { hasText: "PLAY AGAIN" }).click();
+		await F.waitForFunction(() => window.arcade.view?.match === 3, null, { timeout: TIMEOUT });
+		await F.evaluate(() => {
+			window.__idle = window.arcade.idle;
+			window.arcade.idle = () => {};
+		});
+		t0 = await lastMove(3);
+		seen = await watch(t0, HOLD_MS + 3000);
+		const quietEnd = seen.find((x, i) => i > 0 && seen[i - 1].animating && !x.animating)?.at;
+		const quietCard = seen.find((x) => x.card)?.at;
+		check(`a frame that never says idle still gets its card within ${HOLD_MS / 1000} s`, quietCard !== undefined && quietCard >= HOLD_MS - 300 && quietCard <= HOLD_MS + 1500, { quietEnd, quietCard });
+		check("…held past its replay's end, so it waited on the frame, not the replay", quietEnd !== undefined && quietCard - quietEnd > 1000, { quietEnd, quietCard });
+		await F.evaluate(() => {
+			window.arcade.idle = window.__idle;
+		});
+
+		// Match 4: reduced motion: no replay, and the card at once.
+		await nf.emulateMedia({ reducedMotion: "reduce" });
+		const reducedOn = await F.evaluate(() => matchMedia("(prefers-reduced-motion: reduce)").matches);
+		await nf.locator(".managed-over button", { hasText: "PLAY AGAIN" }).click();
+		t0 = await lastMove(4);
+		seen = await watch(t0, 3000);
+		const rmCard = seen.find((x) => x.card)?.at;
+		check("reduced motion: no replay, and the card at once", reducedOn && !seen.some((x) => x.animating) && rmCard !== undefined && rmCard < 800, { reducedOn, rmCard, animated: seen.some((x) => x.animating) });
+		await nf.emulateMedia({ reducedMotion: null });
+		await E.collect();
+		await E.context.close();
+		fx5.stop();
 	}
 
 	// ---------------------------------------------------------------- schema
