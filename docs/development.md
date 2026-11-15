@@ -65,9 +65,16 @@ sw.js                   the service worker template; scripts/assemble.mjs writes
 
 ## Tests
 
-`just test` runs every suite, fastest first. `just --list` names each one with
-a one-line summary. The suites that need the Worker run under wrangler:
-`just test-worker`, `just test-accounts` and `just test-social`.
+`just test` runs every suite, one after another, fastest first. `just --list`
+names each one with a one-line summary. The suites that need the Worker run
+under wrangler, and `just test` leaves them out: `just test-worker`,
+`just test-accounts` and `just test-social`.
+
+**Run one recipe per `just` call.** `just a b` runs both, unless `a` takes
+`*args`: then `b` becomes an argument to `a`, never runs, and the exit is
+still 0. So every such recipe refuses an argument that is a recipe's name,
+test-conformance refuses an unknown lane, and catalog takes only `--check`.
+`just test-just` checks all of them.
 
 To run beside another test run, set `NEON_DIST=dist-<name>` and
 `NEON_PORT_OFFSET=<n>`. A separate build folder and separate ports keep two

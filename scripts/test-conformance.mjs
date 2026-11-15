@@ -187,6 +187,14 @@ async function runInPage({ game, script }) {
 }
 
 const want = process.argv.slice(2);
+// A name that is not a lane is refused, never skipped: `just test-conformance
+// test-webapp` once ran the reference alone and passed (just hands a variadic
+// recipe the rest of the line), and test-webapp never ran.
+const unknown = want.filter((l) => !LANES.includes(l));
+if (unknown.length) {
+	console.error(`unknown lane ${unknown.map((l) => `'${l}'`).join(", ")} (lanes: ${LANES.join(" ")}) — did you mean to run several recipes? Run them one per \`just\` call.`);
+	process.exit(2);
+}
 const lanes = LANES.filter((l) => existsSync(join(EXAMPLES, `tic-tac-toe-${l}`, "game.json")) && (!want.length || want.includes(l) || l === REFERENCE));
 // The repo itself, not the built site: the examples are not deployed. The
 // frame builder comes from a harness page (scripts/fixtures/frame-harness.html).

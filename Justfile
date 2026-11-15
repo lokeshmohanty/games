@@ -11,12 +11,30 @@
 #   just test       every suite
 
 port := "8000"
+# This justfile, run again from inside a recipe.
+just := quote(just_executable()) + " --justfile " + quote(justfile())
 # pnpm, from the system or through Nix (no global install needed on NixOS).
 pnpm := if `command -v pnpm || true` != "" { "pnpm" } else { "nix shell nixpkgs#pnpm nixpkgs#nodejs_24 -c pnpm" }
 
 # List the recipes.
 default:
-    @just --list --unsorted
+    @{{just}} --list --unsorted
+
+# The variadic-recipe trap: `just test-conformance test-webapp test-theme`
+# hands every name after the first to test-conformance as an argument (its
+# `*lanes`), so the other suites never run and the exit is still 0 (it bit on
+# 2026-11-15). Every recipe with a `*` parameter therefore depends on this
+# first, before anything else runs, and fails on an argument that is a
+# recipe's name. Recipes whose values are a closed set also check the values
+# themselves (test-conformance's lanes, catalog's --check). One recipe per
+# `just` call; scripts/test-just.mjs (`just test-just`) holds every variadic
+# recipe to this.
+_not-recipes recipe args:
+    @for a in {{args}}; do \
+      case " $({{just}} --summary) " in *" $a "*) \
+        echo "error: '$a' is a recipe, not an argument to {{recipe}} — did you mean to run several recipes? Run them one per \`just\` call (a path of that name: ./$a)." >&2; exit 2;; \
+      esac; \
+    done
 
 # Why a server: the shell is built by Vite (docs/spa.md), and the camera
 # scanner and the service worker both need a *secure context*. `127.0.0.1`
@@ -50,7 +68,11 @@ serve-lan: install
     {{pnpm}} dev --host 0.0.0.0 --port {{port}}
 
 # Every suite, in the order they get slower.
-test: check-bindings check-colours community build test-stats test-submission test-codec test-hub test-worker-do test-plumbing test-rules test-room test-party test-scan test-pwa test-bots test-rules-screen test-devkit test-protocol test-managed test-conformance test-webapp test-theme test-portal
+test: check-bindings check-colours community build test-stats test-submission test-codec test-just test-hub test-worker-do test-plumbing test-rules test-room test-party test-scan test-pwa test-bots test-rules-screen test-devkit test-protocol test-managed test-conformance test-webapp test-theme test-portal
+
+# The Justfile itself: no variadic recipe swallows the next recipe's name.
+test-just:
+    JUST={{quote(just_executable())}} node scripts/test-just.mjs
 
 # No browser needed — the signalling codec round-trip.
 test-codec:
@@ -80,7 +102,7 @@ test-worker:
 # failures and blackouts. See docs/network-testing.md.
 
 # Symmetric NAT, network switches, lossy links, a blocked room server.
-test-nat *args:
+test-nat *args: (_not-recipes "test-nat" args)
     scripts/test-nat.sh {{args}}
 
 # Not part of `test`: it needs a *deployed* room server (wrangler deploy, or
@@ -92,11 +114,11 @@ test-nat *args:
 # docs/network-testing.md.
 
 # The deployed room server on real Cloudflare: `just test-live https://….workers.dev`.
-test-live url *args:
+test-live url *args: (_not-recipes "test-live" url + " " + args)
     RS_URL={{url}} node scripts/test-live.mjs {{args}}
 
 # The NAT lab in front of the real internet (slirp4netns), against a deployment.
-test-nat-live url *args:
+test-nat-live url *args: (_not-recipes "test-nat-live" url + " " + args)
     RS_URL={{url}} scripts/test-nat.sh {{args}}
 
 # Not part of `test`: needs ssh access (keys, BatchMode) to a second machine on
@@ -114,7 +136,7 @@ test-nat-live url *args:
 # See docs/network-testing.md.
 
 # Two real machines, two real networks: join, traffic, reloads, leave; NAT classification.
-test-pair *args:
+test-pair *args: (_not-recipes "test-pair" args)
     node scripts/test-pair.mjs {{args}}
 
 # Sealed channels, commit-reveal and the round clock, over real routing.
@@ -152,7 +174,7 @@ test-managed:
     node scripts/test-managed.mjs
 
 # SDK v2 adapters: Tic Tac Toe in every language gives the reference's answers, call for call.
-test-conformance *lanes: pyodide
+test-conformance *lanes: (_not-recipes "test-conformance" lanes) pyodide
     node scripts/test-conformance.mjs {{lanes}}
     cd sdk/v2/adapters/go && go test ./...
 
@@ -185,7 +207,8 @@ check-bindings:
 
 # Gather every game.json into lib/catalog.js (generated; committed so the
 # site needs no build step). `just catalog --check` fails if it is stale.
-catalog *args:
+[arg("args", pattern="--check")]
+catalog *args: (_not-recipes "catalog" args)
     node scripts/build-catalog.mjs {{args}}
 
 # Fetch every registered outside repo at its pinned commit into community/
@@ -212,7 +235,7 @@ test-webapp: pyodide
 
 # Everything the platform checks before it lists a game (the registry PR
 # check runs this): `just validate-game path/to/game`, `--static` for no browser.
-validate-game *args:
+validate-game *args: (_not-recipes "validate-game" args)
     node scripts/validate-game.mjs {{args}}
 
 # lib/stats.js with no browser: outcomes per kind, counting once, rematches.
@@ -233,7 +256,7 @@ test-social:
 
 # No colour named outside lib/theme.css (pages, styles, SDK, games). Pass
 # other repos to check too: `just check-colours ../web-games`.
-check-colours *dirs:
+check-colours *dirs: (_not-recipes "check-colours" dirs)
     node scripts/check-colours.mjs {{dirs}}
 
 # Themes at 390x844: the default follows the system, the picker switches and
@@ -251,12 +274,12 @@ test-portal:
 # warm. Takes a few minutes; `--runs 1` for a quick look.
 
 # Phone-speed baseline: FCP, LCP, time to a bots game's frame (docs/perf.md).
-perf *args:
+perf *args: (_not-recipes "perf" args)
     node scripts/perf.mjs {{args}}
 
 # GitHub's page for proposing a repo's games (new) or a newer commit (pinned
 # and moved), filled in as far as GitHub allows: `just propose owner/repo`.
-propose repo *games:
+propose repo *games: (_not-recipes "propose" repo + " " + games)
     node scripts/propose.mjs {{repo}} {{games}}
 
 # The rules a contributor's pull request is judged by (check-submission.mjs),
