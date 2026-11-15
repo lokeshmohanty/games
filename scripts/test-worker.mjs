@@ -478,7 +478,7 @@ try {
 			await dialog;
 			// NEW PARTY lands on the very URL it left (./?fresh=1), so
 			// its arrival is the new party's code, not the URL.
-			if (portal) await page.waitForURL((u) => u.pathname === "/" && !u.search, { timeout: TIMEOUT });
+			if (portal) await page.waitForURL((u) => u.pathname === "/" && /^(\?page=games&tab=(mine|all))?$/.test(u.search), { timeout: TIMEOUT });
 			else await page.waitForFunction((old) => {
 				const digits = document.querySelector(".party-code-digits")?.textContent?.trim();
 				return digits && digits !== old;

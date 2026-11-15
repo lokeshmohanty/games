@@ -27,7 +27,8 @@ const SITE = await serve(8733);
 const PARTY = SITE.url("?party");
 const TIMEOUT = 40_000;
 // The portal: the shell with no query (LEAVE PARTY and ALL GAMES go there).
-const PORTAL = (u) => u.pathname === "/" && !u.search;
+// The portal: ./, or ./ with its sub-tab named (src/router.ts portalAddress).
+const PORTAL = (u) => u.pathname === "/" && /^(\?page=games&tab=(mine|all))?$/.test(u.search);
 
 function chromePath() {
 	const found = [

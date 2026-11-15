@@ -34,7 +34,8 @@ const PW_CACHE = join(homedir(), ".cache", "game-previews");
 const SITE = await serve(8734);
 const url = SITE.url;
 // The portal's address (LEAVE PARTY goes there): the shell with no query.
-const PORTAL = (u) => u.pathname === "/" && !u.search;
+// The portal: ./, or ./ with its sub-tab named (src/router.ts portalAddress).
+const PORTAL = (u) => u.pathname === "/" && /^(\?page=games&tab=(mine|all))?$/.test(u.search);
 const TIMEOUT = 30_000;
 
 function chromePath() {

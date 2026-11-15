@@ -108,7 +108,8 @@ const SITE = (opt("site", "") || process.env.SITE || "https://www.lokeshmohanty.
 const PARTY = SITE + "?party";
 // The portal, where ALL GAMES lands: the shell with no query (index.html on
 // a deployment from before 2026-11-15).
-const PORTAL = (u) => /\/(index\.html)?$/.test(new URL(u).pathname) && !new URL(u).search;
+// The portal: ./, or ./ with its sub-tab named (src/router.ts portalAddress).
+const PORTAL = (u) => /\/(index\.html)?$/.test(new URL(u).pathname) && /^(\?page=games&tab=(mine|all))?$/.test(new URL(u).search);
 const RS = opt("rs", "") || process.env.RS || ""; // localStorage "neon.rs" on both sides
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const tag8 = () => randomBytes(4).toString("hex");
