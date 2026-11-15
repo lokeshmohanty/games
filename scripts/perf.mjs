@@ -7,7 +7,7 @@
 //   portal       index.html: FCP, LCP, DOMContentLoaded, load, bytes
 //   bots game    SINGLE PLAYER on Connect 4: time to the START GAME button,
 //                then the tap, then time to the game's frame being mounted
-//   leaderboard  leaderboard.html: FCP, LCP, load, bytes
+//   leaderboard  ./?page=leaderboard: FCP, LCP, load, bytes
 //
 // The link is a throttling proxy in front of the static server, not CDP's
 // network emulation: CDP throttles only the page, so a service worker's own
@@ -181,7 +181,7 @@ const scenarios = {
 	},
 
 	async bots(site, warm) {
-		const url = site.url("party.html?game=connect4&fresh=1&mode=bots");
+		const url = site.url("?game=connect4&fresh=1&mode=bots");
 		const ctx = await context(this.browser, warm, site.url("index.html"));
 		const page = await ctx.newPage();
 		await throttle(page);
@@ -205,10 +205,10 @@ const scenarios = {
 	},
 
 	async leaderboard(site, warm) {
-		const ctx = await context(this.browser, warm, site.url("leaderboard.html"));
+		const ctx = await context(this.browser, warm, site.url("?page=leaderboard"));
 		const page = await ctx.newPage();
 		await throttle(page);
-		await page.goto(site.url("leaderboard.html"), { waitUntil: "domcontentloaded", timeout: 120_000 });
+		await page.goto(site.url("?page=leaderboard"), { waitUntil: "domcontentloaded", timeout: 120_000 });
 		await page.waitForLoadState("load", { timeout: LOAD_CAP }).catch(() => {});
 		await settle(page);
 		const v = await readVitals(page);

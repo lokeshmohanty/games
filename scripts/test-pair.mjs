@@ -105,7 +105,10 @@ const role = args[0] && !args[0].startsWith("--") ? args[0] : "pair";
 // `wrangler dev` on one machine, reached by the other over ssh -L, so both
 // browsers see them on loopback — docs/network-testing.md).
 const SITE = (opt("site", "") || process.env.SITE || "https://www.lokeshmohanty.in/games/").replace(/\/?$/, "/");
-const PARTY = SITE + "party.html";
+const PARTY = SITE + "?party";
+// The portal, where ALL GAMES lands: the shell with no query (index.html on
+// a deployment from before 2026-11-15).
+const PORTAL = (u) => /\/(index\.html)?$/.test(new URL(u).pathname) && !new URL(u).search;
 const RS = opt("rs", "") || process.env.RS || ""; // localStorage "neon.rs" on both sides
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const tag8 = () => randomBytes(4).toString("hex");
@@ -551,10 +554,10 @@ function driver(init = {}) {
 	return async function handle(cmd) {
 		switch (cmd.c) {
 			case "host": {
-				// A fresh party on party.html; its code from the stored token.
+				// A fresh party; its code from the stored token.
 				await fresh("host");
 				const t0 = Date.now();
-				await page.goto(PARTY + "?fresh=1");
+				await page.goto(PARTY + "&fresh=1");
 				await page.locator(".party-code-digits").waitFor({ timeout: 40_000 });
 				const tok = await page.evaluate(() => JSON.parse(localStorage.getItem("neon.room") || "null"));
 				await listen(page).catch(() => {});
@@ -623,7 +626,7 @@ function driver(init = {}) {
 				const t = Date.now();
 				await page.locator("a.neon-btn", { hasText: /^ALL GAMES$/ }).click();
 				await page.locator('dialog.neon-ask[open] [data-ask="yes"]').click({ timeout: 5000 }).catch(() => {});
-				await page.waitForURL(/index\.html/, { timeout: 15_000 }).catch(() => {});
+				await page.waitForURL(PORTAL, { timeout: 15_000 }).catch(() => {});
 				return { ms: Date.now() - t, url: page.url(), token: await page.evaluate(() => localStorage.getItem("neon.room")).catch(() => "?") };
 			}
 			case "bare":
@@ -1016,7 +1019,7 @@ async function pairRole() {
 		const left = G.ask({ c: "leave" }, 30_000);
 		const gone = await H.ask({ c: "alone", ms: 20_000 }, 40_000);
 		const lv = await left;
-		check("guest leave: guest navigated away, token dropped", /index\.html/.test(lv.url ?? "") && lv.token === null, JSON.stringify(lv), lv.ms);
+		check("guest leave: guest navigated away, token dropped", !!lv.url && PORTAL(lv.url) && lv.token === null, JSON.stringify(lv), lv.ms);
 		check(`guest leave: host down to one member within ${LEAVE_SEEN / 1000}s`, gone.ok && gone.ms <= LEAVE_SEEN, JSON.stringify(gone.members), gone.ms);
 		row.leave = gone.ok && gone.ms <= LEAVE_SEEN ? `ok ${ms(gone.ms)}` : "FAIL";
 		await quitRun();

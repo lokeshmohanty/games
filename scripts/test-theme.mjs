@@ -67,7 +67,7 @@ try {
 	check("titles in Space Grotesk, values in Cascadia Code, both loaded", /Space Grotesk/.test(fonts.h1) && /Cascadia/.test(fonts.meta) && fonts.loaded.some((f) => /Space Grotesk/.test(f)), fonts);
 
 	console.log("\ntheme: a game's frame follows the page");
-	await p.goto(site.url("connect4.html"));
+	await p.goto(site.url("?game=connect4&fresh=1"));
 	await p.locator("button", { hasText: "SINGLE PLAYER" }).first().click();
 	await p.locator("button", { hasText: "START GAME" }).first().click();
 	const f = await gameFrame(p, TIMEOUT);

@@ -250,11 +250,11 @@ try {
 	// the buttons above the tabs crowded a phone). Community has its own tabs.
 	for (const [page, tab, sub] of [
 		["index.html", "Games", null],
-		["leaderboard.html", "Leaderboards", null],
-		["contributors.html", "Community", "Contributors"],
+		["./?page=leaderboard", "Leaderboards", null],
+		["./?page=contributors", "Community", "Contributors"],
 		["./?page=collections", "Community", "Collections"],
-		["contribute.html", null, null],
-		["profile.html", null, null],
+		["./?page=contribute", null, null],
+		["./?page=profile", null, null],
 	]) {
 		await p.goto(site.url(page));
 		await p.locator(".site-row").waitFor({ timeout: TIMEOUT });
@@ -283,7 +283,7 @@ try {
 		await p.locator(".site-menu-btn").click();
 		nav = await read();
 		const texts = nav.items.map((i) => i.text);
-		check(`${page}: ☰ lists Add your game, Theme, account and GitHub, 44px each, inside the phone`, nav.open && nav.expanded === "true" && texts[0] === "Add your game" && texts[1] === "Theme" && /^(Sign in|Profile|.+)$/.test(texts[2]) && texts.at(-1) === "Source on GitHub" && nav.items[0].href === "contribute.html" && nav.items.at(-1).href === "https://github.com/lokeshmohanty/games" && nav.items.every((i) => i.h >= 44) && nav.listBox.left >= 0 && nav.listBox.right <= 390, nav);
+		check(`${page}: ☰ lists Add your game, Theme, account and GitHub, 44px each, inside the phone`, nav.open && nav.expanded === "true" && texts[0] === "Add your game" && texts[1] === "Theme" && /^(Sign in|Profile|.+)$/.test(texts[2]) && texts.at(-1) === "Source on GitHub" && nav.items[0].href === "./?page=contribute" && nav.items.at(-1).href === "https://github.com/lokeshmohanty/games" && nav.items.every((i) => i.h >= 44) && nav.listBox.left >= 0 && nav.listBox.right <= 390, nav);
 		check(`${page}: fits the phone`, !nav.sideways);
 		await p.keyboard.press("Escape");
 		check(`${page}: Esc closes it, focus back on ☰`, await p.evaluate(() => document.querySelector(".site-menu-list").hidden && document.activeElement === document.querySelector(".site-menu-btn")));
@@ -307,7 +307,7 @@ try {
 		route.fulfill({ status: 200, contentType: "application/json", headers: { "Access-Control-Allow-Origin": "*" }, body: JSON.stringify({ games: Object.fromEntries(Object.entries(PLAYS).map(([g, played]) => [g, { played }])) }) }),
 	);
 	const repoGames = await p.evaluate(() => Object.fromEntries(["lokeshmohanty/games", "lokeshmohanty/web-games"].map((r) => [r, NeonArcade.CATALOG.filter((g) => g.repo === `https://github.com/${r}`).length])));
-	await p.goto(site.url("contributors.html"));
+	await p.goto(site.url("?page=contributors"));
 	await p.locator(".person").first().waitFor({ timeout: TIMEOUT });
 	await p.waitForFunction(() => !document.querySelector(".person-plays")?.textContent.startsWith("…"), null, { timeout: TIMEOUT });
 	const readPerson = () =>
@@ -337,7 +337,7 @@ try {
 	check("…linking to its games in the portal, and to GitHub", person.cols[1]?.href === "./?q=from%3Alokeshmohanty%2Fweb-games" && person.cols[1]?.gh === "https://github.com/lokeshmohanty/web-games", person.cols[1]);
 	check("…CHECK FOR UPDATES on a pinned collection only (the arcade's own has no pin)", !person.cols[0]?.update && person.cols[1]?.update, person.cols);
 	check("…and their games' total plays", person.facts === `${games + arcadeGames} games · 601 plays · 2 collections`, person.facts);
-	check("…SEE THEIR GAMES opens the portal searched by author", person.see === "index.html?q=author%3Alokeshmohanty", person.see);
+	check("…SEE THEIR GAMES opens the portal searched by author", person.see === "./?q=author%3Alokeshmohanty", person.see);
 	check("…fits the phone", await p.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
 	await p.locator('.person[data-login="lokeshmohanty"] .fav-star').click();
 	check("★ makes a contributor a favourite", (await readPerson()).star === "true" && (await p.evaluate(() => NeonArcade.stats.isFav("contributor:lokeshmohanty"))));
@@ -356,7 +356,7 @@ try {
 	await p.locator(".person-links a", { hasText: "SEE THEIR GAMES" }).first().click();
 	await p.waitForSelector(".game-card:visible");
 	check("…which lists their games", (await p.locator("[data-search]").inputValue()) === "author:lokeshmohanty" && (await shown()).length > 0);
-	await p.goto(site.url("contributors.html"));
+	await p.goto(site.url("?page=contributors"));
 	await p.locator('.person-collection[data-repo="lokeshmohanty/web-games"] .person-collection-name').click();
 	await p.locator(".game-card:visible").first().waitFor({ timeout: TIMEOUT });
 	check("a collection's name lists its games (from:owner/repo)", (await p.locator("[data-search]").inputValue()) === "from:lokeshmohanty/web-games" && new Set(await shown()).size === arcadeGames, await shown());
@@ -414,7 +414,7 @@ try {
 	check("…and from:lokeshmohanty/games the arcade's own", new Set(await shown()).size === games, await shown());
 
 	console.log("\nportal: add your game");
-	await p.goto(site.url("contribute.html"));
+	await p.goto(site.url("?page=contribute"));
 	await p.locator("[data-guide] h1").waitFor({ timeout: TIMEOUT });
 	const guide = await p.evaluate(() => ({
 		h1: document.querySelector("[data-guide] h1").textContent,
@@ -423,7 +423,7 @@ try {
 		sdk: document.querySelector('[data-guide] a[href$="docs/sdk-v2.md"]')?.getAttribute("href"),
 		examples: [...document.querySelectorAll('[data-guide] a[href*="sdk/v2/examples/tic-tac-toe-"]')].map((a) => a.getAttribute("href").replace(/.*\/tic-tac-toe-/, "")),
 		plays: [...document.querySelectorAll('[data-guide] a[href*="?game=tic-tac-toe-"]')].map((a) => new URL(a.href).searchParams.get("game")),
-		local: document.querySelector('[data-guide] a[href="contributors.html"]') !== null,
+		local: document.querySelector('[data-guide] a[href="./?page=contributors"]') !== null,
 	}));
 	check("the guide is CONTRIBUTING.md, rendered", guide.h1 === "Putting your game in the arcade" && guide.h2.length >= 4 && guide.code >= 3, guide);
 	check("…repo files link to GitHub, site pages stay here", guide.sdk === "https://github.com/lokeshmohanty/games/blob/main/docs/sdk-v2.md" && guide.local, guide);
@@ -435,7 +435,7 @@ try {
 	// One page (docs/spa.md): the guide's site link moves in-app, and Back
 	// draws the guide again in the same document.
 	await p.evaluate(() => (window.__samePage = true));
-	await p.locator('[data-guide] a[href="contributors.html"]').first().click();
+	await p.locator('[data-guide] a[href="./?page=contributors"]').first().click();
 	await p.locator(".person").first().waitFor({ timeout: TIMEOUT });
 	await p.goBack();
 	await p.locator("[data-guide] h1").waitFor({ timeout: TIMEOUT });
@@ -452,7 +452,7 @@ try {
 		if (u.pathname.includes("/git/trees/")) return json({ tree: [{ type: "blob", path: "chess/game.json" }, { type: "blob", path: "go/game.json" }, { type: "blob", path: "README.md" }] });
 		return route.fulfill({ status: 404, body: "{}" });
 	});
-	await p.goto(site.url("contribute.html"));
+	await p.goto(site.url("?page=contribute"));
 	await p.locator("[data-guide] h1").waitFor({ timeout: TIMEOUT });
 	check("Propose your games sits at the bottom, after the guide", await p.evaluate(() => {
 		const guide = document.querySelector("[data-guide]");
@@ -477,7 +477,7 @@ try {
 	await tab.close();
 	check("…and one tap copies the new commit as it opens the page", (await p.evaluate(() => navigator.clipboard.readText())) === HEAD);
 	check("…with the three steps to paste it", (await p.locator(".propose-steps li").count()) === 3);
-	await p.goto(site.url("contributors.html"));
+	await p.goto(site.url("?page=contributors"));
 	await p.locator(".person-update button").first().click();
 	const upd = p.locator(".person-update-out a", { hasText: "Copy the commit" });
 	check("Contributors: CHECK FOR UPDATES offers the same for a moved repo", await upd.waitFor({ timeout: TIMEOUT }).then(() => true, () => false));

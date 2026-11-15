@@ -82,7 +82,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 async function connectPeers(pages, timeoutMs = 30_000) {
 	const [host, ...guests] = pages;
 	for (const [i, guest] of guests.entries()) {
-		// The game page opens the party's quick start: INVITE A FRIEND, every
+		// The game's address opens the party's quick start: INVITE A FRIEND, every
 		// time — it is offered again once the last invite has connected.
 		const friends = host.locator("button", { hasText: "MULTI-PLAYER" });
 		if (await friends.count()) await friends.first().click();
@@ -92,7 +92,7 @@ async function connectPeers(pages, timeoutMs = 30_000) {
 		await inviteBox.waitFor({ timeout: timeoutMs });
 		const link = await inviteBox.inputValue();
 
-		// The guest is already sitting on this file, so navigating straight to the
+		// The guest is already sitting on this page, so navigating straight to the
 		// invite would be a fragment-only change and would not re-run the page.
 		await guest.goto("about:blank");
 		await guest.goto(link);
@@ -219,7 +219,7 @@ async function sweepMouse(page, seconds, phase = 0) {
 
 const GAMES = {
 	undercover: {
-		file: "undercover.html",
+		file: "?game=undercover&fresh=1",
 		// One device, one page — there is nothing to connect, which is the whole
 		// point of the game. The harness only runs its handshake for peers > 1,
 		// so this scenario starts the game itself.
@@ -288,7 +288,7 @@ const GAMES = {
 	},
 
 	"liars-dice": {
-		file: "liars-dice.html",
+		file: "?game=lokeshmohanty%2Fliars-dice&fresh=1",
 		peers: 2,
 		seconds: 16,
 		async beforeStart([host]) {
@@ -330,7 +330,7 @@ const GAMES = {
 	},
 
 	"neon-bid": {
-		file: "neon-bid.html",
+		file: "?game=neon-bid&fresh=1",
 		peers: 2,
 		seconds: 16,
 		async beforeStart([host]) {
@@ -379,7 +379,7 @@ const GAMES = {
 	},
 
 	battleship: {
-		file: "battleship.html",
+		file: "?game=lokeshmohanty%2Fbattleship&fresh=1",
 		peers: 2,
 		seconds: 14,
 		async play([a, b], seconds) {
@@ -413,7 +413,7 @@ const GAMES = {
 	},
 
 	"light-cycles": {
-		file: "light-cycles.html",
+		file: "?game=lokeshmohanty%2Flight-cycles&fresh=1",
 		peers: 2,
 		seconds: 12,
 		async beforeStart([host]) {
@@ -464,7 +464,7 @@ const GAMES = {
 	},
 
 	connect4: {
-		file: "connect4.html",
+		file: "?game=connect4&fresh=1",
 		peers: 2,
 		seconds: 12,
 		async play([a, b], seconds) {
@@ -487,7 +487,7 @@ const GAMES = {
 	},
 
 	"draw-guess": {
-		file: "draw-guess.html",
+		file: "?game=lokeshmohanty%2Fdraw-guess&fresh=1",
 		peers: 2,
 		seconds: 16,
 		async play([a, b], seconds) {
@@ -546,7 +546,7 @@ const GAMES = {
 	},
 
 	"neon-fission": {
-		file: "index.html?game=neon-fission&fresh=1",
+		file: "?game=neon-fission&fresh=1",
 		// One phone against three bots: no handshake, so the harness skips its
 		// own and `beforeStart` seats the bots, sets the table and plays the
 		// quiet opening off camera; the clip opens on a grid about to chain.
@@ -577,7 +577,7 @@ const GAMES = {
 	},
 
 	"neon-survival-mp": {
-		file: "neon-survival-mp.html",
+		file: "?game=neon-survival-mp&fresh=1",
 		peers: 2,
 		seconds: 10,
 		async play([a, b], seconds) {
@@ -658,7 +658,7 @@ if (spec.peers > 1) {
 	// them here, while the lobby is still on screen.
 	if (spec.beforeStart) await spec.beforeStart(pages);
 	await startGame(pages);
-	// Games built on lib/ui.js have no `#game`; they have a `.g-stage`. Waiting
+	// Games that lay out a `.g-stage` (Neon Bid, Undercover) have no `#game`. Waiting
 	// for only the old selector meant a silent 20-second stall per recording.
 	await pages[0]
 		.locator("#game, .g-stage")

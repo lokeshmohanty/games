@@ -69,7 +69,7 @@ const ROOT = resolvePath(dirname(fileURLToPath(import.meta.url)), "..");
 const PW_CACHE = join(homedir(), ".cache", "game-previews");
 // Served, not file://: framed games are fetched and inlined by the shell.
 const SITE = await serve(8738);
-const PARTY = SITE.url("party.html");
+const PARTY = SITE.url("?party");
 // The games that come from lokeshmohanty/web-games (registry/) carry
 // their owner in their id.
 const COMMUNITY = ["battleship", "draw-guess", "liars-dice", "light-cycles"];
@@ -303,7 +303,7 @@ const browser = await chromium.launch({
 /**
  * A fresh browser context — its own localStorage, so its own rejoin token
  * — with every page in it pointed at the local server. Set by init script
- * rather than `?rs=`, because NEW PARTY navigates to `party.html?fresh=1`
+ * rather than `?rs=`, because NEW PARTY navigates to `./?fresh=1`
  * and would drop the query, and land on the deployed server.
  */
 // Each person is its own address to the server (wrangler dev passes
@@ -353,7 +353,7 @@ async function waitForMembers(page, n) {
  * as NEW PARTY uses, so a token left by an earlier step is not reconnected.
  */
 async function host(page) {
-	await page.goto(PARTY + "?fresh=1");
+	await page.goto(PARTY + "&fresh=1");
 	await page.locator(".party-code-digits").waitFor({ timeout: TIMEOUT });
 	return token(page);
 }
@@ -476,9 +476,9 @@ try {
 			const dialog = nextDialog(page, true);
 			await page.locator(portal ? "a.neon-btn" : "button.neon-btn", { hasText: portal ? /^ALL GAMES$/ : /^NEW PARTY$/ }).first().click();
 			await dialog;
-			// NEW PARTY lands on the very URL it left (party.html?fresh=1), so
+			// NEW PARTY lands on the very URL it left (./?fresh=1), so
 			// its arrival is the new party's code, not the URL.
-			if (portal) await page.waitForURL(/index\.html/, { timeout: TIMEOUT });
+			if (portal) await page.waitForURL((u) => u.pathname === "/" && !u.search, { timeout: TIMEOUT });
 			else await page.waitForFunction((old) => {
 				const digits = document.querySelector(".party-code-digits")?.textContent?.trim();
 				return digits && digits !== old;
@@ -569,7 +569,7 @@ try {
 		check("d holds a token for it", (await token(d))?.code === tc.code);
 		// A classic invite from a party with no room server behind it.
 		const e = await person("e");
-		await e.goto(`${PARTY}?rs=http://127.0.0.1:1`);
+		await e.goto(`${PARTY}&rs=http://127.0.0.1:1`);
 		await e.locator(".party-member").first().waitFor({ timeout: TIMEOUT });
 		await e.locator("button", { hasText: "ADD PLAYER" }).first().click();
 		const inviteBox = e.locator("textarea.share-code").first();
@@ -1125,7 +1125,7 @@ try {
 		const t = await host(h);
 		check("(the guest joins by code)", await joinByCode(g, t.code));
 		const gId = await g.evaluate(() => window.__party.room.selfId);
-		await g.goto(PARTY + "?fresh=1"); // the portal's START A PARTY
+		await g.goto(PARTY + "&fresh=1"); // the portal's START A PARTY
 		const dropped = await h
 			.waitForFunction((id) => !window.__party.room.getMember(id), gId, { timeout: 10_000 })
 			.then(() => true, () => false);
@@ -1145,7 +1145,7 @@ try {
 		// Another tab of the same browser holds that seat live: a new party here
 		// would steal its token, so this tab says where the party is instead.
 		const tab2 = await k.context().newPage();
-		await tab2.goto(PARTY + "?fresh=1");
+		await tab2.goto(PARTY + "&fresh=1");
 		const told = await tab2.locator("text=This party is open in another tab.").first().waitFor({ timeout: TIMEOUT }).then(() => true, () => false);
 		check("START A PARTY in a second tab does not take the first tab's seat", told && (await inParty(k)));
 		await tab2.close();
@@ -1163,15 +1163,15 @@ try {
 		check("…and that it is back online", back && (await k.locator(".neon-toast", { hasText: "Back online." }).count()) === 1);
 		for (const p of [h, g, k]) await p.context().close();
 	}
-	// --------------------------- 13. a game page is a party shortcut
-	// Game pages used to carry their own lobby: no code, no way back after a
-	// reload. Now they open the party shell with that game picked.
-	console.log("\nworker: a game page opens a party: code, quick start, reload rejoins");
+	// --------------------------- 13. a game's address opens a party
+	// ./?game=<id> (a portal card's link) opens the party with that game
+	// picked: a code, a quick start, and a reload that rejoins.
+	console.log("\nworker: a game's address opens a party: code, quick start, reload rejoins");
 	{
-		const PAGES = PARTY.replace(/party\.html$/, "");
+		const PAGES = SITE.url("");
 		const h = await person("gp-host");
 		const g = await person("gp-guest");
-		await h.goto(PAGES + "connect4.html");
+		await h.goto(PAGES + "?game=connect4&fresh=1");
 		await h.locator("button", { hasText: "MULTI-PLAYER" }).click({ timeout: TIMEOUT });
 		const quick = await h.locator(".party-code-digits").waitFor({ timeout: TIMEOUT }).then(() => true, () => false);
 		const head = await h.evaluate(() => ({
@@ -1179,7 +1179,7 @@ try {
 			buttons: [...document.querySelectorAll("#party button")].map((b) => b.textContent),
 			url: location.pathname.split("/").pop() + location.search,
 		}));
-		check("connect4.html opens a party with a code, Connect 4 up front", quick && head.title === "CONNECT 4" && head.buttons.includes("INVITE A FRIEND") && head.buttons.includes("ADD BOT"), JSON.stringify(head));
+		check("./?game=connect4 opens a party with a code, Connect 4 up front", quick && head.title === "CONNECT 4" && head.buttons.includes("INVITE A FRIEND") && head.buttons.includes("ADD BOT"), JSON.stringify(head));
 		// One page (docs/spa.md): the party is the shell at ./?game=…
 		check("…and leaves no `fresh` in the URL to break a reload", head.url === "?game=connect4", head.url);
 		const t = await token(h);
@@ -1196,10 +1196,10 @@ try {
 		check("the friend's reload rejoins the party", await waitInParty(g));
 		check("…and the game, in the same seat", (await mounted(g)) && (await gameDebug(g))?.yellow === gId);
 
-		// A fresh visit to another game page moves on: the old seat goes at once.
-		await g.goto(PAGES + "battleship.html");
+		// A fresh visit to another game's address moves on: the old seat goes at once.
+		await g.goto(PAGES + "?game=lokeshmohanty%2Fbattleship&fresh=1");
 		const gone = await h.waitForFunction((id) => !window.__party.room.getMember(id), gId, { timeout: 10_000 }).then(() => true, () => false);
-		check("opening another game page gives the old seat back", gone);
+		check("opening another game's address gives the old seat back", gone);
 		const title = await g.locator(".lobby-title", { hasText: "BATTLESHIP" }).first().waitFor({ timeout: TIMEOUT }).then(() => true, () => false);
 		check("…and opens a new party for that game", title);
 		for (const p of [h, g]) await p.context().close();
