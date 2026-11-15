@@ -593,6 +593,23 @@ export interface Input {
 	i: Json;
 }
 
+/**
+ * `idle`, frame to shell. Layer 2: this phone's frame has finished showing view
+ * `seq` (its replay of the last move is over, or there was none). Once a frame
+ * has sent one, the shell keeps the end card back after the final move until
+ * the frame is idle on the newest view, at most a few seconds; the result is
+ * still reported at once. A game that never sends it gets its card at once.
+ */
+export interface Idle {
+	v: 2;
+	t: "idle";
+	/**
+	 * The `seq` of the newest view this frame has finished showing (0: none yet).
+	 * At least 0.
+	 */
+	seq: number;
+}
+
 /** Values of RulesCallFn. */
 export type RulesCallFn = "init" | "apply" | "tick" | "view" | "turn" | "bot" | "result" | "snapshot" | "restore" | "skip" | "leave";
 
@@ -663,13 +680,19 @@ export interface Rules {
 
 /**
  * `view`, shell to frame. Layer 2: what this phone's player may see now (the
- * rules' `view({ seat })`), in `state`. Sent only when it changed.
+ * rules' `view({ seat })`), in `state`. Sent only when it changed. `seq`
+ * numbers the views sent to this frame, for `idle`.
  */
 export interface View {
 	v: 2;
 	t: "view";
 	/** May carry ArrayBuffers (see Json). */
 	state: Json;
+	/**
+	 * This view's number on this frame, rising by one per view; a frame echoes the
+	 * newest it has shown in `idle`. At least 1.
+	 */
+	seq?: number;
 }
 
 /**
@@ -762,6 +785,7 @@ export type ToShell =
 	| Verify
 	| Act
 	| Input
+	| Idle
 	| RuntimeFile
 	| Http
 	| Address;
@@ -819,6 +843,7 @@ export const TO_SHELL: readonly ToShell["t"][] = [
 	"verify",
 	"act",
 	"input",
+	"idle",
 	"runtime.file",
 	"http",
 	"address",

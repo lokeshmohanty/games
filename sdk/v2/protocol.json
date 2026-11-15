@@ -298,6 +298,9 @@
           "$ref": "#/$defs/input"
         },
         {
+          "$ref": "#/$defs/idle"
+        },
+        {
           "$ref": "#/$defs/runtime.file"
         },
         {
@@ -1406,6 +1409,28 @@
         }
       }
     },
+    "idle": {
+      "description": "Layer 2: this phone's frame has finished showing view `seq` (its replay of the last move is over, or there was none). Once a frame has sent one, the shell keeps the end card back after the final move until the frame is idle on the newest view, at most a few seconds; the result is still reported at once. A game that never sends it gets its card at once.",
+      "type": "object",
+      "required": [
+        "v",
+        "t",
+        "seq"
+      ],
+      "properties": {
+        "v": {
+          "const": 2
+        },
+        "t": {
+          "const": "idle"
+        },
+        "seq": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "The `seq` of the newest view this frame has finished showing (0: none yet)."
+        }
+      }
+    },
     "rulesCall": {
       "type": "object",
       "required": [
@@ -1546,7 +1571,7 @@
       }
     },
     "view": {
-      "description": "Layer 2: what this phone's player may see now (the rules' `view({ seat })`), in `state`. Sent only when it changed.",
+      "description": "Layer 2: what this phone's player may see now (the rules' `view({ seat })`), in `state`. Sent only when it changed. `seq` numbers the views sent to this frame, for `idle`.",
       "type": "object",
       "required": [
         "v",
@@ -1562,6 +1587,11 @@
         },
         "state": {
           "$ref": "#/$defs/json"
+        },
+        "seq": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "This view's number on this frame, rising by one per view; a frame echoes the newest it has shown in `idle`."
         }
       }
     },

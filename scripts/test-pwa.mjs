@@ -609,6 +609,23 @@ console.log("\npwa: every game offline in single player");
 			const start = await until(G, (d) => d.racing);
 			return start && until(G, (d) => d.walls > start.walls + 4); // riders lay walls
 		},
+		"lokeshmohanty/bubble-rush": async (G) => {
+			// START, then the round ticks and a tap on a bubble scores (the host
+			// judges where it landed). Alone from the portal: no bots to watch.
+			const on = await until(G, async (d) => {
+				if (d.phase === "setup") await press(G, /^START$/);
+				return d.phase === "play";
+			});
+			return (
+				on &&
+				until(G, async (d) => {
+					if ((d.scores[d.you] ?? 0) > 0) return true;
+					const b = d.bubbles.find((b) => b.k !== "x" && b.y > 0.1 && b.y < 0.9);
+					if (b && !d.stunned) await G.evaluate((tap) => window.arcade.act({ tap }), { x: b.x, y: b.y, t: Math.round(d.t) });
+					return false;
+				})
+			);
+		},
 		"lokeshmohanty/sudoku": async (G) => {
 			const d = await until(G, async (d) => {
 				if (d.phase === "pick") await press(G, /NEW PUZZLE/);

@@ -438,6 +438,57 @@ const GAMES = {
 		},
 	},
 
+	"bubble-rush": {
+		file: "?game=lokeshmohanty%2Fbubble-rush&fresh=1",
+		peers: 2,
+		seconds: 10, // constant motion: 14 s was 1.4MB even at the low profile
+		// Upright, like the phone it is made for: its 1 : 2 field is a thin
+		// column in the default landscape frame.
+		width: 420,
+		height: 760,
+		async beforeStart([host]) {
+			// Two people and two bots: four on the field.
+			for (let i = 0; i < 2; i++) {
+				await host.locator("button", { hasText: "ADD BOT" }).first().click().catch(() => {});
+				await sleep(150);
+			}
+		},
+		async play([a, b], seconds) {
+			const scopes = await Promise.all([a, b].map((p) => gameScope(p, 20_000)));
+			const [H] = scopes;
+			// Two a side: TEAMS shows the two colours and the denials, which a
+			// free-for-all clip would not. Sides are set here, while the game is
+			// on its mode choice (it reads the party's sides live then): the
+			// quick start deals its own as START GAME is pressed.
+			await a.evaluate(() => {
+				const room = window.__party.room;
+				room.getMembers().forEach((m, i) => room.setTeam(m.id, i % 2 ? "B" : "A"));
+			});
+			await H.waitForFunction(() => window.__game.handle.debug().phase === "setup" && window.__game.handle.debug().teamsOk, null, { timeout: 20_000 }).catch(() => {});
+			await readyToClick(a);
+			await H.locator('.br-setup button[data-mode="teams"]').click().catch(() => {});
+			await sleep(400);
+			await H.locator(".br-setup button", { hasText: "START" }).click().catch(() => {});
+			// A person's tap, on the page's mouse: their own colour or gold,
+			// never a bomb, and not always the first one up.
+			const tap = async (page, G) => {
+				const d = await G.evaluate(() => window.__game.handle.debug()).catch(() => null);
+				if (!d || d.phase !== "play" || d.stunned || !d.you) return;
+				const mine = await G.evaluate(() => window.arcade.party.members.find((m) => m.id === window.arcade.party.self)?.team ?? null);
+				const ok = d.bubbles.filter((x) => x.k !== "x" && (!x.team || x.team === mine) && x.py > x.pr && x.py < d.field.h * 0.8);
+				const pick = ok[Math.floor(Math.random() * Math.min(3, ok.length))];
+				const box = await G.locator(".br-field canvas").boundingBox();
+				const inset = await G.evaluate(() => document.querySelector(".br-field canvas").clientLeft);
+				if (pick && box) await page.mouse.click(box.x + inset + pick.px, box.y + inset + pick.py);
+			};
+			const end = Date.now() + seconds * 1000;
+			while (Date.now() < end) {
+				await Promise.all([a, b].map((p, i) => tap(p, scopes[i])));
+				await sleep(380);
+			}
+		},
+	},
+
 	connect4: {
 		file: "?game=connect4&fresh=1",
 		peers: 2,
@@ -591,8 +642,9 @@ if (!game || !GAMES[game]) {
 
 const spec = GAMES[game];
 const seconds = Number(flag("seconds", spec.seconds));
-const width = Number(flag("width", 900));
-const height = Number(flag("height", 620));
+// A game may want its own frame: Bubble Rush's field is a 1 : 2 column.
+const width = Number(flag("width", spec.width ?? 900));
+const height = Number(flag("height", spec.height ?? 620));
 const outDir = mkdtempSync(join(tmpdir(), "game-preview-"));
 
 const { chromium } = loadPlaywright();

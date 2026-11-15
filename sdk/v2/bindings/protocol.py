@@ -605,6 +605,22 @@ class Input(TypedDict):
     # May carry ArrayBuffers (see Json).
     i: Json
 
+class Idle(TypedDict):
+    """
+    `idle`, frame to shell. Layer 2: this phone's frame has finished showing
+    view `seq` (its replay of the last move is over, or there was none). Once a
+    frame has sent one, the shell keeps the end card back after the final move
+    until the frame is idle on the newest view, at most a few seconds; the
+    result is still reported at once. A game that never sends it gets its card
+    at once.
+    """
+
+    v: Literal[2]
+    t: Literal["idle"]
+    # The `seq` of the newest view this frame has finished showing (0: none
+    # yet). At least 0.
+    seq: int
+
 # Values of RulesCallFn.
 RulesCallFn = Literal["init", "apply", "tick", "view", "turn", "bot", "result", "snapshot", "restore", "skip", "leave"]
 
@@ -671,13 +687,17 @@ class Rules(TypedDict):
 class View(TypedDict):
     """
     `view`, shell to frame. Layer 2: what this phone's player may see now (the
-    rules' `view({ seat })`), in `state`. Sent only when it changed.
+    rules' `view({ seat })`), in `state`. Sent only when it changed. `seq`
+    numbers the views sent to this frame, for `idle`.
     """
 
     v: Literal[2]
     t: Literal["view"]
     # May carry ArrayBuffers (see Json).
     state: Json
+    # This view's number on this frame, rising by one per view; a frame echoes
+    # the newest it has shown in `idle`. At least 1.
+    seq: NotRequired[int]
 
 class Rejected(TypedDict):
     """
@@ -767,6 +787,7 @@ ToShellType = Literal[
     "verify",
     "act",
     "input",
+    "idle",
     "runtime.file",
     "http",
     "address",
@@ -799,6 +820,7 @@ TO_SHELL: tuple[ToShellType, ...] = (
     "verify",
     "act",
     "input",
+    "idle",
     "runtime.file",
     "http",
     "address",
@@ -832,6 +854,7 @@ ToShell = (
     | Verify
     | Act
     | Input
+    | Idle
     | RuntimeFile
     | Http
     | Address
