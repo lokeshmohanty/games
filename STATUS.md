@@ -47,6 +47,22 @@ stalls (fails on the old bot). test-neon-bid and test-bots are green.
 sw.js v38 shipped with this; the Tug of War removal (session games-99, shared
 tree, uncommitted) also bumped to v38 and must take v39.
 
+## Platform features round on `platform-features`, NOT merged (2026-11-15)
+
+Phase 4 merged and live (a59d8c4); PR #4 merged (arcade-games on v2).
+This round (15bda63 + groundwork b39ae41): SDK v1 dropped; SINGLE PLAYER /
+MULTI-PLAYER (SAME DEVICE for party); home sections (favourites, popular,
+categories); Collections page + contributor/collection favourites; RULES.md
+on first open + "?"; richer game-over card; offline single player for every
+game; solo runs ranked with server-issued runs, Sudoku verified on the
+server; Neon Survival per-player scores; docs/contributor-prompt.md and
+docs/suggestions.md. Reviewed adversarially, fixed; `just test` + worker/
+social/accounts green. **Awaiting Lokesh:** (1) merge; (2) worker: from
+worker/, `wrangler d1 migrations apply arcade --remote` then `wrangler
+deploy` (solo runs, favourites ids); VERIFY the Cloudflare plan (Sudoku
+generation can exceed the free plan's 10 ms); (3) push arcade-games-v2
+platform-v2 (33334bc: RULES.md + seeded Sudoku) and move the pin by PR.
+
 ## Platform v2 refactor — Phases 1–3 merged and live (c40dd19, 2026-11-14); Phase 4 done on `platform-spa`, NOT merged (2026-11-15)
 
 Phase 4 (docs/spa.md): the shell is one page — Solid + Vite + TypeScript,
