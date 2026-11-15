@@ -2010,11 +2010,101 @@ try {
 		url: location.search,
 		token: NeonArcade.rejoinToken()?.id,
 		closed: window.__twinTab.room.closed,
-		useHere: [...document.querySelectorAll("button")].some((b) => b.textContent === "USE THIS TAB INSTEAD"),
+		useHere: [...document.querySelectorAll("button")].some((b) => b.textContent === "USE IT HERE"),
 	}));
 	check("no new party was started", !/fresh/.test(twinAfter.url), JSON.stringify(twinAfter));
 	check("the other tab keeps its seat and its token", twinAfter.token === twinTab && !twinAfter.closed, JSON.stringify(twinAfter));
-	check("and USE THIS TAB INSTEAD is offered", twinAfter.useHere, JSON.stringify(twinAfter));
+	check("and USE IT HERE is offered", twinAfter.useHere, JSON.stringify(twinAfter));
+
+	// ------------------- 7b. a seat the server holds and no page here does
+	// Found on a phone (2026-11-15): the server still had a socket on the
+	// token's seat — Chrome keeps a page in its back/forward cache for up to
+	// 10 minutes, its room socket open — so every release answered `busy`,
+	// and every SINGLE PLAYER, START A PARTY and LEAVE PARTY said "open in
+	// another tab" until the cache let the page go. Only a live page of this
+	// browser holding the seat (its Web Lock) is another tab; a socket alone
+	// is a ghost. The mock is seeded with one: a seat bound to a socket no
+	// page owns, and the token naming it.
+	console.log("\nroom: a ghost seat never sticks");
+	{
+		const GHOST = { code: "424242", id: "ghostseat", secret: "ghostsecret" };
+		const gctx = await browser.newContext({ viewport: { width: 390, height: 844 } });
+		await gctx.addInitScript((g) => {
+			let mock;
+			Object.defineProperty(window, "__neonRoomMock", {
+				configurable: true,
+				get: () => mock,
+				set(m) {
+					mock = m;
+					const socket = { readyState: 1, closedWith: null, close(c) { this.readyState = 3; this.closedWith = c; } };
+					window.__ghostSocket = socket;
+					m.rooms.set(g.code, new Map([[g.id, { id: g.id, secret: g.secret, socket, joinedAt: 0 }]]));
+				},
+			});
+		}, GHOST);
+		const a = await gctx.newPage();
+		a.on("pageerror", (err) => {
+			console.log(`  FAIL page error: ${err.message}`);
+			failures++;
+		});
+		const seed = async () => {
+			await a.goto(SERVED("manifest.webmanifest"));
+			await a.evaluate((g) => localStorage.setItem("neon.room", JSON.stringify(g)), GHOST);
+		};
+		const said = (p) => p.evaluate(() => document.querySelector(".lobby-status")?.textContent ?? "");
+		const ghostGone = (p) =>
+			until(p, (g) => !window.__neonRoomMock.rooms.get(g.code)?.has(g.id) && !localStorage.getItem("neon.room"), GHOST, "ghost released");
+
+		// A card's SINGLE PLAYER: the bots game starts at once, whatever the token says.
+		await seed();
+		const t0 = Date.now();
+		await a.goto(SERVED("?game=neon-survival-mp&fresh=1&mode=bots", "&mockroom=1"));
+		const started = await until(a, () => window.__party?.game === "neon-survival-mp", undefined, "bots game mounted");
+		check("SINGLE PLAYER over a ghost seat starts the bots game", started && !/another tab/i.test(await said(a)), await said(a));
+		check("…at once (not after the room server)", Date.now() - t0 < 10_000, `${Date.now() - t0} ms`);
+		check("…and the ghost seat is given back, the token dropped", await ghostGone(a));
+
+		// START A PARTY (it hosts through the server, so it waits for the release).
+		await seed();
+		await a.goto(SERVED("?fresh=1", "&mockroom=1"));
+		const hosted = await a.locator(".party-code-digits").waitFor({ timeout: TIMEOUT }).then(() => true, () => false);
+		check("START A PARTY over a ghost seat hosts a new party", hosted, await said(a));
+		check("…and the ghost was hung up (4409), not left bound", await a.evaluate(() => window.__ghostSocket.closedWith === 4409));
+
+		// LEAVE PARTY from a screen with no live room (reconnecting).
+		await seed();
+		await a.goto(SERVED("?party", "&mockroom=1"));
+		await a.locator(".lobby-sub", { hasText: "Reconnecting" }).waitFor({ timeout: TIMEOUT });
+		await a.locator("a", { hasText: "LEAVE PARTY" }).click();
+		await a.waitForURL((u) => !u.search.includes("party"), { timeout: TIMEOUT }).catch(() => {});
+		check("LEAVE PARTY while reconnecting drops the token", (await a.evaluate(() => localStorage.getItem("neon.room"))) === null);
+
+		// A live page of this browser does hold it (another tab, the installed app).
+		const b = await gctx.newPage();
+		await b.goto(SERVED("manifest.webmanifest"));
+		await b.evaluate((id) => {
+			window.__stolen = false;
+			navigator.locks
+				.request("neon.seat." + id, () => new Promise(() => {}))
+				.catch(() => (window.__stolen = true));
+		}, GHOST.id);
+		await seed();
+		await a.goto(SERVED("?fresh=1", "&mockroom=1"));
+		const told = await until(a, () => /open in another tab/i.test(document.querySelector(".lobby-status")?.textContent ?? ""), undefined, "displaced");
+		check("START A PARTY while a live tab holds the seat: open in another tab", told);
+		check("…the token is kept for that tab", (await a.evaluate(() => NeonArcade.rejoinToken()?.id)) === GHOST.id);
+		await seed();
+		await a.goto(SERVED("?game=neon-survival-mp&fresh=1&mode=bots", "&mockroom=1"));
+		check("SINGLE PLAYER still starts the bots game beside it", await until(a, () => window.__party?.game === "neon-survival-mp", undefined, "bots beside live tab"));
+		check("…leaving that tab's token alone", (await a.evaluate(() => NeonArcade.rejoinToken()?.id)) === GHOST.id);
+		await seed();
+		await a.goto(SERVED("?fresh=1", "&mockroom=1"));
+		await a.locator("button", { hasText: "USE IT HERE" }).click({ timeout: TIMEOUT });
+		const moved = await a.locator(".lobby-sub", { hasText: `Reconnecting to party ${GHOST.code}` }).waitFor({ timeout: TIMEOUT }).then(() => true, () => false);
+		check("USE IT HERE reconnects here (not back to the same screen)", moved && !(await a.evaluate(() => location.search.includes("fresh"))), await said(a));
+		check("…and takes the seat from the other tab", await until(b, () => window.__stolen, undefined, "lock stolen"));
+		await gctx.close();
+	}
 
 	// `?rs=` is honoured only when it names this machine: a link that could
 	// pick the signalling server could swap the DTLS fingerprints in the
