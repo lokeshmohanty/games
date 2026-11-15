@@ -582,6 +582,23 @@ console.log("\npwa: every game offline in single player");
 			await G.evaluate(() => document.querySelector(".nb-go")?.click());
 			return until(G, (d) => d.results.length > 0); // and the lot was opened
 		},
+		"neon-fission": async (G) => {
+			// START at the table (no seat handed to a person), then a move and the bot's answer.
+			const started = await until(G, async (d) => {
+				if (d.phase === "setup") await press(G, /^START$/);
+				return d.phase === "play";
+			});
+			if (!started) return null;
+			let acted = -1;
+			return until(G, async (v) => {
+				if (v.moves >= 2 && v.last && v.last.seat !== v.you) return true; // the bot answered
+				if (v.canPlay && v.moves !== acted) {
+					acted = v.moves;
+					await G.evaluate((cell) => window.arcade.act({ cell }), v.owner.indexOf(-1));
+				}
+				return false;
+			});
+		},
 		"neon-survival-mp": async (G) => {
 			const first = await until(G, (d) => d.active && d.simMs != null);
 			return first && until(G, (d) => d.simMs > first.simMs + 500); // the run ticks

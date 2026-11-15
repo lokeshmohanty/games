@@ -106,7 +106,7 @@ arcade.managed({
   view({ seat }) { return … },                // what this seat may see; seat null = a spectator
   turn() { return [ids…] },                   // whose move it is: drives bots and the turn-wait banner
   bot({ seat }) { return action },            // a bot's move (null: none)
-  result() { return null | { kind, ranking, scores?, title?, details? } },   // sdk.md "Reporting a result"; title, details: the end card's (below)
+  result() { return null | { kind, ranking, scores?, title?, details?, names? } },   // sdk.md "Reporting a result"; title, details, names: the end card's (below)
   snapshot() { return state },                // for the heir
   restore({ snapshot }) { … },
   skip({ seat }) { … return true },           // optional: the host chose SKIP TURN
@@ -164,6 +164,11 @@ How it runs:
     (label ≤ 32 characters, value ≤ 40; anything else is dropped), drawn
     as a small table. Connect 4 gives moves played and the winning line;
     Neon Survival the time survived and each player's gems and time.
+  - **Names for bot seats:** an optional `names`, `{ id: name }`, renames
+    bot seats on the card (≤ 24 characters; a real member's name is never
+    replaced). For people sharing the host's phone, which the platform
+    sees as bot seats: Neon Fission's "Player 3". The game still does not
+    rank (it has bot seats).
 
   ```js
   result() {

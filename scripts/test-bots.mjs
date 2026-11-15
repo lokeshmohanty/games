@@ -865,6 +865,132 @@ try {
 	check("the portal shows it on the game's card", /won of 1/.test(portalSays), portalSays);
 	check("…and under Recently played", (await page.locator("[data-recent] .recent-game").first().textContent().catch(() => "")) === "Connect 4");
 
+	// ------------------------------------------------------ neon fission
+	//
+	// A managed ffa game with a same-device mode: before the first move the
+	// one person seated may turn bot seats into people beside them, whose
+	// turns are played on this phone (games/neon-fission/neon-fission.js).
+
+	/** Open Neon Fission's party with `bots` bots seated, start, and wait for the table. */
+	async function openFission(p, bots) {
+		await p.goto(url("index.html?game=neon-fission&fresh=1"));
+		const solo = p.locator("button", { hasText: "SINGLE PLAYER" }).first();
+		await solo.waitFor({ timeout: TIMEOUT });
+		const label = await solo.textContent();
+		await solo.click();
+		for (let i = 1; i < bots; i++) await p.locator("button", { hasText: "ADD BOT" }).first().click();
+		await p.locator("button", { hasText: "START GAME" }).first().click();
+		await p.waitForFunction(() => window.__game?.handle, null, { timeout: TIMEOUT });
+		const F = await gameScope(p, TIMEOUT);
+		await F.waitForFunction(() => window.__game.handle.debug().phase === "setup", null, { timeout: TIMEOUT });
+		await readyToClick(p);
+		return { F, label };
+	}
+	const fission = (F) => F.evaluate(() => window.__game.handle.debug());
+	/** Tap a cell this phone may play, as a person would. */
+	async function tapCell(p, F, v, pick) {
+		const box = await F.locator("#board").boundingBox();
+		await p.mouse.click(box.x + ((pick % v.cols) + 0.5) * v.cell, box.y + (Math.floor(pick / v.cols) + 0.5) * v.cell);
+	}
+	/** A legal cell for the seat on turn: the first empty corner, else the first of its own or empty. */
+	const legalPick = (v) => {
+		const ok = (i) => v.owner[i] === -1 || v.owner[i] === v.turn;
+		const corners = [0, v.cols - 1, v.cols * (v.rows - 1), v.cols * v.rows - 1].filter((i) => v.owner[i] === -1);
+		return corners[0] ?? v.owner.findIndex((_, i) => ok(i));
+	};
+
+	console.log("\nbots: neon fission, single player against a bot, to the end");
+	{
+		const { F, label } = await openFission(page, 1);
+		check("the party offers SINGLE PLAYER / SAME DEVICE (a party game)", label.trim() === "SINGLE PLAYER / SAME DEVICE", label);
+		const table = await F.evaluate(() => {
+			const btns = [...document.querySelectorAll("#setup button")].map((b) => b.getBoundingClientRect());
+			return {
+				labels: [...document.querySelectorAll("#setup button")].map((b) => b.textContent),
+				minH: Math.min(...btns.map((b) => b.height)),
+				right: Math.max(...btns.map((b) => b.right)),
+				bottom: Math.max(...btns.map((b) => b.bottom)),
+				top: Math.min(...btns.map((b) => b.top)),
+				doc: document.documentElement.scrollWidth,
+			};
+		});
+		check("the table first: the bot's seat can be a PLAYER, then START", table.labels.join() === "BOT,PLAYER,START", table.labels.join());
+		check("…44px taps, all on a 390x844 screen, clear of the top band, no sideways scroll",
+			table.minH >= 44 && table.right <= 390 && table.bottom <= 844 && table.top >= 52 && table.doc <= 390, JSON.stringify(table));
+		await F.locator("#setup button", { hasText: "START" }).click();
+		await F.waitForFunction(() => window.__game.handle.debug().phase === "play", null, { timeout: TIMEOUT });
+		const fit = await F.evaluate(() => {
+			const b = document.getElementById("board").getBoundingClientRect();
+			const t = document.getElementById("turn").getBoundingClientRect();
+			const v = window.__game.handle.debug();
+			return { left: b.left, right: b.right, bottom: b.bottom, hudTop: t.top, cell: v.cell, cols: v.cols, rows: v.rows, doc: document.documentElement.scrollWidth, dpr: document.getElementById("board").width / b.width };
+		});
+		check("two players: a 6 × 9 grid with cells of at least 44px, all on screen", fit.cols === 6 && fit.rows === 9 && fit.cell >= 44 && fit.left >= 0 && fit.right <= 390 && fit.bottom <= 844 && fit.doc <= 390, JSON.stringify(fit));
+		check("…the turn line clear of the shell's top band; drawn at the device's pixel ratio", fit.hudTop >= 52 && Math.abs(fit.dpr - (await page.evaluate(() => devicePixelRatio))) < 0.05, JSON.stringify(fit));
+		let v = await fission(F);
+		let botMoved = false;
+		let acted = -1;
+		for (const end = Date.now() + 120_000; Date.now() < end && v.winner === null; v = await fission(F)) {
+			if (v.last && v.last.seat === 1) botMoved = true;
+			if (v.canPlay && !v.animating && v.moves !== acted) {
+				acted = v.moves;
+				await tapCell(page, F, v, legalPick(v));
+			}
+			await sleep(120);
+		}
+		check("the bot plays its own turns", botMoved);
+		check("the game plays out to a winner", v.winner === 0 || v.winner === 1, `winner=${v.winner} after ${v.moves} moves`);
+		const card = await page.locator(".managed-over").first().textContent({ timeout: TIMEOUT }).catch(() => "");
+		check("the end card shows, with the bot and us ranked", /YOU|WIN/.test(card) && card.includes("DETAILS"), card);
+		await resultReached(page, "neon-fission", v.winner === 0);
+	}
+
+	console.log("\nlocal: neon fission on one phone, two people and a bot");
+	{
+		const ctx2 = await newContext();
+		const hot = await ctx2.newPage();
+		hot.on("pageerror", (err) => {
+			console.log(`  FAIL page error: ${err.message}`);
+			failures++;
+		});
+		const { F } = await openFission(hot, 2);
+		await F.locator('#setup .seg button[data-seat="1"]', { hasText: "PLAYER" }).click();
+		await F.waitForFunction(() => window.__game.handle.debug().players[1].kind === "local", null, { timeout: TIMEOUT });
+		let v = await fission(F);
+		check("seat 2 is now a player on this device, named Player 2; seat 3 stays a bot", v.players[1].name === "Player 2" && v.players[2].kind === "bot", JSON.stringify(v.players.map((p) => [p.name, p.kind])));
+		await F.locator("#setup button", { hasText: "START" }).click();
+		const taps = { 0: 0, 1: 0 };
+		const seatMoves = { 0: 0, 1: 0, 2: 0 };
+		let lastSeen = 0;
+		let passLine = "";
+		let acted = -1;
+		let neverOurs = true;
+		for (const end = Date.now() + 150_000; Date.now() < end; v = await fission(F)) {
+			if (v.last && v.last.n !== lastSeen) {
+				lastSeen = v.last.n;
+				seatMoves[v.last.seat]++;
+			}
+			if (v.winner !== null) break;
+			if (v.turn === 2 && v.canPlay) neverOurs = false; // the bot's turn must not be ours to play
+			if (v.canPlay && !v.animating && v.moves !== acted) {
+				if (v.turn === 1 && !passLine) passLine = await F.locator("#turn").textContent();
+				acted = v.moves;
+				taps[v.turn]++;
+				await tapCell(hot, F, v, legalPick(v));
+			}
+			await sleep(100);
+		}
+		check("on Player 2's turn the phone says so: pass it", /Player 2/.test(passLine) && /pass the phone/.test(passLine), passLine);
+		check("Player 2's moves are exactly the taps made for them: no bot played that seat", seatMoves[1] > 0 && seatMoves[1] === taps[1], JSON.stringify({ seatMoves, taps }));
+		check("the real bot moved itself, and its turns were never this phone's", seatMoves[2] > 0 && neverOurs, JSON.stringify(seatMoves));
+		check("the game ends", v.winner !== null, `after ${v.moves} moves`);
+		const card = await hot.locator(".managed-over").first().textContent({ timeout: TIMEOUT }).catch(() => "");
+		const botName = v.players[2].name;
+		check("the end card names Player 2 and the bot by name", card.includes("Player 2") && card.includes(botName), card);
+		check("…and its title names the winner as the game does", card.toUpperCase().includes(`${v.players[v.winner].name.toUpperCase()} WINS`), card);
+		await ctx2.close();
+	}
+
 	// ------------------------------------------------------ neon survival
 
 	console.log("\nbots: neon survival runs for one player, and for one plus bots");

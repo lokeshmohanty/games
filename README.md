@@ -27,6 +27,9 @@ takes one tap to get there.
 - **[Neon Bid](neon-bid.html)** — Twelve gems, 100 credits, every bid sealed
   and opened together. The winner pays the second-highest bid; sets and a
   rainbow score. 2–8 players. Design: [`docs/neon-bid.md`](docs/neon-bid.md).
+- **[Neon Fission](./?game=neon-fission)** — Add an orb a turn; a full cell
+  bursts into its neighbours and takes them, and bursts chain. Last one with
+  cells wins. Bots, friends on their phones, or people passing one phone. 2–8 players.
 
 ### Multiplayer (P2P, no server)
 
