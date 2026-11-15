@@ -25,6 +25,7 @@ questions about this project from this folder alone.
 - [Testing across real networks](network-testing.md) — the NAT lab: symmetric NAT, network switches, lossy links, a blocked room server
 - [`../lib/README.md`](../lib/README.md) — the P2P core, registry, party, lobby and QR APIs
 - [Neon Bid](neon-bid.md) — the sealed-bid gem auction's design, as approved
+- Neon Fission (`games/neon-fission/`, rules in its `RULES.md`) — the chain-reaction grid for 2–8: a managed ffa game; one person with bots can hand bot seats to people on the same phone before the first move (those seats' turns are reported as the person's, so no bot plays them; the end card names them via the result's `names`, docs/sdk-v2.md)
 - (still missing: design notes for the other games, decision log)
 
 ## How-to (verified commands)
@@ -49,6 +50,7 @@ questions about this project from this folder alone.
 | Test Undercover | `node scripts/test-undercover.mjs` — the deal, the win conditions, and the table sizes that survive a wrong vote |
 | Test Liar's Dice | `node scripts/test-liars-dice.mjs` — wilds, the bid ladder, the at-least rule, and the reveal race that once accused an honest player |
 | Test Neon Bid's rules, audit and bot | `node scripts/test-neon-bid.mjs` — second price, the reserve, tie refunds, scoring and tie-breaks, the bid audit broken six ways, and the bot measured against a random and an even-spending bidder |
+| Test Neon Fission's rules and bot | `node scripts/test-neon-fission.mjs` — capacities, a three-wave chain (RULES.md's example), conversion, knock-outs only after a first turn, the chain stopping once one player owns every orb, the bot (legal, fast, takes a win; vs random and greedy players), 210 whole bot games that all end, and the same-device seats in the managed layer |
 | Test the Light Cycles arena | `node scripts/test-light-cycles.mjs` — head-on collisions, spawn symmetry, and the bot measured against a rider that only avoids crashing |
 | Rebuild the app icons | `node scripts/make-icons.mjs` after editing `assets/icon.svg` — renders the PNGs the manifest needs |
 | Get back to the portal | every page has a fixed `.portal-link` ("← ALL GAMES") linking to `index.html` |
@@ -372,6 +374,7 @@ Where the brains live:
 | Connect 4 | minimax + alpha-beta, 5 plies, centre-first move ordering | `games/connect4/connect4.js` |
 | Neon Survival | steering: inverse-square flee from enemies, drift to gems, wall push-off, speed-capped | `games/neon-survival-mp/neon-survival-mp.js` |
 | Neon Bid | marginal points (plus a share of the rainbow) + half the leader's gain, scaled by credits per lot it can expect to win, ±15% noise | `games/neon-bid/neon-bid.js` (`NeonArcade.neonBidRules.botBid`) |
+| Neon Fission | every legal cell simulated in full (chains included) and judged (material, safe corners and edges, loaded cells, cells beside an enemy one orb from bursting); the best 8 checked against the next player's strongest reply; takes a win at once | `games/neon-fission/rules.js` (`botMove`) |
 | Draw & Guess | none — `bots: false` in its registration | — |
 
 Draw & Guess opts out on purpose. A bot that draws is replaying a canned doodle

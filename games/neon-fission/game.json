@@ -1,0 +1,32 @@
+{
+  "sdk": 2,
+  "state": "managed",
+  "id": "neon-fission",
+  "name": "NEON FISSION",
+  "title": "Neon Fission",
+  "blurb": "Load cells with orbs until they burst and take their neighbours. Last one with cells wins.",
+  "description": "Add an orb a turn. A full cell bursts into its neighbours and takes them, and bursts chain across the grid. Last player with cells wins. 2 to 8 players, bots or friends, on one phone or many.",
+  "entry": "index.html",
+  "rules": "RULES.md",
+  "shape": "free",
+  "seats": {
+    "min": 2,
+    "max": 8
+  },
+  "bots": true,
+  "kind": "ffa",
+  "tags": [
+    "alone",
+    "party",
+    "strategy",
+    "one-phone"
+  ],
+  "categories": [
+    "party",
+    "strategy"
+  ],
+  "preview": "../../assets/neon-fission.gif",
+  "license": "MIT",
+  "author": "lokeshmohanty",
+  "repo": "https://github.com/lokeshmohanty/games"
+}

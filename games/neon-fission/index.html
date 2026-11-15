@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Neon Fission</title>
+    <link rel="stylesheet" href="neon-fission.css" />
+  </head>
+  <body>
+    <!-- SDK v2, managed state: the platform inlines sdk/v2/runtime.js ahead of
+         this and runs the rules on the host (docs/sdk-v2.md). rules.js is the
+         game itself, pure; neon-fission.js maps it onto the party and draws. -->
+    <div id="game">
+      <div id="hud">
+        <div id="turn" role="status" aria-live="polite"></div>
+        <div id="seats" aria-label="Players"></div>
+      </div>
+      <div id="wrap">
+        <canvas id="board" aria-label="The grid"></canvas>
+        <div id="setup" hidden></div>
+      </div>
+    </div>
+    <script src="rules.js"></script>
+    <script src="neon-fission.js"></script>
+  </body>
+</html>

@@ -180,6 +180,28 @@ async function dodgeLoop(page, seconds, canvasSel = "#gameCanvas") {
 	}
 }
 
+/**
+ * Neon Fission: when it is this phone's move, tap the cell the game's own bot
+ * would pick (rules.js `botMove`, read in the frame), as a person would.
+ * Returns the moves played so far, or -1 once someone has won.
+ */
+async function fissionStep(page, G) {
+	const v = await G.evaluate(() => window.__game.handle.debug()).catch(() => null);
+	if (!v || v.winner !== null) return v ? -1 : 0;
+	if (v.canPlay && !v.animating) {
+		const cell = await G.evaluate(() => {
+			const v = window.__game.handle.debug();
+			const n = v.players.length;
+			const g = { ...v, players: n, played: v.players.map((p, i) => p.cells > 0 || v.moves >= n || i < v.turn), out: v.players.map((p) => (p.out ? 0 : null)), gone: v.players.map((p) => p.gone) };
+			return window.neonFissionRules.botMove(g);
+		});
+		const box = await G.locator("#board").boundingBox();
+		if (box) await page.mouse.click(box.x + ((cell % v.cols) + 0.5) * v.cell, box.y + (Math.floor(cell / v.cols) + 0.5) * v.cell);
+		await sleep(250);
+	}
+	return v.moves;
+}
+
 /** Sweep the pointer along a sine path — both Neon Survival games follow the mouse. */
 async function sweepMouse(page, seconds, phase = 0) {
 	const box = await page.locator("canvas").first().boundingBox();
@@ -523,6 +545,37 @@ const GAMES = {
 		},
 	},
 
+	"neon-fission": {
+		file: "index.html?game=neon-fission&fresh=1",
+		// One phone against three bots: no handshake, so the harness skips its
+		// own and `beforeStart` seats the bots, sets the table and plays the
+		// quiet opening off camera; the clip opens on a grid about to chain.
+		peers: 1,
+		seconds: 14,
+		async beforeStart([page]) {
+			await page.locator("button", { hasText: "SINGLE PLAYER" }).first().click();
+			for (let i = 0; i < 2; i++) await page.locator("button", { hasText: "ADD BOT" }).first().click();
+			await page.locator("button", { hasText: "START GAME" }).first().click();
+			await page.waitForFunction(() => window.__game?.handle, null, { timeout: 20_000 });
+			const G = await gameScope(page, 20_000);
+			await G.waitForFunction(() => window.__game.handle.debug().phase === "setup", null, { timeout: 20_000 });
+			await readyToClick(page);
+			await G.locator("#setup button", { hasText: "START" }).click();
+			const end = Date.now() + 40_000;
+			while (Date.now() < end && (await fissionStep(page, G)) < 22) await sleep(80);
+		},
+		async play([page], seconds) {
+			const G = await gameScope(page, 20_000);
+			const end = Date.now() + seconds * 1000;
+			while (Date.now() < end) {
+				const moves = await fissionStep(page, G);
+				if (moves < 0) break; // someone won
+				await sleep(80);
+			}
+			await sleep(1200);
+		},
+	},
+
 	"neon-survival-mp": {
 		file: "neon-survival-mp.html",
 		peers: 2,
@@ -612,6 +665,9 @@ if (spec.peers > 1) {
 		.first()
 		.waitFor({ state: "visible", timeout: 20_000 })
 		.catch(() => {});
+} else if (spec.beforeStart) {
+	// One page, no handshake: the scenario seats and starts itself, off camera.
+	await spec.beforeStart(pages);
 }
 await sleep(600);
 

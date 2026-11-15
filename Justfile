@@ -129,6 +129,7 @@ test-room:
 test-rules:
     node scripts/test-neon-bid.mjs
     node scripts/test-undercover.mjs
+    node scripts/test-neon-fission.mjs
 
 # Three real browser peers: recruiting, teams, game switching, succession.
 test-party:

@@ -1,0 +1,114 @@
+/* games/neon-fission — the frame's layout. Colours only from the theme's
+   tokens (lib/theme.css): seats are --p1…--p8 in seat order. */
+
+html, body { margin: 0; height: 100%; overflow: hidden; background: var(--bg); color: var(--ink); }
+
+/* The top 52px band is the shell's (portal link left, game buttons right). */
+#game {
+	position: absolute;
+	inset: 0;
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	gap: 10px;
+	padding: calc(env(safe-area-inset-top) + 58px) 16px max(12px, env(safe-area-inset-bottom));
+	box-sizing: border-box;
+	font-family: var(--font-body);
+	touch-action: manipulation;
+	user-select: none;
+	-webkit-user-select: none;
+}
+
+#hud { width: 100%; max-width: 560px; display: flex; flex-direction: column; align-items: center; gap: 8px; }
+
+#turn {
+	display: inline-flex;
+	align-items: center;
+	gap: 8px;
+	min-height: 34px;
+	padding: 4px 14px;
+	border: 2px solid var(--seat, var(--rule));
+	border-radius: 999px;
+	font-family: var(--font-display);
+	font-weight: 600;
+	font-size: 1rem;
+	letter-spacing: 0.02em;
+	box-shadow: 0 0 12px var(--glow);
+	box-sizing: border-box;
+	max-width: 100%;
+	text-align: center;
+}
+#turn .dot { flex: none; }
+#turn .sub { font-family: var(--font-body); font-weight: 400; color: var(--ink-2); }
+
+.dot {
+	display: inline-block;
+	width: 12px;
+	height: 12px;
+	border-radius: 50%;
+	background: var(--seat);
+	box-shadow: 0 0 8px var(--glow);
+}
+
+#seats { display: flex; flex-wrap: wrap; justify-content: center; gap: 6px; }
+.chip {
+	display: inline-flex;
+	align-items: center;
+	gap: 5px;
+	padding: 3px 9px;
+	border: 1px solid var(--rule);
+	border-radius: 999px;
+	font-size: 0.8rem;
+	color: var(--ink-2);
+	background: var(--surface);
+}
+.chip .name { max-width: 7.5ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.chip .n { font-family: var(--font-mono); color: var(--ink); }
+.chip.is-turn { border-color: var(--seat); color: var(--ink); box-shadow: 0 0 0 1px var(--seat); }
+.chip.is-out { opacity: 0.45; text-decoration: line-through; }
+
+#wrap { position: relative; flex: 1; width: 100%; min-height: 0; display: flex; align-items: flex-start; justify-content: center; }
+#board { display: block; border-radius: 10px; box-shadow: 0 0 24px var(--glow); cursor: pointer; }
+
+/* The table, before the first move: who plays on this device. */
+#setup {
+	position: absolute;
+	inset: 0;
+	overflow-y: auto;
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	gap: 10px;
+	padding: 4px 0 12px;
+	background: var(--bg);
+}
+#setup[hidden] { display: none; }
+#setup h2 { margin: 4px 0 0; font-family: var(--font-display); font-size: 1.35rem; color: var(--accent); text-shadow: 0 0 10px var(--glow); }
+#setup p { margin: 0; max-width: 30rem; text-align: center; color: var(--ink-2); font-size: 0.92rem; }
+#setup ol { list-style: none; margin: 0; padding: 0; width: 100%; max-width: 26rem; display: flex; flex-direction: column; gap: 6px; }
+#setup li {
+	display: flex;
+	align-items: center;
+	gap: 10px;
+	min-height: 52px;
+	padding: 0 6px 0 12px;
+	border: 1px solid var(--rule);
+	border-radius: 10px;
+	background: var(--surface);
+}
+#setup li .who { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#setup li .tag { font-family: var(--font-mono); font-size: 0.8rem; color: var(--ink-2); padding-right: 8px; }
+.seg { display: inline-flex; border: 1px solid var(--rule); border-radius: 999px; overflow: hidden; flex: none; }
+.seg button {
+	min-height: 44px;
+	min-width: 76px;
+	padding: 0 12px;
+	border: 0;
+	background: transparent;
+	color: var(--ink-2);
+	font: 600 0.8rem var(--font-display);
+	letter-spacing: 0.04em;
+	cursor: pointer;
+}
+.seg button[aria-pressed="true"] { background: var(--accent); color: var(--on-accent); }
+#setup .neon-btn { min-height: 48px; min-width: 160px; }
