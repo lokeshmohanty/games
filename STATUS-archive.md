@@ -1,4 +1,4 @@
-# STATUS archive — finished work, 2026-11-13 and earlier
+# STATUS archive — finished work
 
 *Moved out of `STATUS.md` on 2026-11-14 so sessions reading it don't pay for
 history. Read-only record; current state lives in `STATUS.md`, the full
@@ -491,3 +491,97 @@ one-phone · strategy · quick. A new game should be given whichever apply.
 
 All eleven suites pass (457 checks): codec, party, scan, pwa, bots, plumbing,
 onitama, light-cycles, battleship, liars-dice, undercover.
+
+## Neon Bid fixes (2026-11-14): pushed to main, sw.js v38
+
+Found by a playthrough at a person's pace, 2 to 8 seats, in all three themes:
+1. **Lots thrown away in every game against bots.** The open-phase fallback
+   timer was armed after the host's and bots' openings had already settled the
+   lot, so 4 s later it settled the next lot mid-bidding as everybody passing.
+   Screen and game then ran a lot apart: bids landed on the wrong gems, and
+   bots were flagged "never opened their bid". Timer now armed first and tied
+   to its lot; `settle` only settles the clock's lot while bids open.
+2. **Tie deadlock at 6–8 seats.** Bots on 100 credits all bid exactly 100, so
+   every lot tied and was discarded from about lot 4 on (100% of 7–8 seat
+   games). Bot bids are now capped a random 0–30% below the balance. 93–95%
+   of lots sell at every size; strength vs baselines unchanged (~100%).
+3. Seat colours = gem colours since the theme commit (a3bdbb5): seats are now
+   a ring in their colour with an initial. Lokesh picked this 2026-11-14.
+4. The "Cyan" gem is drawn blue under Paper: now named "Blue" under Paper,
+   "Cyan" under Neon, switching live. Lokesh picked this 2026-11-14.
+5. The game frame's `<title>` was "Cyan": now "Neon Bid".
+Tests: test-bots now bids at a person's pace and checks each sealed bid against
+the lot it settled (fails on the old code); test-neon-bid checks 2–8 seats for
+stalls (fails on the old bot). test-neon-bid and test-bots are green.
+sw.js v38 shipped with this; the Tug of War removal (session games-99, shared
+tree, uncommitted) also bumped to v38 and must take v39.
+
+## Platform features round on `platform-features`, NOT merged (2026-11-15)
+
+Phase 4 merged and live (a59d8c4); PR #4 merged (web-games on v2).
+This round (15bda63 + groundwork b39ae41): SDK v1 dropped; SINGLE PLAYER /
+MULTI-PLAYER (SAME DEVICE for party); home sections (favourites, popular,
+categories); Collections page + contributor/collection favourites; RULES.md
+on first open + "?"; richer game-over card; offline single player for every
+game; solo runs ranked with server-issued runs, Sudoku verified on the
+server; Neon Survival per-player scores; docs/contributor-prompt.md and
+docs/suggestions.md. Reviewed adversarially, fixed; `just test` + worker/
+social/accounts green. **Awaiting Lokesh:** (1) merge; (2) worker: from
+worker/, `wrangler d1 migrations apply arcade --remote` then `wrangler
+deploy` (solo runs, favourites ids); VERIFY the Cloudflare plan (Sudoku
+generation can exceed the free plan's 10 ms); (3) push web-games-v2
+platform-v2 (33334bc: RULES.md + seeded Sudoku) and move the pin by PR.
+
+## Platform v2 refactor — Phases 1–3 merged and live (c40dd19, 2026-11-14); Phase 4 done on `platform-spa`, NOT merged (2026-11-15)
+
+Phase 4 (docs/spa.md): the shell is one page — Solid + Vite + TypeScript,
+pnpm (Lokesh's choice). Query-routed views (the hash carries invites), the
+party mounted once in a persistent layer (BACK TO GAME), old pages as
+redirect stubs, scripts/assemble.mjs builds dist/ and generates sw.js
+(derived precache list, VERSION over its bytes). Deploy/CI build with pnpm.
+Perf: portal cold FCP 0.44 s, bots to frame 2.05 s, shell JS 194 KB decoded
+(was 426). Reviewed adversarially, fixed. `just test` green; worker/social/
+accounts green against v2 community. **Awaiting Lokesh's confirmation to
+merge Phase 4.** PR #4 (web-games pin → its v2 commit 2997566) is open,
+checks green, for Lokesh to merge; then delete sdk/v1 (his call: drop once
+the pin moves). Not done: party/lobby screens stay vanilla inside the layer.
+
+### Earlier (Phases 1–3)
+
+Lokesh asked for a fast, slick platform and a language-neutral game contract.
+Plan of record: `~/.claude/plans/ethereal-honking-beaver.md`; decisions in
+the multiplayer skill's `gaming-platform-vision` memory. Phases: perf → SDK v2
+protocol (+WASM) → managed state + adapters + port all 10 games, drop v1 →
+Solid + Vite single-page shell. Worktree `../games-platform-v2`.
+Phase 1 (docs/perf.md, `just perf`): cold PLAY WITH BOTS 4.9 s + tap → 2.2 s,
+no tap; warm 1.8 s → 0.29 s; cold portal 5.7 MB / 30 s → 471 KB / 2.6 s; FCP
+unchanged. Code served from one versioned snapshot; VERSION is now a content
+hash (`just sw-version`, checked by `just test`). Full `just test` green.
+Not met: party.html JS ≤ 300 KB (403 KB, now 426 KB with sdk-host.js) —
+needs Phase 4's bundling.
+Phase 2 (docs/sdk-v2.md): the contract is `sdk/v2/protocol.json`, messages
+over a MessagePort; `lib/sdk-host.js` answers them; the clock, turn-wait,
+host pause and sealing are shell services; WASM allowed (CSP
+'wasm-unsafe-eval', module bytes in `init`); bindings for TS/Rust/Go/Python
+(`just bindings`); examples in JS and Rust; `just test-protocol` (3 peers,
+every message schema-checked). Cap 10 MB; WebRTC is a static validate-game
+failure. Reviewer pass done, findings fixed. Re-measure caught a Phase 1
+gif-fallback blow-up (fixed). Next: Phase 3 (managed state, adapters, port
+the 10 games, drop v1).
+Phase 3 (docs/sdk-v2.md): managed state (lib/sdk-managed.js, `just
+test-managed`), reviewed adversarially and fixed (epochs, the heir's copy,
+leaves, views, banner); adapters + conformance in all 7 lanes (`just
+test-conformance`); web apps on v2 (Locale upgraded at mount). **All nine
+games on v2**: connect4, neon-survival-mp (managed + tick), neon-bid,
+undercover here; battleship, draw-guess, liars-dice, light-cycles, sudoku
+in `../web-games-v2` branch platform-v2 at 2997566 (not pushed; from
+the pinned a1eeebf; Bubble Rush is another session's branch, left alone).
+Full `just test` green with `NEON_PIN_OVERRIDE=lokeshmohanty/web-games=
+2997566…` (v2 community) — the registry pin itself is unchanged.
+Landing order: merge + deploy platform-v2 → web-games PR moves the pin
+(`just propose`) → only then delete sdk/v1 (validate-game warns on sdk 1
+meanwhile). **Lokesh to decide: merging Phases 1–3, the v1 window, and
+whether to start Phase 4 (Solid + Vite SPA, a build step; npm or pnpm?).**
+Known: the Neon Survival preview clip ends early (recorder steering);
+Pyodide's cache is per deploy (re-downloaded after each deploy).
+**Awaiting Lokesh's confirmation before merging either phase to main.**
