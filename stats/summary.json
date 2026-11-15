@@ -1,8 +1,8 @@
 {
- "at": "2026-11-15T09:07:16.207Z",
+ "at": "2026-11-15T11:07:16.456Z",
  "games": {
   "neon-survival-mp": {
-   "played": 30
+   "played": 35
   },
   "lokeshmohanty/tug-of-war": {
    "played": 8
@@ -11,7 +11,7 @@
    "played": 1
   },
   "connect4": {
-   "played": 5
+   "played": 6
   },
   "lokeshmohanty/sudoku": {
    "played": 1
@@ -26,6 +26,15 @@
    "played": 3
   },
   "lokeshmohanty/battleship": {
+   "played": 1
+  },
+  "tic-tac-toe-rust": {
+   "played": 1
+  },
+  "tic-tac-toe-c": {
+   "played": 2
+  },
+  "neon-fission": {
    "played": 1
   }
  }
