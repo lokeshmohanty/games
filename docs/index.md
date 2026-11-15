@@ -17,6 +17,7 @@ questions about this project from this folder alone.
 - [Accounts and the social layer](accounts.md) — sign-in, ranked matches, leaderboards, friends, invites, groups, feedback, the public snapshot; what is stored; the one-time setup
 - [A prompt for contributors' AI](contributor-prompt.md) — paste into an AI assistant to adapt or write a game for the platform
 - [Suggestions](suggestions.md) — formalising and improving the platform: contract, contributors, quality, trust, players, operations
+- [Developing the arcade](development.md) — running it, where the code is, the stack and why, tests, the service worker, previews and icons
 - [The shell is one page](spa.md) — Solid + Vite, the query router, the party kept across views, the build and the generated service worker
 - [The game SDK v2](sdk-v2.md) — the language-neutral message protocol (sdk/v2/protocol.json), shell services, WebAssembly, bindings, examples (branch `platform-v2`)
 - [The game SDK](sdk.md) — framed games: sandbox, bridge protocol, manifest, rules for outside authors (branch `platform`)

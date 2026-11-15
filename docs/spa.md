@@ -137,6 +137,13 @@ contribute, contributors; collections is new (no old page: the nav links
   weigh against lib/styles.css exactly as they did on their own page. A plain `.view-x a` prefix outranked
   `.neon-btn--accent` and turned button text the colour of its background.
 - **The site nav** is lib/nav.js, drawn into `nav[data-nav]` in `onMount`.
+  It is one row on phone and desktop: the tabs Games · Leaderboards ·
+  Community, and a ☰ menu at the right holding Add your game, Theme, sign in
+  or the profile, and the source on GitHub. Community has its own tabs,
+  Collections · Contributors, and opens on Collections. The row's height is
+  reserved in CSS, so the static first frame doesn't jump when it's drawn.
+  This replaced a bar of buttons above the tabs that crowded a phone
+  (2026-11-15).
 - **Room for the pill:** a live party's BACK TO GAME pill gets room at the
   bottom from one rule in lib/styles.css. The party's own top buttons
   (`.top-actions`) hide on every other view.

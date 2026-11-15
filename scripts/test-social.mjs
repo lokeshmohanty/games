@@ -65,7 +65,7 @@ try {
 
 	console.log("\nsocial: the portal and favourites on two devices");
 	await ana.p.goto(page("index.html"));
-	check("the portal names you", (await ana.p.locator(".site-bar .acct-me").textContent({ timeout: TIMEOUT })).includes("Ana Lima"));
+	check("the portal names you", (await ana.p.locator(".site-menu .acct-me").textContent({ timeout: TIMEOUT })).includes("Ana Lima"));
 	check("…and still fits the phone", await noSideScroll(ana.p));
 	check("…with no star or feedback on the cards any more", (await ana.p.locator(".game-card .fav, .game-card .fb").count()) === 0);
 	// Starred from inside the game now (party.js, top right).
@@ -109,7 +109,7 @@ try {
 	// Bo opens another page (the portal); Ana invites from the party screen.
 	const boPortal = await bo.ctx.newPage();
 	await boPortal.goto(page("index.html"));
-	await boPortal.locator(".site-bar .acct-me").waitFor({ timeout: TIMEOUT });
+	await boPortal.locator(".site-menu .acct-me").waitFor({ state: "attached", timeout: TIMEOUT });
 	await ana.p.evaluate(() => window.__party && document.dispatchEvent(new Event("visibilitychange")));
 	await ana.p.reload();
 	await ana.p.locator(".party-code-digits").waitFor({ timeout: TIMEOUT });
