@@ -420,11 +420,14 @@ try {
 		h1: document.querySelector("[data-guide] h1").textContent,
 		h2: [...document.querySelectorAll("[data-guide] h2")].map((h) => h.textContent),
 		code: document.querySelectorAll("[data-guide] pre code").length,
-		sdk: document.querySelector('[data-guide] a[href$="docs/sdk.md"]')?.getAttribute("href"),
+		sdk: document.querySelector('[data-guide] a[href$="docs/sdk-v2.md"]')?.getAttribute("href"),
+		examples: [...document.querySelectorAll('[data-guide] a[href*="sdk/v2/examples/tic-tac-toe-"]')].map((a) => a.getAttribute("href").replace(/.*\/tic-tac-toe-/, "")),
+		plays: [...document.querySelectorAll('[data-guide] a[href*="?game=tic-tac-toe-"]')].map((a) => new URL(a.href).searchParams.get("game")),
 		local: document.querySelector('[data-guide] a[href="contributors.html"]') !== null,
 	}));
 	check("the guide is CONTRIBUTING.md, rendered", guide.h1 === "Putting your game in the arcade" && guide.h2.length >= 4 && guide.code >= 3, guide);
-	check("…repo files link to GitHub, site pages stay here", guide.sdk === "https://github.com/lokeshmohanty/games/blob/main/docs/sdk.md" && guide.local, guide);
+	check("…repo files link to GitHub, site pages stay here", guide.sdk === "https://github.com/lokeshmohanty/games/blob/main/docs/sdk-v2.md" && guide.local, guide);
+	check("…and it lists the seven examples: each one's code on GitHub and a link to play it", guide.examples.join() === "js,html,ts,rust,c,go,python" && guide.plays.join() === "tic-tac-toe-js,tic-tac-toe-html,tic-tac-toe-ts,tic-tac-toe-rust,tic-tac-toe-c,tic-tac-toe-go,tic-tac-toe-python", guide);
 	const unsafe = await p.evaluate(() =>
 		NeonArcade.markdown.render('<img src=x onerror=alert(1)> [x](javascript:alert(1)) **b** `<b>`\n\n```\n<script>\n```'),
 	);
