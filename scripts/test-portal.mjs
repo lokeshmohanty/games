@@ -488,6 +488,47 @@ try {
 	check("Contributors: CHECK FOR UPDATES offers the same for a moved repo", await upd.waitFor({ timeout: TIMEOUT }).then(() => true, () => false));
 	check("…nobody's pull request is opened for them: every link is GitHub's own page", /github\.com\/lokeshmohanty\/games\/edit\//.test(await upd.getAttribute("href")));
 
+	console.log("\nportal: one fetch per preview clip");
+	// A game sits in several sections at once, a card in each: its clip is
+	// fetched once and shared (lib/portal.js clip). Measured with the HTTP
+	// cache off, as on Lokesh's phone, where each card fetched it again
+	// (neon-bid.webm three times, 2026-11-15); the cache did not save it either.
+	const cp = await ctx.newPage();
+	const cdp = await ctx.newCDPSession(cp);
+	await cdp.send("Network.setCacheDisabled", { cacheDisabled: true });
+	const clipRequests = {};
+	cp.on("request", (r) => {
+		const url = r.url();
+		if (!url.startsWith("blob:") && /\.(webm|mp4)$/.test(new URL(url).pathname)) clipRequests[new URL(url).pathname] = (clipRequests[new URL(url).pathname] ?? 0) + 1;
+	});
+	await cp.goto(site.url("index.html"));
+	await cp.waitForSelector(".game-card:visible");
+	await cp.evaluate(() => NeonArcade.catalogs);
+	await cp.waitForTimeout(1500);
+	const firstScreen = await cp.evaluate(() =>
+		[...document.querySelectorAll("video.card-preview")]
+			.filter((v) => !v.paused)
+			.map((v) => ({ game: v.closest(".game-card").dataset.game, src: v.currentSrc, poster: !!v.poster, ready: v.readyState })),
+	);
+	check("at 390x844 the first screen plays its previews, over their posters", firstScreen.length > 0 && firstScreen.every((v) => v.poster && v.src.startsWith("blob:") && v.ready >= 2), firstScreen);
+	await cp.evaluate(async () => {
+		for (const c of document.querySelectorAll(".game-card")) {
+			c.scrollIntoView();
+			await new Promise((r) => setTimeout(r, 80));
+		}
+	});
+	await cp.waitForTimeout(1500);
+	const twice = Object.entries(clipRequests).filter(([, n]) => n > 1);
+	const shared = await cp.evaluate(() => {
+		const by = {};
+		for (const v of document.querySelectorAll("video.card-preview[src]")) (by[v.closest(".game-card").dataset.game] ??= new Set()).add(v.getAttribute("src"));
+		const cards = (id) => document.querySelectorAll(`.game-card[data-game="${CSS.escape(id)}"] video.card-preview[src]`).length;
+		return Object.entries(by).filter(([id]) => cards(id) > 1).map(([id, srcs]) => [id, cards(id), srcs.size]);
+	});
+	check("every card scrolled past: each clip fetched once, however many sections show its game", Object.keys(clipRequests).length >= 5 && !twice.length, { fetched: Object.keys(clipRequests).length, twice });
+	check("…and a game in several sections plays one shared copy in all of them", shared.length > 0 && shared.every(([, , srcs]) => srcs === 1), shared);
+	await cp.close();
+
 	console.log("\nportal: previews when no video plays");
 	// Every video fails (offline, or a browser that plays neither format):
 	// each card shows its ~5 KB poster, still — never the 0.4–1 MB gif.
