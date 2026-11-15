@@ -48,7 +48,19 @@ game folder/
 1. The shell builds the frame (lib/bridge.js `buildFrameDoc`). It inlines
    `sdk/v2/runtime.js`, the arcade's `lib/theme.css` and `lib/styles.css`,
    then the game's page with its scripts and stylesheets. `<html>` carries
-   `data-theme`, `data-mode` and `data-runtime`.
+   `data-theme`, `data-mode` and `data-runtime`. This is two steps
+   (2026-11-15): `buildFrameTemplate` does everything that is the same for
+   every player (the game's page, scripts and stylesheets inlined, the CSP,
+   slots for the runtime's files, the fonts as `neon-font:` marks), and
+   `finishFrameDoc` adds the session's part with string work only: the
+   runtime's files and the fonts from the copies the page holds, the theme on
+   `<html>`, a web app's address. The deploy runs the first step for every
+   game the catalogs register (`scripts/prebuild-frames.mjs`, from
+   `scripts/assemble.mjs`, in headless Chrome) into `frames/<id>.html`,
+   precached; the shell fetches that one file and finishes it. A dev-kit game
+   (`?dev=`), or a site served from source, has none and is built at tap
+   time, by the same function: test-bots checks that every prebuilt frame
+   equals the one the shell would build.
 2. The shell posts `{ t: "neon:port" }` to the frame's window, with a
    `MessagePort` attached. This is the only message that is not on the port.
 3. The frame says `hello`. The shell answers with `init`: the party, the

@@ -13,6 +13,10 @@
 //   games/  assets/  registry/  community/ (if fetched)
 //   manifest, contributor.json
 //
+// Then every game the catalogs register gets its frame prebuilt into
+// frames/<id>.html (scripts/prebuild-frames.mjs): the shell fetches that one
+// file at tap time instead of the game's page and scripts.
+//
 // Then dist/sw.js is written from sw.js: its precache list is every file the
 // shell needs offline — the template's own entries (icons, fonts, a few
 // extras) plus, derived, every built chunk, every lib/ script and stylesheet,
@@ -24,9 +28,10 @@
 //   node scripts/assemble.mjs        (pnpm build runs it after vite build)
 
 import { createHash } from "node:crypto";
-import { cpSync, existsSync, globSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, globSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { basename, dirname, join, posix, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { prebuildFrames } from "./prebuild-frames.mjs";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const DIST = process.env.NEON_DIST ? resolve(ROOT, process.env.NEON_DIST) : join(ROOT, "dist");
@@ -54,6 +59,11 @@ for (const f of new Set(["manifest.webmanifest", "contributor.json", ...rootList
 mkdirSync(join(DIST, "sdk", "v1"), { recursive: true });
 cpSync(join(ROOT, "sdk", "dev-server.mjs"), join(DIST, "sdk", "v1", "dev-server.mjs"));
 
+// ---- the game frames, prebuilt ------------------------------------------------
+
+rmSync(join(DIST, "frames"), { recursive: true, force: true });
+const frames = await prebuildFrames(DIST);
+
 // ---- the service worker -------------------------------------------------------
 
 const template = readFileSync(join(ROOT, "sw.js"), "utf8");
@@ -65,6 +75,8 @@ const derived = [
 	...files("app/*.{js,css}"),
 	...files("*.html"),
 	...files("lib/*.{js,css}"),
+	// Each game's prebuilt frame (above): what the shell mounts, offline too.
+	...frames.written,
 	// The portal's preview posters (~5 KB each; the gifs and videos are not).
 	...files("assets/*.webp"),
 	// Everything a game folder ships — its RULES.md, a wasm module, images —
@@ -119,4 +131,4 @@ const sw = template
 	.replace(/^const RUNTIME = "[^"]*";.*$/m, `const RUNTIME = "${runtime}";`)
 	.replace(/const SHELL = \[[\s\S]*?\];/, `const SHELL = [\n\t// Written by scripts/assemble.mjs from what was built and copied.\n${list}\n];`);
 writeFileSync(join(DIST, "sw.js"), sw);
-console.log(`assemble: dist/ ready — ${shell.length} files precached, ${communityFiles.length} community, VERSION ${version}`);
+console.log(`assemble: dist/ ready — ${shell.length} files precached (${frames.written.length} prebuilt frames), ${communityFiles.length} community, VERSION ${version}`);

@@ -36,7 +36,7 @@ import { createGzip } from "node:zlib";
 import { createRequire } from "node:module";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { gameFrame, serve } from "./serve.mjs";
+import { PORT_OFFSET, gameFrame, serve } from "./serve.mjs";
 
 const require = createRequire(import.meta.url);
 const arg = (name, dflt) => {
@@ -224,7 +224,7 @@ const median = (xs) => {
 };
 
 const origin = await serve(8790);
-const site = await throttledProxy(origin.base, 8791);
+const site = await throttledProxy(origin.base, 8791 + PORT_OFFSET);
 const browser = await pw.chromium.launch({ executablePath: chrome, args: ["--no-sandbox"] });
 const results = { label: LABEL, date: new Date().toISOString(), runs: RUNS, network: NETWORK, cpu: 4, scenarios: {} };
 

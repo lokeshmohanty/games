@@ -138,6 +138,34 @@ page.on("pageerror", (err) => {
 });
 
 try {
+	// ------------------------------------------------------- prebuilt frames
+	//
+	// Every game below is mounted from its prebuilt frame (frames/<id>.html,
+	// scripts/prebuild-frames.mjs). It must be exactly what the shell builds
+	// at tap time, which is what the dev kit and validate-game check.
+
+	console.log("\nframes: every game's prebuilt frame is the one the shell would build");
+	await page.goto(url("index.html"));
+	await page.waitForFunction(() => window.NeonArcade?.catalogs, null, { timeout: TIMEOUT });
+	const frames = await page.evaluate(async () => {
+		await NeonArcade.catalogs;
+		const out = [];
+		for (const def of [...NeonArcade.CATALOG, ...(NeonArcade.UNLISTED ?? [])]) {
+			const g = NeonArcade.getGame(def.id);
+			const at = g && NeonArcade.prebuiltFrame(g);
+			if (!at) continue;
+			const res = await fetch(at);
+			const prebuilt = res.ok ? await res.text() : null;
+			out.push({ id: g.id, prebuilt: !!prebuilt, same: prebuilt === (await NeonArcade.buildFrameTemplate(g)) });
+		}
+		return out;
+	});
+	if (process.env.NEON_SERVE_SRC) console.log("  skip (serving the repo: nothing is prebuilt)");
+	else {
+		check(`every listed and unlisted game has one (${frames.length})`, frames.length >= 10 && frames.every((f) => f.prebuilt), JSON.stringify(frames.filter((f) => !f.prebuilt)));
+		check("…identical to the template built at tap time", frames.every((f) => f.same), JSON.stringify(frames.filter((f) => !f.same).map((f) => f.id)));
+	}
+
 	// ------------------------------------------------------------ connect 4
 	//
 	// The bot with something to prove: it is the only one here that has to be
