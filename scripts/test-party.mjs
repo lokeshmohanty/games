@@ -273,7 +273,7 @@ try {
 		await dg.waitFor({ timeout: TIMEOUT });
 		await dg.click();
 
-		// Draw & Guess runs framed (lokeshmohanty/arcade-games): its DOM is
+		// Draw & Guess runs framed (lokeshmohanty/web-games): its DOM is
 		// read in each page's game frame.
 		const F = new Map();
 		for (const page of [host, p2, p3]) {

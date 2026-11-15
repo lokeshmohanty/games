@@ -7,7 +7,7 @@
 *Started 2026-11-13 on branch `platform`. Plan of record:
 `~/.claude/plans/1-a-b-2-generic-whistle.md`. Status: the bridge, the frame
 loader, the catalogs and the registry are built; all ten games run framed
-(four here, six from `lokeshmohanty/arcade-games`). The dev kit,
+(four here, six from `lokeshmohanty/web-games`). The dev kit,
 `validate-game`, the PR check and the deploy step are built too; the portal
 does not list community games yet (**planned** below).*
 
@@ -209,7 +209,7 @@ Community ids are `<owner>/<id>` — `lokeshmohanty/battleship` — in party
 state and URLs (`party.html?game=lokeshmohanty%2Fbattleship`). The old pages
 (`battleship.html` …) redirect there.
 
-**`lokeshmohanty/arcade-games`** holds the games its registry entry lists
+**`lokeshmohanty/web-games`** holds the games its registry entry lists
 (Onitama left out 2026-11-13: a recreation of a published game; Tug of War
 retired 2026-11-14: still in that repo, no longer listed in the registry), registered exactly like an outsider's
 repo (branch `import`, not yet pushed). Its rules tests load the platform

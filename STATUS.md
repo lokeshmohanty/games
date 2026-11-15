@@ -13,13 +13,13 @@ separate `TODO.md`.*
 
 ## Tug of War retired (2026-11-14)
 
-Lokesh chose "remove only": dropped from registry/lokeshmohanty/arcade-games.json
+Lokesh chose "remove only": dropped from registry/lokeshmohanty/web-games.json
 (the pin stays a1eeebf, the published commit); its gif, recorder scenario, bots
 and party tests and doc mentions are gone; `tug-of-war.html` redirects to the
 portal (an invite hash goes to the party); sw.js v39. Started by the ended
 session games-99, finished by games-e1.
 **Pending, not shipped:** Bubble Rush, games-99's replacement game, is commit
-0d0c40b on the local `bubble-rush` branch of ../arcade-games, unpushed and
+0d0c40b on the local `bubble-rush` branch of ../web-games, unpushed and
 unreviewed. Shipping it = review + play it, push that repo, then re-pin here
 with "bubble-rush" in the games list.
 
@@ -49,7 +49,7 @@ tree, uncommitted) also bumped to v38 and must take v39.
 
 ## Platform features round on `platform-features`, NOT merged (2026-11-15)
 
-Phase 4 merged and live (a59d8c4); PR #4 merged (arcade-games on v2).
+Phase 4 merged and live (a59d8c4); PR #4 merged (web-games on v2).
 This round (15bda63 + groundwork b39ae41): SDK v1 dropped; SINGLE PLAYER /
 MULTI-PLAYER (SAME DEVICE for party); home sections (favourites, popular,
 categories); Collections page + contributor/collection favourites; RULES.md
@@ -60,7 +60,7 @@ docs/suggestions.md. Reviewed adversarially, fixed; `just test` + worker/
 social/accounts green. **Awaiting Lokesh:** (1) merge; (2) worker: from
 worker/, `wrangler d1 migrations apply arcade --remote` then `wrangler
 deploy` (solo runs, favourites ids); VERIFY the Cloudflare plan (Sudoku
-generation can exceed the free plan's 10 ms); (3) push arcade-games-v2
+generation can exceed the free plan's 10 ms); (3) push web-games-v2
 platform-v2 (33334bc: RULES.md + seeded Sudoku) and move the pin by PR.
 
 ## Platform v2 refactor — Phases 1–3 merged and live (c40dd19, 2026-11-14); Phase 4 done on `platform-spa`, NOT merged (2026-11-15)
@@ -73,7 +73,7 @@ redirect stubs, scripts/assemble.mjs builds dist/ and generates sw.js
 Perf: portal cold FCP 0.44 s, bots to frame 2.05 s, shell JS 194 KB decoded
 (was 426). Reviewed adversarially, fixed. `just test` green; worker/social/
 accounts green against v2 community. **Awaiting Lokesh's confirmation to
-merge Phase 4.** PR #4 (arcade-games pin → its v2 commit 2997566) is open,
+merge Phase 4.** PR #4 (web-games pin → its v2 commit 2997566) is open,
 checks green, for Lokesh to merge; then delete sdk/v1 (his call: drop once
 the pin moves). Not done: party/lobby screens stay vanilla inside the layer.
 
@@ -105,11 +105,11 @@ leaves, views, banner); adapters + conformance in all 7 lanes (`just
 test-conformance`); web apps on v2 (Locale upgraded at mount). **All nine
 games on v2**: connect4, neon-survival-mp (managed + tick), neon-bid,
 undercover here; battleship, draw-guess, liars-dice, light-cycles, sudoku
-in `../arcade-games-v2` branch platform-v2 at 2997566 (not pushed; from
+in `../web-games-v2` branch platform-v2 at 2997566 (not pushed; from
 the pinned a1eeebf; Bubble Rush is another session's branch, left alone).
-Full `just test` green with `NEON_PIN_OVERRIDE=lokeshmohanty/arcade-games=
+Full `just test` green with `NEON_PIN_OVERRIDE=lokeshmohanty/web-games=
 2997566…` (v2 community) — the registry pin itself is unchanged.
-Landing order: merge + deploy platform-v2 → arcade-games PR moves the pin
+Landing order: merge + deploy platform-v2 → web-games PR moves the pin
 (`just propose`) → only then delete sdk/v1 (validate-game warns on sdk 1
 meanwhile). **Lokesh to decide: merging Phases 1–3, the v1 window, and
 whether to start Phase 4 (Solid + Vite SPA, a build step; npm or pnpm?).**

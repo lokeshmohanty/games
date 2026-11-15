@@ -122,7 +122,7 @@ the leaderboard view shows a strip: Races · Easy · alone · … (`?level=`).
 **Sudoku, verified — within the free plan's 10 ms.** The game deals attempt
 k of a puzzle from its own random stream (`streamOf(key, k)`): its full grid
 first, `solutionFor(key, k)`, then the cells it takes away while the puzzle
-keeps exactly one solution (arcade-games `sudoku/sudoku-rules.js`, commit
+keeps exactly one solution (web-games `sudoku/sudoku-rules.js`, commit
 b90aafb; the key is `seedKey(seed, level)`, or `dailyKey(date, level)`). Its
 solo result carries `proof: { start, level, daily, attempt, grid }`. The
 puzzle having one solution, the only grid that solves it is its full grid,
@@ -151,7 +151,7 @@ the game's generator changes, the copy must change with it: `just
 test-accounts` compares the server's `solutionFor` with the grid the game's
 `generate()` deals, for the attempt it used, for 236 puzzles (seeds and
 dailies at every difficulty) and every attempt of one seed, when
-`../arcade-games-v2` is checked out.
+`../web-games-v2` is checked out.
 
 **CPU (Lokesh, 2026-11-15: everything within the Workers free plan, 10 ms of
 CPU per request and per cron run).** Measured in Node, warm (JIT), and with
@@ -168,9 +168,9 @@ CPU, and are not in these:
 | Sign-in, sessions, vault | HMAC and AES-GCM on short strings: well under 1 ms | — |
 
 **Until the Sudoku pin moves.** The arcade serves the pinned Sudoku
-(registry `lokeshmohanty/arcade-games.json`, commit 2997566), which ignores
+(registry `lokeshmohanty/web-games.json`, commit 2997566), which ignores
 the seed and sends no proof, so a solo Sudoku is refused ("…has none")
-until arcade-games b90aafb is pushed and the pin moves to it. That commit
+until web-games b90aafb is pushed and the pin moves to it. That commit
 also changes every puzzle generate() deals, today's daily included.
 
 **What it does not stop.** A player who waits out the clock and then

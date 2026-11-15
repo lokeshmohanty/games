@@ -1,7 +1,7 @@
 // worker/api/sudoku.js — the server's check of a solo Sudoku run.
 //
 // COPIED, NOT IMPORTED: everything between the two "copy" lines below is
-// sudoku/sudoku-rules.js lines 12–145 from lokeshmohanty/arcade-games
+// sudoku/sudoku-rules.js lines 12–145 from lokeshmohanty/web-games
 // (branch platform-v2, commit b90aafb), one tab of indent removed: the grid,
 // the seeded random streams and the randomized full-grid search, up to
 // solutionFor(). Not the removal, not the uniqueness checks — those cost up
@@ -16,7 +16,7 @@
 // check. The proof names k. If the game's generator ever changes, this copy
 // must change with it and the pin must move to that commit;
 // scripts/test-accounts.mjs compares solutionFor here with the game's
-// generate() for many seeds whenever ../arcade-games-v2 is checked out.
+// generate() for many seeds whenever ../web-games-v2 is checked out.
 //
 // What is checked (verifySudoku), cheapest first: the difficulty, how the
 // puzzle was dealt (from the run's seed, or the daily puzzle of a date near

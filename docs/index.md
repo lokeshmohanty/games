@@ -454,7 +454,7 @@ silently sending in the clear. A game with a secret should refuse to deal on
 
 ### The worked example: Battleship
 
-`arcade-games: battleship/battleship.js` is what this was built for, and it shows the pattern in
+`web-games: battleship/battleship.js` is what this was built for, and it shows the pattern in
 full. Nobody holds anybody else's fleet — not even the host. Each player commits
 to a fleet before a shot is fired, answers hit-or-miss for their *own* board
 during play, and opens the commitment at the end.

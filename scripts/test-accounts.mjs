@@ -461,7 +461,7 @@ try {
 		// The server's solutionFor is a copy of the game's (worker/api/sudoku.js):
 		// the grid the game deals must be the one the server computes, for the
 		// attempt the game actually used.
-		const RULES = new URL("../../arcade-games-v2/sudoku/sudoku-rules.js", import.meta.url);
+		const RULES = new URL("../../web-games-v2/sudoku/sudoku-rules.js", import.meta.url);
 		if (existsSync(RULES)) {
 			new Function(readFileSync(RULES, "utf8"))();
 			const G = globalThis.sudokuRules;
@@ -484,7 +484,7 @@ try {
 			}
 			check(`the server's solutionFor is the grid the game deals (${n} puzzles, attempts ${[...attempts].sort((x, y) => x - y).join(",")} used; every attempt of one seed)`, diff.length === 0, diff.join(" "));
 			check("…and the game's ATTEMPTS is the server's", G.ATTEMPTS === SU.ATTEMPTS, G.ATTEMPTS);
-		} else console.log("  skip the server's generator against the game's: ../arcade-games-v2 is not checked out");
+		} else console.log("  skip the server's generator against the game's: ../web-games-v2 is not checked out");
 
 		const GAME = "lokeshmohanty/sudoku";
 		const age = (run, ms) => call("POST", "/api/admin/age-run", { body: { run, ms } });
