@@ -861,6 +861,7 @@ try {
 		const fia = await person("Fia");
 		const gus = await person("Gil");
 		const me = (await call("GET", "/api/me", { token: fia.token })).body;
+		me.friendCode ??= "NOCODE22"; // a server without friend codes: fail the checks, not the run
 		check("an account has a short friend code", /^[A-HJKMNP-Z2-9]{8}$/.test(me.friendCode ?? ""), me.friendCode);
 		check("…the same one every time", (await call("GET", "/api/me", { token: fia.token })).body.friendCode === me.friendCode);
 		const dashed = `${me.friendCode.slice(0, 4)}-${me.friendCode.slice(4)}`.toLowerCase();
@@ -957,23 +958,23 @@ try {
 		check("inviting a friend with no page open: the same answer", r.status === 200 && r.body.invited === true && r.body.delivered === undefined, r.body);
 		let waiting = await call("GET", "/api/invites", { token: g.token });
 		check("…the invite waits for their next visit", waiting.body.invites?.length === 1 && waiting.body.invites[0].code === "654321" && waiting.body.invites[0].from.id === h.id && waiting.body.invites[0].from.name === "Hux", waiting.body);
-		check("…only for them", (await call("GET", "/api/invites", { token: m.token })).body.invites.length === 0);
+		check("…only for them", (await call("GET", "/api/invites", { token: m.token })).body.invites?.length === 0);
 		check("inviting the same friend again at once is refused", (await call("POST", `/api/friends/${g.id}/invite`, { token: h.token, body: { code: "654321" } })).status === 429);
-		check("NOT NOW (or JOIN) clears it", (await call("DELETE", `/api/invites/${h.id}`, { token: g.token })).status === 200 && (await call("GET", "/api/invites", { token: g.token })).body.invites.length === 0);
+		check("NOT NOW (or JOIN) clears it", (await call("DELETE", `/api/invites/${h.id}`, { token: g.token })).status === 200 && (await call("GET", "/api/invites", { token: g.token })).body.invites?.length === 0);
 		await call("POST", `/api/friends/${m.id}/invite`, { token: h.token, body: { code: "111222" } });
 		await sleep(4300); // INVITE_TTL_MS is 4 s here (10 minutes for real)
-		check("an invite left waiting expires", (await call("GET", "/api/invites", { token: m.token })).body.invites.length === 0);
+		check("an invite left waiting expires", (await call("GET", "/api/invites", { token: m.token })).body.invites?.length === 0);
 		await call("POST", `/api/friends/${h.id}/mute`, { token: m.token });
-		check("muting a friend: still a friend, marked muted", (await call("GET", "/api/friends", { token: m.token })).body.friends.find((p) => p.id === h.id)?.muted === true);
+		check("muting a friend: still a friend, marked muted", (await call("GET", "/api/friends", { token: m.token })).body.friends?.find((p) => p.id === h.id)?.muted === true);
 		const ear = await listen(m.token);
 		const muted = await call("POST", `/api/friends/${m.id}/invite`, { token: h.token, body: { code: "333444" } });
 		await sleep(400);
-		check("…their invite answers the same, but is neither pushed nor kept", muted.body.invited === true && !ear.heard.some((x) => x.t === "invite") && (await call("GET", "/api/invites", { token: m.token })).body.invites.length === 0, { muted: muted.body, heard: ear.heard });
+		check("…their invite answers the same, but is neither pushed nor kept", muted.body.invited === true && !ear.heard.some((x) => x.t === "invite") && (await call("GET", "/api/invites", { token: m.token })).body.invites?.length === 0, { muted: muted.body, heard: ear.heard });
 		ear.close();
 		await call("DELETE", `/api/friends/${h.id}/mute`, { token: m.token });
-		check("…and unmuting", (await call("GET", "/api/friends", { token: m.token })).body.friends.find((p) => p.id === h.id)?.muted === false);
+		check("…and unmuting", (await call("GET", "/api/friends", { token: m.token })).body.friends?.find((p) => p.id === h.id)?.muted === false);
 		await call("DELETE", `/api/friends/${g.id}`, { token: h.token });
-		check("unfriending drops their waiting invites", (await call("GET", "/api/invites", { token: g.token })).body.invites.length === 0);
+		check("unfriending drops their waiting invites", (await call("GET", "/api/invites", { token: g.token })).body.invites?.length === 0);
 	}
 
 	console.log("\naccounts: a hidden player — befriended by link, seen by friends, private elsewhere");
@@ -1052,13 +1053,13 @@ try {
 		await call("POST", `/api/groups/${g.id}/owner`, { token: m1.token, body: { account: o.id } });
 		const left = await call("DELETE", `/api/groups/${g.id}/members/${o.id}`, { token: o.token });
 		const after = (await call("GET", `/api/groups/${g.id}`, { token: m1.token })).body;
-		check("the owner may leave: the longest-standing member owns it", left.body.removed === true && after.owner === m1.id && after.members.length === 2, after);
+		check("the owner may leave: the longest-standing member owns it", left.body.removed === true && after.owner === m1.id && after.members?.length === 2, after);
 
 		g = (await call("POST", "/api/groups", { token: m2.token, body: { name: "Duo" } })).body;
 		await call("POST", "/api/groups/join", { token: j.token, body: { code: g.code } });
 		await call("DELETE", "/api/me", { token: m2.token });
 		const kept = await call("GET", `/api/groups/${g.id}`, { token: j.token });
-		check("an owner deleting their account leaves the group to the next member", kept.status === 200 && kept.body.owner === j.id && kept.body.members.length === 1, kept.body);
+		check("an owner deleting their account leaves the group to the next member", kept.status === 200 && kept.body.owner === j.id && kept.body.members?.length === 1, kept.body);
 		const solo = (await call("POST", "/api/groups", { token: o.token, body: { name: "Just me" } })).body;
 		await call("DELETE", `/api/groups/${solo.id}/members/${o.id}`, { token: o.token });
 		check("…and the last member leaving deletes it", (await call("GET", `/api/groups/${solo.id}`, { token: o.token })).status === 404);
@@ -1077,11 +1078,11 @@ try {
 	console.log("\naccounts: a profile's boards say their own kind and unit");
 	{
 		const prof = await call("GET", `/api/u/${A}`);
-		const lc = prof.body.ratings.find((r) => r.game === "lokeshmohanty/light-cycles@alone");
+		const lc = prof.body.ratings?.find((r) => r.game === "lokeshmohanty/light-cycles@alone");
 		check("Light Cycles alone: best score, in seconds", lc?.kind === "coop" && lc.unit === "s", lc);
 		const mine = await call("GET", "/api/me/matches", { token: ana });
-		check("…on your own profile too", mine.body.ratings.find((r) => r.game === "lokeshmohanty/light-cycles@alone")?.unit === "s");
-		const su = mine.body.ratings.find((r) => r.game.startsWith("lokeshmohanty/sudoku@"));
+		check("…on your own profile too", mine.body.ratings?.find((r) => r.game === "lokeshmohanty/light-cycles@alone")?.unit === "s");
+		const su = mine.body.ratings?.find((r) => r.game.startsWith("lokeshmohanty/sudoku@"));
 		check("Sudoku's level boards: a time", !su || su.kind === "time", su);
 	}
 
