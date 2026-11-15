@@ -110,14 +110,19 @@ export default function Portal() {
 				</button>
 			</div>
 
-			{/* My Games: Recently played, then ★ Favourites (a section below);
-			    with neither, how to star a game. */}
+			{/* My Games: Recently played (with PLAY SOMETHING), then ★ Favourites
+			    (a section below); with neither, how to star a game. */}
 			<div class="recent" data-recent hidden>
-				<h2>Recently played</h2>
+				<div class="section-head">
+					<h2>Recently played</h2>
+					<a class="quick-play-btn" data-quick href="./?page=games&tab=all">
+						PLAY SOMETHING
+					</a>
+				</div>
 				<div class="recent-list" />
 			</div>
 			<div class="my-empty" data-my-empty hidden>
-				<p>Nothing here yet. Tap ☆ on a game's card, or at the top of a game, and it lands here. So do the games you play.</p>
+				<p>Nothing here yet. Star a game from inside it, with ★, and it appears here. So do the games you play.</p>
 				<div class="my-empty-actions">
 					<a class="quick-play-btn" data-quick href="./?page=games&tab=all">
 						PLAY SOMETHING

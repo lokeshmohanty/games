@@ -493,9 +493,6 @@
     letter-spacing: 1.5px;
     margin: 0 0 8px;
   }
-  :where(.view-portal) .section-head {
-    margin-bottom: 8px;
-  }
   /* The rows reach the screen's edges as they scroll (the 3vw beside the
      94% column), while their first card lines up with everything above:
      the cards' rows and Recently played alike. Percentages of margin and
@@ -609,48 +606,28 @@
   margin-top: -6px;
 }
 
-/* ☆ on a card (lib/portal.js): over the preview's corner, above the card's
-   two choices; the glyph small, the tap 44px. */
-:where(.view-portal) .card-fav {
-  position: absolute;
-  top: 0;
-  right: 0;
-  z-index: 2;
-  width: 44px;
-  height: 44px;
-  display: grid;
-  place-items: center;
-  padding: 0;
-  border: none;
-  background: none;
-  color: var(--ink);
-  font-size: 1.1rem;
-  line-height: 1;
-  cursor: pointer;
-}
-/* The glyph on a disc of the page's colour, so it reads over any preview. */
-:where(.view-portal) .card-fav::before {
-  content: "";
-  position: absolute;
-  inset: 7px;
-  z-index: -1;
-  border-radius: 50%;
-  background: color-mix(in oklch, var(--bg) 72%, transparent);
-}
-:where(.view-portal) .card-fav[aria-pressed="true"] {
-  color: var(--accent);
-}
-
-/* Popular's heading, with PLAY SOMETHING at its right. */
+/* A heading with PLAY SOMETHING at its right: Popular's, and My Games'
+   (Recently played's, else ★ Favourites'). Too narrow for both on one
+   line (320px), the button goes under the heading. */
 :where(.view-portal) .section-head {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
+  gap: 8px 12px;
   margin-bottom: 14px;
 }
-:where(.view-portal) .section-head .section-title {
+:where(.view-portal) .section-head .section-title,
+:where(.view-portal) .recent .section-head h2 {
   margin: 0;
+}
+:where(.view-portal) .recent .section-head {
+  margin-bottom: 8px;
+}
+@media (max-width: 560px) {
+  :where(.view-portal) .section-head {
+    margin-bottom: 8px;
+  }
 }
 /* PLAY SOMETHING (lib/portal.js quickPick): a popular game, single player,
    at once. A modest pill, not a banner. */

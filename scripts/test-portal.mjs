@@ -358,10 +358,12 @@ console.log("\nportal: My Games · All Games");
 // has a favourite or a recent game, decided before the first paint.
 {
 	/** A phone of its own, with this device's storage set before the first load. */
-	const phone = async (storage = {}, { width = 390, height = 844 } = {}) => {
+	const phone = async (storage = {}, { width = 390, height = 844, init = null, counts = null } = {}) => {
 		const c = await browser.newContext({ viewport: { width, height }, hasTouch: true, isMobile: true });
-		// No play counts: Popular (and PLAY SOMETHING's pool) in the catalog's order.
-		await c.route("**/api/stats/summary", (r) => r.abort());
+		if (init) await c.addInitScript(init);
+		// No play counts (unless the test plays them): Popular (and PLAY
+		// SOMETHING's pool) in the catalog's order.
+		await c.route("**/api/stats/summary", counts ?? ((r) => r.abort()));
 		await c.route("**/summary.json", (r) => r.abort());
 		const pg = await c.newPage();
 		pg.on("pageerror", (e) => check(`no page error (${e.message})`, false));
@@ -445,7 +447,7 @@ console.log("\nportal: My Games · All Games");
 			sections: document.querySelectorAll("[data-section]:not([hidden])").length,
 			search: document.querySelector(".search").hidden,
 		}));
-		check("My Games is ./?page=games&tab=mine, and with nothing of yours it says how to star (☆ on a card or in a game)", tabOf(pg) === "mine" && (await subOn(pg)) === "My Games" && /☆/.test(empty.text) && /card/.test(empty.text) && /game/.test(empty.text) && !empty.sections && empty.search, { url: pg.url(), empty });
+		check("My Games is ./?page=games&tab=mine, and with nothing of yours it says how to star (★, from inside a game)", tabOf(pg) === "mine" && (await subOn(pg)) === "My Games" && /★/.test(empty.text) && /inside/.test(empty.text) && !/card/.test(empty.text) && !empty.sections && empty.search, { url: pg.url(), empty });
 		check("…with PLAY SOMETHING (a game's single player) and ALL GAMES", /^\.\/\?game=[^&]+&fresh=1/.test(empty.quick ?? "") && (await pg.locator("[data-my-empty] .my-empty-all").textContent()) === "ALL GAMES", empty.quick);
 		await pg.goBack();
 		await pg.locator('[data-section="popular"]:not([hidden]) .game-card').first().waitFor({ timeout: TIMEOUT });
@@ -457,21 +459,33 @@ console.log("\nportal: My Games · All Games");
 		await pg.locator('[data-section="popular"]:not([hidden]) .game-card').first().waitFor({ timeout: TIMEOUT });
 		check("…and the empty state's ALL GAMES opens All Games", tabOf(pg) === "all", pg.url());
 
-		// ☆ on a card: in My Games at once; ☆ again: gone at once.
-		const star = pg.locator('[data-section="popular"] .game-card[data-game="connect4"] .card-fav');
-		await star.click();
-		const starred = await pg.evaluate(() => ({
-			fav: NeonArcade.stats.isFav("connect4"),
-			pressed: [...document.querySelectorAll('.game-card[data-game="connect4"] .card-fav')].map((b) => b.getAttribute("aria-pressed")),
-			open: !!document.querySelector('.game-card[data-game="connect4"].is-open'),
-		}));
-		check("☆ on an All Games card stars the game (every card of it), without opening the card", starred.fav && starred.pressed.length > 1 && starred.pressed.every((p) => p === "true") && !starred.open, starred);
-		check("…stays on All Games (starring never moves you)", tabOf(pg) === "all");
+		// Stars come from inside a game (Lokesh, 2026-11-16: "Only inside
+		// games"), not from the cards; each lands in My Games at once.
+		check("no star on any card: a game is starred only from inside it", (await pg.locator(".game-card button, .game-card [aria-pressed]").count()) === 0 && !(await pg.locator(".game-card").allTextContents()).some((t) => /[☆★]/.test(t)));
+		const favs = () => pg.locator('[data-section="favs"] .game-card').evaluateAll((cs) => cs.map((c) => c.dataset.game).join());
+		await pg.evaluate(() => NeonArcade.stats.toggleFav("connect4")); // as the game's ★ does
+		check("…a star from a game leaves you where you are", tabOf(pg) === "all");
 		await pg.locator(".site-subtab", { hasText: "My Games" }).click();
 		await pg.locator('[data-section="favs"]:not([hidden]) .game-card').first().waitFor({ timeout: TIMEOUT });
-		check("…and it is in My Games", (await pg.locator('[data-section="favs"] .game-card').evaluateAll((cs) => cs.map((c) => c.dataset.game).join())) === "connect4" && (await pg.locator("[data-my-empty]").isHidden()));
-		await pg.locator('[data-section="favs"] .game-card[data-game="connect4"] .card-fav').click();
-		check("★ again on My Games: gone at once, and the empty state is back", (await pg.locator('[data-section="favs"]').isHidden()) && (await pg.locator("[data-my-empty]").isVisible()) && !(await pg.evaluate(() => NeonArcade.stats.isFav("connect4"))));
+		check("…and the game is in My Games", (await favs()) === "connect4" && (await pg.locator("[data-my-empty]").isHidden()));
+		await pg.evaluate(() => NeonArcade.stats.toggleFav("connect4"));
+		check("unstarred, it is gone from My Games at once, and the empty state is back", (await pg.locator('[data-section="favs"]').isHidden()) && (await pg.locator("[data-my-empty]").isVisible()));
+
+		// A card left open on My Games, then All Games, a star changed, and
+		// back: the row is current (review 2026-11-16: the open card survived
+		// the switch, held its row back, and My Games froze).
+		await pg.evaluate(() => ["connect4", "neon-bid"].forEach((id) => NeonArcade.stats.toggleFav(id)));
+		await pg.locator('[data-section="favs"] .game-card[data-game="connect4"]').waitFor({ timeout: TIMEOUT });
+		await pg.locator('[data-section="favs"] .game-card[data-game="connect4"] h3').tap();
+		const opened = await pg.locator('[data-section="favs"] .game-card.is-open').count();
+		await pg.locator(".site-subtab", { hasText: "All Games" }).click();
+		await pg.locator('[data-section="popular"]:not([hidden]) .game-card').first().waitFor({ timeout: TIMEOUT });
+		await pg.evaluate(() => NeonArcade.stats.toggleFav("connect4"));
+		await pg.locator(".site-subtab", { hasText: "My Games" }).click();
+		await pg.locator('[data-section="favs"]:not([hidden]) .game-card').first().waitFor({ timeout: TIMEOUT });
+		await pg.waitForTimeout(300);
+		const back = { favs: await favs(), open: await pg.locator(".game-card.is-open").count() };
+		check("a card left open, a sub-tab away, a star changed: My Games is current on return", opened === 1 && back.favs === "neon-bid" && back.open === 0, { opened, back });
 		await c.close();
 	}
 
@@ -496,17 +510,9 @@ console.log("\nportal: My Games · All Games");
 		});
 		check("its pool: the 5 most played with bots (or one-device and playable alone), no Python game", pool.real.length === 5 && pool.real.every((g) => (g.bots || (g.local && g.alone)) && g.runtime !== "python"), pool.real);
 		check("…never a Python game, a people-only game or a one-phone game for a crowd, however popular", pool.withFakes.length === 5 && !pool.withFakes.some((g) => ["py-game", "people-game", "crowd-phone"].includes(g.id)), pool.withFakes);
-		// A pick per visit, never the last visit's again.
-		const picks = [];
-		for (let i = 0; i < 4; i++) {
-			await pg.goto(site.url(ALL));
-			const q = pg.locator('[data-section="popular"] [data-quick]');
-			await q.waitFor({ timeout: TIMEOUT });
-			picks.push(await q.getAttribute("data-game"));
-		}
 		const ids = pool.real.map((g) => g.id);
-		check("…a pick each visit from that pool, never the same twice running", picks.every((id) => ids.includes(id)) && picks.every((id, i) => i === 0 || id !== picks[i - 1]), picks);
 		const q = pg.locator('[data-section="popular"] [data-quick]');
+		check("…a pick from that pool", ids.includes(await q.getAttribute("data-game")));
 		const box = await q.boundingBox();
 		const picked = await q.getAttribute("data-game");
 		await q.click();
@@ -520,11 +526,49 @@ console.log("\nportal: My Games · All Games");
 		check("…one tap starts it in single player: that game, you and its bots only, no lobby", game.game === picked && game.alone && !game.lobby && box.height >= 44, { game, picked, h: box.height });
 		await c.close();
 	}
+	// Never the last visit's pick again: Math.random() always 0 would offer
+	// the pool's first game every time, but for that rule.
+	{
+		const { c, pg } = await phone({}, { init: () => (Math.random = () => 0) });
+		const picks = [];
+		for (let i = 0; i < 6; i++) {
+			await pg.goto(site.url(ALL));
+			picks.push(await pg.locator('[data-section="popular"] [data-quick]').getAttribute("data-game", { timeout: TIMEOUT }));
+		}
+		check("PLAY SOMETHING never offers the last visit's game again (Math.random fixed at 0: 6 visits)", picks.every((id) => !!id) && picks.every((id, i) => i === 0 || id !== picks[i - 1]) && new Set(picks).size === 2, picks);
+		await c.close();
+	}
+	// The pick is chosen once per visit: play counts landing late reorder the
+	// pool, never the button under a finger; and the game saved as the last
+	// one is the game that was shown.
+	{
+		let release;
+		const held = new Promise((r) => (release = r));
+		const { c, pg } = await phone({}, {
+			init: () => (Math.random = () => 0.999), // the pool's last game: the first to drop out
+			counts: async (route) => {
+				await held;
+				await summary(route).catch(() => {});
+			},
+		});
+		await pg.goto(site.url(ALL));
+		const q = pg.locator('[data-section="popular"] [data-quick]');
+		const first = await q.getAttribute("data-game", { timeout: TIMEOUT });
+		const poolBefore = await pg.evaluate(() => NeonArcade.portal.quickPool().map((g) => g.id));
+		release();
+		await pg.waitForFunction(() => !!localStorage.getItem("neon.plays"), null, { timeout: TIMEOUT });
+		await pg.waitForTimeout(400);
+		const after = await pg.evaluate(() => ({ shown: document.querySelector('[data-section="popular"] [data-quick]').dataset.game, saved: localStorage.getItem("neon.quick"), pool: NeonArcade.portal.quickPool().map((g) => g.id) }));
+		check("PLAY SOMETHING keeps its pick when late counts reorder the pool (out of it, even)", after.shown === first && !after.pool.includes(first) && after.saved === first, { first, poolBefore, after });
+		await c.close();
+	}
 
-	// The layout, at 390x844 and on Lokesh's phone (354x696, DPR 3.5).
+	// The layout, at 390x844, on Lokesh's phone (354x696, DPR 3.5) and on
+	// the narrowest phone we meet (320x640).
 	for (const [width, height] of [
 		[390, 844],
 		[354, 696],
+		[320, 640],
 	]) {
 		const { c, pg } = await phone({ "neon.recent": RECENT, "neon.favs": ["connect4", "lokeshmohanty/sudoku", "neon-bid", "contributor:lokeshmohanty"] }, { width, height });
 		for (const t of ["mine", "all"]) {
@@ -534,7 +578,7 @@ console.log("\nportal: My Games · All Games");
 			const L = await pg.evaluate(() => {
 				const shown = (n) => n.getClientRects().length > 0 && getComputedStyle(n).visibility !== "hidden";
 				const r = (n) => n.getBoundingClientRect();
-				const targets = [...document.querySelectorAll(".party-banner .play-btn, .site-tab, .site-subtab, .site-menu-btn, .recent-game, .fav-more-item, [data-quick], .card-fav, .search input, .my-empty-all")]
+				const targets = [...document.querySelectorAll(".party-banner .play-btn, .site-tab, .site-subtab, .site-menu-btn, .recent-game, .fav-more-item, [data-quick], .search input, .my-empty-all")]
 					.filter(shown)
 					.map((n) => ({ what: n.className || n.tagName, text: n.textContent.trim().slice(0, 20), h: Math.round(r(n).height) }));
 				// Every line a card says, on the cards the first rows show.
@@ -578,11 +622,13 @@ console.log("\nportal: My Games · All Games");
 					recent,
 					search: search ? Math.round(r(search).left) : null,
 					title: Math.round(r(document.querySelector(".portal-section:not([hidden]) .section-title")).left),
+					// PLAY SOMETHING where this sub-tab shows it: Popular's heading, or Recently played's.
+					quick: [...document.querySelectorAll("[data-quick]")].filter(shown).map((a) => ({ where: a.closest("[data-section], [data-recent]")?.dataset.section ?? "recent", h: Math.round(r(a).height), left: Math.round(r(a).left), right: Math.round(r(a).right), game: a.dataset.game })),
 				};
 			});
 			const at = `${width}x${height} ${t === "mine" ? "My Games" : "All Games"}`;
 			check(`${at}: no sideways scroll`, !L.sideways);
-			check(`${at}: every tap target 44px tall (START A PARTY, JOIN WITH A CODE, sub-tabs, chips, ☆, PLAY SOMETHING…)`, L.targets.length >= 8 && L.targets.every((x) => x.h >= 44), L.targets.filter((x) => x.h < 44));
+			check(`${at}: every tap target 44px tall (START A PARTY, JOIN WITH A CODE, sub-tabs, chips, PLAY SOMETHING…)`, L.targets.length >= 8 && L.targets.every((x) => x.h >= 44), L.targets.filter((x) => x.h < 44));
 			check(`${at}: every line on a card 12px or more`, L.text.length > 0 && L.text.every((x) => x.size >= 12), L.text.filter((x) => x.size < 12));
 			check(`${at}: …and the meta line still on one line`, L.metaLines <= 1, L.metaLines);
 			check(`${at}: a row is two whole cards and the edge of the next, scrolling to the screen's edges`, L.rowWhole === 2 && L.rowPeeks && L.rowEdges[0] === 0 && L.rowEdges[1] === L.vw, L);
@@ -592,9 +638,26 @@ console.log("\nportal: My Games · All Games");
 				const R = L.recent;
 				check(`${at}: Recently played lines up with the cards and its heading`, !!R && Math.abs(R.chip - L.card) <= 1 && Math.abs(R.heading - L.card) <= 1, { R, card: L.card });
 				check(`${at}: …scrolls to the screen's edges, its last chip all the way in view`, !!R && R.left === 0 && R.right === L.vw && (!R.scrolls || R.end <= L.vw), R);
+				check(`${at}: PLAY SOMETHING for a returning player too, in Recently played's heading, 44px and on screen`, L.quick.length === 1 && L.quick[0].where === "recent" && L.quick[0].h >= 44 && L.quick[0].left >= 0 && L.quick[0].right <= L.vw && !!L.quick[0].game, L.quick);
 				check(`${at}: …with no scrollbar, like the card rows`, !!R && R.bar === "none" && R.barH === 0, R);
 			}
 		}
+		await c.close();
+	}
+	// My Games with favourites but nothing played yet: PLAY SOMETHING in ★ Favourites' heading.
+	for (const width of [390, 354, 320]) {
+		const { c, pg } = await phone({ "neon.favs": ["connect4", "neon-bid"] }, { width, height: 700 });
+		await pg.goto(site.url("index.html"));
+		await pg.locator('[data-section="favs"]:not([hidden]) .game-card').first().waitFor({ timeout: TIMEOUT });
+		const q = await pg.evaluate(() =>
+			[...document.querySelectorAll("[data-quick]")]
+				.filter((a) => a.getClientRects().length)
+				.map((a) => {
+					const r = a.getBoundingClientRect();
+					return { where: a.closest("[data-section]")?.dataset.section ?? null, h: Math.round(r.height), left: Math.round(r.left), right: Math.round(r.right), sideways: document.documentElement.scrollWidth > innerWidth };
+				}),
+		);
+		check(`${width}px My Games, favourites only: PLAY SOMETHING in ★ Favourites' heading, 44px, on screen`, tabOf(pg) === "mine" && q.length === 1 && q[0].where === "favs" && q[0].h >= 44 && q[0].left >= 0 && q[0].right <= width && !q[0].sideways, q);
 		await c.close();
 	}
 }

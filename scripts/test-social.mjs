@@ -67,9 +67,15 @@ try {
 	await ana.p.goto(page("index.html"));
 	check("the portal names you", (await ana.p.locator(".site-menu .acct-me").textContent({ timeout: TIMEOUT })).includes("Ana Lima"));
 	check("…and still fits the phone", await noSideScroll(ana.p));
-	// Feedback only from inside a game; a star on the card too since
-	// 2026-11-15 (☆ → My Games), beside the one inside the game.
-	check("…with no feedback on the cards, and ☆ on each", (await ana.p.locator(".game-card .fb").count()) === 0 && (await ana.p.locator(".game-card").count()) === (await ana.p.locator(".game-card .card-fav").count()));
+	// Starred and given feedback only from inside a game (Lokesh: "Only
+	// inside games", 2026-11-14 and 2026-11-16). A card has no button at all,
+	// so any star or feedback control would be one; nor a ☆ or ★ in its text.
+	const cardControls = await ana.p.evaluate(() => ({
+		cards: document.querySelectorAll(".game-card").length,
+		controls: document.querySelectorAll(".game-card :is(button, [aria-pressed], .fav, .fb, .card-fav, .top-fav)").length,
+		stars: [...document.querySelectorAll(".game-card")].filter((c) => /[☆★]/.test(c.textContent)).length,
+	}));
+	check("…with no star or feedback on the cards", cardControls.cards > 0 && cardControls.controls === 0 && cardControls.stars === 0, cardControls);
 	// Starred from inside the game now (party.js, top right).
 	await ana.p.goto(page("?party", "&game=connect4"));
 	await ana.p.locator(".top-fav").click({ timeout: TIMEOUT });

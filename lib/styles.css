@@ -81,7 +81,7 @@ body {
   color: var(--ink-3);
   cursor: not-allowed;
 }
-/* The same pill used as a link (e.g. "ALL GAMES" on the disconnect screen). */
+/* The same pill used as a link (e.g. "GAMES" on the disconnect screen). */
 a.neon-btn {
   display: inline-flex;
   align-items: center;
@@ -827,7 +827,7 @@ canvas {
 .top-fav[aria-pressed="true"] {
   border-color: var(--warn);
 }
-/* A phone has room beside ALL GAMES and PARTY for the icons only; the
+/* A phone has room beside ← GAMES and PARTY for the icons only; the
    names stay as each button's label and tooltip. */
 @media (max-width: 559px) {
   .top-btn .label {

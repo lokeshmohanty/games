@@ -1166,14 +1166,14 @@ try {
 			.catch(() => false);
 		check("…and the new reply connects", linked);
 
-		// One page (docs/spa.md): "← All games" only moves to the portal — the
+		// One page (docs/spa.md): "← Games" only moves to the portal — the
 		// party stays, and BACK TO PARTY returns to it, nobody asked or told.
 		const guestName = await replier.evaluate(() => window.__game.room.self().name);
 		await replier.locator("a.portal-link").click();
 		const kept = await replier
 			.waitForFunction(() => document.body.dataset.view === "portal" && !window.__party.room.closed, null, { timeout: TIMEOUT })
 			.then(() => true, () => false);
-		check("← All games moves to the portal and keeps the party", kept && (await replier.locator("dialog.neon-ask[open]").count()) === 0);
+		check("← Games moves to the portal and keeps the party", kept && (await replier.locator("dialog.neon-ask[open]").count()) === 0);
 		await replier.locator(".back-to-game").click();
 		await replier.waitForFunction(() => document.body.dataset.view === "party", null, { timeout: TIMEOUT });
 		// LEAVE PARTY walks out: with somebody else in it, it asks first, and

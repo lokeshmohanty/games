@@ -35,7 +35,7 @@
  * ICE candidate pair from getStats on both ends, who offered the link and
  * whether it is the role-swapped retry. Then: the guest reloads and
  * reconnects (twice); the host reloads and reconnects; the guest leaves
- * (ALL GAMES, confirmed) and the host sees it at once.
+ * (GAMES, confirmed) and the host sees it at once.
  * If ICE finds no path, the expected product behaviour is the explicit
  * "no-route" message at ~15–20 s — that is asserted instead, and the NAT
  * classification says whose mapping is to blame.
@@ -106,7 +106,7 @@ const role = args[0] && !args[0].startsWith("--") ? args[0] : "pair";
 // browsers see them on loopback — docs/network-testing.md).
 const SITE = (opt("site", "") || process.env.SITE || "https://www.lokeshmohanty.in/games/").replace(/\/?$/, "/");
 const PARTY = SITE + "?party";
-// The portal, where ALL GAMES lands: the shell with no query (index.html on
+// The portal, where GAMES lands: the shell with no query (index.html on
 // a deployment from before 2026-11-15).
 // The portal: ./, or ./ with its sub-tab named (src/router.ts portalAddress).
 const PORTAL = (u) => /\/(index\.html)?$/.test(new URL(u).pathname) && /^(\?page=games&tab=(mine|all))?$/.test(new URL(u).search);
@@ -622,10 +622,10 @@ function driver(init = {}) {
 			case "stats":
 				return { pairs: await pairInfo(page) };
 			case "leave": {
-				// ALL GAMES, confirmed in the page's own question: the
+				// GAMES, confirmed in the page's own question: the
 				// deliberate leave (lobby.js leaveParty).
 				const t = Date.now();
-				await page.locator("a.neon-btn", { hasText: /^ALL GAMES$/ }).click();
+				await page.locator("a.neon-btn", { hasText: /^GAMES$/ }).click();
 				await page.locator('dialog.neon-ask[open] [data-ask="yes"]').click({ timeout: 5000 }).catch(() => {});
 				await page.waitForURL(PORTAL, { timeout: 15_000 }).catch(() => {});
 				return { ms: Date.now() - t, url: page.url(), token: await page.evaluate(() => localStorage.getItem("neon.room")).catch(() => "?") };
@@ -1015,7 +1015,7 @@ async function pairRole() {
 			}
 		}
 
-		// 4. Guest leaves (ALL GAMES, confirmed); the host sees it at once.
+		// 4. Guest leaves (GAMES, confirmed); the host sees it at once.
 		t = Date.now();
 		const left = G.ask({ c: "leave" }, 30_000);
 		const gone = await H.ask({ c: "alone", ms: 20_000 }, 40_000);

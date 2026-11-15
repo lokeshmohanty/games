@@ -14,7 +14,7 @@
  *
  *   1. guessing different codes from one IP is blocked (IpGate), and a
  *      second IP is not;
- *   2. NEW PARTY and ALL GAMES really release the seat before navigating;
+ *   2. NEW PARTY and GAMES really release the seat before navigating;
  *   3. the reconnect screen after a rejoin nobody answered: RETRY and
  *      START A NEW PARTY both work;
  *   4. a `#c=` link opened in a tab with a live party asks first;
@@ -442,7 +442,7 @@ try {
 	}
 
 	// ----------------------------------- 2. a leave lands before navigating
-	console.log("\nworker: NEW PARTY and ALL GAMES release the seat before navigating");
+	console.log("\nworker: NEW PARTY and GAMES release the seat before navigating");
 	{
 		// Over loopback the unwaited leave has not been seen to get lost
 		// (the second half measures it); over a real network an unload can
@@ -474,7 +474,7 @@ try {
 				});
 			}
 			const dialog = nextDialog(page, true);
-			await page.locator(portal ? "a.neon-btn" : "button.neon-btn", { hasText: portal ? /^ALL GAMES$/ : /^NEW PARTY$/ }).first().click();
+			await page.locator(portal ? "a.neon-btn" : "button.neon-btn", { hasText: portal ? /^GAMES$/ : /^NEW PARTY$/ }).first().click();
 			await dialog;
 			// NEW PARTY lands on the very URL it left (./?fresh=1), so
 			// its arrival is the new party's code, not the URL.
@@ -487,7 +487,7 @@ try {
 			const verdict = await claimOf(t.code, t.id);
 			if (!raced && verdict === "no-room") released++;
 			if (raced && verdict !== "no-room") racedLost++;
-			if (!raced && verdict !== "no-room") console.log(`    (round ${round}: ${portal ? "ALL GAMES" : "NEW PARTY"} left the room ${verdict})`);
+			if (!raced && verdict !== "no-room") console.log(`    (round ${round}: ${portal ? "GAMES" : "NEW PARTY"} left the room ${verdict})`);
 		}
 		check(`every leave reached the server before the page went (${released}/${ROUNDS})`, released === ROUNDS);
 		console.log(`  ·    without the wait, ${racedLost}/${ROUNDS} leaves were lost`);

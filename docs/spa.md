@@ -75,12 +75,14 @@ the sections of the sub-tab showing.
   therefore the drawn row's, and test-portal compares the two (with the
   app's code blocked, then loaded): same boxes, same lit sub-tab, the title
   unmoved. **Change nav.js's tabs and that markup together.**
-- **PLAY SOMETHING** (Popular's heading, and My Games' empty state) is the
-  SINGLE PLAYER address of a game from the five most played that one person
-  can play now (bots, or one-device and playable alone), never a people-only
-  or Python game; at random per visit, never the last visit's pick
-  (`neon.quick`). Being the card's own address, it plays offline after one
-  visit (test-pwa).
+- **PLAY SOMETHING** (Popular's heading; on My Games, Recently played's
+  heading, else ★ Favourites', and the empty state) is the SINGLE PLAYER
+  address of a game from the five most played that one person can play now
+  (bots, or one-device and playable alone), never a people-only or Python
+  game. Picked at random once per visit and kept for the visit, even when
+  late play counts reorder the pool; saved as the last pick (`neon.quick`)
+  once it is on screen, and the next visit never offers it again. Being the
+  card's own address, it plays offline after one visit (test-pwa).
 
 Every same-origin link to the shell (`./` or `index.html`, with any query
 and hash), including those in the shell's vanilla code, is caught by one
@@ -97,7 +99,7 @@ stage.
 - **Other views** only hide it. The room, the connections and the running
   game carry on, and a fixed **BACK TO GAME** (or **BACK TO PARTY**) pill
   returns to it.
-- **Leaving.** In the shell, "← All games" moves to the portal, and the
+- **Leaving.** In the shell, "← Games" moves to the portal, and the
   party screen's **LEAVE PARTY** is the way out (lib/lobby.js asks first,
   as before).
 - **Back.** The guard entry is pushed only on the party view. Back from the
