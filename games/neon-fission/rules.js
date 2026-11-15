@@ -170,11 +170,17 @@
 		return { cell, seat: s, waves, bursts };
 	}
 
-	/** The seat on turn misses it (the host's SKIP TURN): it counts as their turn. */
+	/**
+	 * The seat on turn misses it (the host's SKIP TURN). A seat that has never
+	 * played is spared once: its second skip counts as its turn, so one who
+	 * stepped away is not knocked out at once, and one who is gone still is.
+	 */
 	function skip(g) {
 		if (g.winner !== null) return false;
-		g.played[g.turn] = true;
 		const s = g.turn;
+		const skips = (g.skips ||= []);
+		skips[s] = (skips[s] || 0) + 1;
+		if (skips[s] >= 2) g.played[s] = true;
 		settle(g);
 		if (g.winner === null) g.turn = nextSeat(g, s);
 		return true;

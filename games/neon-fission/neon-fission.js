@@ -70,6 +70,9 @@ arcade.managed({
 		const g = s.g;
 		if (g.winner !== null) return "the game is over";
 		if (moverOf(g.turn) !== by) return "not your turn";
+		// A tap carries the move it was meant for: on one phone the same person
+		// moves for several seats, so a late second tap must not land on the next.
+		if (action.n !== undefined && action.n !== g.moves) return "that move has passed";
 		const before = { owner: [...g.owner], count: [...g.count] };
 		const r = R.play(g, action.cell);
 		if (typeof r === "string") return r;
@@ -460,7 +463,7 @@ canvas.addEventListener("click", (e) => {
 	const i = r * view.cols + c;
 	const o = view.owner[i];
 	if (o !== -1 && o !== view.turn) return arcade.toast("That cell is taken: play an empty one or your own.", "warn");
-	arcade.act({ cell: i });
+	arcade.act({ cell: i, n: view.moves });
 });
 
 addEventListener("resize", resize);

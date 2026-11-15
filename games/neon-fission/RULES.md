@@ -21,6 +21,7 @@ Fill cells with orbs until they burst. A burst takes over the cells next to it, 
 
 ## Winning
 - Once you have had your first turn, owning no cells puts you out.
+- If you miss your first turn (the host skips it), you get one more round. Missing it twice counts as a turn.
 - The last player with cells on the grid wins. The rest are ranked by how long they lasted.
 - A chain stops as soon as one player owns every orb on the grid.
 - If a player leaves, their cells stay until someone takes them.
