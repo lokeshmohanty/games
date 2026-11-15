@@ -300,13 +300,15 @@ const catalog = await (async () => {
 	const probe = await ctx.newPage();
 	await probe.goto(`${BASE}/party.html`);
 	await probe.waitForFunction(() => window.NeonArcade?.listGames, null, { timeout: 20_000 });
+	// The listed games, then the unlisted ones (the SDK's other examples):
+	// playable by their address, on no list.
 	const games = await probe.evaluate(() =>
-		window.NeonArcade.listGames().map((g) => ({ id: g.id, name: g.name, bots: !!g.bots, local: !!g.local, runtime: g.runtime ?? null })),
+		[...window.NeonArcade.listGames(), ...(window.NeonArcade.UNLISTED ?? []).map((u) => window.NeonArcade.getGame(u.id))].map((g) => ({ id: g.id, name: g.name, bots: !!g.bots, local: !!g.local, runtime: g.runtime ?? null, listed: g.listed !== false })),
 	);
 	await probe.close();
 	return games;
 })();
-const registered = catalog.map((g) => g.id);
+const registered = catalog.filter((g) => g.listed).map((g) => g.id);
 
 // --------------------------------------------------------- the portal, small
 //
@@ -657,6 +659,13 @@ console.log("\npwa: every game offline in single player");
 
 	/** From the portal, offline: the card's SINGLE PLAYER. Null when the card has none. */
 	const openSolo = async (id) => {
+		// An unlisted game has no card: its SINGLE PLAYER address, as the
+		// "Add your game" guide links it.
+		if (catalog.find((g) => g.id === id)?.listed === false) {
+			await page.goto(`${BASE}/?game=${id}&fresh=1&mode=bots`, { waitUntil: "domcontentloaded" });
+			await page.waitForSelector(".game-frame", { timeout: 15_000 });
+			return gameFrame(page, 20_000);
+		}
 		await page.goto(`${BASE}/index.html`, { waitUntil: "domcontentloaded" });
 		const card = page.locator(`.game-card[data-game="${id}"]`).first();
 		await card.waitFor({ timeout: 10_000 });
@@ -673,7 +682,8 @@ console.log("\npwa: every game offline in single player");
 		await page.waitForSelector(".game-card", { timeout: 10_000 }).catch(() => {});
 		return page.evaluate(() => [...new Set([...document.querySelectorAll(".game-card")].map((c) => c.dataset.game))]);
 	})();
-	check(`offline, the portal lists all ${catalog.length} games (community and examples too)`, portalCards.length === catalog.length, `${portalCards.length}: ${catalog.map((g) => g.id).filter((id) => !portalCards.includes(id)).join(", ")} missing`);
+	const listed = catalog.filter((g) => g.listed);
+	check(`offline, the portal lists all ${listed.length} listed games (community too), and no unlisted example`, portalCards.length === listed.length && listed.every((g) => portalCards.includes(g.id)), `${portalCards.length}: ${listed.map((g) => g.id).filter((id) => !portalCards.includes(id)).join(", ")} missing`);
 
 	const vendored = existsSync(join(SITE, "sdk", "v1", "pyodide", "pyodide.asm.wasm"));
 	const python = [];

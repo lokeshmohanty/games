@@ -19,9 +19,12 @@ const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const OUT = join(ROOT, "lib", "catalog.js");
 
 // The arcade's games, then the SDK's managed Tic Tac Toe in every language
-// (sdk/v2/examples/tic-tac-toe-<lane>, category "examples"), playable like
-// any game (Lokesh, 2026-11-15) and copied into the site by assemble.mjs.
+// (sdk/v2/examples/tic-tac-toe-<lane>), copied into the site by assemble.mjs.
+// Only the JavaScript one is listed, as Tic Tac Toe under Strategy; the
+// others are playable by their address (the "Add your game" guide links each)
+// but on no list (Lokesh, 2026-11-15: "only one should be").
 const EXAMPLES = "sdk/v2/examples";
+const LISTED_EXAMPLE = "tic-tac-toe-js";
 const files = [
 	...readdirSync(join(ROOT, "games"))
 		.sort()
@@ -34,7 +37,7 @@ const files = [
 
 let games;
 try {
-	games = catalogEntries(files, ROOT);
+	games = catalogEntries(files, ROOT).map((g) => (g.path.startsWith(EXAMPLES) && g.id !== LISTED_EXAMPLE ? { ...g, listed: false } : g));
 } catch (err) {
 	console.error(err.message);
 	process.exit(1);

@@ -29,9 +29,8 @@ const shown = () => p.evaluate(() => [...document.querySelectorAll(".games-grid:
 
 try {
 	console.log("\nportal: the home screen");
-	// The play counts, played here (the server's /api/stats/summary). An
-	// example played most of all is still no contender for Popular.
-	const HOME_PLAYS = { "lokeshmohanty/sudoku": 50, undercover: 40, connect4: 30, "tic-tac-toe-js": 999 };
+	// The play counts, played here (the server's /api/stats/summary).
+	const HOME_PLAYS = { "lokeshmohanty/sudoku": 50, undercover: 40, connect4: 30 };
 	const summary = (route) =>
 		route.fulfill({ status: 200, contentType: "application/json", headers: { "Access-Control-Allow-Origin": "*" }, body: JSON.stringify({ games: Object.fromEntries(Object.entries(HOME_PLAYS).map(([g, played]) => [g, { played }])) }) });
 	await p.route("**/api/stats/summary", summary);
@@ -47,12 +46,14 @@ try {
 		}));
 	await p.waitForFunction(() => document.querySelector('[data-section="popular"] .game-card')?.dataset.game === "lokeshmohanty/sudoku", null, { timeout: TIMEOUT }).catch(() => {});
 	let h = await home();
-	check("no favourites: the section is hidden; then Popular and the categories, in order", h.order.join() === "popular,arcade,party,strategy,solo,examples", h.order);
-	check("…titled Popular, Arcade, Party, Strategy, Puzzle / Single player, Examples", h.titles.join() === "Popular,Arcade,Party,Strategy,Puzzle / Single player,Examples", h.titles);
+	check("no favourites: the section is hidden; then Popular and the categories, in order", h.order.join() === "popular,arcade,party,strategy,solo", h.order);
+	check("…titled Popular, Arcade, Party, Strategy, Puzzle / Single player", h.titles.join() === "Popular,Arcade,Party,Strategy,Puzzle / Single player", h.titles);
+	const ttt = await p.evaluate(() => ({ listed: NeonArcade.CATALOG.filter((g) => g.path?.startsWith("sdk/v2/examples/")).map((g) => [g.id, g.title, g.categories.join()]), unlisted: (NeonArcade.UNLISTED ?? []).map((g) => g.id), cards: [...document.querySelectorAll(".game-card")].map((c) => c.dataset.game).filter((id) => id.startsWith("tic-tac-toe")) }));
+	check("one Tic Tac Toe, under Strategy; the other six examples on no list", ttt.listed.length === 1 && ttt.listed[0].join() === "tic-tac-toe-js,Tic Tac Toe,strategy" && ttt.unlisted.length === 6 && new Set(ttt.cards).size === 1 && ttt.cards[0] === "tic-tac-toe-js" && h.rows.strategy.includes("tic-tac-toe-js"), ttt);
 	check("Popular: 3 to 5 games", h.rows.popular.length >= 3 && h.rows.popular.length <= 5, h.rows.popular);
-	const nonExamples = h.catalog.filter((g) => !g.cats.every((c) => c === "examples")).map((g) => g.id);
-	check("…the most played first, then the catalog's order; no examples", h.rows.popular.join() === ["lokeshmohanty/sudoku", "undercover", "connect4", ...nonExamples.filter((id) => !["lokeshmohanty/sudoku", "undercover", "connect4"].includes(id))].slice(0, 5).join(), h.rows.popular);
-	const belongs = { arcade: (g) => g.cats.includes("arcade"), party: (g) => g.cats.includes("party"), strategy: (g) => g.cats.includes("strategy"), solo: (g) => g.cats.includes("puzzle") || g.min <= 1, examples: (g) => g.cats.includes("examples") };
+	const nonExamples = h.catalog.map((g) => g.id);
+	check("…the most played first, then the catalog's order", h.rows.popular.join() === ["lokeshmohanty/sudoku", "undercover", "connect4", ...nonExamples.filter((id) => !["lokeshmohanty/sudoku", "undercover", "connect4"].includes(id))].slice(0, 5).join(), h.rows.popular);
+	const belongs = { arcade: (g) => g.cats.includes("arcade"), party: (g) => g.cats.includes("party"), strategy: (g) => g.cats.includes("strategy"), solo: (g) => g.cats.includes("puzzle") || g.min <= 1 };
 	for (const [id, fits] of Object.entries(belongs)) {
 		const want = h.catalog.filter(fits).map((g) => g.id);
 		check(`${id}: exactly its games, in the catalog's order`, want.length > 0 && h.rows[id].join() === want.join(), { got: h.rows[id], want });
@@ -71,11 +72,11 @@ try {
 	check("Puzzle / Single player: Sudoku, and what one person can start alone", h.rows.solo.includes("lokeshmohanty/sudoku") && h.rows.solo.includes("neon-survival-mp") && !h.rows.solo.includes("connect4"), h.rows.solo);
 	const rows = await p.evaluate(() => ({
 		sideways: document.documentElement.scrollWidth > innerWidth,
-		examples: (({ scrollWidth, clientWidth }) => ({ scrollWidth, clientWidth }))(document.querySelector('[data-section="examples"] .section-row')),
+		widest: [...document.querySelectorAll(".portal-section:not([hidden]) .section-row")].map(({ scrollWidth, clientWidth }) => ({ scrollWidth, clientWidth })).sort((a, b) => b.scrollWidth - a.scrollWidth)[0],
 		inside: [...document.querySelectorAll(".portal-section")].every((s) => s.getBoundingClientRect().right <= innerWidth && s.getBoundingClientRect().left >= 0),
 		cards: [...document.querySelectorAll(".game-card")].every((c) => c.dataset.tags.trim().length > 0),
 	}));
-	check("on a phone a section is one row that scrolls sideways inside itself", rows.examples.scrollWidth > rows.examples.clientWidth, rows.examples);
+	check("on a phone a section is one row that scrolls sideways inside itself", rows.widest.scrollWidth > rows.widest.clientWidth, rows.widest);
 	check("…and the page never does", !rows.sideways && rows.inside, rows);
 	// Only what is on screen plays: a card per game per section is dozens.
 	await p.waitForTimeout(1500);
@@ -100,7 +101,7 @@ try {
 	await p.reload();
 	await p.waitForSelector('[data-section="popular"] .game-card');
 	await p.evaluate(() => NeonArcade.catalogs);
-	check("no counts at all (offline, first visit): the catalog's first five, examples aside", (await home()).rows.popular.join() === nonExamples.slice(0, 5).join(), (await home()).rows.popular);
+	check("no counts at all (offline, first visit): the catalog's first five", (await home()).rows.popular.join() === nonExamples.slice(0, 5).join(), (await home()).rows.popular);
 	await p.unroute("**/api/stats/summary");
 	await p.unroute("**/summary.json");
 	// Favourites: games starred (lib/stats.js), in the order starred; a starred
@@ -109,7 +110,7 @@ try {
 	await p.reload();
 	await p.waitForSelector('[data-section="favs"]:not([hidden]) .game-card');
 	h = await home();
-	check("favourites first, above Popular", h.order.join() === "favs,popular,arcade,party,strategy,solo,examples", h.order);
+	check("favourites first, above Popular", h.order.join() === "favs,popular,arcade,party,strategy,solo", h.order);
 	check("…the games starred, in that order (a game no longer listed left out)", h.rows.favs.join() === "lokeshmohanty/sudoku,connect4", h.rows.favs);
 	const more = await p.locator('[data-section="favs"] .fav-more-item').allTextContents();
 	check("…and the contributors and collections starred", more.join() === "lokeshmohanty,lokeshmohanty/web-games", more);
@@ -134,7 +135,7 @@ try {
 	check("a word finds a game by name", (await search("swarm")).join() === "Neon Survival", await search("swarm"));
 	check("…in one grid, in place of the sections and Recently played", await p.evaluate(() => document.querySelector("[data-sections]").hidden && document.querySelector("[data-recent]").hidden && !document.querySelector(".games-grid").hidden));
 	check("…or by its description", (await search("impostor")).includes("Undercover"));
-	check("type:duel — the head-to-head games, examples among them", (await search("type:duel")).includes("Battleship") && (await search("type:duel")).includes("Connect 4") && !(await search("type:duel")).includes("Undercover"));
+	check("type:duel — the head-to-head games, Tic Tac Toe among them", (await search("type:duel")).includes("Battleship") && (await search("type:duel")).includes("Connect 4") && (await search("type:duel")).includes("Tic Tac Toe") && !(await search("type:duel")).includes("Undercover"));
 	check("tag:quick", (await search("tag:quick")).length > 0 && (await search("tag:quick")).length < all);
 	check("author:lokeshmohanty — everything here is theirs", (await search("author:lokeshmohanty")).length === all);
 	check("players:10 — only what seats ten", (await search("players:10")).join() === "Undercover", await search("players:10"));
@@ -244,29 +245,59 @@ try {
 	check("…and opening another card closes the first", !(await tcard.evaluate((c) => c.classList.contains("is-open"))));
 	await touch.close();
 
-	console.log("\nportal: the bar and tabs on every page");
-	for (const [page, tab] of [
-		["index.html", "Games"],
-		["leaderboard.html", "Leaderboards"],
-		["contributors.html", "Contributors"],
-		["./?page=collections", "Collections"],
-		["contribute.html", null],
-		["profile.html", null],
+	console.log("\nportal: the tabs and the menu on every page");
+	// One row: Games · Leaderboards · Community, and ☰ (Lokesh, 2026-11-15:
+	// the buttons above the tabs crowded a phone). Community has its own tabs.
+	for (const [page, tab, sub] of [
+		["index.html", "Games", null],
+		["leaderboard.html", "Leaderboards", null],
+		["contributors.html", "Community", "Contributors"],
+		["./?page=collections", "Community", "Collections"],
+		["contribute.html", null, null],
+		["profile.html", null, null],
 	]) {
 		await p.goto(site.url(page));
-		await p.locator(".site-bar").waitFor({ timeout: TIMEOUT });
-		const nav = await p.evaluate(() => ({
-			gh: document.querySelector('.site-left a[href="https://github.com/lokeshmohanty/games"]') !== null,
-			add: document.querySelector('.site-left a[href="contribute.html"]')?.textContent,
-			on: document.querySelector(".site-tab.is-on")?.textContent ?? null,
-			tabs: [...document.querySelectorAll(".site-tab")].map((t) => t.textContent),
-			sideways: document.documentElement.scrollWidth > innerWidth,
-			leftX: document.querySelector(".site-left").getBoundingClientRect().left,
-		}));
-		check(`${page}: GitHub and "Add your game" at the top left`, nav.gh && nav.add === "Add your game" && nav.leftX < 40, nav);
-		check(`${page}: tabs Games · Leaderboards · Contributors · Collections${tab ? `, on ${tab}` : ""}`, nav.tabs.join() === "Games,Leaderboards,Contributors,Collections" && nav.on === tab, nav);
+		await p.locator(".site-row").waitFor({ timeout: TIMEOUT });
+		const read = () =>
+			p.evaluate(() => {
+				const box = (s) => document.querySelector(s)?.getBoundingClientRect();
+				const list = document.querySelector(".site-menu-list");
+				return {
+					tabs: [...document.querySelectorAll(".site-tab")].map((t) => t.textContent),
+					on: document.querySelector(".site-tab.is-on")?.textContent ?? null,
+					subs: [...document.querySelectorAll(".site-subtab")].map((t) => t.textContent),
+					subOn: document.querySelector(".site-subtab.is-on")?.textContent ?? null,
+					oneRow: new Set([...document.querySelectorAll(".site-tab, .site-menu-btn")].map((n) => Math.round(n.getBoundingClientRect().bottom / 10))).size <= 2 && box(".site-menu-btn").top < box(".site-tab").bottom,
+					btn: { w: Math.round(box(".site-menu-btn").width), h: Math.round(box(".site-menu-btn").height), right: Math.round(box(".site-menu-btn").right) },
+					open: !list.hidden,
+					expanded: document.querySelector(".site-menu-btn").getAttribute("aria-expanded"),
+					items: [...list.querySelectorAll(".site-menu-item")].map((i) => ({ text: i.textContent.trim(), href: i.getAttribute("href"), h: Math.round(i.getBoundingClientRect().height) })),
+					listBox: list.hidden ? null : { left: Math.round(box(".site-menu-list").left), right: Math.round(box(".site-menu-list").right) },
+					sideways: document.documentElement.scrollWidth > innerWidth,
+				};
+			});
+		let nav = await read();
+		check(`${page}: tabs Games · Leaderboards · Community${tab ? `, on ${tab}` : ""}`, nav.tabs.join() === "Games,Leaderboards,Community" && nav.on === tab, nav);
+		check(`${page}: ${sub ? `Community's tabs Collections · Contributors, on ${sub}` : "no Community tabs"}`, sub ? nav.subs.join() === "Collections,Contributors" && nav.subOn === sub : nav.subs.length === 0, nav);
+		check(`${page}: tabs and ☰ in one row, ☰ 44px at the right, closed`, nav.oneRow && nav.btn.w >= 44 && nav.btn.h >= 44 && nav.btn.right > 340 && !nav.open && nav.expanded === "false", nav);
+		await p.locator(".site-menu-btn").click();
+		nav = await read();
+		const texts = nav.items.map((i) => i.text);
+		check(`${page}: ☰ lists Add your game, Theme, account and GitHub, 44px each, inside the phone`, nav.open && nav.expanded === "true" && texts[0] === "Add your game" && texts[1] === "Theme" && /^(Sign in|Profile|.+)$/.test(texts[2]) && texts.at(-1) === "Source on GitHub" && nav.items[0].href === "contribute.html" && nav.items.at(-1).href === "https://github.com/lokeshmohanty/games" && nav.items.every((i) => i.h >= 44) && nav.listBox.left >= 0 && nav.listBox.right <= 390, nav);
 		check(`${page}: fits the phone`, !nav.sideways);
+		await p.keyboard.press("Escape");
+		check(`${page}: Esc closes it, focus back on ☰`, await p.evaluate(() => document.querySelector(".site-menu-list").hidden && document.activeElement === document.querySelector(".site-menu-btn")));
 	}
+	await p.goto(site.url("index.html"));
+	await p.locator(".site-menu-btn").click();
+	await p.mouse.click(200, 600);
+	check("a tap outside closes the menu", await p.evaluate(() => document.querySelector(".site-menu-list").hidden));
+	await p.locator(".site-tab", { hasText: "Community" }).click();
+	await p.locator(".site-subtab.is-on").waitFor({ timeout: TIMEOUT });
+	check("Community opens on Collections", (await p.locator(".site-subtab.is-on").textContent()) === "Collections" && new URL(p.url()).searchParams.get("page") === "collections");
+	await p.locator(".site-subtab", { hasText: "Contributors" }).click();
+	await p.locator(".person").first().waitFor({ timeout: TIMEOUT });
+	check("…and its Contributors tab opens Contributors, Community still on", (await p.locator(".site-subtab.is-on").textContent()) === "Contributors" && (await p.locator(".site-tab.is-on").textContent()) === "Community");
 
 	console.log("\nportal: contributors");
 	// The play counts, played here (the server's /api/stats/summary): the
@@ -362,7 +393,7 @@ try {
 	const layout = await p.evaluate(() => ({
 		sideways: document.documentElement.scrollWidth > innerWidth,
 		star: [...document.querySelectorAll(".collection .fav-star")].map((b) => b.getBoundingClientRect()).every((r) => r.width >= 44 && r.height >= 44 && r.right <= innerWidth),
-		top: document.querySelector(".view-collections h1").getBoundingClientRect().top >= document.querySelector(".site-tabs").getBoundingClientRect().bottom,
+		top: document.querySelector(".view-collections h1").getBoundingClientRect().top >= document.querySelector(".site-subtabs").getBoundingClientRect().bottom,
 	}));
 	check("…fits the phone: no sideways scroll, ★ 44px, nothing under the bar", !layout.sideways && layout.star && layout.top, layout);
 	await p.locator('.collection[data-repo="lokeshmohanty/web-games"] .fav-star').click();
