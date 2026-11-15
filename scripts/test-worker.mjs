@@ -1265,14 +1265,27 @@ try {
 		check("neon survival: (three in, the game up)", t.up);
 		await goes(t, "neon-survival-mp", "neon survival");
 		// After the heir's 3-2-1 (the old host was out of the app, as a closed
-		// tab is), the swarm spawns and moves again for everyone.
+		// tab is), the swarm spawns and moves again for everyone. The swarm
+		// is held still while the shell pauses for the handover, and the
+		// toasts above can come before that pause ends — on a slower runner a
+		// fixed one-second sample fell inside it (2026-11-15) — so this waits
+		// for the swarm to move rather than sampling it once.
 		const nsFrame = await inGame(t.b);
 		const swarm = () => nsFrame.evaluate(() => JSON.stringify(window.enemies?.map((e) => [Math.round(e.x), Math.round(e.y)]) ?? []));
 		await nsFrame.waitForFunction(() => (window.enemies?.length ?? 0) > 0, null, { timeout: 15_000 }).catch(() => {});
 		const e0 = await swarm();
-		await t.b.waitForTimeout(1000);
+		const moved = await nsFrame
+			.waitForFunction(
+				(was) => {
+					const now = JSON.stringify(window.enemies?.map((e) => [Math.round(e.x), Math.round(e.y)]) ?? []);
+					return now !== "[]" && now !== was;
+				},
+				e0,
+				{ timeout: 20_000, polling: 100 },
+			)
+			.then(() => true, () => false);
 		const e1 = await swarm();
-		check("neon survival: the swarm still comes, and moves, for the others", e0 !== "[]" && e0 !== e1, `${e0.slice(0, 60)} / ${e1.slice(0, 60)}`);
+		check("neon survival: the swarm still comes, and moves, for the others", e0 !== "[]" && moved, `${e0.slice(0, 60)} / ${e1.slice(0, 60)}`);
 		await done(t);
 
 		// Draw & guess: the clock goes on under the heir.
