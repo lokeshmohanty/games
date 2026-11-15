@@ -21,7 +21,7 @@ export default function Collections() {
 			<main class="view-collections" ref={main}>
 				<h1>Collections</h1>
 				<p class="muted">
-					<span data-count /> A collection is one games repository; a <a href="contributors.html">contributor</a> can share several.
+					<span data-count /> A collection is one games repository; a <a href="./?page=contributors">contributor</a> can share several.
 					★ keeps one at the top.
 				</p>
 				<div data-collections />

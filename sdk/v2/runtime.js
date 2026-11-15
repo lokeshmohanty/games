@@ -1,8 +1,8 @@
 // sdk/v2/runtime.js — the frame's end of the SDK v2 protocol.
 //
-// A v2 game runs in the same sandboxed frame as a v1 game (lib/bridge.js: no
-// same-origin, no network), but what it may say to the party is a list of
-// messages, sdk/v2/protocol.json, not a JavaScript object. Anything that can
+// A game runs in a sandboxed frame (lib/bridge.js: no same-origin, no
+// network), and what it may say to the party is a list of messages,
+// sdk/v2/protocol.json, not a JavaScript object. Anything that can
 // post a message can be a game: this file is the JavaScript end, and the
 // adapters for Rust, C, Go and Python sit on top of it. docs/sdk-v2.md
 // explains each message.
@@ -252,7 +252,7 @@
 	});
 
 	// The tests reach a running game through `window.__game.handle.debug()`
-	// (scripts/serve.mjs gameFrame), the same as a v1 game. It appears once
+	// (scripts/serve.mjs gameFrame). It appears once
 	// the game has its `init`.
 	arcade.init.then(() => {
 		window.__game = { handle: { debug: () => arcade.debug?.() ?? null } };

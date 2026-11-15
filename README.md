@@ -49,7 +49,7 @@ follow you between devices.
 Anyone can put a game in the arcade from their own GitHub repository, in
 JavaScript, TypeScript, Rust, C/C++, Go or Python. See
 **[CONTRIBUTING.md](CONTRIBUTING.md)**, or open the
-[Add your game](https://www.lokeshmohanty.in/games/contribute.html) page.
+[Add your game](https://www.lokeshmohanty.in/games/?page=contribute) page.
 
 ## For developers
 

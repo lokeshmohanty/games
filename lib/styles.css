@@ -778,7 +778,7 @@ canvas {
 /* The top right of a game page (party.js): FEEDBACK and FAVOURITE for the
    game, and PARTY mid-game — the way back to the party screen while a game
    runs. The portal link's twin on the other side of the same top band, which
-   every game already keeps clear (ui.js gameShell's 52px). */
+   every game already keeps clear (a 52px band at the top). */
 .top-actions {
   position: fixed;
   top: calc(env(safe-area-inset-top) + 10px);

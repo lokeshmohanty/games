@@ -3,7 +3,7 @@
   "short_name": "Arcade Games",
   "description": "Serverless browser games. Every game is multiplayer — play against bots on one device, or peer-to-peer with friends. No accounts, no servers.",
   "id": "./",
-  "start_url": "./index.html",
+  "start_url": "./",
   "scope": "./",
   "display": "standalone",
   "orientation": "any",
@@ -21,7 +21,7 @@
       "name": "Party",
       "short_name": "Party",
       "description": "Open the persistent party screen and add players",
-      "url": "./party.html",
+      "url": "./?party",
       "icons": [{ "src": "assets/icon-192.png", "sizes": "192x192", "type": "image/png" }]
     }
   ]

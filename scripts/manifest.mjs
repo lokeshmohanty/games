@@ -34,7 +34,7 @@ const PATH = /^(?!\/)(?!.*(?:^|\/)\.\.(?:\/|$))[\w.\/-]+$/;
 const TARGET = /^[A-Za-z_][\w.]*(:[A-Za-z_]\w*)?$/;
 
 /**
- * An existing web app, run as it is (docs/sdk.md, "Web apps"). As the author
+ * An existing web app, run as it is (docs/platform.md, "Web apps"). As the author
  * writes it, paths relative to the game folder:
  *
  *   "app": { "build": { "dir": "frontend", "run": "npm ci && npm run build", "out": "frontend/dist" },
@@ -73,24 +73,12 @@ export function validateApp(a) {
 	return p;
 }
 
-/**
- * What is allowed but on its way out, as sentences. SDK v1 goes once every
- * listed game is on v2 (docs/sdk-v2.md); a web app needs nothing (it is
- * upgraded as it mounts).
- */
-export function manifestWarnings(m) {
-	const w = [];
-	if (m?.sdk === 1 && m?.kind === "shared") w.push('"sdk": 1 is upgraded to 2 as it mounts; say "sdk": 2');
-	return w;
-}
-
 /** Problems with a manifest, as sentences; empty when it is fine. */
 export function validateManifest(m) {
 	const p = [];
 	if (!m || typeof m !== "object") return ["not a JSON object"];
-	// SDK v1 was dropped on 2026-11-15 (docs/sdk-v2.md). A web app may still
-	// say 1: it is upgraded as it mounts.
-	if (m.sdk !== 2 && !(m.sdk === 1 && m.kind === "shared")) p.push('"sdk" must be 2 (v1 was dropped; docs/sdk-v2.md)');
+	// Every game and web app speaks SDK v2 (docs/sdk-v2.md); v1 went on 2026-11-15.
+	if (m.sdk !== 2) p.push(`"sdk" must be 2: set "sdk": 2 in game.json${m.sdk === 1 ? " (SDK v1 is no longer accepted)" : ""}; docs/sdk-v2.md`);
 	// SDK v2 (docs/sdk-v2.md): a game in JavaScript, or compiled to WebAssembly.
 	if (m.runtime != null && (m.sdk !== 2 || !RUNTIMES.includes(m.runtime))) p.push(`"runtime" needs "sdk": 2 and is one of ${RUNTIMES.join(", ")}`);
 	if ((m.runtime === "wasm") !== (m.wasm != null)) p.push('"runtime": "wasm" goes with "wasm", the module\'s path, and only with it');

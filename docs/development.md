@@ -23,14 +23,19 @@ not. Use PASTE for the reply code there.
 ## Where things are
 
 ```
-index.html, src/        the one-page shell: Solid + Vite + TypeScript (docs/spa.md)
-*.html                  old page addresses, kept as redirect stubs into the shell
+index.html, src/        the one-page shell: Solid + Vite + TypeScript (docs/spa.md);
+                        the only page (views are ./?page=…, the party ./?party)
 lib/                    framework-free libraries: networking (net.js), the party
                         (party.js, lobby.js), the SDK host (sdk-host.js,
-                        sdk-managed.js), QR, accounts, the theme. API in lib/README.md
+                        sdk-managed.js), QR, accounts, the theme. lib/README.md
 games/<id>/             this repository's games, each with game.json and RULES.md
-sdk/v2/                 the game protocol (protocol.json), runtime, adapters for
-                        7 languages, and the tic-tac-toe example in each (docs/sdk-v2.md)
+sdk/v2/                 the game protocol (protocol.json), runtime, web-app shim,
+                        adapters for 7 languages, generated bindings, and the
+                        tic-tac-toe example in each (docs/sdk-v2.md)
+sdk/dev-server.mjs      the dev kit authors run (docs/platform.md); the build also
+                        publishes it at sdk/v1/dev-server.mjs until 2027-02-15
+sdk/arcade_server.py    a web app's Python server glue, run in Pyodide
+sdk/pyodide/            (vendored, git-ignored: just pyodide) the Python runtime
 registry/<owner>/<repo>.json   contributors' repositories, each pinned to a commit
 community/              (generated, git-ignored) the pinned games, fetched at deploy
 worker/                 the Cloudflare Worker: room server, accounts, leaderboards

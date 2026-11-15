@@ -24,8 +24,9 @@ The fix for the first two is the same thing: a small rendezvous service. The
 decision is a **Cloudflare Worker + Durable Object**, signalling only. The static site stays on GitHub Pages; the worker
 is a separate `wrangler` deploy. **The existing scan/paste handshake remains
 the fallback** when the room server is unreachable — progressive enhancement,
-not a rewrite. The zero-server path (LAN, `file://`, offline) must keep working
-and keep passing its tests.
+not a rewrite. The zero-server path (LAN, offline) must keep working
+and keep passing its tests. (It also meant `file://` until the one-page
+shell, 2026-11-15: the arcade is now served, docs/spa.md.)
 
 ## What the room server is — and is not
 
@@ -614,7 +615,7 @@ from the worker; it was removed before the first deploy.)
   server: the claim lapses). Bounded by 4 s (probe timeout + leave ack).
 - The lobby and party screens gain **JOIN WITH CODE** (a 6-digit input) and
   the host panel gains the code, big, plus a QR of
-  `<site>/party.html#c=123456` — tiny compared with today's 70-90 module
+  `<site>/?party#c=123456` (`party.html#c=` until 2026-11-15) — tiny compared with today's 70-90 module
   grids, and scanning it *auto-joins*. `#c=` follows the existing `#i=`/`#a=`
   fragment pattern. The old invite/scan/paste flow remains, one button away,
   and is what shows when the room server is unreachable.
@@ -708,16 +709,16 @@ from the worker; it was removed before the first deploy.)
   socket with 4409, as the hub does), every host dialling `/room/new` and
   getting a distinct server-drawn code, every redial / reload rejoin /
   release presenting a pass the mock finds valid (it logs each dial in
-  `mock.dials`), `#c=` auto-join, fallback when unreachable. The real `test-party.mjs` (three browsers, `file://`) keeps
-  passing untouched — it exercises exactly the path that must not regress.
-  `test-pwa.mjs`'s precache check must keep passing: **`lib/room-join.js`
-  must be added to `sw.js`'s `SHELL` and `VERSION` bumped** (see the pwa skill
-  before touching `sw.js`).
+  `mock.dials`), `#c=` auto-join, fallback when unreachable. The real `test-party.mjs` (three browsers; served since the one-page
+  shell, 2026-11-15) keeps passing untouched — it exercises exactly the path that must not regress.
+  `test-pwa.mjs`'s precache check must keep passing (since 2026-11-15
+  `scripts/assemble.mjs` derives the precache list and `VERSION`; see the pwa
+  skill before touching `sw.js`).
 - `?mockroom=1` installs an in-page mock (`window.__neonRoomMock`, private to
   `room-join.js`) so browser tests drive the code-join UI with no network, the
   same philosophy as the fake capture device in `test-scan.mjs`. It mirrors
-  the hub's observable rules; it cannot *be* `hub.js`, which is an ES module,
-  and module scripts do not load on `file://`.
+  the hub's observable rules; it cannot *be* `hub.js`, which is an ES module
+  for the Worker, while `room-join.js` is a classic script.
 - Deploy: `npx wrangler login` once, `wrangler secret put ROOM_PASS_KEY`
   once, then `npx wrangler deploy` in `worker/` (documented in
   `worker/README.md`). Live since 2026-11-11 at

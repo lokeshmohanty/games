@@ -11,10 +11,10 @@
 // listed game folders are copied to community/<owner>/<repo>/<path>/ (tests
 // left behind). A game folder is static files, copied as they are — unless
 // its manifest has `app`, an existing web app, which scripts/app-build.mjs
-// builds in a throwaway container and lays out (docs/sdk.md, "Web apps").
+// builds in a throwaway container and lays out (docs/platform.md, "Web apps").
 // Then:
 //
-//   community/catalog.js   registers the games (party.html loads it)
+//   community/catalog.js   registers the games (the shell loads it)
 //   community/precache.js  their files, for the service worker's offline copy
 //
 // community/ is generated and git-ignored.
@@ -67,7 +67,7 @@ const GAME_PATH = /^[A-Za-z0-9_.-]+(\/[A-Za-z0-9_.-]+)*$/;
 const APP_CACHE = process.env.NEON_APP_CACHE ? resolve(process.env.NEON_APP_CACHE) : null;
 // What a build's output depends on besides the pinned commit: change any of
 // these and every web app is built again.
-const BUILD_TOOLS = ["scripts/app-build.mjs", "scripts/py-deps.py", "sdk/v1/pyodide/pyodide-lock.json"];
+const BUILD_TOOLS = ["scripts/app-build.mjs", "scripts/py-deps.py", "sdk/pyodide/pyodide-lock.json"];
 
 const overrides = new Map(
 	(process.env.NEON_PIN_OVERRIDE ?? "")

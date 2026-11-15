@@ -83,7 +83,7 @@ export interface Start {
 	match: number;
 }
 
-/** sdk.md "Reporting a result". */
+/** docs/platform.md "Results". */
 export interface GameResult {
 	kind: "duel" | "ffa" | "teams" | "coop" | "local";
 	/** Places: ranking[0] won; several ids in one slot are a tie or a team. */

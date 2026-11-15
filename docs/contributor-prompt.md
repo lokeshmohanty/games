@@ -93,7 +93,7 @@ if you cannot browse:
    - `node ../games/scripts/validate-game.mjs <my game folder>`: the
      manifest, size (10 MB), files, then a real browser mount at 390×844
      with bots and no CSP violation. It must pass.
-   - The dev kit: `node ../games/sdk/v1/dev-server.mjs <folder holding my
+   - The dev kit: `node ../games/sdk/dev-server.mjs <folder holding my
      games>` prints a link that opens the real Arcade with my game loaded
      from my machine. Play it against bots, and with a second browser tab
      invited as a friend.

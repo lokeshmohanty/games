@@ -75,6 +75,7 @@ import {
 import { homedir, tmpdir } from "node:os";
 import { dirname, extname, join, normalize, resolve as resolvePath } from "node:path";
 import { fileURLToPath } from "node:url";
+import { SITE_DIR } from "./serve.mjs";
 
 const require = createRequire(import.meta.url);
 const ROOT = resolvePath(dirname(fileURLToPath(import.meta.url)), "..");
@@ -89,7 +90,7 @@ const STUN_PORT_2 = 3479;
 // The lab's own STUN and room servers go in through storage (net.js
 // iceDefault, room-join.js resolveBase): the app takes neither from the URL
 // — `?rs=` only for a loopback server — on purpose.
-const BASE = `http://${PUBLIC}:${HTTP_PORT}/party.html`;
+const BASE = `http://${PUBLIC}:${HTTP_PORT}/?party`;
 // joinRoom's own deadline (room-join.js JOIN_ANSWER_MS) plus slack: every
 // "must fail explicitly" check allows this long and no longer.
 const FAIL_BOUND_MS = 35_000;
@@ -356,8 +357,8 @@ const TYPES = {
 function startHttp() {
 	const server = createServer((req, res) => {
 		const path = normalize(decodeURIComponent(new URL(req.url, "http://x").pathname));
-		const file = join(ROOT, path === "/" ? "index.html" : path);
-		if (!file.startsWith(ROOT) || !existsSync(file) || !statSync(file).isFile()) {
+		const file = join(SITE_DIR, path === "/" ? "index.html" : path);
+		if (!file.startsWith(SITE_DIR) || !existsSync(file) || !statSync(file).isFile()) {
 			res.writeHead(404).end();
 			return;
 		}
@@ -479,7 +480,8 @@ async function device(site, tag) {
 /**
  * Live mode: a device on the host's *normal* network — a Chrome test-nat.sh
  * started outside every namespace, driven over CDP through slirp's alias
- * for the host's loopback. It loads the repo from file://, as test-live does.
+ * for the host's loopback. It loads the built site from file:// (VERIFY: the
+ * one-page shell may not run from file://; test-live serves it instead).
  */
 async function hostDevice(tag) {
 	const browser = await chromium.connectOverCDP(HOST_CDP);
@@ -497,7 +499,7 @@ async function hostDevice(tag) {
 		failures++;
 	});
 	// Closing a CDP-connected browser only disconnects; the context goes.
-	return { browser: { close: () => context.close() }, page, tag, site: null, base: `file://${join(ROOT, "party.html")}` };
+	return { browser: { close: () => context.close() }, page, tag, site: null, base: `file://${join(SITE_DIR, "index.html")}?party` };
 }
 
 /** Everything a check needs to know about one page's party, in one read. */
@@ -614,7 +616,7 @@ function sayYes(page) {
 /** Host a party through the room server; returns its code. */
 async function hostByCode(dev) {
 	const start = Date.now();
-	await dev.page.goto((dev.base ?? BASE) + "?fresh=1");
+	await dev.page.goto((dev.base ?? BASE) + "&fresh=1");
 	const w = await waitFor(dev, (s) => /^\d{6}$/.test(s.code ?? ""), 20_000);
 	return { code: w.s?.code, ms: Date.now() - start, ok: w.ok };
 }
@@ -936,7 +938,7 @@ scenario(7, "room server unreachable from one client", async () => {
 		check("…with RETRY offered", retry > 0);
 
 		// Its own party: no code, the classic invite flow instead.
-		await g.page.goto(BASE + "?fresh=1");
+		await g.page.goto(BASE + "&fresh=1");
 		const solo = await waitFor(g, (s) => !!s.room, 15_000);
 		check("blocked client still hosts, classically (no party code)", solo.ok && !solo.s.code, brief(solo.s), Date.now() - start);
 		const ok = await joinClassic(g, h);

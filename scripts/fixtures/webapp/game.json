@@ -1,5 +1,5 @@
 {
-	"sdk": 1,
+	"sdk": 2,
 	"id": "webapp-fixture",
 	"name": "Web app fixture",
 	"blurb": "scripts/test-webapp.mjs: an ordinary web app and its FastAPI server.",

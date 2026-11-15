@@ -50,7 +50,7 @@ jobs:
         uses: actions/cache@v6
         with:
           path: ${{ runner.temp }}/app-cache
-          key: apps-${{ hashFiles('registry/**/*.json', 'scripts/app-build.mjs', 'scripts/py-deps.py', 'sdk/v1/pyodide/pyodide-lock.json') }}
+          key: apps-${{ hashFiles('registry/**/*.json', 'scripts/app-build.mjs', 'scripts/py-deps.py', 'sdk/pyodide/pyodide-lock.json') }}
           restore-keys: apps-
       # Community preview gifs get poster + video twins (preview-media.mjs).
       - name: Install ffmpeg
@@ -65,7 +65,7 @@ jobs:
           name: generated
           path: |
             community/
-            sdk/v1/pyodide/
+            sdk/pyodide/
           include-hidden-files: false
           retention-days: 1
 

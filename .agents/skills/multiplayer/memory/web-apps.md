@@ -1,11 +1,11 @@
 ---
 name: web-apps
-description: Traps found building the web-app path (manifest `app`, sdk/v1/web-shim.js, lib/py-server.js) — what a sandboxed srcdoc frame refuses, and the two test traps that made a passing feature look broken.
+description: Traps found building the web-app path (manifest `app`, sdk/v2/web-shim.js, lib/py-server.js) — what a sandboxed srcdoc frame refuses, and the two test traps that made a passing feature look broken.
 metadata:
   type: project
 ---
 
-Built 2026-11-14 on branch `plug-n-play` (docs/sdk.md "Web apps"). Lokesh:
+Built 2026-11-14 on branch `plug-n-play` (docs/platform.md "Web apps"). Lokesh:
 "My platform is supposed to be plug-n-play" — an outside React + FastAPI app
 must run unchanged. See [[handover]] (a web app's takeOver is false) and
 [[addressed-is-not-private]] (p$http bodies relay in plaintext).
@@ -32,7 +32,9 @@ not; re-deriving them costs an afternoon.
   a background page draws no frames — it waits forever. Pass
   `{ polling: 250 }` in multi-page tests.
 - **Test trap: a click into a background page's frame lands on the
-  `<iframe>`** (docs/sdk.md, Testing) — `bringToFront()` before clicking.
+  `<iframe>`** (a sandboxed frame is its own process, and a page that has
+  not drawn since the frame mounted misses the click) — `bringToFront()`
+  before clicking.
   Both traps hit the rules-overlay check; calling `window.open` directly
   proved the feature worked.
 

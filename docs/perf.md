@@ -1,7 +1,6 @@
 # Performance — measured on a phone-sized, throttled browser
 
-*Started 2026-11-14 for the speed refactor (plan of record:
-`~/.claude/plans/ethereal-honking-beaver.md`; decisions in the multiplayer
+*Started 2026-11-14 for the speed refactor (decisions in the multiplayer
 skill's `gaming-platform-vision` memory). Every phase of that refactor is
 measured against the baseline below, with the same harness.*
 
@@ -38,12 +37,13 @@ full run takes a few minutes.
     worker in control.
 - **Scenarios:**
   - **portal**: `index.html` until `load`, plus 1.5 s for LCP to settle.
-  - **bots**: what PLAY WITH BOTS opens (`party.html?game=connect4&fresh=1&mode=bots`).
+  - **bots**: what PLAY WITH BOTS opens (`./?game=connect4&fresh=1&mode=bots`;
+    `party.html?…` until 2026-11-15).
     - It times the START GAME button appearing, taps it if needed (and
       records that a tap was needed), then times until the game's sandboxed
       frame is up (`gameFrame()`: `window.__game.handle` exists).
-  - **leaderboard**: `leaderboard.html` until `load` (since 2026-11-15 a
-    redirect stub into the one-page shell's `./?page=leaderboard`).
+  - **leaderboard**: `./?page=leaderboard` until `load` (`leaderboard.html`,
+    its own page, in the measurements before 2026-11-15).
 - **Columns:** medians of N runs. FCP and LCP come from the Performance API.
   *to START* and *to frame* are wall-clock times from navigation start.
   *transferred* sums the `transferSize` of the navigation and every resource.

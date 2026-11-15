@@ -1,7 +1,10 @@
 // scripts/test-submission.mjs — the rules a contributor's pull request is
-// judged by (scripts/check-submission.mjs `judge`), with no network or git.
+// judged by (scripts/check-submission.mjs `judge`), and the manifest rule
+// every game must meet ("sdk": 2, scripts/manifest.mjs), with no network or git.
 
+import { readFileSync } from "node:fs";
 import { judge } from "./check-submission.mjs";
+import { validateManifest } from "./manifest.mjs";
 
 let failures = 0;
 const check = (label, ok, detail = "") => {
@@ -63,6 +66,19 @@ v = await world({
 	after: { [P]: entry("ada", "minis", B), "registry/ada/more.json": entry("ada", "more", A) },
 });
 check("a new repo and an update together are 'mixed'", v.kind === "mixed" && v.ok, v);
+
+console.log("\nmanifest: every game says \"sdk\": 2");
+// The web-app fixture is a well-formed manifest (scripts/fixtures/webapp/).
+const good = JSON.parse(readFileSync(new URL("./fixtures/webapp/game.json", import.meta.url), "utf8"));
+check("a web app with \"sdk\": 2 is accepted", validateManifest(good).length === 0, validateManifest(good));
+for (const [what, m] of [
+	["a game with \"sdk\": 1", { ...good, kind: "duel", app: undefined, seats: { min: 2, max: 2 }, sdk: 1 }],
+	["a web app with \"sdk\": 1 (no longer upgraded)", { ...good, sdk: 1 }],
+	["a manifest with no \"sdk\"", { ...good, sdk: undefined }],
+]) {
+	const problems = validateManifest(m);
+	check(`${what} is refused, saying to set "sdk": 2`, problems.some((p) => p.includes('set "sdk": 2')), problems);
+}
 
 console.log(failures ? `\n${failures} submission check(s) failed` : "\nall submission checks passed");
 process.exit(failures ? 1 : 0);

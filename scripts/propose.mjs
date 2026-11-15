@@ -15,7 +15,7 @@
 //                        (GitHub cannot fill an edit page).
 //   registered, current → says so.
 //
-// The site does the same in the browser: contribute.html's form and the
+// The site does the same in the browser: the Add your game form (./?page=contribute) and the
 // Contributors page's "Propose update" (lib/propose.js). Repos are public, so
 // the GitHub API needs no token (GITHUB_TOKEN raises the rate limit).
 

@@ -1,12 +1,12 @@
 // scripts/vendor-pyodide.mjs — fetch the Python runtime web apps' servers run on.
 //
 // lib/py-server.js runs a web app's Python server on the host's phone, in
-// Pyodide. The platform serves Pyodide itself, from sdk/v1/pyodide/, so no
+// Pyodide. The platform serves Pyodide itself, from sdk/pyodide/, so no
 // phone ever asks a CDN for it (memory: no-third-party-services) and it works
 // offline once seen. It is ~15 MB, so it is fetched here — at deploy and
 // before the tests — rather than committed, and git-ignored.
 //
-//   sdk/v1/pyodide/  pyodide.mjs, pyodide.asm.mjs, pyodide.asm.wasm,
+//   sdk/pyodide/  pyodide.mjs, pyodide.asm.mjs, pyodide.asm.wasm,
 //                    python_stdlib.zip, pyodide-lock.json (trimmed to what is
 //                    here), and the wheels of PACKAGES and their dependencies
 //
@@ -25,7 +25,7 @@ import { fileURLToPath } from "node:url";
 
 export const PYODIDE_VERSION = "314.0.7";
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-export const PYODIDE_DIR = join(ROOT, "sdk/v1/pyodide");
+export const PYODIDE_DIR = join(ROOT, "sdk/pyodide");
 // The npm tarball's integrity, so a changed upload is refused.
 const TARBALL_SHA512 = "0YvXxEhfEdpLfb/XkM2BFAeMROq0iMUX2bzzH9pOttyMcWkwq+HbE5uyuGD82LN7y2q+SNvi/6V5JEsOlD2R1A==";
 const PACKAGES = ["fastapi", "numpy"];
@@ -37,7 +37,7 @@ export const norm = (n) => n.replace(/[-_.]+/g, "-").toLowerCase();
 function main() {
 	const stamp = join(PYODIDE_DIR, "VERSION");
 	if (existsSync(stamp) && readFileSync(stamp, "utf8").trim() === PYODIDE_VERSION) {
-		console.log(`pyodide ${PYODIDE_VERSION}: already in sdk/v1/pyodide/`);
+		console.log(`pyodide ${PYODIDE_VERSION}: already in sdk/pyodide/`);
 		return;
 	}
 	const tmp = mkdtempSync(join(tmpdir(), "pyodide-"));
@@ -75,7 +75,7 @@ function main() {
 		rmSync(PYODIDE_DIR, { recursive: true, force: true });
 		mkdirSync(dirname(PYODIDE_DIR), { recursive: true });
 		renameSync(out, PYODIDE_DIR);
-		console.log(`pyodide ${PYODIDE_VERSION}: core + ${keep.size} packages → sdk/v1/pyodide/ (tarball sha512-${sha})`);
+		console.log(`pyodide ${PYODIDE_VERSION}: core + ${keep.size} packages → sdk/pyodide/ (tarball sha512-${sha})`);
 	} finally {
 		rmSync(tmp, { recursive: true, force: true });
 	}
