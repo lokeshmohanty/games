@@ -109,7 +109,11 @@ sub-tab; an empty one is hidden):
 - **Popular** — the five most played (`/api/stats/summary`, else the public
   snapshot), examples aside. The counts are kept on the device
   (`neon.plays`), so the row paints at once and in the same order offline;
-  with no counts ever, the catalog's order.
+  with no counts ever, the catalog's order. Counts that land late never
+  replace a row someone is using (a card tapped open, hovered with a mouse,
+  or reached by keyboard): the row is redrawn when they leave it, at the
+  scroll it had (`lib/portal.js` `inUse`; a slow phone had the card close
+  under the finger, review 2026-11-16).
 - **Arcade · Party · Strategy · Puzzle / Single player · Examples** — the
   catalog's `categories` (`scripts/manifest.mjs`); a game sits in every one
   it is in. Puzzle / Single player also takes any game one person can start

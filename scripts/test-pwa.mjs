@@ -747,8 +747,14 @@ console.log("\npwa: every game offline in single player");
 		} catch (err) {
 			detail = err.message.split("\n")[0];
 		}
-		const how = await page.evaluate(() => ({ game: window.__party?.game, bots: !!window.__party?.room?.getMembers().some((m) => m.id.startsWith("bot_")) })).catch(() => ({}));
-		check(`PLAY SOMETHING offline: ${g?.name ?? id} in single player (bots seated, or one device), and it plays`, !!g && g.runtime !== "python" && how.game === id && (g.bots ? how.bots : g.local) && !!played, detail || JSON.stringify(how));
+		// Single player: you and the game's bots only (Neon Survival seats none).
+		const how = await page
+			.evaluate(() => {
+				const room = window.__party?.room;
+				return { game: window.__party?.game, alone: !!room && room.getMembers().every((m) => m.id === room.selfId || m.id.startsWith("bot_")) };
+			})
+			.catch(() => ({}));
+		check(`PLAY SOMETHING offline: ${g?.name ?? id} in single player (you and its bots only), and it plays`, !!g && g.runtime !== "python" && (g.bots || g.local) && how.game === id && how.alone && !!played, detail || JSON.stringify(how));
 		check("…with every file it asked for on the device, and no room server", missed.length === 0 && refused.filter((u) => /\/ping(?:$|\?)/.test(u)).length === roomBefore, [...new Set(missed)].join(", "));
 		if (errors.length) check("…with no page errors", false, errors.join(" | ").slice(0, 200));
 	}

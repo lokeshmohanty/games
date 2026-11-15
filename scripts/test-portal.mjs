@@ -238,6 +238,10 @@ try {
 	check("MULTI-PLAYER lands on the friends view (invite, and the code when there is a server)", (await p.locator(".party-choice").count()) === 0);
 	// A phone: no hover, so the first tap opens the choices and nothing else.
 	const touch = await browser.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
+	// No counts from the deployed worker or the snapshot: their late arrival
+	// reorders Popular (tested on its own, below).
+	await touch.route("**/api/stats/summary", (r) => r.abort());
+	await touch.route("**/summary.json", (r) => r.abort());
 	const tp = await touch.newPage();
 	await tp.goto(site.url("index.html"));
 	await tp.waitForSelector(".game-card:visible");
@@ -250,6 +254,43 @@ try {
 	await tp.locator('.game-card[data-game="neon-bid"] h3').first().tap();
 	check("…and opening another card closes the first", !(await tcard.evaluate((c) => c.classList.contains("is-open"))));
 	await touch.close();
+	// A slow phone: the play counts land after a card was tapped open. The
+	// row is not replaced under the finger (it closed the card, or slid
+	// another game beneath it); it is redrawn once the card closes, where
+	// it had been scrolled to.
+	{
+		const slow = await browser.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
+		let release;
+		const held = new Promise((r) => (release = r));
+		await slow.route("**/api/stats/summary", async (route) => {
+			await held;
+			await summary(route).catch(() => {});
+		});
+		await slow.route("**/summary.json", (r) => r.abort());
+		const sp = await slow.newPage();
+		sp.on("pageerror", (e) => check(`no page error (${e.message})`, false));
+		await sp.goto(site.url(ALL));
+		await sp.locator('[data-section="popular"] .game-card').first().waitFor({ timeout: TIMEOUT });
+		const row = sp.locator('[data-section="popular"] .section-row');
+		const before = await row.evaluate((r) => {
+			r.scrollLeft = r.children[1].offsetLeft - r.children[0].offsetLeft; // a snap point: the second card first
+			const c = r.querySelector('.game-card[data-game="neon-bid"]');
+			c.__tapped = true;
+			return { ids: r.dataset.ids, x: r.scrollLeft };
+		});
+		const bid = sp.locator('[data-section="popular"] .game-card[data-game="neon-bid"]');
+		await bid.locator("h3").tap();
+		release();
+		await sp.waitForFunction(() => !!localStorage.getItem("neon.plays"), null, { timeout: TIMEOUT });
+		await sp.waitForTimeout(400);
+		const during = await row.evaluate((r) => ({ ids: r.dataset.ids, x: r.scrollLeft, open: r.querySelector(".game-card.is-open")?.dataset.game ?? null, same: !!r.querySelector('.game-card[data-game="neon-bid"]').__tapped }));
+		check("a card tapped open stays open when the play counts land late (same card, same row, same scroll)", before.x > 0 && during.open === "neon-bid" && during.same && during.ids === before.ids && during.x === before.x, { before, during });
+		await bid.tap({ position: { x: 6, y: 6 } }); // its corner: not one of its two buttons
+		await sp.waitForFunction(() => document.querySelector('[data-section="popular"] .game-card')?.dataset.game === "lokeshmohanty/sudoku", null, { timeout: TIMEOUT }).catch(() => {});
+		const after = await row.evaluate((r) => ({ ids: r.dataset.ids, x: r.scrollLeft, pending: r.dataset.pending ?? null }));
+		check("…closed, the row takes the new order (most played first), keeping its scroll", after.ids.startsWith("lokeshmohanty/sudoku undercover connect4") && after.x === before.x && !after.pending, { before, after });
+		await slow.close();
+	}
 
 	console.log("\nportal: the tabs and the menu on every page");
 	// One row: Games · Leaderboards · Community, and ☰ (Lokesh, 2026-11-15:
@@ -470,8 +511,13 @@ console.log("\nportal: My Games · All Games");
 		const picked = await q.getAttribute("data-game");
 		await q.click();
 		await pg.waitForSelector(".game-frame", { timeout: TIMEOUT });
-		const game = await pg.evaluate(() => ({ game: window.__party?.game, bots: window.__party.room.getMembers().some((m) => m.id.startsWith("bot_")), lobby: !!document.querySelector(".party-choice") }));
-		check("…one tap starts it in single player: that game, bots seated, no lobby", game.game === picked && game.bots && !game.lobby && box.height >= 44, { game, picked, h: box.height });
+		// Single player: you and the game's bots, nobody else (a game one
+		// person can play, Neon Survival, may seat no bot at all).
+		const game = await pg.evaluate(() => {
+			const room = window.__party.room;
+			return { game: window.__party?.game, alone: room.getMembers().every((m) => m.id === room.selfId || m.id.startsWith("bot_")), lobby: !!document.querySelector(".party-choice") };
+		});
+		check("…one tap starts it in single player: that game, you and its bots only, no lobby", game.game === picked && game.alone && !game.lobby && box.height >= 44, { game, picked, h: box.height });
 		await c.close();
 	}
 
