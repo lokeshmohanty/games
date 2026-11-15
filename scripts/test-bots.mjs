@@ -700,6 +700,127 @@ try {
 		JSON.stringify({ winner: lc.winner, wins: lc.riders.map((r) => r.wins) }));
 	await resultReached(page, "lokeshmohanty/light-cycles", lc.winner === (await selfOf(page)));
 
+	// -------------------------------------------------------- bubble rush
+	//
+	// The other ticking game, and the one where a tap is an action the host
+	// judges: a phone sends where the finger landed and when, never which
+	// bubble, and the host hit-tests it against its own field. Checked here
+	// as a person plays it — a real click on a bubble scores, a click on
+	// empty field does not — and the 60-second round has to end by itself
+	// with the bots on every other seat having played.
+
+	console.log("\nbots: bubble rush, a whole round against three bots");
+	await page.goto(url("index.html?game=lokeshmohanty%2Fbubble-rush&fresh=1"));
+	await page.locator("button", { hasText: "SINGLE PLAYER" }).first().click();
+	for (let i = 0; i < 3; i++) await page.locator("button", { hasText: "ADD BOT" }).first().click();
+	await page.locator("button", { hasText: "START GAME" }).first().click();
+	await page.waitForFunction(() => window.__game?.handle, null, { timeout: TIMEOUT });
+	G = await gameScope(page, TIMEOUT);
+	await G.waitForFunction(() => window.__game.handle.debug().phase === "setup", null, { timeout: TIMEOUT });
+	await readyToClick(page);
+	const brSetup = await G.evaluate(() => {
+		const btns = [...document.querySelectorAll(".br-setup button")];
+		const boxes = btns.map((b) => b.getBoundingClientRect());
+		return {
+			labels: btns.map((b) => b.textContent),
+			teamsOff: !!document.querySelector('.br-setup button[data-mode="teams"]')?.disabled,
+			minH: Math.min(...boxes.map((b) => b.height)),
+			right: Math.max(...boxes.map((b) => b.right)),
+			bottom: Math.max(...boxes.map((b) => b.bottom)),
+			top: Math.min(...boxes.map((b) => b.top)),
+			doc: document.documentElement.scrollWidth,
+		};
+	});
+	check("the host picks the mode, then START", brSetup.labels.join() === "FREE-FOR-ALL,TEAMS,START", brSetup.labels.join());
+	check("…TEAMS waits for players on both sides", brSetup.teamsOff);
+	check("…44px taps, on a 390x844 screen, clear of the top band, no sideways scroll",
+		brSetup.minH >= 44 && brSetup.right <= 390 && brSetup.bottom <= 844 && brSetup.top >= 52 && brSetup.doc <= 390, JSON.stringify(brSetup));
+	await G.locator(".br-setup button", { hasText: "START" }).click();
+	await G.waitForFunction(() => window.__game.handle.debug().phase !== "setup", null, { timeout: TIMEOUT });
+	let br = await debug(page);
+	check("START opens on a countdown, not on bubbles", br.phase === "count" || (br.phase === "play" && br.t < 500), JSON.stringify({ phase: br.phase, t: br.t }));
+	await G.waitForFunction(() => window.__game.handle.debug().phase === "play", null, { timeout: TIMEOUT });
+	const brFit = await G.evaluate(() => {
+		const canvas = document.querySelector(".br-field canvas");
+		const c = canvas.getBoundingClientRect();
+		const hud = document.querySelector(".br-hud").getBoundingClientRect();
+		return { left: c.left, right: c.right, top: c.top, bottom: c.bottom, hudTop: hud.top, doc: document.documentElement.scrollWidth, dpr: canvas.width / canvas.clientWidth };
+	});
+	check("the field fills the phone below the scores, clear of the top band, no sideways scroll",
+		brFit.left >= 0 && brFit.right <= 390 && brFit.bottom <= 844 && brFit.hudTop >= 52 && brFit.bottom - brFit.top > 500 && brFit.doc <= 390, JSON.stringify(brFit));
+	check("…drawn at the device's pixel ratio", Math.abs(brFit.dpr - Math.min(3, await G.evaluate(() => devicePixelRatio))) < 0.05, `${brFit.dpr}`);
+
+	// A person's taps, judged by the host. The canvas is in the frame; the
+	// mouse is the page's, which reaches into it. A bubble's place is in the
+	// canvas's content box: the page box less the canvas's own border.
+	const canvasBox = await G.locator(".br-field canvas").boundingBox();
+	const inset = await G.evaluate(() => {
+		const c = document.querySelector(".br-field canvas");
+		return { x: c.clientLeft, y: c.clientTop };
+	});
+	const tapField = (x, y) => page.mouse.click(canvasBox.x + inset.x + x, canvasBox.y + inset.y + y);
+	let popped = false;
+	for (let i = 0; i < 60 && !popped; i++) {
+		const d = await debug(page);
+		const b = d.bubbles.filter((b) => b.k !== "x" && b.py > b.pr && b.py < d.field.h - b.pr).sort((p, q) => p.py - q.py)[0];
+		if (b && !d.stunned) {
+			const before = d.scores[d.you] ?? 0;
+			await tapField(b.px, b.py);
+			await sleep(300);
+			popped = ((await debug(page)).scores[d.you] ?? 0) > before;
+		} else await sleep(150);
+	}
+	check("a tap on a bubble pops it: the host judged it and scored it", popped);
+	// Empty field: a spot near the top no bubble is near, as far as this phone sees.
+	let missed = null;
+	for (let i = 0; i < 40 && missed === null; i++) {
+		const d = await debug(page);
+		const spot = [[0.08, 0.04], [0.92, 0.04], [0.5, 0.04]]
+			.map(([x, y]) => [d.field.w * x, d.field.h * y])
+			.find(([x, y]) => d.bubbles.every((b) => Math.hypot(b.px - x, b.py - y) > b.pr + 40));
+		if (spot && !d.stunned) {
+			const before = d.scores[d.you] ?? 0;
+			await tapField(...spot);
+			await sleep(300);
+			const after = await debug(page);
+			missed = { before, after: after.scores[d.you] ?? 0, streak: after.streak, misses: after.misses - d.misses };
+		} else await sleep(150);
+	}
+	check("a tap on empty field scores nothing, counts one miss on the host, and breaks the streak", missed && missed.after === missed.before && missed.misses === 1 && missed.streak === 0, JSON.stringify(missed));
+	// A phone turned sideways (844x390): the 1 : 2 field would be about 130px
+	// wide, so the game asks for the phone upright instead; turned back, it plays.
+	await page.setViewportSize({ width: 844, height: 390 });
+	const sideways = await G.waitForFunction(() => window.__game.handle.debug().turnUpright, null, { timeout: 5000 }).then(() => true, () => false);
+	const sidewaysFit = await G.evaluate(() => {
+		const hint = document.querySelector(".br-turn").getBoundingClientRect();
+		return { hint: [hint.width, hint.height].map(Math.round), text: document.querySelector(".br-turn").textContent, doc: document.documentElement.scrollWidth, win: innerWidth };
+	});
+	check("sideways at 844x390: TURN YOUR PHONE UPRIGHT over the field, no sideways scroll",
+		sideways && /UPRIGHT/.test(sidewaysFit.text) && sidewaysFit.hint[0] > 200 && sidewaysFit.doc <= sidewaysFit.win, JSON.stringify(sidewaysFit));
+	await page.setViewportSize({ width: 390, height: 844 });
+	const upright = await G.waitForFunction(() => !window.__game.handle.debug().turnUpright && window.__game.handle.debug().field.w >= 300, null, { timeout: 5000 }).then(() => true, () => false);
+	check("…and upright again, the field is back, at least 300px wide", upright, JSON.stringify((await debug(page)).field));
+
+	// Each bot pops bubbles of its own (popped, not score: a bomb can take a
+	// score to zero). Waited for rather than slept on.
+	const brBotsPopped = await G.waitForFunction(() => {
+		const d = window.__game.handle.debug();
+		const bots = Object.keys(d.scores).filter((id) => id.startsWith("bot_"));
+		return bots.length === 3 && bots.every((id) => (d.popped[id] ?? 0) > 0);
+	}, null, { timeout: 30_000 }).then(() => true, () => false);
+	br = await debug(page);
+	check("the three bots play their own taps", brBotsPopped, JSON.stringify(br.popped));
+
+	// The round ends on its own after 60 seconds.
+	await G.waitForFunction(() => window.__game.handle.debug().phase === "over", null, { timeout: 75_000 });
+	br = await debug(page);
+	check("the round ends by itself, at the minute", br.phase === "over" && Math.round(br.t) === 60_000, JSON.stringify({ phase: br.phase, t: br.t }));
+	const brCard = await page.locator(".managed-over").first().textContent({ timeout: TIMEOUT }).catch(() => "");
+	check("the end card ranks the four of us, with the game's own details", /WIN|DRAW|TIE/.test(brCard) && brCard.includes("DETAILS") && brCard.includes("Bubbles popped") && brCard.includes("Best streak"), brCard.slice(0, 160));
+	const brMe = br.scores[br.you] ?? 0;
+	const brLevel = Object.values(br.scores).length === 4 && Object.values(br.scores).every((v) => v === brMe);
+	await resultReached(page, "lokeshmohanty/bubble-rush", brLevel ? "drawn" : brMe === Math.max(...Object.values(br.scores)));
+
 	console.log("\nbots: connect 4 plays a real opponent");
 	// The game page is a party shortcut; its quick start must suit a phone.
 	await page.goto(url("connect4.html"));
