@@ -127,7 +127,8 @@ Sizes:
 |---|---|---|
 | The shell's code on the party path | 426 KB decoded, unminified, in ~17 files | about 139 KB, 48 KB gzipped, in one bundle |
 
-**Deploy.** deploy.yml fetches the community games, runs `pnpm install
+**Deploy.** deploy.yml waits for every suite (test.yml, in parallel
+shards: docs/development.md), fetches the community games, runs `pnpm install
 --frozen-lockfile` and `pnpm build`, and uploads `dist/`. platform-check
 and submission build the same way before validate-game. Playwright is a
 pinned dev dependency (driver only; CI uses the runner's Chrome).

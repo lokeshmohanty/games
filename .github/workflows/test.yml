@@ -1,0 +1,171 @@
+# Every suite of `just test`, plus the wrangler ones, in parallel shards
+# (docs/development.md, Tests). The grouping lives in the Justfile
+# (`_shard-<n>`, run as `just test-shard <n>`), so a shard runs the same
+# locally; scripts/test-just.mjs fails if a suite is in no shard, or if this
+# matrix and the Justfile disagree.
+#
+#   static   the cheap checks, no build (`just test-static`): gates the shards
+#   build    pyodide, the community games, `pnpm build` → one dist artifact
+#   shard    `just test-shard <n>` against that artifact, one runner each
+#
+# Runs on every push except main's (deploy.yml calls this workflow first and
+# deploys only when it passes), and on pull requests — a branch of this repo
+# is tested by its push, so a pull request runs only from a fork. A pull
+# request that touches only registry/ is a game submission: submission.yml
+# judges it. No secrets, a read-only token.
+name: Test
+
+on:
+  push:
+    branches-ignore: [main]
+  pull_request:
+    paths-ignore:
+      - "registry/**"
+  workflow_call:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# A newer push to a branch replaces its run; main's (inside a deploy) finish.
+concurrency:
+  group: test-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+jobs:
+  static:
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+      # just from its release, pinned and checked: the Justfile uses [arg]
+      # patterns, newer than Ubuntu's package.
+      - name: Install just
+        run: |
+          curl -sSfL -o "$RUNNER_TEMP/just.tgz" https://github.com/casey/just/releases/download/1.58.0/just-1.58.0-x86_64-unknown-linux-musl.tar.gz
+          echo "4a5cc2f53e6f0f8c59092a6cc38291eb729d46a7dd95d3ae582008881b84931d  $RUNNER_TEMP/just.tgz" | sha256sum -c -
+          mkdir -p "$RUNNER_TEMP/bin" && tar -xzf "$RUNNER_TEMP/just.tgz" -C "$RUNNER_TEMP/bin" just
+          echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
+      - name: Bindings, colours, catalog, stats, submission rules, codec, the Justfile
+        run: just test-static
+
+  # Beside static, not after it: the shards wait for both.
+  build:
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+      - name: Install pnpm
+        run: npm install -g pnpm@12.9.0
+      - name: Install the shell's dependencies
+        env:
+          PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: "1"
+        run: pnpm install --frozen-lockfile
+      # sdk/pyodide (~18 MB, pinned by hash in vendor-pyodide.mjs). Before the
+      # build: assemble copies sdk/ (with it) into the site.
+      - name: Restore Pyodide
+        uses: actions/cache@v6
+        with:
+          path: sdk/pyodide
+          key: pyodide-${{ hashFiles('scripts/vendor-pyodide.mjs') }}
+      - name: Fetch Pyodide
+        run: node scripts/vendor-pyodide.mjs
+      # Each web app's build, kept per pinned commit (fetch-community.mjs,
+      # NEON_APP_CACHE), as deploy.yml keeps it.
+      - name: Restore web app builds
+        uses: actions/cache@v6
+        with:
+          path: ${{ runner.temp }}/app-cache
+          key: apps-${{ hashFiles('registry/**/*.json', 'scripts/app-build.mjs', 'scripts/py-deps.py', 'sdk/pyodide/pyodide-lock.json') }}
+          restore-keys: apps-
+      # Community preview gifs get poster + video twins, as on the deployed site.
+      - name: Install ffmpeg
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq --no-install-recommends ffmpeg
+      - name: Fetch and build community games
+        env:
+          NEON_APP_CACHE: ${{ runner.temp }}/app-cache
+        run: node scripts/fetch-community.mjs
+      - name: Build the site (type check, vite build, assemble + sw.js)
+        run: pnpm build
+      - uses: actions/upload-artifact@v7
+        with:
+          name: site
+          path: dist/
+          retention-days: 1
+
+  shard:
+    needs: [static, build]
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4]
+    name: shard ${{ matrix.shard }}
+    env:
+      # Each shard has its own runner; these mirror a local run beside others.
+      NEON_DIST: dist-shard-${{ matrix.shard }}
+      NEON_PORT_OFFSET: ${{ matrix.shard }}00
+      NEON_BUILT: "1"
+      CHROME: /usr/bin/google-chrome
+      # The wrangler suites (test-wrangler): wrangler dev with a throwaway
+      # local D1 and fake GitHub/Google, so no Cloudflare account or secret.
+      # npx fetches it only in the shard that runs them.
+      WRANGLER: npx --yes wrangler@4.151.1
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+      # test-conformance also runs the Go adapter's own tests.
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: sdk/v2/adapters/go/go.mod
+          cache: false
+      - name: Install just
+        run: |
+          curl -sSfL -o "$RUNNER_TEMP/just.tgz" https://github.com/casey/just/releases/download/1.58.0/just-1.58.0-x86_64-unknown-linux-musl.tar.gz
+          echo "4a5cc2f53e6f0f8c59092a6cc38291eb729d46a7dd95d3ae582008881b84931d  $RUNNER_TEMP/just.tgz" | sha256sum -c -
+          mkdir -p "$RUNNER_TEMP/bin" && tar -xzf "$RUNNER_TEMP/just.tgz" -C "$RUNNER_TEMP/bin" just
+          echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
+      - name: Install pnpm
+        run: npm install -g pnpm@12.9.0
+      - name: Install the shell's dependencies
+        env:
+          PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: "1"
+        run: pnpm install --frozen-lockfile
+      # test-scan films its fake camera's frames with ffmpeg. Every shard
+      # installs it, so the groups can change without touching this file.
+      - name: Install ffmpeg
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq --no-install-recommends ffmpeg
+      # test-conformance and test-webapp read sdk/pyodide from the repo.
+      - name: Restore Pyodide
+        uses: actions/cache/restore@v6
+        with:
+          path: sdk/pyodide
+          key: pyodide-${{ hashFiles('scripts/vendor-pyodide.mjs') }}
+      - uses: actions/download-artifact@v8
+        with:
+          name: site
+          path: ${{ env.NEON_DIST }}
+      - name: just test-shard ${{ matrix.shard }}
+        run: |
+          set -o pipefail
+          just test-shard ${{ matrix.shard }} 2>&1 | tee "$RUNNER_TEMP/shard.log"
+          # A wrangler suite that cannot start wrangler skips and exits 0;
+          # here that is a failure, not a pass.
+          if grep -E '^skip: ' "$RUNNER_TEMP/shard.log"; then
+            echo "::error::a suite skipped (above): wrangler did not start"
+            exit 1
+          fi

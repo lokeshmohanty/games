@@ -1,14 +1,19 @@
 // scripts/test-just.mjs — the Justfile itself, with no browser.
 //
-// The variadic-recipe trap: `just a b c` hands b and c to a when a takes
-// `*args`, so b and c never run and the exit is 0. Every recipe with a
-// `*`/`+` parameter must depend on `_not-recipes` first (before anything
-// else runs), and `just <it> … test-webapp` must fail.
+// 1. The variadic-recipe trap: `just a b c` hands b and c to a when a takes
+//    `*args`, so b and c never run and the exit is 0. Every recipe with a
+//    `*`/`+` parameter must depend on `_not-recipes` first (before anything
+//    else runs), and `just <it> … test-webapp` must fail.
+// 2. CI's parallel shards (.github/workflows/test.yml) drop no suite: the
+//    cheap gate (test-static) plus the `_shard-<n>` recipes hold exactly the
+//    suites of `just test` and of `test-wrangler`, each once; and the CI
+//    matrix lists exactly those shards.
 //
 // Reads the Justfile through `just --dump --dump-format json` (JUST names the
 // binary; the recipe passes just_executable()).
 
 import { spawnSync } from "node:child_process";
+import { readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -49,6 +54,32 @@ if (!failures) {
 }
 const lane = spawnSync(process.execPath, [join(ROOT, "scripts/test-conformance.mjs"), "rsut"], { cwd: ROOT, encoding: "utf8", timeout: 30_000 });
 check("test-conformance refuses a lane that does not exist", lane.status === 2 && /unknown lane 'rsut'/.test(lane.stderr), `exit ${lane.status}: ${lane.stderr.trim()}`);
+
+console.log("\njust: the CI shards hold every suite, once");
+// What `just test` does that is not a suite: fetch and build (the CI build job).
+const SETUP = new Set(["community", "build"]);
+// The groups a list may name instead of their suites.
+const GROUPS = new Set(["test-static", "test-wrangler"]);
+const expand = (name) => (GROUPS.has(name) ? deps(name).flatMap(expand) : [name]);
+const suites = [...deps("test"), "test-wrangler"].flatMap(expand).filter((s) => !SETUP.has(s));
+const shards = Object.keys(recipes)
+	.map((n) => /^_shard-(\d+)$/.exec(n)?.[1])
+	.filter(Boolean)
+	.map(Number)
+	.sort((a, b) => a - b);
+const placed = ["test-static", ...shards.flatMap((n) => deps(`_shard-${n}`))].flatMap(expand);
+const twice = placed.filter((s, i) => placed.indexOf(s) !== i);
+check(`${shards.length} shards, numbered 1 to ${shards.length}`, shards.length >= 2 && shards.every((n, i) => n === i + 1), shards.join(","));
+check("test-wrangler's suites are not in `just test` (they need wrangler)", !deps("test-wrangler").some((s) => deps("test").includes(s)));
+check("no suite is in two shards (or in a shard and the gate)", !twice.length, twice.join(", "));
+const dropped = suites.filter((s) => !placed.includes(s));
+const extra = placed.filter((s) => !suites.includes(s));
+check(`every suite of \`just test\` and test-wrangler is in the gate or a shard (${suites.length})`, !dropped.length, `dropped: ${dropped.join(", ")}`);
+check("…and the shards run nothing else", !extra.length, `extra: ${extra.join(", ")}`);
+const workflow = readFileSync(join(ROOT, ".github/workflows/test.yml"), "utf8");
+const matrix = /^\s*shard:\s*\[([^\]]*)\]/m.exec(workflow)?.[1].split(",").map((s) => Number(s.trim()));
+check("the CI matrix runs exactly these shards", matrix?.join() === shards.join(), `matrix: ${matrix?.join() ?? "none"}`);
+check("CI's first job is `just test-static`", /run:\s*just test-static\b/.test(workflow));
 
 console.log(failures ? `\n${failures} justfile check(s) failed` : "\nall justfile checks passed");
 process.exit(failures ? 1 : 0);

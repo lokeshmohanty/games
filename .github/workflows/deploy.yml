@@ -22,6 +22,14 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  # Every suite (test.yml, the same workflow branches and pull requests run):
+  # nothing deploys unless all of them pass. Read-only: the test jobs never
+  # hold the Pages token.
+  tests:
+    permissions:
+      contents: read
+    uses: ./.github/workflows/test.yml
+
   # Outside repos' games (registry/), at their pinned commits, into
   # community/ with community/catalog.js and precache.js. Fails the deploy on
   # a bad pin rather than publishing a site without those games. A web app
@@ -70,7 +78,7 @@ jobs:
           retention-days: 1
 
   deploy:
-    needs: build-community
+    needs: [tests, build-community]
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}

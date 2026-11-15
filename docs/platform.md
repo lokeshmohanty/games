@@ -205,7 +205,9 @@ which also checks that a manifest saying `"sdk": 1` is refused.
 `platform-check.yml` checks changes to the platform itself: on every pull
 request touching `games/`, `sdk/`, `lib/` or the checking scripts it
 re-validates every game — no secrets, read-only, safe for forks.
-`deploy.yml` runs `fetch-community.mjs` before uploading the Pages artifact.
+`deploy.yml` runs every suite first (`test.yml`, docs/development.md "CI runs
+the suites in parallel"), and `fetch-community.mjs` before uploading the
+Pages artifact.
 
 ## The dev kit
 

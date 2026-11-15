@@ -68,9 +68,32 @@ serve-lan: install
     {{pnpm}} dev --host 0.0.0.0 --port {{port}}
 
 # Every suite, in the order they get slower.
-test: check-bindings check-colours community build test-stats test-submission test-codec test-just test-hub test-worker-do test-plumbing test-rules test-room test-party test-scan test-pwa test-bots test-rules-screen test-devkit test-protocol test-managed test-conformance test-webapp test-theme test-portal
+test: test-static community build test-room test-party test-scan test-pwa test-bots test-rules-screen test-devkit test-protocol test-managed test-conformance test-webapp test-theme test-portal
 
-# The Justfile itself: no variadic recipe swallows the next recipe's name.
+# The cheap checks: no build, no browser, seconds. CI's first job, which gates the shards.
+test-static: check-bindings check-colours (catalog "--check") test-stats test-submission test-codec test-just test-hub test-worker-do test-plumbing test-rules
+
+# CI runs the slow suites in parallel shards (.github/workflows/test.yml),
+# grouped by time so they take about as long as each other: these are the
+# groups, so a shard runs the same here. The times, measured on 2026-11-15,
+# are in docs/development.md (Tests). `just test-shard <n>` fetches the
+# community games and builds first, unless NEON_BUILT=1 (CI builds once and
+# downloads that build into every shard); beside another run, give it its own
+# NEON_DIST and NEON_PORT_OFFSET. A suite added to `test` must go in a shard
+# too: test-just fails until it is in exactly one.
+
+# One of CI's parallel test shards (1-4): `just test-shard 2`.
+test-shard n:
+    @{{just}} --show _shard-{{n}} >/dev/null 2>&1 || { echo "error: there is no shard '{{n}}' (the shards are the _shard-<n> recipes)" >&2; exit 2; }
+    @[ "${NEON_BUILT:-}" = 1 ] || {{just}} community build
+    {{just}} _shard-{{n}}
+
+_shard-1: test-bots
+_shard-2: test-room test-party test-scan test-theme
+_shard-3: test-pwa test-devkit test-managed test-portal test-protocol test-webapp test-rules-screen test-conformance
+_shard-4: test-wrangler
+
+# The Justfile itself: no variadic recipe swallows the next recipe's name, and the CI shards drop no suite.
 test-just:
     JUST={{quote(just_executable())}} node scripts/test-just.mjs
 
@@ -253,6 +276,10 @@ test-accounts:
 # game, leaderboards, groups, feedback, deleting the account. Needs wrangler.
 test-social:
     node scripts/test-social.mjs
+
+# The suites that need wrangler (test-worker, test-accounts, test-social): not
+# part of `test`, but CI runs them, in a shard of their own.
+test-wrangler: test-worker test-accounts test-social
 
 # No colour named outside lib/theme.css (pages, styles, SDK, games). Pass
 # other repos to check too: `just check-colours ../web-games`.
