@@ -47,7 +47,21 @@ stalls (fails on the old bot). test-neon-bid and test-bots are green.
 sw.js v38 shipped with this; the Tug of War removal (session games-99, shared
 tree, uncommitted) also bumped to v38 and must take v39.
 
-## Platform v2 refactor — Phases 1–3 done on branch `platform-v2`, NOT merged (2026-11-14)
+## Platform v2 refactor — Phases 1–3 merged and live (c40dd19, 2026-11-14); Phase 4 done on `platform-spa`, NOT merged (2026-11-15)
+
+Phase 4 (docs/spa.md): the shell is one page — Solid + Vite + TypeScript,
+pnpm (Lokesh's choice). Query-routed views (the hash carries invites), the
+party mounted once in a persistent layer (BACK TO GAME), old pages as
+redirect stubs, scripts/assemble.mjs builds dist/ and generates sw.js
+(derived precache list, VERSION over its bytes). Deploy/CI build with pnpm.
+Perf: portal cold FCP 0.44 s, bots to frame 2.05 s, shell JS 194 KB decoded
+(was 426). Reviewed adversarially, fixed. `just test` green; worker/social/
+accounts green against v2 community. **Awaiting Lokesh's confirmation to
+merge Phase 4.** PR #4 (arcade-games pin → its v2 commit 2997566) is open,
+checks green, for Lokesh to merge; then delete sdk/v1 (his call: drop once
+the pin moves). Not done: party/lobby screens stay vanilla inside the layer.
+
+### Earlier (Phases 1–3)
 
 Lokesh asked for a fast, slick platform and a language-neutral game contract.
 Plan of record: `~/.claude/plans/ethereal-honking-beaver.md`; decisions in
