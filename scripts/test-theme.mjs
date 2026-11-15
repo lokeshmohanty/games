@@ -4,22 +4,17 @@
 // mode and remembers it; a running game's sandboxed frame follows the page
 // (attributes, fonts, its canvas colours); and nothing scrolls sideways.
 
-import { existsSync, globSync } from "node:fs";
-import { createRequire } from "node:module";
-import { homedir } from "node:os";
-import { join } from "node:path";
+import { existsSync } from "node:fs";
 import { gameFrame, serve } from "./serve.mjs";
+import { loadPlaywright } from "./playwright.mjs";
 
-const require = createRequire(import.meta.url);
 const TIMEOUT = 30_000;
 let failures = 0;
 const check = (label, ok, detail = "") => {
 	console.log(`  ${ok ? "ok  " : "FAIL"} ${label}${!ok && detail !== "" ? ` — ${typeof detail === "string" ? detail : JSON.stringify(detail)}` : ""}`);
 	if (!ok) failures++;
 };
-const pw = require(
-	[join(homedir(), ".cache", "game-previews", "node_modules", "playwright"), ...globSync(join(homedir(), ".npm", "_npx", "*", "node_modules", "playwright"))].find(existsSync),
-);
+const pw = loadPlaywright();
 const chrome = [process.env.CHROME, "/run/current-system/sw/bin/google-chrome-stable", "/run/current-system/sw/bin/chromium", "/usr/bin/google-chrome"].filter(Boolean).find(existsSync);
 const site = await serve(8739);
 const browser = await pw.chromium.launch({ executablePath: chrome, args: ["--no-sandbox"] });

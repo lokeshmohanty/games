@@ -30,15 +30,12 @@
 // sandboxed frame, which is its own process, so its own start-up inside
 // "to frame" runs unthrottled. That part is small; the waits before it are not.
 
-import { existsSync, globSync, writeFileSync } from "node:fs";
+import { existsSync, writeFileSync } from "node:fs";
 import { createServer, request } from "node:http";
 import { createGzip } from "node:zlib";
-import { createRequire } from "node:module";
-import { homedir } from "node:os";
-import { join } from "node:path";
 import { gameFrame, serve } from "./serve.mjs";
+import { loadPlaywright } from "./playwright.mjs";
 
-const require = createRequire(import.meta.url);
 const arg = (name, dflt) => {
 	const i = process.argv.indexOf(`--${name}`);
 	return i > 0 ? process.argv[i + 1] : dflt;
@@ -50,9 +47,7 @@ const LOAD_CAP = 60_000;
 const ONLY = arg("only", null)?.split(","); // e.g. --only portal,leaderboard
 const DEBUG = process.argv.includes("--debug");
 
-const pw = require(
-	[join(homedir(), ".cache", "game-previews", "node_modules", "playwright"), ...globSync(join(homedir(), ".npm", "_npx", "*", "node_modules", "playwright"))].find(existsSync),
-);
+const pw = loadPlaywright();
 const chrome = [process.env.CHROME, "/run/current-system/sw/bin/google-chrome-stable", "/run/current-system/sw/bin/chromium", "/usr/bin/google-chrome"].filter(Boolean).find(existsSync);
 
 const PHONE = { viewport: { width: 390, height: 844 }, deviceScaleFactor: 3, isMobile: true, hasTouch: true };

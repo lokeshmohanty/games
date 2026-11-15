@@ -2,22 +2,17 @@
 // and tabs on every page, the Contributors and Collections pages and the
 // add-your-game guide, at 390x844.
 
-import { existsSync, globSync, readFileSync } from "node:fs";
-import { createRequire } from "node:module";
-import { homedir } from "node:os";
-import { join } from "node:path";
+import { existsSync, readFileSync } from "node:fs";
 import { serve } from "./serve.mjs";
+import { loadPlaywright } from "./playwright.mjs";
 
-const require = createRequire(import.meta.url);
 const TIMEOUT = 20_000;
 let failures = 0;
 const check = (label, ok, detail = "") => {
 	console.log(`  ${ok ? "ok  " : "FAIL"} ${label}${!ok && detail !== "" ? ` — ${typeof detail === "string" ? detail : JSON.stringify(detail)}` : ""}`);
 	if (!ok) failures++;
 };
-const pw = require(
-	[join(homedir(), ".cache", "game-previews", "node_modules", "playwright"), ...globSync(join(homedir(), ".npm", "_npx", "*", "node_modules", "playwright"))].find(existsSync),
-);
+const pw = loadPlaywright();
 const chrome = [process.env.CHROME, "/run/current-system/sw/bin/google-chrome-stable", "/run/current-system/sw/bin/chromium", "/usr/bin/google-chrome"].filter(Boolean).find(existsSync);
 const site = await serve(8740);
 const browser = await pw.chromium.launch({ executablePath: chrome, args: ["--no-sandbox"] });

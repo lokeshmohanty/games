@@ -18,17 +18,14 @@
  * downloaded binaries are not patched for the nix dynamic linker). We always
  * drive the nix-provided Chrome via executablePath.
  */
-import { createRequire } from "node:module";
-import { execFileSync } from "node:child_process";
-import { existsSync, globSync, mkdtempSync, readdirSync, renameSync } from "node:fs";
+import { existsSync, mkdtempSync, readdirSync, renameSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { dirname, join, resolve as resolvePath } from "node:path";
 import { fileURLToPath } from "node:url";
 import { gameScope, readyToClick, serve } from "./serve.mjs";
+import { loadPlaywright } from "./playwright.mjs";
 
-const require = createRequire(import.meta.url);
 const ROOT = resolvePath(dirname(fileURLToPath(import.meta.url)), "..");
-const PW_CACHE = join(homedir(), ".cache", "game-previews");
 
 /** Where the browser lives. Bundled browsers do not run on NixOS. */
 function chromePath() {
@@ -44,28 +41,6 @@ function chromePath() {
 		process.exit(1);
 	}
 	return found;
-}
-
-/**
- * Playwright is a dev-only dependency of this otherwise build-free repo, so it
- * is never vendored into it: we reuse whatever copy exists, and only install
- * into ~/.cache as a last resort.
- */
-function loadPlaywright() {
-	const candidates = [
-		join(ROOT, "node_modules", "playwright"),
-		join(PW_CACHE, "node_modules", "playwright"),
-		...globSync(join(homedir(), ".npm", "_npx", "*", "node_modules", "playwright")),
-	];
-	let found = candidates.find((p) => existsSync(p));
-	if (!found) {
-		console.error("installing playwright into " + PW_CACHE + " (one time)…");
-		execFileSync("npm", ["install", "--prefix", PW_CACHE, "--no-save", "--no-audit", "playwright"], {
-			stdio: "inherit",
-		});
-		found = join(PW_CACHE, "node_modules", "playwright");
-	}
-	return require(found);
 }
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));

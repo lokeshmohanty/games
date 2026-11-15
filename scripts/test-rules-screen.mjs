@@ -10,14 +10,12 @@
 // Under automation the first-open sheet is off (so the other suites can
 // drive games); localStorage "neon.rules" = "on" turns it back on here.
 
-import { existsSync, globSync } from "node:fs";
-import { createRequire } from "node:module";
-import { homedir } from "node:os";
+import { existsSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { gameScope, serve } from "./serve.mjs";
+import { loadPlaywright } from "./playwright.mjs";
 
-const require = createRequire(import.meta.url);
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const TIMEOUT = 30_000;
 let failures = 0;
@@ -26,9 +24,7 @@ const check = (label, ok, detail = "") => {
 	if (!ok) failures++;
 };
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-const pw = require(
-	[join(ROOT, "node_modules", "playwright"), join(homedir(), ".cache", "game-previews", "node_modules", "playwright"), ...globSync(join(homedir(), ".npm", "_npx", "*", "node_modules", "playwright"))].find(existsSync),
-);
+const pw = loadPlaywright();
 const chrome = [process.env.CHROME, "/run/current-system/sw/bin/google-chrome-stable", "/run/current-system/sw/bin/chromium", "/usr/bin/google-chrome"].filter(Boolean).find(existsSync);
 const site = await serve(8746);
 const browser = await pw.chromium.launch({ executablePath: chrome, args: ["--no-sandbox"] });

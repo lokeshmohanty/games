@@ -31,13 +31,13 @@
 // violation, no page error and no console error, and not scroll sideways.
 
 import { spawn } from "node:child_process";
-import { existsSync, globSync, readdirSync, readFileSync, statSync } from "node:fs";
-import { createRequire } from "node:module";
+import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { COLOUR, validateManifest } from "./manifest.mjs";
 import { PORT_OFFSET, gameFrame, serve } from "./serve.mjs";
+import { loadPlaywright } from "./playwright.mjs";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const MAX_BYTES = 10 * 1024 * 1024;
@@ -182,16 +182,6 @@ function chromePath() {
 		.find((p) => existsSync(p));
 	if (!found) throw new Error("no system Chrome found; set CHROME=/path/to/chrome");
 	return found;
-}
-function loadPlaywright() {
-	const require = createRequire(import.meta.url);
-	const found = [
-		join(ROOT, "node_modules", "playwright"),
-		join(homedir(), ".cache", "game-previews", "node_modules", "playwright"),
-		...globSync(join(homedir(), ".npm", "_npx", "*", "node_modules", "playwright")),
-	].find((p) => existsSync(p));
-	if (!found) throw new Error("playwright not found (run `just test-bots` once to fetch it)");
-	return require(found);
 }
 
 /** Mount each game in the real party with bots, via the dev kit. */

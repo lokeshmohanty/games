@@ -15,15 +15,14 @@
 //   node scripts/test-conformance.mjs            every lane present
 //   node scripts/test-conformance.mjs rust c     only these (plus the reference)
 
-import { existsSync, globSync, readFileSync } from "node:fs";
-import { createRequire } from "node:module";
+import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { checkTrace } from "./protocol-check.mjs";
 import { serve } from "./serve.mjs";
+import { loadPlaywright } from "./playwright.mjs";
 
-const require = createRequire(import.meta.url);
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const EXAMPLES = join(ROOT, "sdk/v2/examples");
 const LANES = ["js", "html", "ts", "rust", "c", "go", "python"];
@@ -84,11 +83,6 @@ function chromePath() {
 		.find((p) => existsSync(p));
 	if (!found) throw new Error("no system Chrome found; set CHROME=/path/to/chrome");
 	return found;
-}
-function loadPlaywright() {
-	const found = [join(ROOT, "node_modules", "playwright"), join(homedir(), ".cache", "game-previews", "node_modules", "playwright"), ...globSync(join(homedir(), ".npm", "_npx", "*", "node_modules", "playwright"))].find((p) => existsSync(p));
-	if (!found) throw new Error("playwright not found (run `just test-bots` once to fetch it)");
-	return require(found);
 }
 
 /** Runs in the page: mount `game` in a sandboxed frame and play SCRIPT through it. */

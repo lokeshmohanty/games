@@ -64,9 +64,10 @@
  * after SECS; this machine invites unless `,remote`.
  *
  * Needs: ssh access to the remote (BatchMode — keys, no prompts), node and
- * a system Chrome there, and Playwright on both machines (looked for where
- * scripts/test-live.mjs looks; installed into ~/.cache/game-previews if
- * absent). Nothing secret is copied; the script copies only this file.
+ * a system Chrome there, and Playwright on both machines (the repo's
+ * node_modules, else ~/.cache/game-previews, installed there if absent: this
+ * file runs alone on the remote, so it keeps its own lookup rather than
+ * scripts/playwright.mjs). Nothing secret is copied; the script copies only this file.
  * The remote's processes are killed at the end (pkill on the script path).
  */
 import { createRequire } from "node:module";
