@@ -13,8 +13,8 @@
 // these, so links, bookmarks and installed shortcuts keep working.
 import { createMemo, createRoot, createSignal } from "solid-js";
 
-export type View = "portal" | "party" | "leaderboard" | "profile" | "contribute" | "contributors";
-const PAGES: View[] = ["leaderboard", "profile", "contribute", "contributors"];
+export type View = "portal" | "party" | "leaderboard" | "profile" | "contribute" | "contributors" | "collections";
+const PAGES: View[] = ["leaderboard", "profile", "contribute", "contributors", "collections"];
 // Not ?rs= or ?mockroom= (they choose the room server and ride along on any view).
 const PARTY_KEYS = ["game", "mode", "fresh", "dev", "party"];
 

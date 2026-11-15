@@ -19,6 +19,9 @@
     "duel",
     "strategy"
   ],
+  "categories": [
+    "strategy"
+  ],
   "preview": "../../assets/connect4.gif",
   "license": "MIT",
   "author": "lokeshmohanty",

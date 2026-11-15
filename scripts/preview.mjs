@@ -84,7 +84,7 @@ async function connectPeers(pages, timeoutMs = 30_000) {
 	for (const [i, guest] of guests.entries()) {
 		// The game page opens the party's quick start: INVITE A FRIEND, every
 		// time — it is offered again once the last invite has connected.
-		const friends = host.locator("button", { hasText: "PLAY WITH FRIENDS" });
+		const friends = host.locator("button", { hasText: "MULTI-PLAYER" });
 		if (await friends.count()) await friends.first().click();
 		await host.locator("button", { hasText: "INVITE A FRIEND" }).first().click();
 

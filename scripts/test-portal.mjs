@@ -86,7 +86,7 @@ try {
 	const oldRoom = await p.evaluate(() => window.__party.room.selfId);
 	const c4 = p.locator('.game-card[data-game="connect4"]');
 	await c4.hover();
-	await c4.locator(".card-play", { hasText: "PLAY WITH BOTS" }).click();
+	await c4.locator(".card-play", { hasText: "SINGLE PLAYER" }).click();
 	// The host of a party is asked first (the party ends): yes.
 	const yes = p.locator('dialog.neon-ask[open] [data-ask="yes"]');
 	const askedFirst = await yes.waitFor({ timeout: 5000 }).then(() => true, () => false);
@@ -106,9 +106,9 @@ try {
 		),
 	);
 	check("no PLAY NOW on any card", (await p.locator(".game-card .play-btn").count()) === 0);
-	check("a bots game offers PLAY WITH BOTS and PLAY WITH FRIENDS", cardInfo.connect4?.join() === "PLAY WITH BOTS,PLAY WITH FRIENDS", cardInfo.connect4);
-	check("…a people-only game only PLAY WITH FRIENDS", cardInfo["lokeshmohanty/draw-guess"]?.join() === "PLAY WITH FRIENDS", cardInfo["lokeshmohanty/draw-guess"]);
-	check("…a one-device game just PLAY", cardInfo.undercover?.join() === "PLAY", cardInfo.undercover);
+	check("a bots game offers SINGLE PLAYER and MULTI-PLAYER", cardInfo.connect4?.join() === "SINGLE PLAYER,MULTI-PLAYER", cardInfo.connect4);
+	check("…a people-only game only MULTI-PLAYER", cardInfo["lokeshmohanty/draw-guess"]?.join() === "MULTI-PLAYER", cardInfo["lokeshmohanty/draw-guess"]);
+	check("…a one-device (party) game: SINGLE PLAYER / SAME DEVICE", cardInfo.undercover?.join() === "SINGLE PLAYER / SAME DEVICE", cardInfo.undercover);
 	const c4card = p.locator('.game-card[data-game="connect4"]');
 	const visible = () => c4card.locator(".card-actions").evaluate((a) => getComputedStyle(a).opacity === "1");
 	check("hidden until wanted", !(await visible()));
@@ -120,17 +120,17 @@ try {
 	await c4card.focus();
 	await p.waitForTimeout(250);
 	check("…and so does keyboard focus", await visible());
-	await c4card.locator(".card-play", { hasText: "PLAY WITH BOTS" }).click();
+	await c4card.locator(".card-play", { hasText: "SINGLE PLAYER" }).click();
 	await p.waitForSelector(".game-frame", { timeout: TIMEOUT });
-	check("PLAY WITH BOTS goes straight into the game, bots seated: no second choice, no START", (await p.locator(".party-choice").count()) === 0 && (await p.evaluate(() => window.__party.room.getMembers().some((m) => m.id.startsWith("bot_")))));
+	check("SINGLE PLAYER goes straight into the game, bots seated: no second choice, no START", (await p.locator(".party-choice").count()) === 0 && (await p.evaluate(() => window.__party.room.getMembers().some((m) => m.id.startsWith("bot_")))));
 	check("…without waiting on the room server: no party code yet", await p.evaluate(() => !document.querySelector(".party-code-digits")));
 	check("…and the address forgets the mode, for a reload", !new URL(p.url()).searchParams.has("mode"), p.url());
 	await p.goto(site.url("index.html"));
 	await p.waitForSelector(".game-card");
 	await p.locator('.game-card[data-game="connect4"]').hover();
-	await p.locator('.game-card[data-game="connect4"] .card-play', { hasText: "PLAY WITH FRIENDS" }).click();
+	await p.locator('.game-card[data-game="connect4"] .card-play', { hasText: "MULTI-PLAYER" }).click();
 	await p.locator("button", { hasText: "INVITE A FRIEND" }).first().waitFor({ timeout: TIMEOUT });
-	check("PLAY WITH FRIENDS lands on the friends view (invite, and the code when there is a server)", (await p.locator(".party-choice").count()) === 0);
+	check("MULTI-PLAYER lands on the friends view (invite, and the code when there is a server)", (await p.locator(".party-choice").count()) === 0);
 	// A phone: no hover, so the first tap opens the choices and nothing else.
 	const touch = await browser.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
 	const tp = await touch.newPage();

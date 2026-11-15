@@ -20,5 +20,8 @@
   "author": "lokeshmohanty",
   "repo": "https://github.com/lokeshmohanty/games",
   "state": "managed",
-  "runtime": "python"
+  "runtime": "python",
+  "categories": [
+    "examples"
+  ]
 }

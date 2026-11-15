@@ -59,7 +59,7 @@ jobs:
         env:
           CHROME: /usr/bin/google-chrome
         run: |
-          dirs="sdk/v1/example/tic-tac-toe $(ls -d games/*/)"
+          dirs="$(ls -d sdk/v2/examples/*/) $(ls -d games/*/)"
           for pin in community/*/*/pin.json; do
             [ -e "$pin" ] || continue
             base=$(dirname "$pin")

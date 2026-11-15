@@ -6,6 +6,23 @@
 export const KINDS = ["duel", "ffa", "teams", "coop", "local", "shared"];
 export const SHAPES = ["teams", "coop", "free"];
 export const RUNTIMES = ["js", "wasm", "python"];
+// The portal's sections (Lokesh, 2026-11-15); `examples` is the SDK's own.
+export const CATEGORIES = ["arcade", "party", "strategy", "puzzle", "examples"];
+/**
+ * A game's categories: its manifest's, or (until every repo says) what its
+ * tags and shape suggest — real-time games are arcade, crowds and one-phone
+ * games party, strategy tagged strategy, solo-first puzzles puzzle.
+ */
+export function categoriesOf(m) {
+	if (Array.isArray(m.categories) && m.categories.length) return m.categories.filter((c) => CATEGORIES.includes(c));
+	const tags = new Set(m.tags ?? []);
+	const out = [];
+	if (m.tick || tags.has("arcade") || tags.has("action")) out.push("arcade");
+	if (tags.has("party") || tags.has("one-phone") || m.kind === "local") out.push("party");
+	if (tags.has("strategy")) out.push("strategy");
+	if (tags.has("puzzle") || (tags.has("alone") && !out.length)) out.push("puzzle");
+	return out;
+}
 // Licences that let the platform serve a copy of the game (redistribution).
 export const LICENSES = ["MIT", "Apache-2.0", "BSD-2-Clause", "BSD-3-Clause", "ISC", "MPL-2.0", "GPL-3.0", "AGPL-3.0", "0BSD", "Unlicense"];
 
@@ -63,7 +80,7 @@ export function validateApp(a) {
  */
 export function manifestWarnings(m) {
 	const w = [];
-	if (m?.sdk === 1 && m?.kind !== "shared") w.push('"sdk": 1 is deprecated and will be dropped: port the game to "sdk": 2 (docs/sdk-v2.md in lokeshmohanty/games)');
+	if (m?.sdk === 1 && m?.kind === "shared") w.push('"sdk": 1 is upgraded to 2 as it mounts; say "sdk": 2');
 	return w;
 }
 
@@ -71,7 +88,9 @@ export function manifestWarnings(m) {
 export function validateManifest(m) {
 	const p = [];
 	if (!m || typeof m !== "object") return ["not a JSON object"];
-	if (m.sdk !== 1 && m.sdk !== 2) p.push('"sdk" must be 1 or 2');
+	// SDK v1 was dropped on 2026-11-15 (docs/sdk-v2.md). A web app may still
+	// say 1: it is upgraded as it mounts.
+	if (m.sdk !== 2 && !(m.sdk === 1 && m.kind === "shared")) p.push('"sdk" must be 2 (v1 was dropped; docs/sdk-v2.md)');
 	// SDK v2 (docs/sdk-v2.md): a game in JavaScript, or compiled to WebAssembly.
 	if (m.runtime != null && (m.sdk !== 2 || !RUNTIMES.includes(m.runtime))) p.push(`"runtime" needs "sdk": 2 and is one of ${RUNTIMES.join(", ")}`);
 	if ((m.runtime === "wasm") !== (m.wasm != null)) p.push('"runtime": "wasm" goes with "wasm", the module\'s path, and only with it');
@@ -81,6 +100,11 @@ export function validateManifest(m) {
 	if (m.tick != null && (m.state !== "managed" || !Number.isInteger(m.tick) || m.tick < 1 || m.tick > 60)) p.push('"tick" (Hz, 1–60) goes with "state": "managed"');
 	if (m.viewRate != null && (m.tick == null || !Number.isInteger(m.viewRate) || m.viewRate < 1 || m.viewRate > m.tick)) p.push('"viewRate" (Hz) goes with "tick" and is at most it');
 	if (m.opts != null && (typeof m.opts !== "object" || Array.isArray(m.opts))) p.push('"opts" must be an object');
+	if (m.categories != null && (!Array.isArray(m.categories) || !m.categories.length || m.categories.some((c) => !CATEGORIES.includes(c)))) {
+		p.push(`"categories" is a list of ${CATEGORIES.join(", ")}`);
+	}
+	// The rules a player is shown the first time, and behind "?" (a Markdown file in the folder).
+	if (m.rules != null && (typeof m.rules !== "string" || !PATH.test(m.rules) || !/\.md$/i.test(m.rules))) p.push('"rules" must be a .md path inside the game folder');
 	if (!ID.test(m.id ?? "")) p.push('"id" must be 2–32 of a-z, 0-9, -');
 	if (typeof m.name !== "string" || !m.name || m.name.length > 40) p.push('"name" must be 1–40 characters');
 	if (m.blurb != null && (typeof m.blurb !== "string" || m.blurb.length > 140)) p.push('"blurb" must be at most 140 characters');

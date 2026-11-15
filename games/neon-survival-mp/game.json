@@ -6,7 +6,7 @@
   "id": "neon-survival-mp",
   "name": "NEON SURVIVAL",
   "title": "Neon Survival",
-  "blurb": "Dodge the swarm — alone, with bots, or with friends. Last ship flying keeps the run alive.",
+  "blurb": "Dodge the swarm \u2014 alone, with bots, or with friends. Last ship flying keeps the run alive.",
   "description": "Dodge the red, collect the green. Survive alone, or keep each other alive as the swarm closes in.",
   "entry": "index.html",
   "shape": "coop",
@@ -20,6 +20,9 @@
     "alone",
     "party",
     "quick"
+  ],
+  "categories": [
+    "arcade"
   ],
   "preview": "../../assets/neon-survival-mp.gif",
   "license": "MIT",

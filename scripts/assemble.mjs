@@ -37,7 +37,8 @@ if (!existsSync(join(DIST, "index.html"))) {
 
 // ---- copy what is served as-is ------------------------------------------------
 
-const SKIP = [/^sdk\/v2\/(examples|adapters|bindings)(\/|$)/, /(^|\/)(node_modules|target|__pycache__)(\/|$)/, /(^|\/)\.[^/]+$/];
+// The examples ship (they are listed games); their build trees do not.
+const SKIP = [/^sdk\/v2\/(adapters|bindings)(\/|$)/, /^sdk\/v2\/examples\/tic-tac-toe(\/|$)/, /(^|\/)(node_modules|target|__pycache__)(\/|$)/, /(^|\/)\.[^/]+$/];
 const keep = (rel) => !SKIP.some((re) => re.test(rel));
 for (const dir of ["lib", "sdk", "games", "assets", "registry", "community"]) {
 	const from = join(ROOT, dir);
@@ -63,6 +64,9 @@ const derived = [
 	...files("games/**/*.{html,js,css,json}").filter((p) => !basename(p).startsWith("test-")),
 	...files("sdk/v1/*.{js,py}"),
 	...files("sdk/v2/*.js"),
+	// The listed examples: their pages, scripts, styles, modules and Python
+	// (not sources or build files).
+	...files("sdk/v2/examples/tic-tac-toe-*/**/*.{html,js,css,json,wasm,py}").filter((p) => !/(^|\/)(src|node_modules|target)\/|package(-lock)?\.json$|tsconfig|vite\.config|Cargo/.test(p)),
 ];
 const shell = [...new Set(["", ...listed, ...derived])].sort();
 const missing = shell.filter((p) => p && !existsSync(join(DIST, p)));

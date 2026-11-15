@@ -1,8 +1,10 @@
 // games/neon-survival-mp/neon-survival-mp.js — Neon Survival, an SDK v2
 // managed game that ticks.
 //
-// Co-op: everyone seated is in the same run, dodging the same swarm, and
-// sharing one score. Spectators watch without a ship of their own. With one
+// Everyone seated is in the same run, dodging the same swarm, each scoring
+// for the gems they catch (Lokesh, 2026-11-15: every player has their own
+// score); the run ends when the last ship is down and ranks them by score.
+// Spectators watch without a ship of their own. With one
 // seat this is also the solo game, and bots fill other ships for company.
 //
 // The game is its rules and a canvas. The platform (lib/sdk-managed.js) steps
@@ -65,8 +67,8 @@ const shipOf = (id) => s?.ships[id] ?? null;
 const aliveShips = () => Object.values(s.ships).filter((p) => p.alive);
 const newShip = (bot) =>
 	bot
-		? { x: Math.random() * (s.w - 80) + 40, y: Math.random() * (s.h - 80) + 40, alive: true, bot: true }
-		: { x: s.w / 2, y: s.h / 2, alive: true, bot: false };
+		? { x: Math.random() * (s.w - 80) + 40, y: Math.random() * (s.h - 80) + 40, alive: true, bot: true, score: 0 }
+		: { x: s.w / 2, y: s.h / 2, alive: true, bot: false, score: 0 };
 
 function spawnEnemy() {
 	const { w: W, h: H } = s;
@@ -191,7 +193,8 @@ function step() {
 			const g = s.gems[i];
 			if (Math.hypot(ship.x - g.x, ship.y - g.y) < PLAYER_SIZE / 2 + g.size) {
 				s.gems.splice(i, 1);
-				s.score++;
+				ship.score = (ship.score ?? 0) + 1; // the catcher's
+				s.score++; // the run's, which sets the swarm's pace
 			}
 		}
 	}
@@ -199,7 +202,7 @@ function step() {
 
 /**
  * What every seat sees: the whole world, packed flat — enemies as
- * [x, y, vx, vy, …], gems as [id, x, y, …], ships as { id: [x, y, alive, bot] }.
+ * [x, y, vx, vy, …], gems as [id, x, y, …], ships as { id: [x, y, alive, bot, score] }.
  * Built once per change, however many phones are sent it.
  */
 let packed = null;
@@ -222,7 +225,7 @@ function small() {
 	const g = [];
 	for (const gem of s.gems) g.push(gem.id, r1(gem.x), r1(gem.y));
 	const ships = {};
-	for (const [id, p] of Object.entries(s.ships)) ships[id] = [r1(p.x), r1(p.y), p.alive ? 1 : 0, p.bot ? 1 : 0];
+	for (const [id, p] of Object.entries(s.ships)) ships[id] = [r1(p.x), r1(p.y), p.alive ? 1 : 0, p.bot ? 1 : 0, p.score ?? 0];
 	return { m: s.match, w: s.w, h: s.h, score: s.score, g, s: ships };
 }
 
@@ -263,7 +266,7 @@ arcade.managed({
 			const to = { x: clamp(i.x, 0, s.w), y: clamp(i.y, 0, s.h) };
 			let ship = s.ships[id];
 			// Someone seated mid-run: their ship arrives where they point.
-			if (!ship && !s.gone[id]) ship = s.ships[id] = { ...to, alive: true, bot: false };
+			if (!ship && !s.gone[id]) ship = s.ships[id] = { ...to, alive: true, bot: false, score: 0 };
 			if (ship?.alive) moves.push([ship, ship.x, ship.y, to]);
 		}
 		for (let f = 1; f <= frames; f++) {
@@ -297,8 +300,16 @@ arcade.managed({
 	result() {
 		const ids = Object.keys(s.ships);
 		if (!ids.length || aliveShips().length) return null;
-		// Co-op: everyone in the run shares it and its score.
-		return { kind: "coop", ranking: [ids], scores: Object.fromEntries(ids.map((id) => [id, s.score])) };
+		// Each by their own score; equal scores share a place.
+		const by = new Map();
+		for (const id of ids) {
+			const n = s.ships[id].score ?? 0;
+			by.set(n, [...(by.get(n) ?? []), id]);
+		}
+		const ranking = [...by.keys()].sort((a, b) => b - a).map((n) => by.get(n));
+		// Alone it is a run you played (lib/stats.js counts it, best score kept),
+		// not a win over nobody.
+		return { kind: ids.length > 1 ? "ffa" : "coop", ranking, scores: Object.fromEntries(ids.map((id) => [id, s.ships[id].score ?? 0])) };
 	},
 	// A seated player left the party for good: their ship goes with them.
 	leave({ seat }) {
@@ -490,16 +501,19 @@ let lastHud = "";
 function hud() {
 	const me = mine();
 	const n = aliveCount();
-	const key = `${cur.v.score}|${n}|${cur.v.you}|${me?.[2]}`;
+	// Your own score; a spectator sees the leader's.
+	const best = Math.max(0, ...Object.values(cur.v.s).map((p) => p[4] ?? 0));
+	const score = me ? (me[4] ?? 0) : best;
+	const key = `${score}|${n}|${cur.v.you}|${me?.[2]}`;
 	if (key === lastHud) return;
 	lastHud = key;
-	scoreEl.textContent = "Score: " + cur.v.score;
+	scoreEl.textContent = (me ? "Score: " : "Best: ") + score;
 	aliveEl.textContent = "Alive: " + n;
 	const myColor = cur.v.you ? colorFor(cur.v.you) : "transparent";
 	meColorEl.style.color = meColorEl.style.background = myColor;
 	// Everyone down: the shell's card says GAME OVER; the score stays under it.
 	let msg = "";
-	if (n === 0 && Object.keys(cur.v.s).length) msg = "Final Score: " + cur.v.score;
+	if (n === 0 && Object.keys(cur.v.s).length) msg = (me ? "Your score: " : "Best score: ") + score;
 	else if (!cur.v.you) msg = "Spectating…";
 	else if (me && !me[2]) msg = "You're down! Spectating…";
 	ghostEl.textContent = msg;
@@ -687,4 +701,4 @@ Object.defineProperties(window, {
 });
 
 /** For the tests: the run as this phone sees it. */
-arcade.debug = () => ({ active: aliveCount() > 0, match: cur?.v.m ?? null, you: cur?.v.you ?? null, score: cur?.v.score ?? 0, alive: aliveCount(), enemies: live ? s.enemies.length : cur ? cur.v.e.length / 4 : 0, host: live, simMs: live ? Math.round(s.ms) : null });
+arcade.debug = () => ({ active: aliveCount() > 0, match: cur?.v.m ?? null, you: cur?.v.you ?? null, score: cur ? (mine()?.[4] ?? 0) : 0, alive: aliveCount(), enemies: live ? s.enemies.length : cur ? cur.v.e.length / 4 : 0, host: live, simMs: live ? Math.round(s.ms) : null });

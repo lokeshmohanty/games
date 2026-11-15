@@ -21,5 +21,8 @@
   "license": "MIT",
   "author": "lokeshmohanty",
   "repo": "https://github.com/lokeshmohanty/games",
-  "state": "managed"
+  "state": "managed",
+  "categories": [
+    "examples"
+  ]
 }

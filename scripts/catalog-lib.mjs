@@ -4,7 +4,7 @@
 
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, join, relative } from "node:path";
-import { validateContributor, validateManifest } from "./manifest.mjs";
+import { categoriesOf, validateContributor, validateManifest } from "./manifest.mjs";
 
 /**
  * Catalog entries for manifest files. `owner` namespaces community ids
@@ -53,6 +53,9 @@ export function catalogEntries(files, root) {
 			local: m.kind === "local",
 			kind: m.kind,
 			tags: m.tags ?? [],
+			categories: categoriesOf(m),
+			// The rules (Markdown, in the folder): shown on a first visit and behind "?".
+			...(m.rules ? { rules: m.rules } : {}),
 			preview: m.preview ? dir + m.preview : null,
 			// Its poster and video twins (scripts/preview-media.mjs), when made.
 			...previewTwins(file, dir, m.preview),

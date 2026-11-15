@@ -14,7 +14,11 @@
 // have sent the *same* result; a different result from anyone in it voids
 // the match; a report nobody confirms within 15 minutes is dropped. Bots
 // never count (Lokesh, 2026-11-13: leaderboards are human-only), nor does a
-// match with fewer than two accounts, nor "local" (one-phone) games.
+// match with fewer than two accounts, nor "local" (one-phone) games — except
+// a SOLO run (one player, no bots: a puzzle, a survival run alone), which
+// counts on its player's own report (Lokesh, 2026-11-15). Nobody can confirm
+// it, so a solo score is only as honest as its reporter: it is recorded as a
+// run (games, best score), never a win over anybody, and never Elo.
 //
 // Ratings, per account per game: duel → Elo (K 32, from 1200); every kind →
 // games and wins (first place); coop → best score.
@@ -97,7 +101,8 @@ export async function report(env, me, request) {
 	const r = toAccounts(b);
 	if (r.bots) return { counted: false, why: "games with bots are not ranked" };
 	if (!r.accounts.includes(me.id)) throw new HttpError(400, "you can only report a match you played");
-	if (r.accounts.length < 2) return { counted: false, why: "a ranked match needs two signed-in players" };
+	const solo = b.ranking.flat().length === 1 && r.accounts.length === 1;
+	if (r.accounts.length < 2 && !solo) return { counted: false, why: "a ranked match needs two signed-in players" };
 
 	const key = await sha256(`${b.game}|${b.run}|${match}`);
 	const canonical = JSON.stringify({ game: b.game, kind: b.kind, places: r.places, scores: r.scores });
@@ -120,8 +125,9 @@ export async function report(env, me, request) {
 	if (await env.DB.prepare("SELECT 1 FROM kv WHERE k = ?").bind(`void:${key}`).first()) {
 		return { counted: false, why: "the players disagreed about this match, so it does not count" };
 	}
-	if (fromPlayers.length < 2) return { counted: false, pending: true };
-	await commit(env, key, b.game, b.kind, r, t);
+	if (fromPlayers.length < 2 && !solo) return { counted: false, pending: true };
+	// A solo run is a run: games and best score, not a win (commit, coop).
+	await commit(env, key, b.game, solo ? "coop" : b.kind, r, t);
 	return { counted: true };
 }
 

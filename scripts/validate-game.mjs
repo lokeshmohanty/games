@@ -223,10 +223,10 @@ async function checkBrowser(games) {
 				// A one-device game starts by itself (lib/party.js autoStart).
 			} else if (m.kind === "shared") {
 				// One screen, no bots: alone with the friends' controls.
-				await page.locator("button", { hasText: "PLAY WITH FRIENDS" }).first().click({ timeout: TIMEOUT });
+				await page.locator("button", { hasText: "MULTI-PLAYER" }).first().click({ timeout: TIMEOUT });
 				await page.locator("button", { hasText: "START GAME" }).first().click({ timeout: TIMEOUT });
 			} else {
-				const solo = page.locator("button", { hasText: /PLAY WITH BOTS|SINGLE PLAYER/ }).first();
+				const solo = page.locator("button", { hasText: /SINGLE PLAYER/ }).first();
 				if (!m.bots || !(await solo.count())) {
 					check("needs people: nothing to start alone (skipped the play check)", true);
 					continue;

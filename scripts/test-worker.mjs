@@ -1172,7 +1172,7 @@ try {
 		const h = await person("gp-host");
 		const g = await person("gp-guest");
 		await h.goto(PAGES + "connect4.html");
-		await h.locator("button", { hasText: "PLAY WITH FRIENDS" }).click({ timeout: TIMEOUT });
+		await h.locator("button", { hasText: "MULTI-PLAYER" }).click({ timeout: TIMEOUT });
 		const quick = await h.locator(".party-code-digits").waitFor({ timeout: TIMEOUT }).then(() => true, () => false);
 		const head = await h.evaluate(() => ({
 			title: document.querySelector(".lobby-title")?.textContent,

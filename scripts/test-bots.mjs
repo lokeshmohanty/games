@@ -316,7 +316,7 @@ try {
 	// to *before* the bidding, and that lifting them audits clean.
 
 	console.log("\nbots: liar's dice commits every cup before a bid");
-	await startSolo(page, "liars-dice.html", "PLAY WITH BOTS");
+	await startSolo(page, "liars-dice.html", "SINGLE PLAYER");
 	G = await gameScope(page, TIMEOUT);
 	await readyToClick(page);
 	await sleep(1200);
@@ -403,7 +403,7 @@ try {
 
 	console.log("\nbots: neon bid plays twelve sealed lots at a full table");
 	await page.goto(url("neon-bid.html"));
-	await page.locator("button", { hasText: "PLAY WITH BOTS" }).first().click();
+	await page.locator("button", { hasText: "SINGLE PLAYER" }).first().click();
 	for (let i = 0; i < 6; i++) await page.locator("button", { hasText: "ADD BOT" }).first().click();
 	await page.locator("button", { hasText: "START GAME" }).first().click();
 	await page.waitForFunction(() => window.__game?.handle, null, { timeout: TIMEOUT });
@@ -539,7 +539,7 @@ try {
 	// decoration.
 
 	console.log("\nbots: battleship commits, fires and audits");
-	await startSolo(page, "battleship.html", "PLAY WITH BOTS");
+	await startSolo(page, "battleship.html", "SINGLE PLAYER");
 	G = await gameScope(page, TIMEOUT);
 	await readyToClick(page);
 
@@ -704,15 +704,15 @@ try {
 	// The game page is a party shortcut; its quick start must suit a phone.
 	await page.goto(url("connect4.html"));
 	// First the choice, and nothing else: no code, no roster (Lokesh, 2026-11-13).
-	await page.locator("button", { hasText: "PLAY WITH FRIENDS" }).first().waitFor({ timeout: TIMEOUT });
+	await page.locator("button", { hasText: "MULTI-PLAYER" }).first().waitFor({ timeout: TIMEOUT });
 	const choice = await page.evaluate(() => ({
 		buttons: [...document.querySelectorAll("#party button")].map((b) => b.textContent),
 		code: !!document.querySelector(".party-code-digits"),
 		roster: !!document.querySelector(".party-member"),
 	}));
-	check("a game page opens on two choices: PLAY WITH BOTS, PLAY WITH FRIENDS", choice.buttons.join() === "PLAY WITH BOTS,PLAY WITH FRIENDS", choice.buttons.join());
+	check("a game page opens on two choices: SINGLE PLAYER, MULTI-PLAYER", choice.buttons.join() === "SINGLE PLAYER,MULTI-PLAYER", choice.buttons.join());
 	check("…with no party code or roster until friends are chosen", !choice.code && !choice.roster, JSON.stringify(choice));
-	await page.locator("button", { hasText: "PLAY WITH BOTS" }).first().click();
+	await page.locator("button", { hasText: "SINGLE PLAYER" }).first().click();
 	await page.locator("button", { hasText: "START GAME" }).first().waitFor({ timeout: TIMEOUT });
 	check("playing the bots shows no party code either", (await page.locator(".party-code-digits").count()) === 0);
 	const quickFit = await page.evaluate(() => {
@@ -916,8 +916,8 @@ try {
 
 	console.log("\nbots: draw & guess says it needs people");
 	await page.goto(url("draw-guess.html"));
-	await page.locator("button", { hasText: "PLAY WITH FRIENDS" }).first().waitFor();
-	const solos = await page.locator("button", { hasText: /PLAY WITH BOTS|SINGLE PLAYER/ }).count();
+	await page.locator("button", { hasText: "MULTI-PLAYER" }).first().waitFor();
+	const solos = await page.locator("button", { hasText: /SINGLE PLAYER/ }).count();
 	check("no bot option is offered for a game a bot cannot play", solos === 0);
 
 	// ------------------------------------- a game-page reply that failed
@@ -963,7 +963,7 @@ try {
 			});
 		}
 		await inviter.goto(url("draw-guess.html"));
-		await inviter.locator("button", { hasText: "PLAY WITH FRIENDS" }).first().click();
+		await inviter.locator("button", { hasText: "MULTI-PLAYER" }).first().click();
 		await inviter.locator("button", { hasText: "INVITE A FRIEND" }).first().click();
 		const inviteBox = inviter.locator("textarea.share-code").first();
 		await inviteBox.waitFor({ timeout: TIMEOUT });
@@ -1079,7 +1079,7 @@ try {
 			});
 		}
 		await hostP.goto(url("connect4.html"));
-		await hostP.locator("button", { hasText: "PLAY WITH FRIENDS" }).first().click();
+		await hostP.locator("button", { hasText: "MULTI-PLAYER" }).first().click();
 		await hostP.locator("button", { hasText: "INVITE A FRIEND" }).first().click();
 		const box = hostP.locator("textarea.share-code").first();
 		await box.waitFor({ timeout: TIMEOUT });
@@ -1137,7 +1137,7 @@ try {
 	console.log("\nleaving: one person against the bots is never asked");
 	{
 		const lone = await context.newPage();
-		await startSolo(lone, "connect4.html", "PLAY WITH BOTS");
+		await startSolo(lone, "connect4.html", "SINGLE PLAYER");
 		// LEAVE PARTY with only bots in it: nobody to walk out on, so no question.
 		// Mid-game it is on the party screen, pulled up over the game (PARTY).
 		await lone.locator(".party-pill").click({ timeout: TIMEOUT });

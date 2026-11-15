@@ -18,10 +18,19 @@ import { catalogEntries, catalogScript, contributorEntry } from "./catalog-lib.m
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const OUT = join(ROOT, "lib", "catalog.js");
 
-const files = readdirSync(join(ROOT, "games"))
-	.sort()
-	.map((id) => ({ file: join(ROOT, "games", id, "game.json"), owner: null }))
-	.filter(({ file }) => existsSync(file));
+// The arcade's games, then the SDK's managed Tic Tac Toe in every language
+// (sdk/v2/examples/tic-tac-toe-<lane>, category "examples"), playable like
+// any game (Lokesh, 2026-11-15) and copied into the site by assemble.mjs.
+const EXAMPLES = "sdk/v2/examples";
+const files = [
+	...readdirSync(join(ROOT, "games"))
+		.sort()
+		.map((id) => ({ file: join(ROOT, "games", id, "game.json"), owner: null })),
+	...readdirSync(join(ROOT, EXAMPLES))
+		.filter((d) => d.startsWith("tic-tac-toe-"))
+		.sort()
+		.map((d) => ({ file: join(ROOT, EXAMPLES, d, "game.json"), owner: null })),
+].filter(({ file }) => existsSync(file));
 
 let games;
 try {

@@ -80,7 +80,7 @@ async function playExample(label, folder, game, port) {
 
 	console.log(`\ndevkit (${label}): the game in the real party`);
 	await page.goto(link);
-	await page.locator("button", { hasText: "PLAY WITH BOTS" }).first().click({ timeout: TIMEOUT });
+	await page.locator("button", { hasText: "SINGLE PLAYER" }).first().click({ timeout: TIMEOUT });
 	await page.locator("button", { hasText: "START GAME" }).first().click({ timeout: TIMEOUT });
 	const frame = await gameFrame(page, TIMEOUT);
 	check("the dev game mounts in a sandboxed frame", (await page.locator("iframe.game-frame[sandbox='allow-scripts']").count()) === 1);
@@ -125,7 +125,6 @@ async function playExample(label, folder, game, port) {
 	dev.kill();
 }
 
-await playExample("sdk v1", "sdk/v1/example", "tic-tac-toe", DEV_PORT);
 await playExample("sdk v2, JavaScript", "sdk/v2/examples", "tic-tac-toe", DEV_PORT + 1);
 await playExample("sdk v2 managed, Rust", "sdk/v2/examples", "tic-tac-toe-rust", DEV_PORT + 2);
 await playExample("sdk v2 managed, JavaScript", "sdk/v2/examples", "tic-tac-toe-js", DEV_PORT + 3);

@@ -5,7 +5,7 @@
 // browser profile) and warm (the service worker in control after a visit):
 //
 //   portal       index.html: FCP, LCP, DOMContentLoaded, load, bytes
-//   bots game    PLAY WITH BOTS on Connect 4: time to the START GAME button,
+//   bots game    SINGLE PLAYER on Connect 4: time to the START GAME button,
 //                then the tap, then time to the game's frame being mounted
 //   leaderboard  leaderboard.html: FCP, LCP, load, bytes
 //

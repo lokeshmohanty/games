@@ -95,7 +95,7 @@ const text = (frame, id, want) =>
 try {
 	console.log("\nweb app: forming a party of two");
 	await host.goto(PARTY);
-	await host.locator("button", { hasText: "PLAY WITH FRIENDS" }).first().click({ timeout: TIMEOUT, polling: 250 });
+	await host.locator("button", { hasText: "MULTI-PLAYER" }).first().click({ timeout: TIMEOUT, polling: 250 });
 	await host.locator("button", { hasText: "INVITE A FRIEND" }).first().click();
 	const link = await host.locator("textarea.share-code").first().inputValue();
 	await guest.goto(link);

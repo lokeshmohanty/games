@@ -20,6 +20,7 @@ const views: Record<Exclude<View, "party">, ReturnType<typeof lazy>> = {
 	profile: lazy(() => import("./views/Profile")),
 	contribute: lazy(() => import("./views/Contribute")),
 	contributors: lazy(() => import("./views/Contributors")),
+	collections: lazy(() => import("./views/Collections")),
 };
 
 const TITLES: Record<View, string> = {
@@ -29,6 +30,7 @@ const TITLES: Record<View, string> = {
 	profile: "Profile — Arcade Games",
 	contribute: "Add your game — Arcade Games",
 	contributors: "Contributors — Arcade Games",
+	collections: "Collections — Arcade Games",
 };
 
 // The party screen and its game want the page unzoomable (as party.html
