@@ -399,6 +399,11 @@ canvas {
   color: var(--danger);
   border-color: var(--danger);
 }
+/* A person's other choices (lib/profile.js moreSheet), one per row. */
+.sheet-actions {
+  display: grid;
+  gap: 8px;
+}
 .party-game {
   display: block;
   width: 100%;
@@ -723,6 +728,30 @@ canvas {
 .managed-details {
   display: grid;
   gap: 10px;
+}
+/* "Players you just played", ADD FRIEND each (lib/account-ui.js justPlayed). */
+.just-played[hidden] {
+  display: none;
+}
+.just-played-label {
+  color: var(--ink-3);
+  font-size: 0.72rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  margin-bottom: 4px;
+}
+.just-played-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 44px;
+}
+.just-played-row span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .managed-details[hidden] {
   display: none;
@@ -1053,6 +1082,11 @@ canvas {
 .neon-invite p {
   margin: 0 0 10px;
 }
+/* A friend request above a party invite, when both are showing. */
+.neon-request ~ .neon-invite:not(.neon-request),
+.neon-invite:not(.neon-request) ~ .neon-request {
+  bottom: calc(max(16px, env(safe-area-inset-bottom)) + 112px);
+}
 .neon-invite-row {
   display: flex;
   gap: 8px;
@@ -1189,6 +1223,7 @@ canvas {
   margin-bottom: 4px;
 }
 .site-menu-btn {
+  position: relative;
   display: grid;
   place-items: center;
   width: 44px;
@@ -1250,6 +1285,26 @@ canvas {
   width: 22px;
   height: 22px;
   border-radius: 50%;
+}
+/* Friend requests waiting (lib/nav.js): a count on ☰ and on your entry. */
+.site-badge {
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  box-sizing: border-box;
+  border-radius: 9px;
+  background: var(--accent);
+  color: var(--on-accent);
+  font: 700 0.7rem/18px var(--font-mono);
+  text-align: center;
+}
+.site-menu-btn > .site-badge {
+  position: absolute;
+  top: -6px;
+  right: -6px;
+}
+.site-menu-item > .site-badge {
+  margin-left: auto;
 }
 .site-menu-name {
   overflow: hidden;
