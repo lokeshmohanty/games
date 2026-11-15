@@ -7,11 +7,11 @@
 //   ./                         the portal
 //   ./?page=leaderboard        leaderboard | profile | contribute | contributors
 //                              | collections
-//   ./?game=connect4 …         the party (party.html's own words: game, mode,
-//   ./?party  ./#i=…           fresh, dev — and any invite or code link)
+//   ./?game=connect4 …         the party (its words: game, mode, fresh, dev,
+//   ./?party  ./?party#i=…     party — and any invite or code link)
 //
-// The old pages (party.html, leaderboard.html, …) are redirect stubs into
-// these, so links, bookmarks and installed shortcuts keep working.
+// The old pages (party.html, leaderboard.html, …) and their redirect stubs
+// were removed on 2026-11-15: these are the only addresses.
 import { createMemo, createRoot, createSignal } from "solid-js";
 
 export type View = "portal" | "party" | "leaderboard" | "profile" | "contribute" | "contributors" | "collections";
@@ -53,30 +53,16 @@ export function navigate(href: string, { replace = false } = {}) {
 addEventListener("popstate", () => setUrl(new URL(location.href)));
 
 /**
- * The old page names, as they still appear in the shell's vanilla code
- * (lib/party.js "← All games", lib/nav.js tabs…), mapped to views.
+ * A link to the shell (./ or index.html, with any query and hash) as the
+ * address to navigate to, or null for anything else (another file, another
+ * site), which the browser loads itself.
  */
-const OLD: Record<string, string> = {
-	"index.html": "./",
-	"party.html": "./",
-	"leaderboard.html": "./?page=leaderboard",
-	"profile.html": "./?page=profile",
-	"contribute.html": "./?page=contribute",
-	"contributors.html": "./?page=contributors",
-};
-
-/** An old page's URL as the shell's own (its query and hash carried over). */
 export function shellUrl(href: string): string | null {
 	const u = new URL(href, location.href);
 	if (u.origin !== location.origin) return null;
 	const base = new URL("./", location.href);
-	if (!u.pathname.startsWith(base.pathname)) return null;
-	const name = u.pathname.slice(base.pathname.length) || "index.html";
-	const to = OLD[name];
-	if (to === undefined) return null;
-	const out = new URL(to, base);
-	for (const [k, v] of u.searchParams) out.searchParams.set(k, v);
-	if (name === "party.html" && ![...u.searchParams.keys()].some((k) => PARTY_KEYS.includes(k))) out.searchParams.set("party", "");
+	if (u.pathname !== base.pathname && u.pathname !== `${base.pathname}index.html`) return null;
+	const out = new URL(`./${u.search}`, base);
 	out.hash = u.hash;
 	return out.href;
 }

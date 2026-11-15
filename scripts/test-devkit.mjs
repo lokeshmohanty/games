@@ -1,14 +1,15 @@
 // scripts/test-devkit.mjs — the game dev kit, as an outside author uses it.
 //
-// The SDK's example games (sdk/v1/example/tic-tac-toe, and v2's in
-// sdk/v2/examples/) are each served by the
-// author-side server (sdk/v1/dev-server.mjs) on one port, the arcade on
+// The SDK's example games (sdk/v2/examples/) are each served by the
+// author-side server (sdk/dev-server.mjs) on one port, the arcade on
 // another — two origins, as the live site and an author's machine are — and
-// the game is loaded with `party.html?dev=…`, played against a bot to the end,
-// at 390x844. A `?dev=` that is not on this machine must be refused.
+// the game is loaded with `./?dev=…`, played against a bot to the end, at
+// 390x844. A `?dev=` that is not on this machine must be refused. The dev
+// kit's old public address (sdk/v1/dev-server.mjs, a copy the build makes
+// until 2027-02-15) must serve the same file.
 
 import { spawn } from "node:child_process";
-import { existsSync, globSync } from "node:fs";
+import { existsSync, globSync, readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
@@ -55,7 +56,7 @@ const ctx = await browser.newContext({ viewport: { width: 390, height: 844 } });
 
 /** Serve an examples folder as an author would, and play `game` from it against a bot. */
 async function playExample(label, folder, game, port) {
-	const dev = spawn("node", [join(ROOT, "sdk/v1/dev-server.mjs"), join(ROOT, folder), String(port)], {
+	const dev = spawn("node", [join(ROOT, "sdk/dev-server.mjs"), join(ROOT, folder), String(port)], {
 		env: { ...process.env, NEON_PLATFORM: site.base },
 	});
 	process.on("exit", () => dev.kill());
@@ -70,7 +71,7 @@ async function playExample(label, folder, game, port) {
 	page.on("pageerror", (err) => check(`no page error (${err.message})`, false));
 
 	console.log(`\ndevkit (${label}): the author's server`);
-	const link = printed.match(new RegExp(`http\\S+party\\.html\\?\\S+game=dev%2F${game}(?=&|\\s|$)\\S*`))?.[0];
+	const link = printed.match(new RegExp(`http\\S+/\\?\\S+game=dev%2F${game}(?=&|\\s|$)\\S*`))?.[0];
 	check("prints a link to the arcade for each game", !!link, printed);
 	const head = await fetch(`http://127.0.0.1:${port}/${game}/game.json`);
 	check("answers with CORS allowed", head.headers.get("access-control-allow-origin") === "*");
@@ -96,8 +97,8 @@ async function playExample(label, folder, game, port) {
 		})) === "SecurityError",
 	);
 	if (label.startsWith("sdk v2")) {
-		const v1 = await frame.evaluate(() => typeof window.NeonArcade);
-		check("…with no v1 runtime in it, only the protocol", v1 === "undefined", v1);
+		const shell = await frame.evaluate(() => typeof window.NeonArcade);
+		check("…with none of the shell's globals in it, only the protocol", shell === "undefined", shell);
 	}
 	const fits = await frame.evaluate(() => {
 		const b = [...document.querySelectorAll("#ttt button")].map((x) => x.getBoundingClientRect());
@@ -108,7 +109,7 @@ async function playExample(label, folder, game, port) {
 	// Play the first free square on each of our turns until the game ends.
 	await readyToClick(page);
 	const end = Date.now() + TIMEOUT;
-	const me = await frame.evaluate(() => window.__game.ctx?.room.selfId ?? window.arcade.party.self);
+	const me = await frame.evaluate(() => window.arcade.party.self);
 	let state = await frame.evaluate(() => window.__game.handle.debug());
 	while (state.winner === null && Date.now() < end) {
 		const mine = state.x === me ? 1 : 2;
@@ -133,9 +134,19 @@ await playExample("sdk v2 managed, TypeScript", "sdk/v2/examples", "tic-tac-toe-
 await playExample("sdk v2 managed, Go", "sdk/v2/examples", "tic-tac-toe-go", DEV_PORT + 6);
 await playExample("sdk v2 managed, C", "sdk/v2/examples", "tic-tac-toe-c", DEV_PORT + 7);
 
+console.log("\ndevkit: the old public address");
+{
+	// Transition copy for authors who fetched the dev kit from sdk/v1/ (made
+	// by scripts/assemble.mjs; remove on 2027-02-15, docs/platform.md).
+	const old = await fetch(`${site.base}/sdk/v1/dev-server.mjs`);
+	const now = await fetch(`${site.base}/sdk/dev-server.mjs`);
+	const source = readFileSync(join(ROOT, "sdk/dev-server.mjs"), "utf8");
+	check("sdk/v1/dev-server.mjs is still served, identical to sdk/dev-server.mjs", old.ok && now.ok && (await old.text()) === source && (await now.text()) === source, `${old.status} ${now.status}`);
+}
+
 console.log("\ndevkit: only this machine");
 const away = await ctx.newPage();
-await away.goto(`${site.base}/party.html?dev=${encodeURIComponent("https://example.com/game/")}&game=dev%2Fx&fresh=1`);
+await away.goto(`${site.base}/?dev=${encodeURIComponent("https://example.com/game/")}&game=dev%2Fx&fresh=1`);
 const warned = await away
 	.locator(".neon-toast", { hasText: "must be a server on this machine" })
 	.waitFor({ timeout: TIMEOUT })

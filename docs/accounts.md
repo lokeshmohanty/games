@@ -1,7 +1,6 @@
 # Accounts, results and the social layer
 
-*Built 2026-11-13 (branches `platform-2`). Plan of record:
-`~/.claude/plans/1-a-b-2-generic-whistle.md`, Phases 1–6.*
+*Built 2026-11-13 (branches `platform-2`), Phases 1–6 of the platform plan.*
 
 Signing in is optional and changes nothing about playing: every game works
 with no account, offline, from any page. An account adds favourites on every
@@ -25,7 +24,7 @@ groups with their own leaderboards, and feedback on games.
 | Feedback | GitHub Discussions, posted by the arcade's GitHub App | `worker/api/feedback.js` |
 | Public hourly snapshot | GitHub branch `stats` | `worker/api/snapshot.js` |
 
-Game frames never see any of it: they are sandboxed (docs/sdk.md), and the
+Game frames never see any of it: they are sandboxed (docs/platform.md), and the
 token lives in the party page's localStorage only.
 
 ## Decisions (Lokesh, 2026-11-13)
@@ -66,7 +65,7 @@ token lives in the party page's localStorage only.
 
 ## A result's journey
 
-1. A game calls `ctx.reportResult(r)` on every peer (docs/sdk.md).
+1. A game sends `result` on every peer (docs/platform.md, "Results").
 2. `lib/party.js` records it on the device once per run + match + ranking
    (`lib/stats.js`), then calls `NeonArcade.onResult`.
 3. `lib/account.js`: the **host** sends `POST /api/stats/played` (anonymous,

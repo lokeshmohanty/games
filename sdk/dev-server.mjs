@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// sdk/v1/dev-server.mjs — serve your game folder(s) to the live arcade.
+// sdk/dev-server.mjs — serve your game folder(s) to the live arcade.
 //
 // No dependencies, Node 18+. From your repo:
 //
@@ -9,7 +9,7 @@
 // It prints, for every folder below it holding a game.json, a link that opens
 // the real arcade with that game loaded from this machine:
 //
-//   https://www.lokeshmohanty.in/games/party.html?dev=http://127.0.0.1:5174/my-game/&game=dev%2Fmy-game&fresh=1
+//   https://www.lokeshmohanty.in/games/?dev=http://127.0.0.1:5174/my-game/&game=dev%2Fmy-game&fresh=1
 //
 // Edit, reload, play. Bots, invites (open the invite link in a second tab)
 // and the party all work as they will once the game is merged. Set
@@ -21,7 +21,7 @@
 // may still ask you once to allow the arcade to reach this machine).
 // Nothing is cached: a reload always gets your latest files.
 //
-// A web app (game.json with "app", docs/sdk.md "Web apps") is served the way
+// A web app (game.json with "app", docs/platform.md "Web apps") is served the way
 // the arcade publishes it: web/ is your built site (run your build first —
 // this server builds nothing), server/ your Python server's folder, and
 // game.json the published form. Packages Pyodide does not ship are imported
@@ -209,7 +209,7 @@ createServer((req, res) => {
 		const rel = relative(ROOT, dir).split(sep).join("/");
 		const dev = `http://127.0.0.1:${PORT}/${rel ? rel + "/" : ""}`;
 		const q = new URLSearchParams({ dev, game: `dev/${id}`, fresh: "1" });
-		console.log(`\n  ${id}\n  ${PLATFORM}/party.html?${q}`);
+		console.log(`\n  ${id}\n  ${PLATFORM}/?${q}`);
 	}
 	console.log("");
 });

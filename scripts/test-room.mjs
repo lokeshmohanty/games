@@ -96,8 +96,8 @@ page.on("pageerror", (err) => {
 
 try {
 	// ------------------------------------------------------------- setup
-	// The harness, not party.html: nothing is mounted, so the only rooms on
-	// this page are the ones the test makes. party.html hosts on boot, which
+	// The harness, not the party: nothing is mounted, so the only rooms on
+	// this page are the ones the test makes. The party hosts on boot, which
 	// would be a second, unaccounted room.
 	await page.goto(PAGE("scripts/room-harness.html", "?mockroom=1"));
 	await page.evaluate(() => {
@@ -1950,7 +1950,7 @@ try {
 	// The earlier sections left a rejoin token in localStorage; without this
 	// the boot would try to reconnect into a room this page's mock never had.
 	await ui.addInitScript(() => localStorage.removeItem("neon.room"));
-	await ui.goto(SERVED("party.html", "?mockroom=1"));
+	await ui.goto(SERVED("?party", "&mockroom=1"));
 	// The boot itself hosts through the room server, which writes the token;
 	// let it finish, then clear the token and reload, so the reloaded page is
 	// a FRESH host rather than a reconnect into this page's now-orphaned one.
@@ -1968,7 +1968,7 @@ try {
 	// A code link into a fresh page joins straight away — and a code no room
 	// is meeting answers with an explicit error, never a silent wait.
 	const bad = await context.newPage();
-	await bad.goto(SERVED("party.html", "?mockroom=1#c=123456"));
+	await bad.goto(SERVED("?party", "&mockroom=1#c=123456"));
 	await bad.locator(".lobby-status").first().waitFor({ timeout: TIMEOUT });
 	check(
 		"a dead code says so explicitly",
@@ -2037,16 +2037,16 @@ try {
 
 	// ------------------------------------------- 8. the fallback path
 	console.log("\nroom: the zero-server fallback");
-	// A game page opens the party shell; with no room server it offers the
+	// A game's address opens the party; with no room server it offers the
 	// classic invite, and no code that nobody could use.
 	const plain = await context.newPage();
-	await plain.goto(SERVED("connect4.html", "?rs=http://localhost:1"));
+	await plain.goto(SERVED("?game=connect4&fresh=1", "&rs=http://localhost:1"));
 	await plain.locator("button", { hasText: "MULTI-PLAYER" }).click({ timeout: TIMEOUT });
 	await plain.locator("button", { hasText: "INVITE A FRIEND" }).waitFor({ timeout: TIMEOUT });
-	check("a game page still offers the classic invite", true);
+	check("a game's address still offers the classic invite", true);
 	check("…and shows no party code without the room server", (await plain.locator(".party-code-digits").count()) === 0);
 	const plainParty = await context.newPage();
-	await plainParty.goto(SERVED("party.html", "?rs=http://localhost:1"));
+	await plainParty.goto(SERVED("?party", "&rs=http://localhost:1"));
 	await plainParty.evaluate(() => localStorage.removeItem("neon.room"));
 	await plainParty.reload();
 	await plainParty.locator(".party-member").first().waitFor({ timeout: TIMEOUT });

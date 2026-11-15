@@ -1,9 +1,9 @@
 #!/usr/bin/env node
 /**
  * test-webapp.mjs — an ordinary web app and its Python server, run unchanged
- * by two real browser peers (docs/sdk.md, "Web apps").
+ * by two real browser peers (docs/platform.md, "Web apps").
  *
- *   node scripts/test-webapp.mjs     (needs sdk/v1/pyodide/: just pyodide)
+ *   node scripts/test-webapp.mjs     (needs sdk/pyodide/: just pyodide)
  *
  * The app (scripts/fixtures/webapp/) is served by the dev kit, as an author's
  * would be. It fetch()es "http://localhost:8000", shares a room by putting it
@@ -34,8 +34,8 @@ const check = (label, ok, detail = "") => {
 	return ok;
 };
 
-if (!existsSync(join(ROOT, "sdk/v1/pyodide/VERSION"))) {
-	console.error("sdk/v1/pyodide/ is missing: run `just pyodide` (node scripts/vendor-pyodide.mjs)");
+if (!existsSync(join(ROOT, "sdk/pyodide/VERSION"))) {
+	console.error("sdk/pyodide/ is missing: run `just pyodide` (node scripts/vendor-pyodide.mjs)");
 	process.exit(1);
 }
 const chrome = [process.env.CHROME, "/run/current-system/sw/bin/google-chrome-stable", "/run/current-system/sw/bin/chromium", "/usr/bin/google-chrome"]
@@ -51,10 +51,10 @@ if (!chrome || !pw) {
 const { chromium } = require(pw);
 
 const site = await serve(8737);
-const dev = spawn("node", [join(ROOT, "sdk/v1/dev-server.mjs"), join(ROOT, "scripts/fixtures"), String(DEV_PORT)], { stdio: "ignore" });
+const dev = spawn("node", [join(ROOT, "sdk/dev-server.mjs"), join(ROOT, "scripts/fixtures"), String(DEV_PORT)], { stdio: "ignore" });
 process.on("exit", () => dev.kill());
 await new Promise((r) => setTimeout(r, 500));
-const PARTY = `${site.base}/party.html?${new URLSearchParams({ dev: `http://127.0.0.1:${DEV_PORT}/webapp/`, game: "dev/webapp-fixture", fresh: "1", rs: "http://127.0.0.1:1" })}`;
+const PARTY = `${site.base}/?${new URLSearchParams({ dev: `http://127.0.0.1:${DEV_PORT}/webapp/`, game: "dev/webapp-fixture", fresh: "1", rs: "http://127.0.0.1:1" })}`;
 
 const browser = await chromium.launch({ executablePath: chrome, args: ["--no-sandbox"] });
 const context = await browser.newContext({ viewport: { width: 390, height: 844 } });
@@ -115,7 +115,7 @@ try {
 	const dot = await hf.waitForFunction(() => document.getElementById("dot").naturalWidth > 0, null, { timeout: TIMEOUT, polling: 250 }).then(() => true).catch(() => false);
 	check('an <img src="/dot.svg"> loads from the app\'s folder', dot);
 
-	await host.bringToFront(); // a click into a background page's frame misses (docs/sdk.md)
+	await host.bringToFront(); // a sandboxed frame is its own process: a click into a background page's frame misses
 	await hf.locator("#new").click();
 	const inRoom = `/room \\w+/.test(document.getElementById("room").textContent)`;
 	hf = await appFrame(host, inRoom);

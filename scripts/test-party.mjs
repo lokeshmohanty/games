@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * test-party.mjs — drive party.html with three real browser peers.
+ * test-party.mjs — drive the party (./?party) with three real browser peers.
  *
  *   node scripts/test-party.mjs
  *
@@ -24,8 +24,10 @@ const require = createRequire(import.meta.url);
 const ROOT = resolvePath(dirname(fileURLToPath(import.meta.url)), "..");
 const PW_CACHE = join(homedir(), ".cache", "game-previews");
 const SITE = await serve(8733);
-const PARTY = SITE.url("party.html");
+const PARTY = SITE.url("?party");
 const TIMEOUT = 40_000;
+// The portal: the shell with no query (LEAVE PARTY and ALL GAMES go there).
+const PORTAL = (u) => u.pathname === "/" && !u.search;
 
 function chromePath() {
 	const found = [
@@ -347,9 +349,7 @@ try {
 	}
 
 	// The roster is checked against each game's shape before START: a 2-v-1
-	// party cannot start a one-against-one game. (Tug of War, the one game
-	// with several players per side, was retired on 2026-11-14;
-	// docs/index.md says what that leaves untested.)
+	// party cannot start a one-against-one game.
 	console.log("\nparty: a roster the game cannot seat");
 	await host.evaluate(() => window.__party.room.setGame(null));
 	{
@@ -495,7 +495,7 @@ try {
 	await hostC4.waitForFunction(() => window.__game.handle.debug().started, null, { timeout: TIMEOUT });
 	const away4 = await hostC4.evaluate(() => {
 		const d = window.__game.handle.debug();
-		return { toMove: d.turn === 1 ? d.red : d.yellow, host: window.arcade?.party.self ?? window.__game.ctx.room.selfId };
+		return { toMove: d.turn === 1 ? d.red : d.yellow, host: window.arcade.party.self };
 	});
 	if (away4.toMove === away4.host) {
 		await readyToClick(host);
@@ -648,9 +648,9 @@ try {
 	// Now really leave: the others are told, and how.
 	q = nextDialog(p4, true);
 	// One page (docs/spa.md): "← All games" keeps the party; LEAVE PARTY leaves.
-	await Promise.all([p4.waitForURL(/index\.html/, { timeout: TIMEOUT }), p4.locator("a[data-leaves]", { hasText: "LEAVE PARTY" }).click()]);
+	await Promise.all([p4.waitForURL(PORTAL, { timeout: TIMEOUT }), p4.locator("a[data-leaves]", { hasText: "LEAVE PARTY" }).click()]);
 	await q;
-	check("LEAVE leaves for the portal", /index\.html/.test(p4.url()));
+	check("LEAVE leaves for the portal", PORTAL(new URL(p4.url())));
 	check("the host is told who left", await toastOn(host, `${p4Name} left the party.`));
 	check("so is everyone else", await toastOn(p3, `${p4Name} left the party.`));
 	const toastBox = await host.evaluate(() => {
@@ -883,7 +883,7 @@ try {
 		console.log(`  FAIL page error on leaver: ${err.message}`);
 		failures++;
 	});
-	await leaver.goto(PARTY + "?mockroom=1");
+	await leaver.goto(PARTY + "&mockroom=1");
 	await leaver.locator(".party-code-digits").waitFor({ timeout: TIMEOUT });
 	const firstCode = await leaver.locator(".party-code-digits").textContent();
 	check(
@@ -926,7 +926,7 @@ try {
 
 	const alone = nextDialog(leaver, true);
 	await Promise.all([
-		leaver.waitForURL(/index\.html/, { timeout: TIMEOUT }),
+		leaver.waitForURL(PORTAL, { timeout: TIMEOUT }),
 		leaver.locator("a.neon-btn", { hasText: "ALL GAMES" }).click(),
 	]);
 	check(
@@ -940,7 +940,7 @@ try {
 	);
 	// What the portal's party banner does, with the mock still attached so a
 	// surviving token would have somewhere to reconnect to.
-	await leaver.goto(PARTY + "?mockroom=1");
+	await leaver.goto(PARTY + "&mockroom=1");
 	await leaver.locator(".party-code-digits").waitFor({ timeout: TIMEOUT });
 	const banner = await leaver.evaluate(() => ({
 		sub: document.querySelector(".lobby-sub")?.textContent ?? "",
@@ -956,7 +956,7 @@ try {
 	// `?rs=` at a port nothing listens on: the dial fails as "unreachable",
 	// which is the network's fault, not the party's — so the screen must say
 	// so and offer RETRY, not just a fresh party.
-	await leaver.goto(PARTY + "?rs=http://127.0.0.1:1#c=123456");
+	await leaver.goto(PARTY + "&rs=http://127.0.0.1:1#c=123456");
 	const retry = leaver.locator("button", { hasText: /^RETRY$/ });
 	const offered = await retry
 		.waitFor({ timeout: TIMEOUT })

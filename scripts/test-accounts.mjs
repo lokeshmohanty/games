@@ -196,7 +196,7 @@ async function walk(url) {
 	return url;
 }
 const tokenOf = (url) => new URL(url).hash.match(/token=([^&]+)/)?.[1] ?? null;
-const testLogin = async (name, extra = "") => tokenOf(await walk(`${B}/auth/test?name=${encodeURIComponent(name)}${extra}&back=${encodeURIComponent(SITE + "/profile.html")}`));
+const testLogin = async (name, extra = "") => tokenOf(await walk(`${B}/auth/test?name=${encodeURIComponent(name)}${extra}&back=${encodeURIComponent(SITE + "/?page=profile")}`));
 
 try {
 	console.log("\naccounts: CORS");
@@ -210,10 +210,10 @@ try {
 
 	console.log("\naccounts: signing in with GitHub and Google");
 	{
-		const back = encodeURIComponent(`${SITE}/profile.html?x=1`);
+		const back = encodeURIComponent(`${SITE}/?page=profile&x=1`);
 		const ghUrl = await walk(`${B}/auth/github/start?back=${back}`);
 		const gh = tokenOf(ghUrl);
-		check("GitHub: consent → callback → back to the page with a token", !!gh && ghUrl.startsWith(`${SITE}/profile.html?x=1#token=`), ghUrl);
+		check("GitHub: consent → callback → back to the page with a token", !!gh && ghUrl.startsWith(`${SITE}/?page=profile&x=1#token=`), ghUrl);
 		const me = await call("GET", "/api/me", { token: gh });
 		check("…as the GitHub profile's name and avatar", me.body.name === "Octo Cat" && me.body.avatar === "https://avatars.example/42" && me.body.provider === "github", me.body);
 		const again = tokenOf(await walk(`${B}/auth/github/start?back=${back}`));
@@ -222,7 +222,7 @@ try {
 		const gme = await call("GET", "/api/me", { token: g });
 		check("Google: the same flow, a different account", gme.body.name === "Goo Gle" && gme.body.provider === "google" && gme.body.id !== me.body.id, gme.body);
 		// One account, both sign-ins: connect GitHub to the Google account.
-		const linkTo = async (token, provider) => walk((await call("POST", `/api/me/link/${provider}`, { token, body: { back: `${SITE}/profile.html` } })).body.url);
+		const linkTo = async (token, provider) => walk((await call("POST", `/api/me/link/${provider}`, { token, body: { back: `${SITE}/?page=profile` } })).body.url);
 		let landed = await linkTo(g, "github");
 		check("connecting a GitHub account another arcade account has is refused, and says so", landed.endsWith("#signin=taken&provider=github"), landed);
 		fake.ghUser = { id: 77, login: "goo-gh", name: "Goo on GitHub" };

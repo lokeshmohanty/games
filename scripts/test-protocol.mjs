@@ -70,7 +70,7 @@ function loadPlaywright() {
 }
 
 const site = await serve(8737);
-const dev = spawn("node", [join(ROOT, "sdk/v1/dev-server.mjs"), join(ROOT, "scripts/fixtures"), String(DEV_PORT)], {
+const dev = spawn("node", [join(ROOT, "sdk/dev-server.mjs"), join(ROOT, "scripts/fixtures"), String(DEV_PORT)], {
 	env: { ...process.env, NEON_PLATFORM: site.base },
 	stdio: "ignore",
 });
@@ -131,7 +131,7 @@ async function invite(inviter, joiner) {
 try {
 	console.log("\nprotocol: a party of three and a bot");
 	const q = new URLSearchParams({ dev: devBase, fresh: "1", rs: "http://127.0.0.1:1" });
-	await host.goto(`${site.base}/party.html?${q}`);
+	await host.goto(`${site.base}/?${q}`);
 	await host.locator(".party-member").first().waitFor({ timeout: TIMEOUT });
 	await invite(host, p2);
 	await invite(host, p3);

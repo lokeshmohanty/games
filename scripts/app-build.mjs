@@ -1,7 +1,7 @@
 // scripts/app-build.mjs — turn a web app, as its author wrote it, into a game folder.
 //
 // A manifest with `app` (scripts/manifest.mjs) is an existing web app run
-// unchanged (docs/sdk.md, "Web apps"). scripts/fetch-community.mjs calls
+// unchanged (docs/platform.md, "Web apps"). scripts/fetch-community.mjs calls
 // this for each one, on the checkout of the pinned commit:
 //
 //   1. build    `app.build.run` in `app.build.dir`, inside a throwaway
@@ -11,7 +11,7 @@
 //               maintainer on their own machine, never in CI).
 //   2. web/     the built site (or `app.web`), with every script's
 //               `location` and `history` rewritten to the arcade's
-//               (__neon.location / __neon.history, sdk/v1/web-shim.js).
+//               (__neon.location / __neon.history, sdk/v2/web-shim.js).
 //               esbuild only parses here; it runs nothing.
 //   3. server/  the Python server's source, and in server/wheels/ the
 //               pure-Python wheels of what it imports that Pyodide lacks
@@ -25,7 +25,7 @@ import { dirname, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const LOCK = join(ROOT, "sdk/v1/pyodide/pyodide-lock.json");
+const LOCK = join(ROOT, "sdk/pyodide/pyodide-lock.json");
 const ESBUILD = "esbuild@0.28.2";
 const NODE_IMAGE = "docker.io/library/node:22-bookworm-slim";
 const PYTHON = "3.14"; // Pyodide's (scripts/vendor-pyodide.mjs)
@@ -156,7 +156,7 @@ export function buildApp({ repo, gameDir, manifest, to }) {
 			mkdirSync(dirname(join(to, "server", f)), { recursive: true });
 			cpSync(join(src, f), join(to, "server", f));
 		}
-		if (!existsSync(LOCK)) throw new Error("sdk/v1/pyodide/ is missing — run node scripts/vendor-pyodide.mjs");
+		if (!existsSync(LOCK)) throw new Error("sdk/pyodide/ is missing — run node scripts/vendor-pyodide.mjs");
 		const wanted = pythonDeps(src);
 		const got = wanted.length
 			? JSON.parse(

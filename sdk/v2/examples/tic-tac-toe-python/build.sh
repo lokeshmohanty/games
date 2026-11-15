@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Vendor the Python adapter into this folder and check the game under CPython.
-# Nothing is compiled: the platform ships Pyodide (sdk/v1/pyodide/, `just
+# Nothing is compiled: the platform ships Pyodide (sdk/pyodide/, `just
 # pyodide`) and the frame asks the shell for it (`runtime.file`). The shell
 # inlines only scripts inside the game's folder, so the adapter's files are
 # copied here, and the copies are committed.

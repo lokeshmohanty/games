@@ -62,7 +62,7 @@ pub struct Seat {
     pub bot: bool,
 }
 
-/// The kind of match, for [`Outcome`] (docs/sdk.md "Reporting a result").
+/// The kind of match, for [`Outcome`] (docs/platform.md "Results").
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Kind {
@@ -73,7 +73,7 @@ pub enum Kind {
     Local,
 }
 
-/// How a match ended (docs/sdk.md "Reporting a result"). `ranking[0]` won; a
+/// How a match ended (docs/platform.md "Results"). `ranking[0]` won; a
 /// slot of several is a tie or a team, so a draw is everyone in one slot.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Outcome {

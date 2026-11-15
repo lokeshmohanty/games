@@ -44,7 +44,7 @@ async function device(name, uid = name) {
 	const ctx = await browser.newContext(phone);
 	const p = await ctx.newPage();
 	p.on("pageerror", (e) => check(`no page error on ${name}'s device (${e.message})`, false));
-	const back = page("profile.html");
+	const back = page("?page=profile");
 	await p.goto(`${w.base}/auth/test?name=${encodeURIComponent(name)}&uid=${encodeURIComponent(uid)}&back=${encodeURIComponent(back)}`);
 	await p.locator(".who .name").waitFor({ timeout: TIMEOUT });
 	return { ctx, p };
@@ -85,7 +85,7 @@ try {
 	check("…and still fits the phone", await noSideScroll(ana.p));
 	check("…with no star or feedback on the cards any more", (await ana.p.locator(".game-card .fav, .game-card .fb").count()) === 0);
 	// Starred from inside the game now (party.js, top right).
-	await ana.p.goto(page("party.html", "&game=connect4"));
+	await ana.p.goto(page("?party", "&game=connect4"));
 	await ana.p.locator(".top-fav").click({ timeout: TIMEOUT });
 	check("☆ at the top of a game stars it", (await ana.p.locator('.top-fav[aria-pressed="true"]').count()) === 1);
 	// A collection's ★ (lib/collections.js) rides in the same list.
@@ -106,10 +106,10 @@ try {
 	console.log("\nsocial: friends in a party");
 	const bo = await device("Bo");
 	const boId = await bo.p.evaluate(() => NeonArcade.account.me.id);
-	await ana.p.goto(page("party.html"));
+	await ana.p.goto(page("?party"));
 	await ana.p.locator(".party-code-digits").waitFor({ timeout: TIMEOUT });
 	const code = (await ana.p.locator(".party-code-digits").textContent()).replace(/\D/g, "");
-	await bo.p.goto(page("party.html", `#c=${code}`));
+	await bo.p.goto(page("?party", `#c=${code}`));
 	await ana.p.waitForFunction(() => document.querySelectorAll(".party-member").length === 2, null, { timeout: TIMEOUT });
 	const addFriend = ana.p.locator(".party-member button", { hasText: "ADD FRIEND" });
 	check("a signed-in member gets ADD FRIEND", await addFriend.waitFor({ timeout: TIMEOUT }).then(() => true, () => false));
@@ -140,7 +140,7 @@ try {
 	console.log("\nsocial: a ranked game between two signed-in people");
 	// The reload above made a new party; bring Bo into it.
 	const code2 = (await ana.p.locator(".party-code-digits").textContent()).replace(/\D/g, "");
-	await bo.p.goto(page("party.html", `#c=${code2}`));
+	await bo.p.goto(page("?party", `#c=${code2}`));
 	await ana.p.waitForFunction(() => document.querySelectorAll(".party-member").length === 2, null, { timeout: TIMEOUT });
 	await ana.p.evaluate(() => {
 		const r = window.__party.room;
@@ -176,7 +176,7 @@ try {
 	check("…and it is in this device's own stats too", local?.won >= 1 && local.vsPeople >= 1, local);
 
 	console.log("\nsocial: the leaderboards page");
-	await ana.p.goto(page("leaderboard.html", "&game=connect4&scope=global"));
+	await ana.p.goto(page("?page=leaderboard", "&game=connect4&scope=global"));
 	await ana.p.locator("[data-board] [data-player]").first().waitFor({ timeout: TIMEOUT });
 	check("the global board lists the ranked players", (await ana.p.locator("[data-board] [data-player]").count()) === 2);
 	check("…you highlighted", (await ana.p.locator("[data-board] [data-player].me").textContent()).includes("Ana Lima"));
@@ -194,7 +194,7 @@ try {
 			if (r.url().includes("/api/run/start") && r.ok()) issued = await r.json().catch(() => null);
 			if (r.url().includes("/api/match/report")) reports.push({ sent: JSON.parse(r.request().postData() ?? "{}"), got: await r.json().catch(() => null), at: Date.now() });
 		});
-		await cy.p.goto(page("party.html", "&game=neon-survival-mp&fresh=1&mode=bots"));
+		await cy.p.goto(page("?party", "&game=neon-survival-mp&fresh=1&mode=bots"));
 		await gameFrame(cy.p, TIMEOUT);
 		const until = async (fn, ms) => {
 			for (const end = Date.now() + ms; Date.now() < end && !fn(); ) await cy.p.waitForTimeout(200);
@@ -221,7 +221,7 @@ try {
 		else {
 			const eli = await device("Eli");
 			const seen = watchRuns(eli.p);
-			await eli.p.goto(page("party.html", `&game=${encodeURIComponent("lokeshmohanty/light-cycles")}&fresh=1&mode=bots`));
+			await eli.p.goto(page("?party", `&game=${encodeURIComponent("lokeshmohanty/light-cycles")}&fresh=1&mode=bots`));
 			await gameFrame(eli.p, TIMEOUT);
 			const until = async (fn, ms) => {
 				for (const end = Date.now() + ms; Date.now() < end && !fn(); ) await eli.p.waitForTimeout(200);
@@ -234,7 +234,7 @@ try {
 			check("alone, a round's report names the server's run and carries its time", rep?.sent.run === issued?.run && typeof rep?.sent.scores?.[rep.sent.ranking[0][0]] === "number", rep?.sent);
 			check("…which counts", rep?.got?.counted === true, rep?.got);
 			check("…and asks for no run against bots (nobody else is in it)", !seen.starts.some((x) => x.sent.vs), seen.starts.map((x) => x.sent));
-			await eli.p.goto(page("leaderboard.html", `&game=${encodeURIComponent("lokeshmohanty/light-cycles")}&level=alone`));
+			await eli.p.goto(page("?page=leaderboard", `&game=${encodeURIComponent("lokeshmohanty/light-cycles")}&level=alone`));
 			await eli.p.locator("[data-board] [data-player].me").waitFor({ timeout: TIMEOUT });
 			const score = await eli.p.locator("[data-board] [data-player].me .score").textContent();
 			check("the leaderboard's Alone board shows the round, in seconds", /^\d+(\.\d)? s$/.test(score), score);
@@ -249,7 +249,7 @@ try {
 		const dee = await device("Dee");
 		const deeId = await dee.p.evaluate(() => NeonArcade.account.me.id);
 		const seen = watchRuns(dee.p);
-		await dee.p.goto(page("party.html", "&game=tic-tac-toe-js&fresh=1&mode=bots"));
+		await dee.p.goto(page("?party", "&game=tic-tac-toe-js&fresh=1&mode=bots"));
 		const f = await gameFrame(dee.p, TIMEOUT);
 		// The bot wins if it can, blocks if it must, else takes the centre, else
 		// the first free square: 0, 7, 6, 8 forks it, as X or as O (searched).
@@ -276,7 +276,7 @@ try {
 		await dee.p.locator(".managed-actions button", { hasText: "PLAY AGAIN" }).click();
 		await until(() => seen.starts.filter((x) => x.sent.vs === "bots").length === 2, TIMEOUT);
 		check("PLAY AGAIN asks for a new run; the first win was reported once", seen.starts.filter((x) => x.sent.vs === "bots").length === 2 && seen.reports.length === 1, { starts: seen.starts.length, reports: seen.reports.length });
-		await dee.p.goto(page("profile.html"));
+		await dee.p.goto(page("?page=profile"));
 		const line = await dee.p.locator(".bot-wins").textContent({ timeout: TIMEOUT }).catch(() => null);
 		check("the profile says it, under the ratings and apart from them", line === "Wins against bots: Tic Tac Toe 1", line);
 		const ranked = await dee.p.evaluate(() => NeonArcade.account.leaderboard("tic-tac-toe-js"));
@@ -284,7 +284,7 @@ try {
 
 		// A bot removed mid-match hands most games to whoever is left: that is
 		// not a win against bots, and the page does not report it.
-		await dee.p.goto(page("party.html", "&game=connect4&fresh=1&mode=bots"));
+		await dee.p.goto(page("?party", "&game=connect4&fresh=1&mode=bots"));
 		const c4 = await gameFrame(dee.p, TIMEOUT);
 		await c4.waitForFunction(() => window.__game?.handle?.debug?.().started, null, { timeout: TIMEOUT }).catch(() => {});
 		await until(() => seen.starts.filter((x) => x.sent.game === "connect4" && x.sent.vs === "bots").length === 1, TIMEOUT);
@@ -300,7 +300,7 @@ try {
 
 		for (const [name, theme] of [["paper-light", { theme: "paper", mode: "light" }], ["paper-dark", { theme: "paper", mode: "dark" }], ["neon", { theme: "neon", mode: "system" }]]) {
 			await dee.p.evaluate((t) => localStorage.setItem("neon.theme", JSON.stringify(t)), theme);
-			await dee.p.goto(page("leaderboard.html", "&game=tic-tac-toe-js&vs=bots"));
+			await dee.p.goto(page("?page=leaderboard", "&game=tic-tac-toe-js&vs=bots"));
 			await dee.p.locator("[data-board] [data-player]").first().waitFor({ timeout: TIMEOUT });
 			const pressed = await dee.p.locator('.strip[data-vs] [aria-pressed="true"]').textContent();
 			const row = await dee.p.locator("[data-board] [data-player].me").textContent();
@@ -319,23 +319,23 @@ try {
 	}
 
 	console.log("\nsocial: groups");
-	await ana.p.goto(page("profile.html"));
+	await ana.p.goto(page("?page=profile"));
 	await ana.p.locator('input[aria-label="New group name"]').fill("Lunch table");
 	await ana.p.locator("button", { hasText: "CREATE" }).click();
 	await ana.p.locator("[data-group]").waitFor({ timeout: TIMEOUT });
 	const gcode = await ana.p.locator("[data-group] .code").textContent();
 	check("a group gets a join code", /^[A-Z2-9]{8}$/.test(gcode), gcode);
-	await bo.p.goto(page(`profile.html?join=${gcode}`));
+	await bo.p.goto(page(`?page=profile&join=${gcode}`));
 	check("a join link joins it", await bo.p.locator(".neon-toast", { hasText: "Joined" }).waitFor({ timeout: TIMEOUT }).then(() => true, () => false));
 	const gid = await ana.p.locator("[data-group]").getAttribute("data-group");
-	await ana.p.goto(page("leaderboard.html", `&game=connect4&scope=${encodeURIComponent(`group:${gid}`)}`));
+	await ana.p.goto(page("?page=leaderboard", `&game=connect4&scope=${encodeURIComponent(`group:${gid}`)}`));
 	check("the group has its own tab on the leaderboards", (await ana.p.locator('.scope[aria-pressed="true"]').textContent({ timeout: TIMEOUT })) === "Lunch table");
 	await ana.p.locator("[data-board] [data-player]").first().waitFor({ timeout: TIMEOUT }).catch(() => {});
 	const groupRows = await ana.p.locator("[data-board] [data-player]").count();
 	check("…which counts the game they played together", groupRows === 2, groupRows);
 
 	console.log("\nsocial: feedback");
-	await ana.p.goto(page("party.html", "&game=connect4"));
+	await ana.p.goto(page("?party", "&game=connect4"));
 	await ana.p.locator(".top-feedback").click({ timeout: TIMEOUT });
 	const fbOpen = await ana.p.locator("dialog.neon-sheet", { hasText: "Feedback: Connect 4" }).waitFor({ timeout: TIMEOUT }).then(() => true, () => false);
 	check("💬 opens the game's feedback sheet", fbOpen);
@@ -348,7 +348,7 @@ try {
 	await ana.p.keyboard.press("Escape");
 
 	console.log("\nsocial: deleting the account");
-	await ana.p.goto(page("profile.html"));
+	await ana.p.goto(page("?page=profile"));
 	await ana.p.locator("button", { hasText: "DELETE MY ACCOUNT" }).click();
 	await ana.p.locator("dialog.neon-sheet button", { hasText: "DELETE" }).click();
 	check("after deleting, the page is signed out", await ana.p.locator("button", { hasText: "SIGN IN WITH GITHUB" }).waitFor({ timeout: TIMEOUT }).then(() => true, () => false));

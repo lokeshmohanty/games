@@ -6,7 +6,7 @@ import { readFileSync } from "node:fs";
 // refers to later, so `window` has to be the global object here too.
 globalThis.window = globalThis;
 const win = globalThis;
-globalThis.location = { href: "https://example.test/party.html", hash: "", pathname: "/party.html", search: "" };
+globalThis.location = { href: "https://example.test/?party", hash: "", pathname: "/", search: "?party" };
 globalThis.history = { replaceState() {} };
 
 const src = readFileSync(new URL("../lib/net.js", import.meta.url), "utf8");
@@ -83,9 +83,9 @@ const fallback = await unpackSignal(await packSignal({ s: "z", i: "y" }, odd));
 check("unfamiliar SDP falls back to verbatim", fallback.sdp === odd);
 
 // Links, not just bare codes, are accepted on the way back in.
-const fromLink = await unpackSignal(`https://example.test/party.html#a=${code}`);
+const fromLink = await unpackSignal(`https://example.test/?party#a=${code}`);
 check("answer link parses", fromLink.peerId === "peer000001");
-const fromInvite = await unpackSignal(`https://example.test/party.html#i=${code}`);
+const fromInvite = await unpackSignal(`https://example.test/?party#i=${code}`);
 check("invite link parses", fromInvite.peerId === "peer000001");
 
 // The role-swapped retry is readable without inflating the code: the room
@@ -94,7 +94,7 @@ const { isRetrySignal } = win.NeonArcade._codec;
 const retryCode = await packSignal({ s: "ab12", i: "peer000001", r: 1 }, SDP);
 check("a retry is marked, synchronously", isRetrySignal?.(retryCode) === true && isRetrySignal(code) === false);
 check("and unpacks as one", (await unpackSignal(retryCode)).retry === true && out.retry === false);
-check("a retry link parses too", isRetrySignal(`https://example.test/party.html#i=${retryCode}`) && (await unpackSignal(`https://example.test/party.html#i=${retryCode}`)).peerId === "peer000001");
+check("a retry link parses too", isRetrySignal(`https://example.test/?party#i=${retryCode}`) && (await unpackSignal(`https://example.test/?party#i=${retryCode}`)).peerId === "peer000001");
 
 // The hard-NAT mark (net.js classifyNat) rides the code the same way, for
 // the glare rule's synchronous read — alone, and after a retry mark.
@@ -107,7 +107,7 @@ const hardOut = await unpackSignal(hardCode);
 check("a hard offer unpacks as one, whole", hardOut.hard === true && hardOut.retry === false && hardOut.peerId === "peer000001" && hardOut.sdp === out.sdp && out.hard === false);
 const bothOut = await unpackSignal(bothCode);
 check("both marks together round-trip", isRetrySignal(bothCode) && isHardSignal(bothCode) && bothOut.retry && bothOut.hard && bothOut.slot === "ab12");
-check("a hard link parses too", isHardSignal(`https://example.test/party.html#i=${hardCode}`) && (await unpackSignal(`https://example.test/party.html#i=${hardCode}`)).hard === true);
+check("a hard link parses too", isHardSignal(`https://example.test/?party#i=${hardCode}`) && (await unpackSignal(`https://example.test/?party#i=${hardCode}`)).hard === true);
 const plainCode = await packSignal({ s: "ab12", i: "peer000001" }, SDP);
 check("the mark costs two characters", hardCode === "h." + plainCode, `${hardCode.length} vs ${plainCode.length}`);
 

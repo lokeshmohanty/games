@@ -29,7 +29,8 @@ neon-survival-mp).
 
 ## What it does
 
-1. `scripts/preview.mjs <game>` opens the game from `file://` in the system Chrome
+1. `scripts/preview.mjs <game>` serves the built site (scripts/serve.mjs) and opens the
+   game's address (`?game=<id>&fresh=1`) in the system Chrome
    under Playwright and plays a scripted scenario, recording the first page to webm.
    For the P2P games it opens **two** pages and performs the invite/answer handshake
    between them (`connectPeers`), so the gif shows real multiplayer.
@@ -80,7 +81,7 @@ if it is motion-heavy.
   immediately and records two seconds of nothing (measured: an 8s clip became 2s). Latch
   on having seen it true first — `await page.waitForFunction(() => ...racing)` — before
   treating false as the end.
-- **Games built on `lib/ui.js` have no `#game` element**, they have `.g-stage`. The
+- **Games that lay out a `.g-stage` (Neon Bid, Undercover) have no `#game` element.** The
   harness waits for `#game, .g-stage`; waiting for the old selector alone was a silent
   20-second stall per recording, hidden behind a `.catch(() => {})`.
 - **A scenario picks its move inside the page** when the rules already live there

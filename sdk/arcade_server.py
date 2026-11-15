@@ -1,4 +1,4 @@
-# sdk/v1/arcade_server.py — a web app's Python server, inside Pyodide.
+# sdk/arcade_server.py — a web app's Python server, inside Pyodide.
 #
 # lib/py-server.js runs this in a sandboxed frame on the host's phone, then
 # calls `install(...)` once and `call(...)` per request. The author's app is

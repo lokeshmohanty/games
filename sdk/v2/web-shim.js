@@ -1,14 +1,13 @@
 // sdk/v2/web-shim.js — runs an ordinary web app as an arcade game (SDK v2).
 //
-// The v1 shim (sdk/v1/web-shim.js) spoke the v1 bridge; this one speaks the
-// v2 protocol through sdk/v2/runtime.js: `asset` and `http` are requests,
-// `address` a message (protocol.json). Every web app mounts on v2, whatever
-// its manifest's "sdk" says (docs/sdk-v2.md, "Web apps").
+// It speaks the v2 protocol through sdk/v2/runtime.js: `asset` and `http`
+// are requests, `address` a message (protocol.json). A web app's manifest
+// says "sdk": 2 like any game's (docs/sdk-v2.md, "The manifest").
 //
 // An author with a working web app (a Vite/React page that talks to its own
 // server, say) should not have to rewrite it to join the arcade. The shell
 // inlines this file after sdk/v2/runtime.js, ahead of the app's own
-// scripts, when the manifest has an `app` (docs/sdk.md, "Web apps"). It makes
+// scripts, when the manifest has an `app` (docs/platform.md, "Web apps"). It makes
 // the frame look like the place the app was written for:
 //
 //   fetch / XMLHttpRequest   a file of the app's comes from its folder; any
