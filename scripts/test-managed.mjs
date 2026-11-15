@@ -184,7 +184,7 @@ try {
 		r.setTeam(p2Id, "B");
 		r.setTeam(p3Id, "spectator");
 	}, { hostId, p2Id, p3Id });
-	await host.locator(".party-game", { hasText: "TIC TAC TOE (JS)" }).first().click({ timeout: TIMEOUT });
+	await host.locator(".party-game", { hasText: "TIC TAC TOE" }).first().click({ timeout: TIMEOUT });
 	const [fh, f2, f3] = await Promise.all(A.pages.map((p) => gameFrame(p, TIMEOUT)));
 	const [vh, v2, v3] = await Promise.all([fh, f2, f3].map((f) => viewUntil(f, (v) => Array.isArray(v.board))));
 	check("each phone gets its own view: X, O and a spectator", vh?.you === 1 && v2?.you === 2 && v3?.you === 0, { host: vh?.you, p2: v2?.you, p3: v3?.you });
