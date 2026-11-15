@@ -32,9 +32,8 @@ the server), the worker on the free plan (f3282c2), the arcade-games repo
 renamed lokeshmohanty/web-games and re-pinned at 63360fd (PR #5), and Neon
 Fission (games/neon-fission: chain reaction, bots, same-device PLAYER seats,
 multi-device; reviewed, two fixes in 1d19659).
-**Awaiting Lokesh:** the worker deploy — from worker/, `wrangler d1
-migrations apply arcade --remote` then `wrangler deploy`. Until then the
-solo-run checks are not live.
+Worker deployed 2026-11-15 from 3510c58 (migration 0003 applied remotely,
+version b112bde4): solo runs and Sudoku verification are live.
 **Known leftovers:** the local clones are still ../arcade-games and
 ../arcade-games-v2 (the Sudoku cross-check in test-accounts skips until they
 are ../web-games-v2); adapters' result types lack title/details/names; the
