@@ -7,7 +7,7 @@ questions about this project from this folder alone.
 
 ## Contents
 
-- [The portal](#the-portal) — the home screen's sections, the phone layout and the search
+- [The portal](#the-portal) — the home screen's sub-tabs (My Games · All Games), sections, PLAY SOMETHING, the phone layout and the search
 - [Connecting players](#connecting-players) — the serverless handshake, paid once per person; `scanQr`; connectivity (relaying, STUN, NAT classification, no TURN)
 - [Parties](#parties) — the persistent group, teams, switching games, host succession; the party API (`mountParty`, the room controller, lib/lobby.js)
 - [Bots](#bots) — why there is no single-player section, and what a bot actually is
@@ -75,19 +75,37 @@ The portal (`./`, the manifest's `start_url`) is the first thing an installed ap
 per game in `NeonArcade.CATALOG` — this repo's manifests and every pinned
 outside repo's — so a merged registry PR appears with no edit here. Each card
 has your own record on this device and, for a community game, its author. A
-game is starred (☆, `lib/stats.js`) and given feedback (💬) from inside it:
-the party's top right, beside PARTY (2026-11-14; they were on every
-card). Its layout is asserted rather than eyeballed, in `test-pwa.mjs`; what
-is in each section, in `test-portal.mjs`.
+game is starred (☆, `lib/stats.js`) from its card (top right of the
+preview, 44px; back on the cards since 2026-11-15, so a star lands in My
+Games at once) or from inside it, at the party's top right beside PARTY;
+feedback (💬) only from inside it (2026-11-14). Its layout is asserted
+rather than eyeballed, in `test-pwa.mjs` and `test-portal.mjs` "My Games ·
+All Games" (390x844 and Lokesh's phone, 354x696); what is in each section,
+in `test-portal.mjs`.
+
+**Two sub-tabs** (Lokesh, 2026-11-15: "All favourites land under My
+Games"). Under the tab row, Games has **My Games · All Games**, each an
+address (`./?page=games&tab=mine` / `tab=all`); `./` opens on My Games once
+the device has a favourite or a recently played game, else on All Games,
+decided before the first paint ([spa.md](spa.md) "The portal's sub-tabs").
+Under the brand and the party banner:
+
+- **My Games** — the Recently played row, then ★ Favourites. With neither, a
+  line on how to star (☆ on a card or in a game), PLAY SOMETHING and ALL
+  GAMES.
+- **All Games** — the search, then Popular (with **PLAY SOMETHING** at its
+  right: one tap into the single player of a popular game with bots, never
+  people-only or Python, varied per visit) and the categories.
 
 **The home screen is sections** (Lokesh, 2026-11-15: "show the favourites,
 then the top 3~5 games based on popularity, and then pre-defined
-categories"). Under the brand, party banner, search and the Recently played
-row, top to bottom (`lib/portal.js` `SECTIONS`; an empty one is hidden):
+categories"). Top to bottom (`lib/portal.js` `SECTIONS`, each with its
+sub-tab; an empty one is hidden):
 
-- **★ Favourites** — the games starred, in the order starred, then the
-  contributors and collections starred (`contributor:<login>`,
-  `collection:<owner>/<repo>`) as buttons that search for their games.
+- **★ Favourites** (My Games) — the games starred, in the order starred,
+  then the contributors and collections starred (`contributor:<login>`,
+  `collection:<owner>/<repo>`) as buttons that search for their games on
+  All Games.
 - **Popular** — the five most played (`/api/stats/summary`, else the public
   snapshot), examples aside. The counts are kept on the device
   (`neon.plays`), so the row paints at once and in the same order offline;
@@ -101,8 +119,20 @@ A game therefore has several cards. Preview videos get their sources only
 when the card nears the screen and play only while at least half of it is
 on screen, so the home screen plays a handful, not dozens; on a phone each
 section is one row that scrolls sideways inside itself (two cards and the
-edge of a third). **Search** replaces the sections (and Recently played)
-with one grid of the matches, one card per game; the query stays in `?q=`.
+edge of a third), and every row (Recently played's too) scrolls to the
+screen's edges while its first card lines up with the column above, with no
+scrollbar. **Search** replaces All Games' sections with one grid of the
+matches, one card per game; the query stays in `?q=`.
+
+**Real-device findings (Lokesh's OnePlus, 354x696 at DPR 3.5, 2026-11-15)**,
+fixed and asserted: every home tap target is at least 44px (START A PARTY
+and JOIN WITH A CODE were 34px, the sub-tabs 36px); every line on a card is
+at least 12px (the meta line was 9.9px; it keeps one line by dropping its
+letter-spacing and narrowing the card's side margins to 4px); Recently
+played and the search were 80% wide on a phone, narrower than the cards,
+because their base rules came after the phone rules in portal.css. On a
+phone the party banner is its two buttons (the heading said what START A
+PARTY says), which paid for the sub-tab row.
 
 **Nine games have to fit a phone.** They did not: a `minmax(300px, 1fr)` column
 at 80% width is a single column on a 390px screen, and a 200px image plus a
