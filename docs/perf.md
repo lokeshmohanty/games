@@ -213,3 +213,88 @@ The ≤ 300 KB target from Phase 1 is met.
    HTML, which paints as the page arrives and is replaced when the app
    renders. A tiny inline script drops it when the address names another
    view.
+
+### Frame prebuild and preview media (branch improve-perf, 2026-11-16)
+
+**Prebuilt frames** (docs/sdk-v2.md): the deploy writes every game's frame
+template to `frames/<id>.html`; a `?game=` address starts the template, the
+runtime's files and the fonts as lib/bridge.js is evaluated; index.html
+preloads `community/catalog.js` beside the bundle.
+
+Full `just perf` runs, base (230d1f8) and this branch alternately, with
+other agents' test runs sharing the machine (load 3–18):
+
+| Scenario | base, run 1 / run 2 | branch, run 1 / run 2 |
+|---|---|---|
+| bots cold, to frame | 1961 / 1922 ms | 1842 / 1886 ms |
+| bots warm, to frame | 377 / 380 ms | 621 / 909 ms |
+| bots cold FCP | 828 / 808 ms | 804 / 896 ms |
+| portal cold FCP / load | 460 / 496 ms, 2.9 s | 584 / 460 ms, 2.5–2.9 s |
+| leaderboard cold FCP | 1224 / 1180 ms | 528 / 564 ms |
+
+The warm bots numbers did not reproduce: in 15 interleaved warm runs each
+the medians were 464 ms (base) and 418 ms (branch), with the same spread
+(339–1590 against 360–949). In 10 interleaved cold runs each: 1899 ms
+(base) and 1932 ms (branch). **Prebuilding did not lower cold
+bots-to-frame.**
+
+**Where the cold time goes** (resource timeline of a cold bots run, branch):
+the bundle (62 KB) arrives at ~760 ms. The template (5 KB) is in by ~980 ms
+and the party mounts at ~860 ms, ~600 ms earlier than before thanks to the
+catalog preload. But the frame cannot be finished until its fonts are
+inlined, and all four (Space Grotesk 22 KB, Nunito 39 KB, Nunito italic
+41 KB, Cascadia Code 48 KB: 150 KB, 60% of the cold bytes) share the link
+from ~800 ms until ~1750 ms. The page itself needs only the first two; the
+frame needs all four. On base the same fonts finished at ~1780 ms, which is
+why both land at ~1.9 s: the request chain the prebuild removes was hidden
+behind the fonts. Starting the fonts from index.html instead (tried) only
+reorders the link: the frame did not come up clearly sooner, and bots FCP went
+to ~1.3 s, so it was dropped.
+
+**What the prebuild is worth once fonts are not the limit:** the same cold
+bots run with the four font files answered instantly (route-fulfilled, both
+builds alike): base 1377–1530 ms, branch 1156–1244 ms (6 runs each), about
+300 ms (20%) lower. Tapping a game on an already-loaded portal took ~400 ms
+on both (the service worker had precached everything by then).
+
+**The next lever is the frame's fonts**, and each way to change them needs a
+decision by Lokesh:
+- hand the frame the fonts after it mounts (a FontFace from bytes in
+  sdk/v2/runtime.js, which the frame's CSP does not block): the frame comes up
+  at template time, ~1.1–1.2 s cold, with a font swap on the first cold
+  visit only;
+- inline only the faces a game uses (a manifest field, or a measured list);
+  static detection is not safe, since canvas games pick fonts from the
+  theme values at run time;
+- subset the fonts to the glyphs the arcade uses (VERIFY the files'
+  current coverage first).
+
+**Precache** (every file `dist/sw.js` installs, with the community games):
+
+| | files | raw | on the wire (text gzipped) |
+|---|---|---|---|
+| base | 170 | 1792 KB | 952 KB |
+| branch | 187 | 2220 KB | 1104 KB (+16%) |
+
+The 17 templates are 417 KB raw. They carry no fonts (marks, swapped for the
+page's copies: inlined, they would add ~200 KB each, ~3.4 MB) and no runtime
+files (slots filled from the page's copies of runtime.js, theme.css and
+styles.css: inlined, they made the precache 1311 KB on the wire). The rest
+repeats each game's own code, which stays precached for the tap-time fallback
+and the protocol's `asset`.
+
+**Preview clips** (lib/portal.js, test-portal): a cold portal at 390x844,
+then every card scrolled into view, headless:
+
+| | video requests (clips) | video bytes | all requests |
+|---|---|---|---|
+| base, HTTP cache on | 19 (10) | 317 KB | 42 |
+| base, HTTP cache off | 35 (10) | 1260 KB | 63 |
+| branch, cache on or off | 10 (10) | 381 KB | 33 |
+
+Each card's `<source>` fetched its clip again, cache or no cache (neon-bid,
+neon-fission and undercover three times each). Now the first card near the
+screen fetches the clip and every card plays the same `blob:` URL. The first
+screen alone: 13 (cache on) / 24 (cache off) requests on base, 6 on the
+branch. The committed first-party gifs (5 files, ~3.5 MB, never shown) are
+gone; the recorder keeps no gif.
