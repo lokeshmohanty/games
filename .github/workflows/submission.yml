@@ -55,7 +55,7 @@ jobs:
         uses: actions/cache@v6
         with:
           path: ${{ runner.temp }}/app-cache
-          key: apps-${{ hashFiles('registry/**/*.json', 'scripts/app-build.mjs', 'scripts/py-deps.py', 'sdk/v1/pyodide/pyodide-lock.json') }}
+          key: apps-${{ hashFiles('registry/**/*.json', 'scripts/app-build.mjs', 'scripts/py-deps.py', 'sdk/pyodide/pyodide-lock.json') }}
           restore-keys: apps-
       - name: Judge the submission
         env:

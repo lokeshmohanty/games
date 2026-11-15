@@ -17,11 +17,12 @@
 // sandboxed frame under the bridge's CSP reached a STUN server in the review
 // of 2026-11-14), so nothing at runtime would stop it.
 //
-// A web app (`app`, docs/sdk.md) is checked in its published form — the
+// A web app (`app`, docs/platform.md) is checked in its published form — the
 // folder scripts/fetch-community.mjs builds. Its scripts are a bundler's
 // output that talks to its server by design, so the bundle and network
-// checks are skipped: the frame's CSP and sdk/v1/web-shim.js are what hold
-// it. Its server/wheels/ is counted apart (5 MB each), and the browser check
+// checks are skipped: the frame's CSP and sdk/v2/web-shim.js are what hold
+// it. Its server/wheels/ is counted apart (10 MB for the rest, 5 MB for the
+// wheels), and the browser check
 // waits for the server to answer.
 //
 // Browser: the game is served with the dev kit and mounted in the real party
@@ -35,7 +36,7 @@ import { createRequire } from "node:module";
 import { homedir } from "node:os";
 import { dirname, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
-import { COLOUR, manifestWarnings, validateManifest } from "./manifest.mjs";
+import { COLOUR, validateManifest } from "./manifest.mjs";
 import { PORT_OFFSET, gameFrame, serve } from "./serve.mjs";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
@@ -105,7 +106,6 @@ function checkStatic(dir) {
 	}
 	const problems = validateManifest(m);
 	if (!check("game.json is valid", !problems.length, problems.join("; "))) return null;
-	for (const w of manifestWarnings(m)) warn("game.json is current", false, w);
 
 	const entry = join(dir, m.entry);
 	if (!check(`the entry page (${m.entry}) exists`, existsSync(entry))) return null;
@@ -137,7 +137,7 @@ function checkStatic(dir) {
 		const rtc = UNCONTAINED.filter(([re]) => re.test(text)).map(([, what]) => what);
 		check(`${name} opens no connection of its own`, !rtc.length, `found ${rtc.join(", ")} — a game talks to other phones through the party's channels`);
 		const net = NETWORK.filter(([re]) => re.test(text)).map(([, what]) => what);
-		warn(`${name} looks as if it does not use the network`, !net.length, `found ${net.join(", ")} — the frame may fetch nothing; ship files in the folder (sdk v2 \`asset\`, v1 ctx.assets.url()); fine if that path is never taken`);
+		warn(`${name} looks as if it does not use the network`, !net.length, `found ${net.join(", ")} — the frame may fetch nothing; ship files in the folder and read them with the protocol's \`asset\`; fine if that path is never taken`);
 	}
 	// The arcade's theme (lib/theme.css): colours come from its tokens or
 	// NeonArcade.palette(), so the game follows the player's theme.
@@ -203,7 +203,7 @@ async function checkBrowser(games) {
 	for (const { dir, m } of games) {
 		console.log(`\n${m.id}: in the party at 390x844`);
 		const p = port++;
-		const devServer = spawn("node", [join(ROOT, "sdk/v1/dev-server.mjs"), dir, String(p)], { stdio: "ignore" });
+		const devServer = spawn("node", [join(ROOT, "sdk/dev-server.mjs"), dir, String(p)], { stdio: "ignore" });
 		await new Promise((r) => setTimeout(r, 400));
 		const ctx = await browser.newContext({ viewport: { width: 390, height: 844 } });
 		const page = await ctx.newPage();
@@ -218,7 +218,7 @@ async function checkBrowser(games) {
 		});
 		try {
 			const q = new URLSearchParams({ dev: `http://127.0.0.1:${p}/`, game: `dev/${m.id}`, fresh: "1", rs: "http://127.0.0.1:1" });
-			await page.goto(`${site.base}/party.html?${q}`);
+			await page.goto(`${site.base}/?${q}`);
 			if (m.kind === "local") {
 				// A one-device game starts by itself (lib/party.js autoStart).
 			} else if (m.kind === "shared") {

@@ -448,7 +448,7 @@ type Asset struct {
 }
 
 // Result: `result`, frame to shell. The outcome, for stats and leaderboards
-// (docs/sdk.md, "Results"). Every peer may send it; it counts once.
+// (docs/platform.md, "Results"). Every peer may send it; it counts once.
 type Result struct {
 	// Version.
 	V int `json:"v"`
@@ -997,7 +997,7 @@ type Rejected struct {
 
 // RuntimeFile: `runtime.file`, frame to shell. Request: a file of a runtime the
 // platform ships, for a game whose language needs one (manifest `runtime:
-// "python"`: Pyodide, from sdk/v1/pyodide/). Reply `{ bytes, type }`. Only that
+// "python"`: Pyodide, from sdk/pyodide/). Reply `{ bytes, type }`. Only that
 // folder; it does not count toward the game's size cap.
 type RuntimeFile struct {
 	// Version.

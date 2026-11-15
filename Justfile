@@ -18,10 +18,10 @@ pnpm := if `command -v pnpm || true` != "" { "pnpm" } else { "nix shell nixpkgs#
 default:
     @just --list --unsorted
 
-# Why a server at all, when every page also works by double-clicking the HTML:
-# the camera scanner and the service worker both need a *secure context*, and
-# `file://` is not one. `127.0.0.1` counts as secure, `http://<lan-ip>` does
-# not — see `serve-lan` for what that means on a phone.
+# Why a server: the shell is built by Vite (docs/spa.md), and the camera
+# scanner and the service worker both need a *secure context*. `127.0.0.1`
+# counts as secure, `http://<lan-ip>` does not — see `serve-lan` for what that
+# means on a phone.
 #
 # (Note for editors: `just --list` shows only the LAST comment line above a
 # recipe, so the one-line summary goes immediately before it and anything
@@ -194,13 +194,14 @@ catalog *args:
 community:
     node scripts/fetch-community.mjs
 
-# The game dev kit as an outside author uses it: the SDK example served by
-# sdk/v1/dev-server.mjs, loaded with party.html?dev=, played to the end.
+# The game dev kit as an outside author uses it: the SDK examples served by
+# sdk/dev-server.mjs, loaded with ./?dev=, played to the end; and the dev
+# kit's old address (sdk/v1/dev-server.mjs, a build-time copy until 2027-02-15).
 test-devkit:
     node scripts/test-devkit.mjs
 
-# The Python runtime web apps' servers run on (sdk/v1/pyodide/, git-ignored,
-# ~18 MB): fetched once, checked against its pinned hashes.
+# The Python runtime for Python games and web apps' servers (sdk/pyodide/,
+# git-ignored, ~18 MB): fetched once, checked against its pinned hashes.
 pyodide:
     node scripts/vendor-pyodide.mjs
 

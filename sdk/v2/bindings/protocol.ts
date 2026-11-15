@@ -229,7 +229,7 @@ export interface Asset {
 
 /**
  * `result`, frame to shell. The outcome, for stats and leaderboards
- * (docs/sdk.md, "Results"). Every peer may send it; it counts once.
+ * (docs/platform.md, "Results"). Every peer may send it; it counts once.
  */
 export interface Result {
 	v: 2;
@@ -687,7 +687,7 @@ export interface Rejected {
 /**
  * `runtime.file`, frame to shell. Request: a file of a runtime the platform
  * ships, for a game whose language needs one (manifest `runtime: "python"`:
- * Pyodide, from sdk/v1/pyodide/). Reply `{ bytes, type }`. Only that folder; it
+ * Pyodide, from sdk/pyodide/). Reply `{ bytes, type }`. Only that folder; it
  * does not count toward the game's size cap.
  */
 export interface RuntimeFile {

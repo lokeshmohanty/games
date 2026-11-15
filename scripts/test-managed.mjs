@@ -63,7 +63,7 @@ const site = await serve(8741);
 /** The dev kit's server for a folder of games; its base URL for `game`. */
 async function devServer(folder, port, game) {
 	port += PORT_OFFSET;
-	const dev = spawn("node", [join(ROOT, "sdk/v1/dev-server.mjs"), join(ROOT, folder), String(port)], { env: { ...process.env, NEON_PLATFORM: site.base }, stdio: "ignore" });
+	const dev = spawn("node", [join(ROOT, "sdk/dev-server.mjs"), join(ROOT, folder), String(port)], { env: { ...process.env, NEON_PLATFORM: site.base }, stdio: "ignore" });
 	process.on("exit", () => dev.kill());
 	const base = `http://127.0.0.1:${port}/${game}/`;
 	for (let i = 0; i < 50 && !(await fetch(base + "game.json").then((r) => r.ok, () => false)); i++) await new Promise((r) => setTimeout(r, 100));
@@ -94,7 +94,7 @@ async function party(devBase, n) {
 		u.searchParams.set("dev", devBase);
 		return u.href;
 	};
-	await pages[0].goto(`${site.base}/party.html?${new URLSearchParams({ dev: devBase, fresh: "1", rs: "http://127.0.0.1:1" })}`);
+	await pages[0].goto(`${site.base}/?${new URLSearchParams({ dev: devBase, fresh: "1", rs: "http://127.0.0.1:1" })}`);
 	await pages[0].locator(".party-member").first().waitFor({ timeout: TIMEOUT });
 	for (const joiner of pages.slice(1)) {
 		const host = pages[0];

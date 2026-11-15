@@ -284,7 +284,7 @@ pub struct Asset {
     pub as_: Option<AssetAs>,
 }
 
-/// `result`, frame to shell. The outcome, for stats and leaderboards (docs/sdk.md, "Results").
+/// `result`, frame to shell. The outcome, for stats and leaderboards (docs/platform.md, "Results").
 /// Every peer may send it; it counts once.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ResultMessage {
@@ -773,7 +773,7 @@ pub struct Rejected {
 }
 
 /// `runtime.file`, frame to shell. Request: a file of a runtime the platform ships, for a game
-/// whose language needs one (manifest `runtime: "python"`: Pyodide, from sdk/v1/pyodide/). Reply `{
+/// whose language needs one (manifest `runtime: "python"`: Pyodide, from sdk/pyodide/). Reply `{
 /// bytes, type }`. Only that folder; it does not count toward the game's size cap.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct RuntimeFile {

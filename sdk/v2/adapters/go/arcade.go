@@ -29,7 +29,7 @@ type Setup struct {
 	Match int     // 0, then 1 on the first rematch, ...
 }
 
-// Result is how a match ended (docs/sdk.md "Reporting a result").
+// Result is how a match ended (docs/platform.md "Results").
 type Result struct {
 	Kind    string             `json:"kind"`    // "duel", "ffa", "teams", "coop" or "local"
 	Ranking [][]string         `json:"ranking"` // places: Ranking[0] won; several ids in a place tie
