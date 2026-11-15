@@ -945,10 +945,6 @@ the icon for exactly this reason. `test-pwa` now parses the file.
   deal, and the phone cannot know. Two deliberate taps and an immediate hide are
   the whole defence, which is the same defence the card game it descends from
   has.
-- `scripts/test-party.mjs`'s host-succession section is **intermittently
-  flaky** — one failure in five runs on 2026-08-27, timing out waiting for the
-  crown to be offered after the host's page closes. The other four passed and
-  nothing else in the suite failed. Not investigated.
 - `scripts/test-bots.mjs`'s Neon Survival check "the bot ships are being
   flown, not parked" is **intermittently flaky** — failed 2 of 8 runs on
   2026-11-12 (both inside a full `just test`; standalone 0 of 5, and 0 of 1
