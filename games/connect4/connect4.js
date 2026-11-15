@@ -36,6 +36,22 @@ function checkWin(board, row, col, player) {
 	return false;
 }
 const isDraw = (board) => board[0].every((v) => v !== 0);
+/** The cells of `player`'s winning line through (row, col), as "a1" (column, row from the bottom). */
+function winLine(board, row, col, player) {
+	for (const [dr, dc] of [[0, 1], [1, 0], [1, 1], [1, -1]]) {
+		const cells = [[row, col]];
+		for (const sign of [1, -1]) {
+			for (let d = 1; ; d++) {
+				const r = row + dr * d * sign;
+				const c = col + dc * d * sign;
+				if (r < 0 || r >= ROWS || c < 0 || c >= COLS || board[r][c] !== player) break;
+				cells[sign > 0 ? "push" : "unshift"]([r, c]);
+			}
+		}
+		if (cells.length >= 4) return cells.sort((a, b) => a[1] - b[1] || b[0] - a[0]).map(([r, c]) => `${"abcdefg"[c]}${ROWS - r}`);
+	}
+	return null;
+}
 
 // The bot: plain minimax with alpha-beta over a 7x6 board, small enough that
 // a full-width search to five plies finishes well inside a frame. Five sees
@@ -126,14 +142,14 @@ function chooseColumn(board0, me) {
 	return bestCol;
 }
 
-let s = null; // { match, board, turn, winner, started, red, yellow }
+let s = null; // { match, board, turn, winner, started, red, yellow, moves, line }
 const colourOf = (id) => (id === s.red ? RED : id === s.yellow ? YELLOW : 0);
 const idOf = (colour) => (colour === RED ? s.red : s.yellow);
 
 arcade.managed({
 	init({ seats, match }) {
 		const team = (t, i) => (seats.find((p) => p.team === t) ?? seats[i])?.id ?? null;
-		s = { match: match + 1, board: emptyBoard(), turn: RED, winner: null, started: true, red: team("A", 0), yellow: team("B", 1) };
+		s = { match: match + 1, board: emptyBoard(), turn: RED, winner: null, started: true, red: team("A", 0), yellow: team("B", 1), moves: 0, line: null };
 	},
 	apply({ action, by }) {
 		const col = action?.col;
@@ -143,7 +159,11 @@ arcade.managed({
 		const row = dropRowIn(s.board, col);
 		if (row < 0) return "that column is full";
 		s.board[row][col] = s.turn;
-		if (checkWin(s.board, row, col, s.turn)) s.winner = s.turn;
+		s.moves = (s.moves ?? 0) + 1;
+		if (checkWin(s.board, row, col, s.turn)) {
+			s.winner = s.turn;
+			s.line = winLine(s.board, row, col, s.turn);
+		}
 		else if (isDraw(s.board)) s.winner = 0;
 		else s.turn = s.turn === RED ? YELLOW : RED;
 	},
@@ -154,7 +174,10 @@ arcade.managed({
 		if (s.winner === null) return null;
 		const places = (...slots) => slots.map((x) => x.filter(Boolean)).filter((x) => x.length);
 		const ranking = s.winner === 0 ? places([s.red, s.yellow]) : places([idOf(s.winner)], [idOf(s.winner === RED ? YELLOW : RED)]);
-		return { kind: "duel", ranking };
+		// The end card's DETAILS (docs/sdk-v2.md, result `details`).
+		const details = [{ label: "Moves played", value: s.moves ?? 0 }];
+		if (s.line) details.push({ label: "Winning line", value: s.line.join(" ") });
+		return { kind: "duel", ranking, details };
 	},
 	skip() {
 		s.turn = s.turn === RED ? YELLOW : RED;

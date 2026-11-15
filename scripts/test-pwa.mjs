@@ -24,12 +24,14 @@ import { cpSync, existsSync, globSync, mkdtempSync, readFileSync, rmSync, writeF
 import { homedir, tmpdir } from "node:os";
 import { dirname, join, resolve as resolvePath } from "node:path";
 import { fileURLToPath } from "node:url";
-import { SITE_DIR, gameFrame } from "./serve.mjs";
+import { PORT_OFFSET, SITE_DIR, gameFrame } from "./serve.mjs";
 
 const require = createRequire(import.meta.url);
 const ROOT = resolvePath(dirname(fileURLToPath(import.meta.url)), "..");
 const PW_CACHE = join(homedir(), ".cache", "game-previews");
-const PORT = 8732;
+// NEON_PORT_OFFSET moves it, as every suite's (scripts/serve.mjs), so two runs
+// on one machine do not share a server.
+const PORT = 8732 + PORT_OFFSET;
 const BASE = `http://127.0.0.1:${PORT}`;
 
 function chromePath() {
@@ -101,7 +103,12 @@ const ctx = await browser.newContext({
 });
 // The deployed site's strategy (sw.js "Why a snapshot"), not loopback's
 // network-first development mode.
-await ctx.addInitScript(() => localStorage.setItem("neon.sw", "snapshot"));
+// (try: init scripts run in the sandboxed game frames too, which have no storage.)
+await ctx.addInitScript(() => {
+	try {
+		localStorage.setItem("neon.sw", "snapshot");
+	} catch {}
+});
 const page = await ctx.newPage();
 
 // ------------------------------------------------------------- the manifest
@@ -246,25 +253,26 @@ for (const p of [
 // ------------------------------------------------------------- the portal
 //
 // The portal is `start_url`, so it is the first thing an installed app shows.
-// It is also the page that carries the install slot, and the one that was most
-// recently rebuilt — the three player-count sections are gone and everything
-// is one grid — so its layout is asserted rather than eyeballed.
+// It is also the page that carries the install slot, and the one most often
+// rebuilt — since 2026-11-15 the home screen is sections (favourites, popular,
+// the categories; lib/portal.js) — so its layout is asserted rather than
+// eyeballed. What is in each section is test-portal.mjs's.
 
 console.log("\npwa: the portal at 390x844");
 await page.goto(`${BASE}/index.html`);
-await page.waitForSelector(".games-grid .game-card");
+await page.waitForSelector(".portal-section .game-card");
+await page.evaluate(() => window.NeonArcade.catalogs); // the community games drawn too
 
 const portal = await page.evaluate(() => {
 	const doc = document.documentElement;
-	const cards = [...document.querySelectorAll(".games-grid .game-card")];
+	const cards = [...document.querySelectorAll(".portal-section .game-card")];
 	const slot = document.querySelector("[data-install-slot]");
 	const banner = document.querySelector(".party-banner");
 	return {
 		scroll: doc.scrollWidth,
 		client: doc.clientWidth,
-		cards: cards.length,
+		games: [...new Set(cards.map((c) => c.dataset.game))],
 		links: cards.flatMap((c) => [...c.querySelectorAll("a.card-play")].map((a) => a.getAttribute("href"))),
-		sections: document.querySelectorAll("h2.section-title").length,
 		title: document.querySelector("h1")?.textContent.trim(),
 		// The slot must reserve its own room: it is filled after layout, and a
 		// bar that appears from nowhere would shove the first row of cards down.
@@ -272,7 +280,7 @@ const portal = await page.evaluate(() => {
 		bannerAboveGrid:
 			!!banner &&
 			banner.getBoundingClientRect().bottom <=
-				document.querySelector(".games-grid").getBoundingClientRect().top + 1,
+				document.querySelector("[data-sections]").getBoundingClientRect().top + 1,
 	};
 });
 check(
@@ -281,46 +289,52 @@ check(
 	`scrollWidth ${portal.scroll} > clientWidth ${portal.client}`,
 );
 check("it is called Arcade Games", /arcade games/i.test(portal.title ?? ""), portal.title);
-check("every game is in one grid, with no player-count sections", portal.sections === 0, `${portal.sections} sections`);
 
 // Counted against the registry rather than against a number written here.
 // A game added to `games/` and to party.html but never given a portal card is
 // a game nobody outside the party screen can find, and a hard-coded 4 turns
 // that into a test that has to be edited every time rather than one that
 // catches it.
-const registered = await (async () => {
+// (Kept whole for "every game offline in single player", below.)
+const catalog = await (async () => {
 	const probe = await ctx.newPage();
 	await probe.goto(`${BASE}/party.html`);
 	await probe.waitForFunction(() => window.NeonArcade?.listGames, null, { timeout: 20_000 });
-	const names = await probe.evaluate(() => window.NeonArcade.listGames().map((g) => g.id));
+	const games = await probe.evaluate(() =>
+		window.NeonArcade.listGames().map((g) => ({ id: g.id, name: g.name, bots: !!g.bots, local: !!g.local, runtime: g.runtime ?? null })),
+	);
 	await probe.close();
-	return names;
+	return games;
 })();
+const registered = catalog.map((g) => g.id);
 
 // --------------------------------------------------------- the portal, small
 //
 // Nine games do not fit a phone, and until 2026-08-27 the portal did not try:
 // a 300px minimum column at 80% width is one column on a 390px screen, and a
 // 200px image plus a heading plus a paragraph plus a button is taller than the
-// viewport. You arrived at one card.
+// viewport. You arrived at one card. Now each section is a row of two cards
+// and the edge of a third, scrolling sideways inside itself.
 
 const grid = await page.evaluate(() => {
 	// How many cards a screenful actually holds, from the top of the page —
-	// header, banner, filters and all. Scrolling to the grid first would flatter
-	// the answer.
+	// header, banner, search and all. Scrolling to the cards first would
+	// flatter the answer.
 	window.scrollTo(0, 0);
-	const cards = [...document.querySelectorAll(".game-card")].filter((c) => !c.hidden);
+	const cards = [...document.querySelectorAll(".portal-section:not([hidden]) .game-card")];
 	const vh = window.innerHeight;
+	const vw = window.innerWidth;
 	const whole = cards.filter((c) => {
 		const r = c.getBoundingClientRect();
-		return r.top >= 0 && r.bottom <= vh;
+		return r.top >= 0 && r.bottom <= vh && r.left >= 0 && r.right <= vw;
 	});
-	const first = cards[0]?.getBoundingClientRect();
+	const row = document.querySelector(".portal-section:not([hidden]) .section-row");
+	const inRow = [...row.children].map((c) => c.getBoundingClientRect());
 	return {
 		visible: whole.length,
-		columns: getComputedStyle(document.querySelector(".games-grid")).gridTemplateColumns.split(" ").length,
-		cardHeight: first ? Math.round(first.height) : 0,
-		gridTop: Math.round(document.querySelector(".games-grid").getBoundingClientRect().top),
+		rowWhole: inRow.filter((r) => r.left >= 0 && r.right <= vw).length,
+		rowPeeks: inRow.some((r) => r.left < vw && r.right > vw),
+		gridTop: Math.round(row.getBoundingClientRect().top),
 		tagged: cards.every((c) => (c.dataset.tags || "").trim().length > 0),
 		blurbHidden: getComputedStyle(document.querySelector(".game-card p:not(.game-meta)")).display === "none",
 		metaSize: parseFloat(getComputedStyle(document.querySelector(".game-card .game-meta")).fontSize),
@@ -330,8 +344,8 @@ const grid = await page.evaluate(() => {
 		})(),
 	};
 });
-check("the games sit in two columns on a phone", grid.columns === 2, `${grid.columns}`);
-check("four cards fit on screen without scrolling", grid.visible >= 4, `${grid.visible} visible, grid starts at ${grid.gridTop}px`);
+check("a section on a phone: two whole cards, the next peeking in", grid.rowWhole === 2 && grid.rowPeeks, JSON.stringify(grid));
+check("four cards fit on screen without scrolling", grid.visible >= 4, `${grid.visible} visible, the first row starts at ${grid.gridTop}px`);
 check("the header does not eat the screen", grid.gridTop < 400, `${grid.gridTop}px above the first game`);
 check("the blurb is dropped at this width", grid.blurbHidden, "the long description is still rendering");
 // `.game-card p` outranks a bare `.game-meta`, so every rule written for the
@@ -340,49 +354,36 @@ check("the blurb is dropped at this width", grid.blurbHidden, "the long descript
 check("the meta line is styled by its own rule, not the paragraph's",
 	grid.metaSize < 12, `${grid.metaSize}px — .game-card p is winning again`);
 check("and fits on one line", grid.metaLines <= 1, `${grid.metaLines} lines`);
-check("every card carries filter tags", grid.tagged);
+check("every card carries its tags", grid.tagged);
 
-// The filters themselves.
-const filters = await page.evaluate(async () => {
-	const chips = [...document.querySelectorAll(".filter")];
-	const cards = [...document.querySelectorAll(".game-card")];
-	const shown = () => cards.filter((c) => !c.hidden).map((c) => c.querySelector("h3").textContent.trim());
-	const out = { chips: chips.length, minTap: Math.min(...chips.map((c) => Math.round(c.getBoundingClientRect().height))), results: {} };
-	for (const chip of chips) {
-		chip.click();
-		out.results[chip.dataset.filter] = {
-			names: shown(),
-			pressed: chips.filter((c) => c.getAttribute("aria-pressed") === "true").map((c) => c.dataset.filter),
-			emptyShown: !document.querySelector(".filter-empty").hidden,
-		};
-	}
-	document.querySelector('.filter[data-filter="all"]').click();
+// A search: one grid of results, two columns, in place of the sections.
+const searched = await page.evaluate(() => {
+	const box = document.querySelector("[data-search]");
+	const type = (q) => {
+		box.value = q;
+		box.dispatchEvent(new Event("input"));
+	};
+	type("strategy");
+	const g = document.querySelector(".games-grid");
+	const out = {
+		columns: getComputedStyle(g).gridTemplateColumns.split(" ").length,
+		names: [...g.querySelectorAll(".game-card:not([hidden]) h3")].map((h) => h.textContent.trim()),
+		sectionsHidden: document.querySelector("[data-sections]").hidden,
+		sideways: document.documentElement.scrollWidth > innerWidth,
+	};
+	type("");
+	out.back = !document.querySelector("[data-sections]").hidden && g.hidden;
 	return out;
 });
-check("there is a filter strip", filters.chips >= 5, `${filters.chips}`);
-check("the chips clear the tap minimum", filters.minTap >= 36, `${filters.minTap}px`);
-check("ALL shows every game", filters.results.all.names.length === registered.length, `${filters.results.all.names.length}`);
-check("a filter narrows the list",
-	filters.results.strategy.names.length > 0 && filters.results.strategy.names.length < registered.length,
-	filters.results.strategy.names.join(", "));
-check("ONE PHONE finds the game played on one device",
-	filters.results["one-phone"].names.join() === "Undercover", filters.results["one-phone"].names.join(", "));
-check("A CROWD finds the party games",
-	filters.results.party.names.includes("Undercover") && filters.results.party.names.includes("Draw & Guess"),
-	filters.results.party.names.join(", "));
-check("TWO finds only the head-to-head games",
-	filters.results.duel.names.every((n) => ["Battleship", "Connect 4"].includes(n)),
-	filters.results.duel.names.join(", "));
-check("exactly one chip is pressed at a time",
-	Object.values(filters.results).every((r) => r.pressed.length === 1),
-	JSON.stringify(Object.entries(filters.results).map(([k, r]) => [k, r.pressed])));
-check("no filter leaves an empty list without saying so",
-	Object.values(filters.results).every((r) => r.names.length > 0 || r.emptyShown));
+check("a search shows one grid, two columns, in place of the sections",
+	searched.columns === 2 && searched.sectionsHidden && !searched.sideways, JSON.stringify(searched));
+check("…narrowed to what matches", searched.names.length > 0 && searched.names.length < registered.length, searched.names.join(", "));
+check("…and an empty search brings the sections back", searched.back);
 
 check(
-	"the portal has a card for every registered game",
-	portal.cards === registered.length,
-	`${portal.cards} cards, ${registered.length} games (${registered.join(", ")})`,
+	"the home screen has a card for every registered game",
+	registered.every((id) => portal.games.includes(id)),
+	`missing: ${registered.filter((id) => !portal.games.includes(id)).join(", ")}`,
 );
 check(
 	"no card still points at the retired single-player page",
@@ -452,7 +453,13 @@ console.log("\npwa: with the network gone");
 // Aborting every request is a truer "no network" than setOffline, which does
 // not reach the fetches the service worker itself makes — and those are the
 // ones being tested here.
-const disconnect = (route) => route.abort("internetdisconnected");
+// Every URL refused is kept: the single-player runs below must never ask the
+// room server (lib/party.js skips it for SINGLE PLAYER).
+const refused = [];
+const disconnect = (route) => {
+	refused.push(route.request().url());
+	return route.abort("internetdisconnected");
+};
 await ctx.route("**/*", disconnect);
 await ctx.setOffline(true);
 
@@ -522,6 +529,198 @@ check(
 	);
 }
 
+// --------------------------------------- every game offline in single player
+//
+// Lokesh, 2026-11-15: "Games, when played singleplayer/with bots should work
+// offline." So for every game in the catalog — first-party, community and the
+// SDK's examples — after that one online visit: open it from the portal with
+// SINGLE PLAYER, with no network at all, and it mounts and plays. Played,
+// not just drawn: a move and the bot's answer, ticks of a real-time game, a
+// one-phone game started. Each game's own driver is below (PLAY); a game
+// with none fails here, so a new game gets one.
+//
+// A Python game (`runtime: "python"`) is the one exception, by design:
+// Pyodide is ~13 MB, so it is not in the install precache (sw.js isAsset) —
+// it downloads the first time a Python game is opened online, and stays on
+// the device from then on, across deploys. Offline before that, the shell
+// says so plainly. Both halves are checked.
+
+console.log("\npwa: every game offline in single player");
+{
+	const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+	const debug = (G) => G.evaluate(() => window.__game.handle.debug()).catch(() => null);
+	/** Poll the game's debug view until `pred` (which may act) says done; the last view, or null. */
+	const until = async (G, pred, ms = 20_000) => {
+		for (const end = Date.now() + ms; Date.now() < end; await sleep(150)) {
+			const d = await debug(G);
+			if (d && (await pred(d))) return d;
+		}
+		return null;
+	};
+	/** Click the first button in the game whose text matches. */
+	const press = (G, re) => G.evaluate((src) => [...document.querySelectorAll("button")].find((b) => new RegExp(src).test(b.textContent) && !b.disabled)?.click(), re.source);
+	/** A turn game: move when it is ours, until both we and the bot have marks down. */
+	const turns = async (G, { cells, move }) => {
+		let actedAt = -1;
+		return until(G, async (v) => {
+			const all = cells(v);
+			if (!all || !v.you) return false;
+			if (all.includes(v.you) && all.some((m) => m && m !== v.you)) return true;
+			const marks = all.filter(Boolean).length;
+			if (v.winner == null && v.turn === v.you && marks !== actedAt) {
+				actedAt = marks;
+				await G.evaluate((a) => window.arcade.act(a), move(v));
+			}
+			return false;
+		});
+	};
+	const ticTacToe = (G) => turns(G, { cells: (v) => v.board, move: (v) => ({ i: v.board.indexOf(0) }) });
+	const PLAY = {
+		connect4: (G) => turns(G, { cells: (v) => v.started && v.board.flat(), move: (v) => ({ col: v.board[0].findIndex((m) => !m) }) }),
+		"neon-bid": async (G) => {
+			if (!(await until(G, (d) => d.phase === "bid" && d.submitted.length > 0))) return null; // the bot sealed its bid
+			await G.evaluate(() => document.querySelector(".nb-go")?.click());
+			return until(G, (d) => d.results.length > 0); // and the lot was opened
+		},
+		"neon-survival-mp": async (G) => {
+			const first = await until(G, (d) => d.active && d.simMs != null);
+			return first && until(G, (d) => d.simMs > first.simMs + 500); // the run ticks
+		},
+		undercover: (G) => until(G, (d) => !!d.phase), // one phone: it starts
+		"lokeshmohanty/battleship": async (G) => {
+			if (!(await until(G, (d) => d.phase === "place"))) return null;
+			await press(G, /COMMIT FLEET/);
+			return until(G, async (d) => {
+				if (d.shotsAtMe > 0) return true; // the bot fired back
+				if (d.phase === "fire")
+					await G.evaluate(() => {
+						const at = window.battleshipRules.botTarget(window.__game.handle.debug().theirBoard);
+						if (at) document.querySelector(`.bs-grid .bs-cell[data-r="${at[0]}"][data-c="${at[1]}"]`)?.click();
+					});
+				return false;
+			});
+		},
+		"lokeshmohanty/liars-dice": (G) =>
+			until(G, async (d) => {
+				if (d.phase !== "bid" || d.digests < 2) return false; // both cups committed
+				if (d.lastCall || d.bid?.by?.startsWith("bot_")) return true; // the bot bid or called
+				await G.evaluate(() => [...document.querySelectorAll(".ld-actions button")].find((b) => b.textContent.startsWith("BID") && !b.disabled)?.click());
+				return false;
+			}),
+		"lokeshmohanty/light-cycles": async (G) => {
+			const start = await until(G, (d) => d.racing);
+			return start && until(G, (d) => d.walls > start.walls + 4); // riders lay walls
+		},
+		"lokeshmohanty/sudoku": async (G) => {
+			const d = await until(G, async (d) => {
+				if (d.phase === "pick") await press(G, /NEW PUZZLE/);
+				return d.phase === "play" && d.selected >= 0;
+			});
+			if (!d) return null;
+			await G.evaluate((key) => dispatchEvent(new KeyboardEvent("keydown", { key })), String(d.solution[d.selected]));
+			return until(G, (d) => Object.values(d.progress).some((right) => right > 0)); // the host counted it
+		},
+	};
+	const driver = (id) => PLAY[id] ?? (id.startsWith("tic-tac-toe-") ? ticTacToe : null);
+
+	// What a game asked for and did not get: a same-origin miss (a file the
+	// precache lacks), not preview media (never handled offline; the poster
+	// stands in) and not other hosts (the accounts API, which is optional).
+	let missed = [];
+	const SAME = new URL(BASE).origin;
+	const media = (u) => /\.(?:gif|webm|mp4)(?:$|\?)/i.test(u);
+	page.on("response", (r) => {
+		if (r.status() >= 400 && r.url().startsWith(SAME) && !media(r.url())) missed.push(`${r.status()} ${r.url().slice(SAME.length)}`);
+	});
+	page.on("requestfailed", (r) => {
+		if (r.url().startsWith(SAME) && !media(r.url())) missed.push(`failed ${r.url().slice(SAME.length)}`);
+	});
+	let errors = [];
+	page.on("pageerror", (err) => errors.push(err.message));
+
+	/** From the portal, offline: the card's SINGLE PLAYER. Null when the card has none. */
+	const openSolo = async (id) => {
+		await page.goto(`${BASE}/index.html`, { waitUntil: "domcontentloaded" });
+		const card = page.locator(`.game-card[data-game="${id}"]`).first();
+		await card.waitFor({ timeout: 10_000 });
+		const solo = card.locator(".card-play.is-bots");
+		if (!(await solo.count())) return null;
+		await card.hover();
+		await solo.click();
+		await page.waitForSelector(".game-frame", { timeout: 15_000 });
+		return gameFrame(page, 20_000);
+	};
+
+	const portalCards = await (async () => {
+		await page.goto(`${BASE}/index.html`, { waitUntil: "domcontentloaded" });
+		await page.waitForSelector(".game-card", { timeout: 10_000 }).catch(() => {});
+		return page.evaluate(() => [...new Set([...document.querySelectorAll(".game-card")].map((c) => c.dataset.game))]);
+	})();
+	check(`offline, the portal lists all ${catalog.length} games (community and examples too)`, portalCards.length === catalog.length, `${portalCards.length}: ${catalog.map((g) => g.id).filter((id) => !portalCards.includes(id)).join(", ")} missing`);
+
+	const vendored = existsSync(join(SITE, "sdk", "v1", "pyodide", "pyodide.asm.wasm"));
+	const python = [];
+	for (const g of catalog) {
+		missed = [];
+		errors = [];
+		const roomBefore = refused.filter((u) => /\/ping(?:$|\?)/.test(u)).length;
+		const started = Date.now();
+		let detail = "";
+		let G = null;
+		try {
+			G = await openSolo(g.id);
+		} catch (err) {
+			detail = err.message.split("\n")[0];
+		}
+		if (!G && !detail) {
+			// No SINGLE PLAYER on the card: only a people-only game may lack one.
+			check(`${g.name}: no single player to test (people only)`, !g.bots && !g.local, "a game with bots or one device has no SINGLE PLAYER button");
+			continue;
+		}
+		const mountMs = Date.now() - started;
+		if (g.runtime === "python") {
+			python.push(g);
+			if (!vendored) {
+				check(`${g.name}: skipped — Pyodide is not vendored in this build (just pyodide)`, true);
+				continue;
+			}
+			// Never opened online: the runtime is not on this device. Said plainly.
+			const ask = page.locator("dialog.neon-ask[open]");
+			const said = await ask.waitFor({ timeout: 15_000 }).then(() => ask.textContent(), () => "");
+			check(`${g.name}: offline before its first online play, the shell says Python needs one`, /python/i.test(said) && /online/i.test(said), said || "no message");
+			await page.locator('dialog.neon-ask[open] [data-ask="yes"]').click().catch(() => {});
+			continue;
+		}
+		const play = driver(g.id);
+		let played = null;
+		if (G && !play) detail = "no driver in test-pwa.mjs PLAY: add one";
+		else if (G) played = await play(G).catch((err) => ((detail = err.message.split("\n")[0]), null));
+		if (G && !played && !detail) detail = `stuck at ${JSON.stringify(await debug(G)).slice(0, 160)}`;
+		check(`${g.name}: opens from the portal offline in SINGLE PLAYER and plays (mounted in ${(mountMs / 1000).toFixed(1)} s)`, !!played, detail);
+		check(`${g.name}: …with every file it asked for on the device`, missed.length === 0, [...new Set(missed)].join(", "));
+		check(`${g.name}: …without asking the room server`, refused.filter((u) => /\/ping(?:$|\?)/.test(u)).length === roomBefore);
+		if (errors.length) check(`${g.name}: …with no page errors`, false, errors.join(" | ").slice(0, 200));
+	}
+
+	// The Python half: one online play brings Pyodide; offline it plays after.
+	for (const g of vendored ? python : []) {
+		await ctx.unroute("**/*", disconnect);
+		await ctx.setOffline(false);
+		let G = await openSolo(g.id).catch(() => null);
+		const online = G && (await until(G, (v) => Array.isArray(v.board), 90_000));
+		check(`${g.name}: played once online (Pyodide downloads on first use)`, !!online);
+		await ctx.route("**/*", disconnect);
+		await ctx.setOffline(true);
+		missed = [];
+		G = await openSolo(g.id).catch(() => null);
+		const played = G && (await ticTacToe(G));
+		check(`${g.name}: …then plays offline`, !!played, G ? JSON.stringify(await debug(G)) : "did not mount");
+		check(`${g.name}: …with every file it asked for on the device`, missed.length === 0, [...new Set(missed)].join(", "));
+	}
+	// Leave the page as the update checks below expect it: on the portal.
+	await page.goto(`${BASE}/index.html`, { waitUntil: "domcontentloaded" });
+}
+
 await ctx.unroute("**/*", disconnect);
 await ctx.setOffline(false);
 
@@ -560,6 +759,13 @@ console.log("\npwa: an update reaches a player who already has the old copy");
 	await settle(async () => !(await page.evaluate(async () => !!(await navigator.serviceWorker.getRegistration())?.installing)), 15_000);
 	const afterBroken = await keys();
 	check("a deploy that cannot be fetched whole does not install", !afterBroken.includes(broken) && afterBroken.includes(oldVersion), afterBroken.join());
+	// Withdraw the broken deploy before mending it. Chrome retries a failed
+	// update on its own a second or so later (a fetch event's soft update):
+	// with the file back and the broken sw.js still served, that retry
+	// installed it, and swallowed the deploy below (2026-11-15, 2 runs in 4).
+	writeFileSync(swFile, swText);
+	await new Promise((r) => setTimeout(r, 2000));
+	await settle(async () => !(await page.evaluate(async () => !!(await navigator.serviceWorker.getRegistration())?.installing)), 15_000);
 	writeFileSync(markdown, markdownText);
 
 	writeFileSync(join(SITE, "lib", "games.js"), "// redeployed\n");
@@ -569,14 +775,15 @@ console.log("\npwa: an update reaches a player who already has the old copy");
 	const newVersion = oldVersion + "-next";
 	writeFileSync(swFile, swText.replace(oldVersion, newVersion));
 	await update();
+	let st = null;
 	const installed = await settle(async () => {
-		const st = await page.evaluate(async () => {
+		st = await page.evaluate(async () => {
 			const reg = await navigator.serviceWorker.getRegistration();
-			return { busy: !!(reg?.installing || reg?.waiting), keys: await caches.keys() };
+			return { installing: !!reg?.installing, waiting: !!reg?.waiting, active: reg?.active?.scriptURL, keys: await caches.keys() };
 		});
-		return !st.busy && st.keys.includes(newVersion);
+		return !st.installing && !st.waiting && st.keys.includes(newVersion);
 	});
-	check("a new deploy installs as a whole new snapshot", installed);
+	check("a new deploy installs as a whole new snapshot", installed, JSON.stringify(st));
 	check("…while the open page keeps the deploy it was loaded from", (await text("lib/games.js")) === before && (await keys()).includes(oldVersion));
 	await page.reload({ waitUntil: "domcontentloaded" });
 	check("…and the next page load is the new deploy", (await text("lib/games.js")) === "// redeployed");
@@ -586,6 +793,10 @@ console.log("\npwa: an update reaches a player who already has the old copy");
 	await page.reload({ waitUntil: "domcontentloaded" });
 	const dropped = await settle(async () => !(await keys()).includes(oldVersion), 10_000);
 	check("…after which the old snapshot is dropped", dropped, (await keys()).join());
+	// Pyodide, cached by the Python game played above, is in a cache of its
+	// own (sw.js RUNTIME) that a deploy leaving it alone does not prune.
+	if (existsSync(join(SITE, "sdk", "v1", "pyodide", "pyodide.asm.wasm")))
+		check("…while the Python runtime played once stays on the device", await page.evaluate(async () => !!(await caches.match("sdk/v1/pyodide/pyodide.asm.wasm"))), (await keys()).join());
 }
 
 await browser.close();

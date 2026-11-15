@@ -4,6 +4,7 @@
   "name": "TIC TAC TOE (TS)",
   "blurb": "Three in a row. SDK v2 managed state: the rules in TypeScript, the view in Solid.",
   "entry": "index.html",
+  "rules": "RULES.md",
   "kind": "duel",
   "shape": "teams",
   "seats": {

@@ -7,6 +7,7 @@
   "blurb": "Drop discs, get four in a row. One against one.",
   "description": "Drop your discs, line up four in a row. The bot searches five moves ahead, so it will punish a lazy one.",
   "entry": "index.html",
+  "rules": "RULES.md",
   "shape": "teams",
   "seats": {
     "min": 2,

@@ -256,7 +256,9 @@ function main() {
 						}
 					}
 					markColours(to);
-					manifests.push({ file: join(to, "game.json"), owner });
+					// The repo it came from is the registry's word, not the game's:
+					// a game naming another repo would join that collection.
+					manifests.push({ file: join(to, "game.json"), owner, repo: entry.repo });
 				}
 				writeFileSync(join(OUT, owner, repo, "pin.json"), JSON.stringify(entry, null, 2) + "\n");
 				// The owner's card for the Contributors page, from the same commit.

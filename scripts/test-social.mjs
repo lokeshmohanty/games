@@ -72,16 +72,19 @@ try {
 	await ana.p.goto(page("party.html", "&game=connect4"));
 	await ana.p.locator(".top-fav").click({ timeout: TIMEOUT });
 	check("☆ at the top of a game stars it", (await ana.p.locator('.top-fav[aria-pressed="true"]').count()) === 1);
+	// A collection's ★ (lib/collections.js) rides in the same list.
+	await ana.p.evaluate(() => NeonArcade.stats.toggleFav("collection:lokeshmohanty/arcade-games"));
 	await ana.p.waitForTimeout(1200); // the push is debounced
 	// That game hosted a party of its own; forget it, so the party below is new.
 	await ana.p.evaluate(() => localStorage.removeItem("neon.room"));
 	const tablet = await device("Ana", "Ana"); // the same account elsewhere
 	await tablet.p.goto(page("index.html"));
 	const starred = await tablet.p
-		.locator('.game-card[data-game="connect4"][data-tags~="favs"]')
+		.locator('[data-section="favs"] .game-card[data-game="connect4"]')
 		.waitFor({ state: "attached", timeout: TIMEOUT })
 		.then(() => true, () => false);
 	check("a star on one device is a favourite on the other", starred);
+	check("…a collection's too", await tablet.p.evaluate(() => NeonArcade.stats.isFav("collection:lokeshmohanty/arcade-games")));
 	await tablet.ctx.close();
 
 	console.log("\nsocial: friends in a party");
@@ -163,6 +166,34 @@ try {
 	check("…you highlighted", (await ana.p.locator("[data-board] [data-player].me").textContent()).includes("Ana Lima"));
 	check("…a Friends tab", (await ana.p.locator(".scope", { hasText: "Friends" }).count()) === 1);
 	check("…and it fits the phone", await noSideScroll(ana.p));
+
+	console.log("\nsocial: a run played alone, issued by the server");
+	{
+		// SINGLE PLAYER on a one-seat game is alone: no bots, so it ranks on
+		// its own report — under the run the server issued as it began.
+		const cy = await device("Cy");
+		let issued = null;
+		const reports = [];
+		cy.p.on("response", async (r) => {
+			if (r.url().includes("/api/run/start") && r.ok()) issued = await r.json().catch(() => null);
+			if (r.url().includes("/api/match/report")) reports.push({ sent: JSON.parse(r.request().postData() ?? "{}"), got: await r.json().catch(() => null), at: Date.now() });
+		});
+		await cy.p.goto(page("party.html", "&game=neon-survival-mp&fresh=1&mode=bots"));
+		await gameFrame(cy.p, TIMEOUT);
+		const until = async (fn, ms) => {
+			for (const end = Date.now() + ms; Date.now() < end && !fn(); ) await cy.p.waitForTimeout(200);
+			return fn();
+		};
+		check("alone and signed in, the server issues a run as the game begins", await until(() => typeof issued?.run === "string" && Number.isInteger(issued.seed), TIMEOUT), issued);
+		// Nobody steers: the swarm ends the run soon enough.
+		await until(() => reports.length, 120_000);
+		const [rep] = reports;
+		check("…the report names that run, not the party's", rep?.sent.run === issued?.run, rep?.sent);
+		check("…and the server counts it", rep?.got?.counted === true, { got: rep?.got, secs: rep && issued ? (rep.at - issued.at) / 1000 : null });
+		const lb = await cy.p.evaluate(() => NeonArcade.account.leaderboard("neon-survival-mp"));
+		check("…a run with a best score on the board", lb.me?.games === 1 && lb.me.wins === 0 && Number.isFinite(lb.me.best), lb.me);
+		await cy.ctx.close();
+	}
 
 	console.log("\nsocial: groups");
 	await ana.p.goto(page("profile.html"));

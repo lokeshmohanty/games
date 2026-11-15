@@ -57,7 +57,7 @@ const r2 = (v) => Math.round(v * 100) / 100;
 
 // { match, w, h, frames, ships: { id: { x, y, alive, bot } },
 //   enemies: [{ x, y, vx, vy, size }], gems: [{ id, x, y, size }], nextGem,
-//   score, ms, lastSpawn, spawnRate, gone: { id: 1 } }
+//   score, ms, lastSpawn, spawnRate, gone: { id: 1 }, names: { id: name } }
 let s = null;
 let live = false; // these rules are the running simulation: we are the host
 let version = 0; // bumped on every change, so a tick's view is built once
@@ -185,6 +185,7 @@ function step() {
 		for (const e of s.enemies) {
 			if (Math.hypot(ship.x - e.x, ship.y - e.y) < PLAYER_SIZE / 2 + e.size) {
 				ship.alive = false;
+				ship.died = s.ms; // how long they lasted, for the end card
 				break;
 			}
 		}
@@ -242,8 +243,9 @@ function feed() {
 arcade.managed({
 	init({ seats, match }) {
 		const { w, h } = box();
-		s = { match, w, h, frames: 2, ships: {}, enemies: [], gems: [], nextGem: 0, score: 0, ms: 0, lastSpawn: -1e9, spawnRate: SPAWN_INTERVAL_INIT, gone: {} };
+		s = { match, w, h, frames: 2, ships: {}, enemies: [], gems: [], nextGem: 0, score: 0, ms: 0, lastSpawn: -1e9, spawnRate: SPAWN_INTERVAL_INIT, gone: {}, names: {} };
 		for (const p of seats) s.ships[p.id] = newShip(p.bot);
+		for (const p of seats) s.names[p.id] = p.name;
 		for (let i = 0; i < 2; i++) spawnGem();
 		live = true;
 		version++;
@@ -307,9 +309,24 @@ arcade.managed({
 			by.set(n, [...(by.get(n) ?? []), id]);
 		}
 		const ranking = [...by.keys()].sort((a, b) => b - a).map((n) => by.get(n));
+		// The end card's DETAILS (docs/sdk-v2.md, result `details`): how long
+		// the run lasted, then each player's gems and time, best first (seven
+		// at most: eight rows in all).
+		const clock = (ms) => `${Math.floor(ms / 60000)}:${String(Math.floor(ms / 1000) % 60).padStart(2, "0")}`;
+		const nameOf = (id) => s.names?.[id] ?? arcade.party?.members?.find?.((m) => m.id === id)?.name ?? "Player";
+		const details = [
+			{ label: "Time survived", value: clock(s.ms) },
+			...ranking
+				.flat()
+				.slice(0, 7)
+				.map((id) => {
+					const p = s.ships[id];
+					return { label: nameOf(id), value: `${p.score ?? 0} ${p.score === 1 ? "gem" : "gems"} · ${clock(p.died ?? s.ms)}` };
+				}),
+		];
 		// Alone it is a run you played (lib/stats.js counts it, best score kept),
 		// not a win over nobody.
-		return { kind: ids.length > 1 ? "ffa" : "coop", ranking, scores: Object.fromEntries(ids.map((id) => [id, s.ships[id].score ?? 0])) };
+		return { kind: ids.length > 1 ? "ffa" : "coop", ranking, scores: Object.fromEntries(ids.map((id) => [id, s.ships[id].score ?? 0])), details };
 	},
 	// A seated player left the party for good: their ship goes with them.
 	leave({ seat }) {

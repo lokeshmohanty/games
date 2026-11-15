@@ -4,6 +4,7 @@
   "name": "TIC TAC TOE (C)",
   "blurb": "Three in a row. SDK v2 managed state: only the rules, in C compiled to WebAssembly.",
   "entry": "index.html",
+  "rules": "RULES.md",
   "runtime": "wasm",
   "wasm": "pkg/rules.wasm",
   "kind": "duel",

@@ -25,6 +25,7 @@ when the speed refactor started.
 |---|---|
 | pages, `lib/`, `games/`, `sdk/` | **from this VERSION's precache, as-is**. The network only for a file outside SHELL, which is then kept. |
 | icons, fonts, posters, gifs | **cache-first**, nothing downloaded behind a hit |
+| Pyodide (`sdk/v1/pyodide/`) | **cache-first into its own cache**, `RUNTIME` = `arcade-pyodide-<hash of the folder>`, which `prune()` keeps: it survives deploys that leave Pyodide alone |
 | preview videos (`.webm`, `.mp4`) and Range requests | **not handled**: Safari refuses a whole cached file for a media request |
 | loopback (`just run`) | code **network-first**, so an edit shows on reload. Tests opt in to the snapshot with localStorage `neon.sw=snapshot`, which makes lib/pwa.js register `sw.js?snapshot`. |
 
@@ -65,6 +66,38 @@ Coherence is now structural rather than a network round trip:
 Found by an adversarial review on 2026-11-14, after the first snapshot version
 had passed every test. It had swallowed install failures and let open pages
 read the new deploy.
+
+## Every game offline in single player (2026-11-15)
+
+Lokesh: "Games, when played singleplayer/with bots should work offline."
+After one online visit to the portal, every game in the catalog —
+first-party, community, the SDK's examples — opens from the portal with
+SINGLE PLAYER and plays with the network cut. `test-pwa` checks each one
+("every game offline in single player"): it plays a move and waits for the
+bot's answer (ticks for a real-time game, a start for a one-phone game),
+fails on any same-origin request that missed, and fails if the room server
+was asked (`/ping`: lib/party.js skips it for SINGLE PLAYER). A new game
+needs an entry in its `PLAY` table or the check fails. A people-only game
+(no bots, not one-phone: Draw & Guess) has no SINGLE PLAYER and is skipped.
+
+What it took (found by that test, 2026-11-15):
+- The precache missed files a game folder ships besides html/js/css/json.
+  assemble.mjs now takes **all of `games/**`** (not gifs/videos), RULES.md
+  and images for the examples, and the posters `assets/*.webp` (~5 KB each).
+  Community games were already whole (fetch-community's precache.js).
+- **Pyodide is the one exception, on purpose.** ~13 MB for a Python game's
+  core: not in the install precache, which everybody pays on mobile data.
+  It downloads when a Python game is picked online (sdk-host prefetchWasm).
+  It used to be stored under VERSION, so **every deploy pruned it** and the
+  promise "played once online, plays offline" broke silently on the next
+  deploy. Now it lives in `RUNTIME`, which prune keeps; the name changes
+  only when the vendored files do (a new worker, the old cache dropped).
+- Offline before that one play, `runtime.file` gets sw.js's 504 and
+  lib/sdk-host.js says so in a dialog (END GAME / STAY), instead of a frame
+  stuck on "STARTING PYTHON…".
+- The room server was never asked offline: SINGLE PLAYER skips the probe.
+- Trap: a test's `ctx.addInitScript(() => localStorage…)` runs in the
+  sandboxed game frames too and throws there (pageerror). Wrap it in try.
 
 ## Testing an update: stage a real deploy
 

@@ -26,7 +26,7 @@ GitHub Pages has no rewrites, and the hash already carries invites (`#i=`,
 | Address | View |
 |---|---|
 | `./` | the portal |
-| `./?page=leaderboard` (or `profile`, `contribute`, `contributors`) | that view; its own query parameters ride along |
+| `./?page=leaderboard` (or `profile`, `contribute`, `contributors`, `collections`) | that view; its own query parameters ride along |
 | `./?game=connect4`, `?mode`, `?fresh`, `?dev`, `?party`, or an invite or code hash | the party |
 
 The old pages (`party.html`, `leaderboard.html`, …) are redirect stubs that
@@ -91,8 +91,15 @@ stage.
      community/, the old pages, the manifest, and CONTRIBUTING.md.
    - It writes `dist/sw.js` from `sw.js`. The precache list is the
      template's own entries (icons, fonts) plus everything derived: every
-     built chunk, page, lib/ script and stylesheet, game file and frame
-     runtime.
+     built chunk, page, lib/ script and stylesheet, frame runtime, preview
+     poster (`assets/*.webp`), and every file a game folder ships (RULES.md,
+     a wasm module, images; not preview gifs or videos). So every game in
+     the catalog plays offline in single player after one online visit, and
+     `scripts/test-pwa.mjs` opens each from the portal with the network cut
+     and plays it. The one exception is a Python game: Pyodide (~13 MB) is
+     cached on first use, in a cache of its own that deploys do not prune
+     (`RUNTIME`, named by a hash of `sdk/v1/pyodide/`), so a Python game
+     needs one online play first; offline before that, the shell says so.
    - VERSION is a hash of exactly those bytes, with the community files.
      A deploy is therefore a new VERSION exactly when the offline copy
      changed, and a forgotten file is no longer possible. This replaces
@@ -118,7 +125,8 @@ and serves another folder, for parallel runs.
 
 A view is `src/views/<Name>.tsx` (a Solid component, root `.view-<name>`) and
 `src/views/<name>.css`. Converted 2026-11-15: portal, leaderboard, profile,
-contribute, contributors.
+contribute, contributors; collections is new (no old page: the nav links
+`./?page=collections`).
 - **Its library keeps the logic.** The page's library stays vanilla and
   exposes `mount(root) → cleanup`; the view calls it in `onMount` and
   `onCleanup`. A view mounts many times now, so every listener, observer

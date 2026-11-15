@@ -60,6 +60,9 @@ check("recent: newest first, no repeats", S.recent().join() === "a,c,b", S.recen
 for (let i = 0; i < 15; i++) S.played(`g${i}`);
 check("recent keeps ten", S.recent().length === 10);
 check("favourites merge without duplicates", S.mergeFavs(["a", "b"], ["b", "c"]).join() === "a,b,c");
+check("a contributor and a collection are favourites too, beside the games", S.favId.contributor("ada") === "contributor:ada" && S.favId.collection("ada/minis") === "collection:ada/minis" && S.toggleFav(S.favId.collection("ada/minis")) && S.isFav("collection:ada/minis") && !S.isFav("ada/minis"));
+check("…told apart from games' plain ids", S.isGameFav("connect4") && S.isGameFav("ada/chess") && !S.isGameFav("contributor:ada") && !S.isGameFav("collection:ada/minis"));
+S.toggleFav("collection:ada/minis");
 let heard = 0;
 const off = S.onChange(() => heard++);
 S.toggleFav("x");

@@ -4,6 +4,7 @@
   "name": "TIC TAC TOE (GO)",
   "blurb": "Three in a row. SDK v2 managed state: only the rules, in Go compiled to WebAssembly.",
   "entry": "index.html",
+  "rules": "RULES.md",
   "runtime": "wasm",
   "wasm": "tic-tac-toe.wasm",
   "kind": "duel",

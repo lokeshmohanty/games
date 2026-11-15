@@ -4,6 +4,7 @@
   "name": "TIC TAC TOE (JS)",
   "blurb": "Three in a row. SDK v2 managed state: only the rules, in JavaScript.",
   "entry": "index.html",
+  "rules": "RULES.md",
   "kind": "duel",
   "shape": "teams",
   "seats": {

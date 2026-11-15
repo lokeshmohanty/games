@@ -25,7 +25,7 @@ function previewTwins(file, dir, preview) {
 export function catalogEntries(files, root) {
 	const games = [];
 	const errors = [];
-	for (const { file, owner } of files) {
+	for (const { file, owner, repo: registered } of files) {
 		let m;
 		try {
 			m = JSON.parse(readFileSync(file, "utf8"));
@@ -67,7 +67,7 @@ export function catalogEntries(files, root) {
 			...(m.state === "managed" ? { state: "managed", ...(m.tick ? { tick: m.tick, viewRate: m.viewRate ?? Math.min(15, m.tick) } : {}), ...(m.opts ? { opts: m.opts } : {}) } : {}),
 			ownColours: !!m.ownColours,
 			author: m.author,
-			repo: m.repo,
+			repo: registered ?? m.repo,
 			community: !!owner,
 		});
 	}

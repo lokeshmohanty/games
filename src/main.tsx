@@ -17,6 +17,8 @@ import "../lib/lobby.js";
 import "../lib/stats.js";
 import "../lib/account.js";
 import "../lib/account-ui.js";
+import "../lib/markdown.js";
+import "../lib/rules.js";
 import "../lib/party.js";
 import "../lib/bridge.js";
 import "../lib/sdk-managed.js";

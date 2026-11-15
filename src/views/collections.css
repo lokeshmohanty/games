@@ -1,0 +1,106 @@
+/* src/views/collections.css — the Collections view (lib/collections.js), and
+   the ★ both it and the Contributors view put on a card. Scoped with
+   :where() (docs/spa.md): no weight added against lib/styles.css. */
+:where(.view-collections) {
+  max-width: 42rem;
+  margin: 0 auto;
+  padding: 16px 16px 56px;
+}
+:where(.view-collections) > h1 {
+  color: var(--accent);
+  font-size: 1.6rem;
+  margin: 8px 0 4px;
+}
+:where(.view-collections) .muted {
+  color: var(--ink-2);
+  font-size: 0.9rem;
+  margin: 0 0 16px;
+}
+:where(.view-collections) .muted a {
+  color: var(--accent);
+}
+:where(.view-collections) .collection {
+  border: 1px solid var(--rule);
+  border-radius: 12px;
+  background: var(--surface);
+  padding: 14px 16px;
+  margin-bottom: 12px;
+}
+:where(.view-collections) .collection-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+:where(.view-collections) .collection-who {
+  flex: 1;
+  min-width: 0;
+}
+:where(.view-collections) .collection-who h2 {
+  margin: 0;
+  font-size: 1.15rem;
+  color: var(--ink);
+  overflow-wrap: anywhere;
+}
+:where(.view-collections) .collection-owner {
+  color: var(--accent);
+  font-family: var(--font-mono);
+  font-size: 0.82rem;
+  text-decoration: none;
+}
+:where(.view-collections) .collection-meta,
+:where(.view-collections) .collection-games {
+  color: var(--ink-2);
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  margin: 6px 0 0;
+  overflow-wrap: anywhere;
+}
+:where(.view-collections) .collection-games {
+  font-family: var(--font-body);
+  font-size: 0.85rem;
+  color: var(--ink);
+}
+:where(.view-collections) .collection-previews {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+  margin-top: 10px;
+}
+:where(.view-collections) .collection-preview {
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  object-fit: cover;
+  border-radius: 8px;
+  border: 1px solid var(--rule);
+  background: var(--surface-2);
+}
+:where(.view-collections) .collection-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+:where(.view-collections) .collection-links .neon-btn {
+  min-height: 40px;
+  padding: 8px 14px;
+  font-size: 0.8rem;
+  text-decoration: none;
+}
+
+/* ★ on a contributor's or a collection's card (lib/collections.js star). */
+:where(.view-collections, .view-contributors) .fav-star {
+  flex: none;
+  margin-left: auto;
+  width: 44px;
+  height: 44px;
+  border: 1px solid var(--rule);
+  border-radius: 50%;
+  background: var(--surface-2);
+  color: var(--warn);
+  font-size: 1.3rem;
+  line-height: 1;
+  cursor: pointer;
+}
+:where(.view-collections, .view-contributors) .fav-star[aria-pressed="true"] {
+  border-color: var(--warn);
+}

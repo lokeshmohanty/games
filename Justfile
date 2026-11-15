@@ -50,7 +50,7 @@ serve-lan: install
     {{pnpm}} dev --host 0.0.0.0 --port {{port}}
 
 # Every suite, in the order they get slower.
-test: check-bindings check-colours community build test-stats test-submission test-codec test-hub test-worker-do test-plumbing test-rules test-room test-party test-scan test-pwa test-bots test-devkit test-protocol test-managed test-conformance test-webapp test-theme test-portal
+test: check-bindings check-colours community build test-stats test-submission test-codec test-hub test-worker-do test-plumbing test-rules test-room test-party test-scan test-pwa test-bots test-rules-screen test-devkit test-protocol test-managed test-conformance test-webapp test-theme test-portal
 
 # No browser needed — the signalling codec round-trip.
 test-codec:
@@ -158,6 +158,10 @@ test-conformance *lanes: pyodide
 # Every game playable by one person, and the mobile layouts at 390x844.
 test-bots:
     node scripts/test-bots.mjs
+
+# A game's rules: shown on its first open, once; GOT IT; "?"; none without rules; 390x844 in every theme; offline.
+test-rules-screen:
+    node scripts/test-rules-screen.mjs
 
 # Record a portal preview gif: `just preview connect4`, or `just preview all`.
 preview game:

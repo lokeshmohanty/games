@@ -5,8 +5,10 @@
 //   PATCH  /api/me             { name?, hidePublic?, appearOffline? }
 //   DELETE /api/me             every row of ours, at once; the session too
 //   GET    /api/me/export      all of it, as one JSON document
-//   GET    /api/me/favs        { favs: [game] }
-//   PUT    /api/me/favs        { favs: [game] } — replaces (the page merges first)
+//   GET    /api/me/favs        { favs: [id] }
+//   PUT    /api/me/favs        { favs: [id] } — replaces (the page merges first);
+//                              an id is a game's, "contributor:<login>" or
+//                              "collection:<owner>/<repo>" (lib/stats.js favId)
 //   POST   /api/me/signout     ends this session only
 //   POST   /api/me/link/<p>    { back } → { url }: connect GitHub or Google
 //   DELETE /api/me/identities/<p>  disconnect one (never the last)
@@ -28,6 +30,12 @@ const identitiesOf = async (env, account) =>
 	(await env.DB.prepare("SELECT provider, login, linked FROM identities WHERE account = ? ORDER BY linked").bind(account).all()).results ?? [];
 
 const all = async (stmt) => (await stmt.all()).results ?? [];
+
+// A favourite: a game, a contributor (a GitHub login) or a collection (a
+// games repo). The favs table's `game` column is free text: no migration.
+const LOGIN = "[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})";
+const FAV_ID = new RegExp(`^(?:contributor:${LOGIN}|collection:${LOGIN}/(?!\\.\\.?$)[A-Za-z0-9_.-]{1,100})$`);
+const favOk = (id) => typeof id === "string" && (GAME_ID.test(id) || FAV_ID.test(id));
 
 export async function getMe(env, me) {
 	return profile(me, await identitiesOf(env, me.id));
@@ -83,6 +91,7 @@ export async function deleteMe(env, me) {
 		env.DB.prepare("DELETE FROM identities WHERE account = ?").bind(id),
 		env.DB.prepare("DELETE FROM favs WHERE account = ?").bind(id),
 		env.DB.prepare("DELETE FROM reports WHERE account = ?").bind(id),
+		env.DB.prepare("DELETE FROM runs WHERE account = ?").bind(id),
 		env.DB.prepare("DELETE FROM match_players WHERE account = ?").bind(id),
 		env.DB.prepare("DELETE FROM ratings WHERE account = ?").bind(id),
 		env.DB.prepare("DELETE FROM friends WHERE a = ? OR b = ?").bind(id, id),
@@ -125,8 +134,8 @@ export async function getFavs(env, me) {
 
 export async function putFavs(env, me, request) {
 	const { favs } = await body(request);
-	if (!Array.isArray(favs) || favs.length > 200 || !favs.every((g) => typeof g === "string" && GAME_ID.test(g))) {
-		throw new HttpError(400, "favs is a list of game ids");
+	if (!Array.isArray(favs) || favs.length > 200 || !favs.every(favOk)) {
+		throw new HttpError(400, "favs is a list of game, contributor: or collection: ids");
 	}
 	await env.DB.batch([
 		env.DB.prepare("DELETE FROM favs WHERE account = ?").bind(me.id),

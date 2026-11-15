@@ -106,7 +106,7 @@ arcade.managed({
   view({ seat }) { return … },                // what this seat may see; seat null = a spectator
   turn() { return [ids…] },                   // whose move it is: drives bots and the turn-wait banner
   bot({ seat }) { return action },            // a bot's move (null: none)
-  result() { return null | { kind, ranking, scores?, title? } },   // sdk.md "Reporting a result"; title: the end card's (≤ 40)
+  result() { return null | { kind, ranking, scores?, title?, details? } },   // sdk.md "Reporting a result"; title, details: the end card's (below)
   snapshot() { return state },                // for the heir
   restore({ snapshot }) { … },
   skip({ seat }) { … return true },           // optional: the host chose SKIP TURN
@@ -130,9 +130,46 @@ How it runs:
   apps, are reconnecting, or have left, the shell's turn-wait banner shows.
   SKIP TURN calls `skip`; a game without `skip` says it cannot.
 - **Results.** `result()` is checked after every change. It is reported once
-  on every phone (with `match`), and the shell draws the end card: the
-  winner's name, PLAY AGAIN for the host, and SEE THE BOARD. PLAY AGAIN
-  calls `init` again with `match + 1`.
+  on every phone (with `match`), and the shell draws the end card. PLAY
+  AGAIN calls `init` again with `match + 1`.
+- **Played alone, ranked.** When a signed-in player starts a game alone
+  (one seat, no bots), the shell asks the arcade's server for a run before
+  `init`, and `seed` is the server's: deal anything random from it and the
+  server can deal the same. A result may carry `proof` (any JSON) for a
+  server-side check of the run; Sudoku sends its solved grid. Offline or
+  signed out, `seed` is local and the run does not rank. docs/accounts.md
+  "Solo runs".
+- **The end card** (Lokesh, 2026-11-15: everything, with the extra
+  information behind a toggle so the screen stays simple). Always shown:
+  - the title: `title` (≤ 40 characters) if the result has one, else YOU
+    WIN / X WINS / DRAW / GAME OVER (co-op);
+  - the ranking: place (a tie or a team shares one; co-op has none), the
+    seat's colour (`--p1`…`--p8` in seat order), name, and score when
+    `scores` has one; this phone's row is marked;
+  - PLAY AGAIN on the host (others read who can start one), and SEE THE
+    BOARD, which tucks the card away to look at the final board.
+
+  Behind DETAILS (closed at first; open or closed is remembered on the
+  device, localStorage `neon.overDetails`):
+  - **Series:** the match number, how long it took (the host times it
+    from `init` and sends it with the result; an heir keeps the clock),
+    and the matches won since this game was mounted on this phone (only
+    players who have won one are listed; draws counted; co-op has none);
+  - **Your stats:** this device's record for the game (lib/stats.js:
+    played, won, streak and best, against bots and people, best score).
+    Rating changes are not shown: the server's match report answers only
+    whether it counted;
+  - **The game's own details:** an optional `details` in the result,
+    `[{ label, value }]`, at most 8 rows of short strings or numbers
+    (label ≤ 32 characters, value ≤ 40; anything else is dropped), drawn
+    as a small table. Connect 4 gives moves played and the winning line;
+    Neon Survival the time survived and each player's gems and time.
+
+  ```js
+  result() {
+    return { kind: "duel", ranking, details: [{ label: "Moves played", value: 23 }, { label: "Winning line", value: "c1 d2 e3 f4" }] };
+  }
+  ```
 - **Handover.** After every change the host sends `snapshot()` to the heir
   (net.js `heir()`, the longest-present member), at most once a second when
   ticking. When the crown moves, the heir's shell calls `restore` on its
@@ -353,7 +390,11 @@ Lane notes:
   cold. The game's frame boots Pyodide from files the shell hands it
   (`runtime.file`) and loads only the core: no packages, no network. Every
   phone boots it, because every phone's frame holds the rules for a
-  takeover.
+  takeover. **Offline:** the core (~13 MB) is not in the install precache;
+  it downloads when a Python game is first picked online and then stays on
+  the device across deploys (sw.js `RUNTIME`). Opened offline before that,
+  the shell refuses `runtime.file` and tells the player, in a dialog, to
+  play it once online (lib/sdk-host.js).
 - **C/C++.** `dispatch`'s answer belongs to the header until the next call.
   Its JSON parser is strict (RFC 8259) and refuses nesting deeper than 64.
   It was fuzzed under ASan and UBSan with 4,058 malformed calls, and gave
@@ -401,6 +442,28 @@ v2 adds these fields to sdk.md's `game.json`:
 | `"state"` | `"managed"`: the platform runs the rules (Layer 2) |
 | `"tick"`, `"viewRate"` | managed and real-time: steps and views per second |
 | `"wasm"` | with `runtime: "wasm"` only: the module's path inside the folder |
+| `"rules"` | a Markdown file in the folder (`"RULES.md"`): the rules, shown by the shell on a first open and behind "?" (below) |
+
+**Rules** (Lokesh, 2026-11-15: "the first time the user opens it, a
+screen with the game rules (with examples) … and a '?' button so that the
+player can see this anytime"). `lib/rules.js` draws the file, with
+`lib/markdown.js`, in a sheet over the game, on this phone only.
+- **When.** The first time this device mounts the game (localStorage
+  `neon.rules.<id>`, set however the sheet closes: GOT IT, ✕, Escape, a tap
+  outside), and whenever **?** in the party's top buttons is pressed. A game
+  without `rules` has no **?**.
+- **Nothing pauses.** The game keeps running underneath, for the others and
+  for this phone; nothing is sent to the game or the party, so a guest
+  reading the rules holds nobody up.
+- **Offline.** The shell fetches the file from the game's folder, so the
+  service worker serves it: `scripts/assemble.mjs` precaches every
+  first-party game's rules (and fails the build when one is missing), and a
+  community game's comes with its folder (`community/precache.js`).
+- **Under automation** (`navigator.webdriver`) the first-open sheet stays
+  away, so the suites that drive games are not stopped by it. localStorage
+  `neon.rules` = `"on"` brings it back, `"off"` turns it off.
+  `just test-rules-screen` tests it at 390×844 in every theme, offline too.
+- **Content.** CONTRIBUTING.md, "How to play: RULES.md".
 
 **Web apps** (`app`, `kind: "shared"`; sdk.md "Web apps") run on v2 since
 2026-11-14, **whatever their manifest's `sdk` says**. A `shared` sdk 1 app

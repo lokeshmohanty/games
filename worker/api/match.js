@@ -15,15 +15,22 @@
 // the match; a report nobody confirms within 15 minutes is dropped. Bots
 // never count (Lokesh, 2026-11-13: leaderboards are human-only), nor does a
 // match with fewer than two accounts, nor "local" (one-phone) games — except
-// a SOLO run (one player, no bots: a puzzle, a survival run alone), which
-// counts on its player's own report (Lokesh, 2026-11-15). Nobody can confirm
-// it, so a solo score is only as honest as its reporter: it is recorded as a
-// run (games, best score), never a win over anybody, and never Elo.
+// a SOLO run (one player, no bots, in a game listed in runs.js SOLO: Sudoku,
+// Neon Survival alone), which counts on its player's own report (Lokesh,
+// 2026-11-15). Nobody can confirm
+// it, so the server takes part instead: a solo report's `run` must be one the
+// server issued as the game began (POST /api/run/start), unused, the
+// reporter's own and for this game, and the score must be plausible for the
+// time since — or, for Sudoku, the solved grid checks out (worker/api/runs.js,
+// worker/api/sudoku.js). It is recorded as a run (games, best score; for a
+// "time" board the lowest; Sudoku on one board per difficulty), never a win
+// over anybody, and never Elo.
 //
 // Ratings, per account per game: duel → Elo (K 32, from 1200); every kind →
 // games and wins (first place); coop → best score.
 
 import { GAME_ID, HttpError, body, now, randomId, sha256 } from "./http.js";
+import { boardOf, checkSoloRun, claimRun } from "./runs.js";
 
 export const REPORT_TTL_MS = 15 * 60_000;
 export const ELO_START = 1200;
@@ -95,7 +102,7 @@ export async function summary(env) {
 export async function report(env, me, request) {
 	const b = await body(request);
 	if (!GAME_ID.test(b.game ?? "")) throw new HttpError(400, "unknown game");
-	if (typeof b.run !== "string" || !b.run || b.run.length > 40) throw new HttpError(400, "run is the party's run id");
+	if (typeof b.run !== "string" || !b.run || b.run.length > 40) throw new HttpError(400, "run is the party's run id (played alone: the server's, POST /api/run/start)");
 	const match = Number.isInteger(b.match) ? b.match : 1;
 	if (b.kind === "local") return { counted: false, why: "one-phone games are not ranked" };
 	const r = toAccounts(b);
@@ -110,6 +117,18 @@ export async function report(env, me, request) {
 	const t = now();
 	await env.DB.prepare("DELETE FROM reports WHERE at < ?").bind(t - REPORT_TTL_MS).run();
 	if (await env.DB.prepare("SELECT 1 FROM matches WHERE id = ?").bind(key).first()) return { counted: true, already: true };
+	if (solo) {
+		// Nobody confirms a run played alone: its server-issued run does. All
+		// the checks first, then the run is claimed (once), then committed —
+		// to the board the check names (Sudoku: one per difficulty), with the
+		// score it names (Sudoku's: raised to the server's clock).
+		const v = await checkSoloRun(env, me, b, r.scores?.[me.id], t);
+		if (!v.ok) return { counted: false, why: v.why };
+		const claimed = await claimRun(env, b.run, t, v.daily);
+		if (claimed !== true) return { counted: false, why: claimed };
+		await commit(env, key, v.game, "coop", { ...r, scores: { [me.id]: v.score } }, t, { low: v.low });
+		return { counted: true };
+	}
 
 	await env.DB.prepare("INSERT OR REPLACE INTO reports (match, account, digest, payload, at) VALUES (?, ?, ?, ?, ?)")
 		.bind(key, me.id, digest, canonical, t)
@@ -125,14 +144,16 @@ export async function report(env, me, request) {
 	if (await env.DB.prepare("SELECT 1 FROM kv WHERE k = ?").bind(`void:${key}`).first()) {
 		return { counted: false, why: "the players disagreed about this match, so it does not count" };
 	}
-	if (fromPlayers.length < 2 && !solo) return { counted: false, pending: true };
-	// A solo run is a run: games and best score, not a win (commit, coop).
-	await commit(env, key, b.game, solo ? "coop" : b.kind, r, t);
+	if (fromPlayers.length < 2) return { counted: false, pending: true };
+	await commit(env, key, b.game, b.kind, r, t);
 	return { counted: true };
 }
 
-/** Record a confirmed match and move everyone's ratings. */
-async function commit(env, id, game, kind, r, t) {
+/**
+ * Record a confirmed match and move everyone's ratings. `low`: the scores are
+ * times, and the best is the lowest (a "time" board, worker/api/runs.js).
+ */
+async function commit(env, id, game, kind, r, t, { low = false } = {}) {
 	const inserted = await env.DB.prepare("INSERT OR IGNORE INTO matches (id, game, kind, ranking, scores, at) VALUES (?, ?, ?, ?, ?, ?)")
 		.bind(id, game, kind, JSON.stringify(r.places), r.scores ? JSON.stringify(r.scores) : null, t)
 		.run();
@@ -154,8 +175,14 @@ async function commit(env, id, game, kind, r, t) {
 		next.get(x).elo = ex;
 		next.get(y).elo = ey;
 	}
-	if (kind === "coop" && r.scores) {
-		for (const [a, s] of Object.entries(r.scores)) next.get(a).best = Math.max(next.get(a).best ?? -Infinity, s);
+	// Best score: co-op, and every match of a game whose board is best score
+	// (SOLO's "coop": Neon Survival's multi-ship runs are free-for-all, and
+	// their scores belong on the same board; wins are still counted, unshown).
+	if (r.scores && (kind === "coop" || boardOf(game) === "coop")) {
+		for (const [a, s] of Object.entries(r.scores)) {
+			const was = next.get(a).best;
+			next.get(a).best = was == null ? s : low ? Math.min(was, s) : Math.max(was, s);
+		}
 	}
 	await env.DB.batch([
 		...r.places.flatMap((slot, place) =>

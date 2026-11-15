@@ -22,7 +22,9 @@ arcade.managed({
 		const ids = Object.keys(s.score).filter((id) => s.score[id] >= 200);
 		if (!ids.length) return null;
 		const order = Object.keys(s.score).sort((a, b) => s.score[b] - s.score[a]);
-		return { kind: "ffa", ranking: order.map((id) => [id]), scores: s.score };
+		// details: the end card's rows; the last two are dropped (too many, not a string).
+		const details = [{ label: "Ticks", value: s.ticks }, ...Array.from({ length: 7 }, (_, i) => ({ label: `Row ${i + 2}`, value: i + 2 })), { label: "Row 10", value: 10 }, { label: "Bad", value: {} }];
+		return { kind: "ffa", ranking: order.map((id) => [id]), scores: s.score, details };
 	},
 	snapshot: () => s,
 	restore({ snapshot }) {

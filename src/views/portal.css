@@ -136,41 +136,49 @@
   cursor: pointer;
 }
 /*
-  Filter chips. One row of them on a desktop, two on a phone; the whole
-  strip scrolls sideways rather than wrapping into a wall of buttons.
+  The home screen's sections (lib/portal.js SECTIONS): favourites, popular,
+  then the categories, each a heading over its cards. A wrapping grid on a
+  wide screen; on a phone one row per section that scrolls sideways inside
+  itself, never the page (below).
 */
-:where(.view-portal) .filters {
+:where(.view-portal) .portal-sections {
+  width: 80%;
+  max-width: 1200px;
+  display: flex;
+  flex-direction: column;
+  gap: 32px;
+}
+:where(.view-portal) .portal-sections[hidden],
+:where(.view-portal) .portal-section[hidden],
+:where(.view-portal) .section-row[hidden],
+:where(.view-portal) .fav-more[hidden],
+:where(.view-portal) .games-grid[hidden] {
+  display: none;
+}
+:where(.view-portal) .section-title {
+  font-family: var(--font-display);
+  font-size: 1.15rem;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  color: var(--ink);
+  margin: 0 0 14px;
+}
+:where(.view-portal) .section-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 24px;
+}
+/* Starred contributors and collections: each a search for its games. */
+:where(.view-portal) .fav-more {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
-  justify-content: center;
-  width: 92%;
-  max-width: 1200px;
-  margin-bottom: 22px;
+  margin-top: 14px;
 }
-:where(.view-portal) .filter {
-  background: var(--surface);
-  border: 2px solid var(--rule);
-  border-radius: 999px;
-  color: var(--ink-2);
+:where(.view-portal) .fav-more-item {
+  background: none;
   font-family: inherit;
-  font-size: 0.72rem;
-  letter-spacing: 1.5px;
-  text-transform: uppercase;
-  padding: 9px 14px;
-  /* Comfortably past the tap minimum with the small type. */
-  min-height: 40px;
   cursor: pointer;
-}
-:where(.view-portal) .filter:hover {
-  border-color: var(--accent);
-  color: var(--accent);
-}
-:where(.view-portal) .filter[aria-pressed="true"] {
-  background: var(--accent);
-  border-color: var(--accent);
-  color: var(--on-accent);
-  font-weight: bold;
 }
 :where(.view-portal) .filter-empty {
   color: var(--ink-2);
@@ -420,29 +428,33 @@
   :where(.view-portal) .game-card:hover {
     transform: none;
   }
-  /* One row that scrolls sideways (inside itself, never the page):
-     eight chips wrapped to three rows, which pushed the games down. */
-  :where(.view-portal) .filters {
-    gap: 6px;
-    margin-bottom: 10px;
-    flex-wrap: nowrap;
-    justify-content: flex-start;
-    overflow-x: auto;
+  /* A row per section, scrolling sideways inside itself: two cards and
+     the edge of a third, so the row says there is more. */
+  :where(.view-portal) .portal-sections {
     width: 94%;
-    padding-bottom: 2px;
-    scrollbar-width: none;
+    gap: 20px;
   }
-  :where(.view-portal) .filters::-webkit-scrollbar {
+  :where(.view-portal) .section-title {
+    font-size: 0.9rem;
+    letter-spacing: 1.5px;
+    margin: 0 0 8px;
+  }
+  :where(.view-portal) .section-row {
+    grid-template-columns: none;
+    grid-auto-flow: column;
+    grid-auto-columns: calc((100% - 12px) / 2.25);
+    gap: 12px;
+    overflow-x: auto;
+    overscroll-behavior-x: contain;
+    scroll-snap-type: x proximity;
+    scrollbar-width: none;
+    padding-bottom: 2px;
+  }
+  :where(.view-portal) .section-row::-webkit-scrollbar {
     display: none;
   }
-  :where(.view-portal) .filter {
-    flex: none;
-  }
-  :where(.view-portal) .filter {
-    font-size: 0.66rem;
-    padding: 7px 10px;
-    min-height: 36px;
-    letter-spacing: 1px;
+  :where(.view-portal) .section-row > .game-card {
+    scroll-snap-align: start;
   }
 }
 
@@ -517,7 +529,8 @@
   overflow-x: auto;
   padding-bottom: 4px;
 }
-:where(.view-portal) .recent-game {
+:where(.view-portal) .recent-game,
+:where(.view-portal) .fav-more-item {
   flex: none;
   padding: 10px 14px;
   min-height: 44px;

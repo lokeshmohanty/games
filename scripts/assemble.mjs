@@ -25,7 +25,7 @@
 
 import { createHash } from "node:crypto";
 import { cpSync, existsSync, globSync, readFileSync, readdirSync, statSync, writeFileSync } from "node:fs";
-import { basename, dirname, join, relative, resolve } from "node:path";
+import { basename, dirname, join, posix, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
@@ -61,12 +61,25 @@ const derived = [
 	...files("app/*.{js,css}"),
 	...files("*.html"),
 	...files("lib/*.{js,css}"),
-	...files("games/**/*.{html,js,css,json}").filter((p) => !basename(p).startsWith("test-")),
+	// The portal's preview posters (~5 KB each; the gifs and videos are not).
+	...files("assets/*.webp"),
+	// Everything a game folder ships — its RULES.md, a wasm module, images —
+	// so every game opens offline in single player (scripts/test-pwa.mjs).
+	// Files only: a folder in the list (a 301 on Pages, a 404 once it has no
+	// index.html) would fail the install for everyone (review, 2026-11-15).
+	...files("games/**/*").filter((p) => statSync(join(DIST, p)).isFile() && !basename(p).startsWith("test-") && !/\.(?:gif|webm|mp4)$/i.test(p)),
 	...files("sdk/v1/*.{js,py}"),
 	...files("sdk/v2/*.js"),
-	// The listed examples: their pages, scripts, styles, modules and Python
-	// (not sources or build files).
-	...files("sdk/v2/examples/tic-tac-toe-*/**/*.{html,js,css,json,wasm,py}").filter((p) => !/(^|\/)(src|node_modules|target)\/|package(-lock)?\.json$|tsconfig|vite\.config|Cargo/.test(p)),
+	// The listed examples: their pages, scripts, styles, modules, Python,
+	// RULES.md and images (not sources or build files).
+	...files("sdk/v2/examples/tic-tac-toe-*/**/*.{html,js,css,json,wasm,py,md,png,svg,webp}").filter((p) => !/(^|\/)(src|node_modules|target)\/|package(-lock)?\.json$|tsconfig|vite\.config|Cargo/.test(p)),
+	// Each game's rules (manifest "rules", a Markdown file in its folder):
+	// the shell shows them over the game, offline too (lib/rules.js). A
+	// manifest naming a file that is not there fails the build below.
+	...[...files("games/*/game.json"), ...files("sdk/v2/examples/tic-tac-toe-*/game.json")].flatMap((p) => {
+		const rules = JSON.parse(readFileSync(join(DIST, p), "utf8")).rules;
+		return typeof rules === "string" ? [posix.join(posix.dirname(p), rules)] : [];
+	}),
 ];
 const shell = [...new Set(["", ...listed, ...derived])].sort();
 const missing = shell.filter((p) => p && !existsSync(join(DIST, p)));
@@ -87,9 +100,16 @@ for (const p of [...shell, ...communityFiles].filter(Boolean).sort()) {
 }
 hash.update(template.replace(/^const VERSION = "[^"]*";.*$/m, ""));
 const version = `arcade-${hash.digest("hex").slice(0, 12)}`;
+// Pyodide's own cache (sw.js RUNTIME): named by its files, so it survives
+// every deploy that does not change it.
+const pyodide = join(DIST, "sdk", "v1", "pyodide");
+const runtimeHash = createHash("sha256");
+for (const f of existsSync(pyodide) ? readdirSync(pyodide).sort() : []) runtimeHash.update(`\0${f}\0`).update(readFileSync(join(pyodide, f)));
+const runtime = `arcade-pyodide-${runtimeHash.digest("hex").slice(0, 12)}`;
 const list = shell.map((p) => `\t"./${p}",`).join("\n");
 const sw = template
 	.replace(/^const VERSION = "[^"]*";.*$/m, `const VERSION = "${version}";`)
+	.replace(/^const RUNTIME = "[^"]*";.*$/m, `const RUNTIME = "${runtime}";`)
 	.replace(/const SHELL = \[[\s\S]*?\];/, `const SHELL = [\n\t// Written by scripts/assemble.mjs from what was built and copied.\n${list}\n];`);
 writeFileSync(join(DIST, "sw.js"), sw);
 console.log(`assemble: dist/ ready — ${shell.length} files precached, ${communityFiles.length} community, VERSION ${version}`);

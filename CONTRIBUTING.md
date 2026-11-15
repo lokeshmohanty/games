@@ -72,6 +72,7 @@ my-games/
     index.html       your page: only your own <script> and <link> tags
     laser-chess.js   NeonArcade.registerGame({ id, name, mount(ctx) { … } })
     preview.gif      shown on the portal (optional)
+    RULES.md         how to play: shown on a first open and behind "?"
 ```
 
 The example is ~170 lines and has everything a game needs: host-authoritative
@@ -80,6 +81,28 @@ state, a move channel, a bot, `ctx.reportResult`, and the handle hooks
 larger games: Connect 4, Neon Bid (hidden information), Undercover (one phone
 passed around) and Neon Survival (real-time co-op) in [`games/`](games), and
 six more in [lokeshmohanty/arcade-games](https://github.com/lokeshmohanty/arcade-games).
+
+### How to play: RULES.md
+
+The first time someone opens your game on a device, the arcade shows your
+rules over it, and the party's **?** button shows them again at any time.
+Write them in a Markdown file in the game's folder and name it in
+`game.json`: `"rules": "RULES.md"`. Without it there is no **?** and nothing
+is shown.
+
+- **Short.** A phone reads it in about a minute: the goal in a sentence or
+  two, then *How to play*, *Scoring*, *Winning*, *Example* and *Controls*.
+- **An example with real values.** One turn played out, what it scored, and
+  how a game is won. Connect 4's numbers the columns and plays a short
+  game out ([`games/connect4/RULES.md`](games/connect4/RULES.md)).
+- **What your code does**, not what the board game you know does: board
+  size, timers, ties, what bots do, which taps and keys work.
+- **Plain Markdown only:** headings, paragraphs, flat lists, bold, italic,
+  `code` and links. Tables, images, nested lists and HTML are not drawn.
+
+The arcade fetches the file from your folder, so it works offline like the
+rest of your game. Nothing reaches your game: the sheet is the player's
+own, and your game keeps running under it, for them and for everyone else.
 
 ## 2. Play it in the real arcade, from your machine
 

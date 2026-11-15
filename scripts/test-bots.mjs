@@ -860,7 +860,8 @@ try {
 	check("…against a bot", mine.stats?.[c4Id]?.vsBots === 1);
 	check("…and it is the most recent game", mine.recent?.[0] === c4Id, JSON.stringify(mine.recent));
 	await page.goto(url("index.html"));
-	const portalSays = await page.locator(`.game-card[data-game="${c4Id}"] .game-you`).textContent({ timeout: TIMEOUT }).catch(() => "");
+	// A game has a card in every home-screen section it is in: the first will do.
+	const portalSays = await page.locator(`.game-card[data-game="${c4Id}"] .game-you`).first().textContent({ timeout: TIMEOUT }).catch(() => "");
 	check("the portal shows it on the game's card", /won of 1/.test(portalSays), portalSays);
 	check("…and under Recently played", (await page.locator("[data-recent] .recent-game").first().textContent().catch(() => "")) === "Connect 4");
 

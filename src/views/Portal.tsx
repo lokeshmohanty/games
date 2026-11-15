@@ -1,10 +1,11 @@
-// src/views/Portal.tsx — the games: brand, the party banner, search, chips,
-// recently played and the cards (was index.html; docs/spa.md).
+// src/views/Portal.tsx — the home screen: brand, the party banner, search,
+// recently played, then the sections of cards (was index.html; docs/spa.md).
 //
-// The cards, chips and search stay lib/portal.js's vanilla DOM
-// (NeonArcade.portal): it draws them into .games-grid on mount. lib/pwa.js
-// fills the install slot, lib/nav.js the bar and tabs. index.html's
-// speculationrules prefetch of party.html is gone: the party is this page.
+// The sections, cards and search stay lib/portal.js's vanilla DOM
+// (NeonArcade.portal): it draws them into [data-sections] and .games-grid
+// on mount. lib/pwa.js fills the install slot, lib/nav.js the bar and tabs.
+// index.html's speculationrules prefetch of party.html is gone: the party is
+// this page.
 import { onCleanup, onMount } from "solid-js";
 import "../../lib/portal.js";
 import { navigate } from "../router";
@@ -26,17 +27,6 @@ function joinWithCode(event: MouseEvent) {
 	if (code.length !== 6) return alert("That is not a six-digit party code.");
 	navigate("./?party#c=" + code);
 }
-
-const FILTERS: [string, string][] = [
-	["all", "All"],
-	["alone", "On your own"],
-	["duel", "Two"],
-	["party", "A crowd"],
-	["one-phone", "One phone"],
-	["strategy", "Strategy"],
-	["quick", "Quick"],
-	["favs", "★ Favourites"],
-];
 
 export default function Portal() {
 	let main!: HTMLElement;
@@ -95,10 +85,9 @@ export default function Portal() {
 			</div>
 
 			{/*
-			  Filters. Nine games is more than a phone shows at once, so the chips are
-			  how somebody with a particular evening in mind finds the right one: on
-			  their own, against one other person, or with a room full.
-			  lib/portal.js parseQuery: words, or author: type: tag: players: from:
+			  The search. Typed into, it replaces the sections below with one grid of
+			  what matches. lib/portal.js parseQuery: words, or author: type: tag:
+			  players: from:
 			*/}
 			<div class="search">
 				<input
@@ -110,13 +99,6 @@ export default function Portal() {
 					spellcheck={false}
 				/>
 			</div>
-			<div class="filters" role="group" aria-label="Filter games">
-				{FILTERS.map(([id, label]) => (
-					<button class="filter" type="button" data-filter={id} aria-pressed={id === "all" ? "true" : "false"}>
-						{label}
-					</button>
-				))}
-			</div>
 			<p class="filter-empty" hidden>
 				Nothing matches that yet.
 			</p>
@@ -127,8 +109,11 @@ export default function Portal() {
 			</div>
 
 			{/* Drawn by lib/portal.js from every game's manifest (lib/catalog.js,
-			    community/catalog.js): a registered game needs no edit here. */}
-			<div class="games-grid" />
+			    community/catalog.js): a registered game needs no edit here.
+			    The sections (favourites, popular, the categories), and the
+			    search's results in their place while a search is typed. */}
+			<div class="portal-sections" data-sections />
+			<div class="games-grid" hidden />
 		</main>
 	);
 }

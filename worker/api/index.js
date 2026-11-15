@@ -12,6 +12,7 @@ import { HttpError, fail, json, preflight } from "./http.js";
 import { leaderboard } from "./lb.js";
 import { matchesOf, played, publicProfile, ratingsOf, report, summary } from "./match.js";
 import { deleteMe, exportMe, getFavs, getMe, link, patchMe, putFavs, signOut, unlink } from "./me.js";
+import { ageRun, startRun } from "./runs.js";
 import { runSnapshot } from "./snapshot.js";
 import {
 	addFriend,
@@ -87,6 +88,7 @@ export async function api(request, env, { gate = async () => true } = {}) {
 			return send({ matches: await matchesOf(env, m.id), ratings: await ratingsOf(env, m.id) });
 		}
 		if (a === "match" && b === "report" && method === "POST") return send(await report(env, await me(), request));
+		if (a === "run" && b === "start" && method === "POST") return send(await startRun(env, await me(), request));
 		if (a === "feedback" && b && method === "POST") return send(await postFeedback(env, await me(), seg.slice(1).join("/"), request));
 
 		// ------------------------------------------------ friends
@@ -112,6 +114,9 @@ export async function api(request, env, { gate = async () => true } = {}) {
 		// ------------------------------------------------ tests only
 		if (a === "admin" && b === "snapshot" && method === "POST" && env.AUTH_TEST === "1" && /^127\.|^localhost$/.test(url.hostname)) {
 			return send(await runSnapshot(env));
+		}
+		if (a === "admin" && b === "age-run" && method === "POST" && env.AUTH_TEST === "1" && /^127\.|^localhost$/.test(url.hostname)) {
+			return send(await ageRun(env, request));
 		}
 
 		throw new HttpError(404, "not found");

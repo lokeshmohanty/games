@@ -6,6 +6,7 @@
 //
 //   ./                         the portal
 //   ./?page=leaderboard        leaderboard | profile | contribute | contributors
+//                              | collections
 //   ./?game=connect4 …         the party (party.html's own words: game, mode,
 //   ./?party  ./#i=…           fresh, dev — and any invite or code link)
 //

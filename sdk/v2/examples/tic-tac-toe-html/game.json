@@ -4,6 +4,7 @@
   "name": "TIC TAC TOE (HTML)",
   "blurb": "Three in a row. SDK v2 managed state: markup, CSS and rules, no rendering code.",
   "entry": "index.html",
+  "rules": "RULES.md",
   "kind": "duel",
   "shape": "teams",
   "seats": {

@@ -7,7 +7,7 @@ questions about this project from this folder alone.
 
 ## Contents
 
-- [The portal](#the-portal) — the phone layout and the filter tags
+- [The portal](#the-portal) — the home screen's sections, the phone layout and the search
 - [Connecting players](#connecting-players) — the serverless handshake, paid once per person
 - [Parties](#parties) — the persistent group, teams, switching games, host succession
 - [Bots](#bots) — why there is no single-player section, and what a bot actually is
@@ -71,16 +71,41 @@ before changing either subsystem:
 **Since 2026-11-13 its cards are drawn, not written** (`lib/portal.js`): one
 per game in `NeonArcade.CATALOG` — this repo's manifests and every pinned
 outside repo's — so a merged registry PR appears with no edit here. Each card
-has your own record on this device and, for a community game, its author; a
-★ FAVOURITES chip and a Recently played row sit above the grid. A game is
-starred (☆, `lib/stats.js`) and given feedback (💬) from inside it: the top
-right of party.html, beside PARTY (2026-11-14; they were on every card). Two
-things about it are asserted rather than eyeballed, in `test-pwa.mjs`.
+has your own record on this device and, for a community game, its author. A
+game is starred (☆, `lib/stats.js`) and given feedback (💬) from inside it:
+the top right of party.html, beside PARTY (2026-11-14; they were on every
+card). Its layout is asserted rather than eyeballed, in `test-pwa.mjs`; what
+is in each section, in `test-portal.mjs`.
+
+**The home screen is sections** (Lokesh, 2026-11-15: "show the favourites,
+then the top 3~5 games based on popularity, and then pre-defined
+categories"). Under the brand, party banner, search and the Recently played
+row, top to bottom (`lib/portal.js` `SECTIONS`; an empty one is hidden):
+
+- **★ Favourites** — the games starred, in the order starred, then the
+  contributors and collections starred (`contributor:<login>`,
+  `collection:<owner>/<repo>`) as buttons that search for their games.
+- **Popular** — the five most played (`/api/stats/summary`, else the public
+  snapshot), examples aside. The counts are kept on the device
+  (`neon.plays`), so the row paints at once and in the same order offline;
+  with no counts ever, the catalog's order.
+- **Arcade · Party · Strategy · Puzzle / Single player · Examples** — the
+  catalog's `categories` (`scripts/manifest.mjs`); a game sits in every one
+  it is in. Puzzle / Single player also takes any game one person can start
+  (`seats.min ≤ 1`). **More games** catches a game no category takes.
+
+A game therefore has several cards. Preview videos get their sources only
+when the card nears the screen and play only while at least half of it is
+on screen, so the home screen plays a handful, not dozens; on a phone each
+section is one row that scrolls sideways inside itself (two cards and the
+edge of a third). **Search** replaces the sections (and Recently played)
+with one grid of the matches, one card per game; the query stays in `?q=`.
 
 **Nine games have to fit a phone.** They did not: a `minmax(300px, 1fr)` column
 at 80% width is a single column on a 390px screen, and a 200px image plus a
 heading plus a paragraph plus a button is taller than the viewport — you
-arrived at one card. Below 560px the grid is two columns, the artwork is a
+arrived at one card. Below 560px a row holds two cards (the search's grid two
+columns), the artwork is a
 ratio rather than a fixed height, the blurb is dropped (at that width it is four
 words a line, and the meta line already says the thing somebody standing there
 wants to know), and the header — title, tagline, party banner — is roughly
@@ -94,13 +119,52 @@ phone that wrapped it onto a second line. The rules are scoped
 `.game-card .game-meta` now, and the test checks the computed size rather than
 trusting the stylesheet.
 
-**Filters.** Each card carries `data-tags`; a strip of chips filters on them,
-one at a time. Nine games is more than a phone shows at once, so the chips are
-how somebody with a particular evening in mind finds the right game — on their
-own, against one other person, or with a room full. The tags are
-`alone` · `duel` · `party` · `one-phone` · `strategy` · `quick`, and a new game
-should be given whichever apply. A filter matching nothing says so rather than
-leaving a blank page.
+**Tags and search.** The filter chips are gone (2026-11-15): the sections do
+their job. Each card still carries `data-tags`, and the search reads them
+(`tag:quick`, `type:duel`, `players:4`, `author:`, `from:`; `lib/portal.js`
+`parseQuery`). The tags are `alone` · `duel` · `party` · `one-phone` ·
+`strategy` · `quick`, and a new game should be given whichever apply. A
+search matching nothing says so rather than leaving a blank page.
+
+## Contributors and collections
+
+*Lokesh, 2026-11-15: "Contributors can share multiple game repositories …
+add a collections page … always sorted by popularity. Both Contributor and
+Collections can be favourited."*
+
+A **collection** is one games repository the arcade lists: an outside one
+pinned in `registry/<owner>/<repo>.json`, and the arcade's own
+(`lokeshmohanty/games`). Every catalog entry carries its `repo`, so the
+collections are derived, never listed by hand (`lib/collections.js` `list`).
+A contributor (a GitHub login; `NeonArcade.CONTRIBUTORS`, merged to one per
+person) can own several.
+
+- **Collections** (`./?page=collections`, `src/views/Collections.tsx`): one
+  card per repo, **most played first** — the sum of its games' plays from
+  `/api/stats/summary` (else the public snapshot), the same counts the
+  portal's cards show; ties by `owner/repo`. Each card: name, owner, games
+  and plays, up to three posters (the ~5 KB webp, never a gif) and a few game
+  names, ★, SEE ITS GAMES and the repo on GitHub.
+- **Contributors** (`./?page=contributors`): one card per person — their
+  games and the games' total plays, each of their collections (games, plays,
+  a link to its games, GitHub, and CHECK FOR UPDATES when it is pinned:
+  `lib/propose.js`), their profile links, ★.
+- **A collection's games** are the portal searched by
+  `from:<owner>/<repo>` (`lib/portal.js` `matches`: a `from:` value with a
+  slash is a repo; without, still arcade, community or an owner).
+- **★ favourites** go in the same list as games' (`lib/stats.js`,
+  `neon.favs`) as `contributor:<login>` and `collection:<owner>/<repo>`;
+  games keep their plain ids. Starred cards come first on each page, the
+  rest keep their order. Signed in, they sync like game favourites
+  (`/api/me/favs`; the worker accepts the two prefixes since 2026-11-15, no
+  migration). A worker from before that refuses the list with 400, and the
+  page then sends only the games', so a stale deploy never stops game
+  favourites syncing. The profile lists them as `@login` and `owner/repo`.
+- The cards are made once per visit and moved, not redrawn, when a star or
+  the counts arrive and reorder them (a CHECK FOR UPDATES answer stays). The
+  four tabs fit 390 px (and 360) with a narrower tab below 480 px
+  (`lib/styles.css`). Tests: `test-portal.mjs` "contributors" and
+  "collections"; `test-stats`, `test-accounts`, `test-social` for the ids.
 
 ## Connecting players
 

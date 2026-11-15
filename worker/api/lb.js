@@ -5,23 +5,32 @@
 //   GET /api/lb/<game>?scope=group:<id>      a group you are in (signed in)
 //
 // Order: duel by Elo; free-for-all and teams by wins, then win rate; co-op by
-// best score. A group's board is computed from the matches its members played
-// *only against each other* (Lokesh, 2026-11-13: group leaderboards), with its
+// best score; "time" (a game whose solo runs are timed, worker/api/runs.js
+// SOLO: Sudoku, one board per difficulty, `<game>@<level>`) by best — lowest —
+// time, in seconds. A game in SOLO has its board's kind pinned there; any
+// other follows its latest match. A group's board is computed from the
+// matches its members played *only against each other* (Lokesh, 2026-11-13: group leaderboards), with its
 // own Elo — so a group of friends has a ladder that the rest of the world
 // cannot move.
 
 import { ELO_START, elo } from "./match.js";
-import { GAME_ID, HttpError } from "./http.js";
+import { boardOf, isBoardKey, levelsOf } from "./runs.js";
+import { HttpError } from "./http.js";
 import { friendIds } from "./social.js";
 
 export const MIN_GAMES = 5;
 const all = async (stmt) => (await stmt.all()).results ?? [];
 
 const order = (kind) =>
-	kind === "duel" ? "elo DESC, games DESC" : kind === "coop" ? "best DESC, games DESC" : "wins DESC, (wins * 1.0 / games) DESC, games DESC";
+	kind === "duel" ? "elo DESC, games DESC"
+	: kind === "coop" ? "best DESC, games DESC"
+	: kind === "time" ? "best IS NULL, best ASC, games DESC"
+	: "wins DESC, (wins * 1.0 / games) DESC, games DESC";
 
-/** The kind of a game, from its ranked matches (no match: unknown). */
+/** The kind of a game's board: SOLO's say, else its latest ranked match's (none: unknown). */
 async function kindOf(env, game) {
+	const fixed = boardOf(game);
+	if (fixed) return fixed;
 	return (await env.DB.prepare("SELECT kind FROM matches WHERE game = ? ORDER BY at DESC LIMIT 1").bind(game).first())?.kind ?? null;
 }
 
@@ -79,7 +88,9 @@ async function standing(env, game, kind, me, rows, { only = null, includeHidden 
 			? ["r.elo > ? OR (r.elo = ? AND r.games > ?)", [mine.elo, mine.elo, mine.games]]
 			: k === "coop"
 				? ["COALESCE(r.best, -1e18) > ? OR (COALESCE(r.best, -1e18) = ? AND r.games > ?)", [mine.best ?? -1e18, mine.best ?? -1e18, mine.games]]
-				: // wins, then win rate (cross-multiplied, so integers), then games
+				: k === "time"
+					? ["COALESCE(r.best, 1e18) < ? OR (COALESCE(r.best, 1e18) = ? AND r.games > ?)", [mine.best ?? 1e18, mine.best ?? 1e18, mine.games]]
+					: // wins, then win rate (cross-multiplied, so integers), then games
 					[
 						"r.wins > ? OR (r.wins = ? AND r.wins * ? > ? * r.games) OR (r.wins = ? AND r.wins * ? = ? * r.games AND r.games > ?)",
 						[mine.wins, mine.wins, mine.games, mine.wins, mine.wins, mine.games, mine.wins, mine.games],
@@ -119,8 +130,11 @@ async function forGroup(env, game, kind, members) {
 			const [x, y] = places.length > 1 ? [places[0][0], places[1][0]] : places[0];
 			[get(x).elo, get(y).elo] = elo(get(x).elo, get(y).elo, places.length > 1 ? 1 : 0.5);
 		}
-		if (m.kind === "coop" && m.scores) {
-			for (const [a, s] of Object.entries(JSON.parse(m.scores))) get(a).best = Math.max(get(a).best ?? -Infinity, s);
+		if (m.scores && (m.kind === "coop" || kind === "coop")) {
+			for (const [a, s] of Object.entries(JSON.parse(m.scores))) {
+				const was = get(a).best;
+				get(a).best = was == null ? s : kind === "time" ? Math.min(was, s) : Math.max(was, s);
+			}
 		}
 	}
 	const names = new Map(
@@ -134,7 +148,9 @@ async function forGroup(env, game, kind, members) {
 			? (a, b) => b.elo - a.elo || b.games - a.games
 			: k === "coop"
 				? (a, b) => (b.best ?? -Infinity) - (a.best ?? -Infinity)
-				: (a, b) => b.wins - a.wins || b.wins / b.games - a.wins / a.games;
+				: k === "time"
+					? (a, b) => (a.best ?? Infinity) - (b.best ?? Infinity) || b.games - a.games
+					: (a, b) => b.wins - a.wins || b.wins / b.games - a.wins / a.games;
 	return [...st.values()]
 		.filter((r) => names.has(r.account))
 		.sort(cmp)
@@ -147,19 +163,22 @@ async function forGroup(env, game, kind, members) {
  * is the same for everyone, so it is the one that is cached.
  */
 export async function leaderboard(env, me, game, scope = "global") {
-	if (!GAME_ID.test(game)) throw new HttpError(400, "unknown game");
+	if (!isBoardKey(game)) throw new HttpError(400, "unknown game");
 	const kind = await kindOf(env, game);
+	// A game with a board per difficulty for its solo runs says which (Sudoku).
+	const levels = levelsOf(game);
+	const out = (x) => (levels ? { ...x, levels } : x);
 	if (scope === "global") {
 		const min = Number(env.LB_MIN_GAMES ?? MIN_GAMES);
 		const rows = await fromRatings(env, game, kind, { min });
-		if (!me) return { game, kind, scope, min, rows };
-		return { game, kind, scope, min, rows, me: await standing(env, game, kind, me, rows, { min }) };
+		if (!me) return out({ game, kind, scope, min, rows });
+		return out({ game, kind, scope, min, rows, me: await standing(env, game, kind, me, rows, { min }) });
 	}
 	if (!me) throw new HttpError(401, "sign in to see your friends' and groups' boards");
 	if (scope === "friends") {
 		const only = [me.id, ...(await friendIds(env, me.id))];
 		const rows = await fromRatings(env, game, kind, { only, includeHidden: true });
-		return { game, kind, scope, rows, me: await standing(env, game, kind, me, rows, { only, includeHidden: true }) };
+		return out({ game, kind, scope, rows, me: await standing(env, game, kind, me, rows, { only, includeHidden: true }) });
 	}
 	const grp = scope.startsWith("group:") ? scope.slice(6) : null;
 	if (!grp) throw new HttpError(400, "scope is global, friends or group:<id>");
@@ -167,7 +186,7 @@ export async function leaderboard(env, me, game, scope = "global") {
 	if (!members.includes(me.id)) throw new HttpError(403, "you are not in that group");
 	const g = await env.DB.prepare("SELECT name FROM groups WHERE id = ?").bind(grp).first();
 	const rows = await forGroup(env, game, kind, members);
-	return { game, kind, scope, group: { id: grp, name: g?.name }, rows, me: rows.find((r) => r.id === me.id) ?? null };
+	return out({ game, kind, scope, group: { id: grp, name: g?.name }, rows, me: rows.find((r) => r.id === me.id) ?? null });
 }
 
 /** The top of every game, for the public snapshot (snapshot.js). */

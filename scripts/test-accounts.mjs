@@ -6,7 +6,9 @@
 // Needs wrangler (see scripts/wrangler.mjs); skips with a message without it.
 
 import { generateKeyPairSync } from "node:crypto";
+import { existsSync, readFileSync } from "node:fs";
 import { createServer } from "node:http";
+import * as SU from "../worker/api/sudoku.js";
 import { freePort, startWrangler } from "./wrangler.mjs";
 
 let failures = 0;
@@ -128,6 +130,7 @@ const w = await startWrangler({
 	AUTH_TEST: "1",
 	SESSION_KEY: "test-session-key-0123456789",
 	LB_MIN_GAMES: "1",
+	SOLO_PER_DAY: "8",
 	GH_APP_CLIENT_ID: "app-client",
 	GH_APP_CLIENT_SECRET: "app-secret",
 	GITHUB_OAUTH_URL: FAKE,
@@ -252,6 +255,10 @@ try {
 		check("favourites are kept, without duplicates", JSON.stringify(f.body.favs) === JSON.stringify(["connect4", "lokeshmohanty/battleship"]), f.body);
 		check("a favourite that is not a game id is refused", (await call("PUT", "/api/me/favs", { token: ana, body: { favs: ["../etc"] } })).status === 400);
 		check("a dev-kit game is not a game id here", (await call("PUT", "/api/me/favs", { token: ana, body: { favs: ["dev/x"] } })).status === 400);
+		const cf = await call("PUT", "/api/me/favs", { token: ana, body: { favs: ["connect4", "lokeshmohanty/battleship", "contributor:ada", "collection:ada/minis.v2"] } });
+		check("a contributor and a collection are favourites too", cf.status === 200 && cf.body.favs.includes("contributor:ada") && cf.body.favs.includes("collection:ada/minis.v2"), cf.body);
+		check("…but not a malformed one", (await call("PUT", "/api/me/favs", { token: ana, body: { favs: ["collection:ada/.."] } })).status === 400 && (await call("PUT", "/api/me/favs", { token: ana, body: { favs: ["contributor:a/b"] } })).status === 400);
+		await call("PUT", "/api/me/favs", { token: ana, body: { favs: ["connect4", "lokeshmohanty/battleship"] } });
 	}
 
 	console.log("\naccounts: play counts");
@@ -346,6 +353,201 @@ try {
 		check("friends' board needs a sign-in", (await call("GET", "/api/lb/connect4?scope=friends")).status === 401);
 		const fr = await call("GET", "/api/lb/connect4?scope=friends", { token: cy });
 		check("…and holds only you and your friends", fr.body.rows.length === 0, fr.body.rows);
+	}
+
+	console.log("\naccounts: solo runs, issued by the server");
+	{
+		const start = (token, game) => call("POST", "/api/run/start", { token, body: { game } });
+		// Tests only: move a run's start into the past, as if time had passed.
+		const age = (run, ms) => call("POST", "/api/admin/age-run", { body: { run, ms } });
+		const report = (token, body) => call("POST", "/api/match/report", { token, body });
+		const surv = (run, score, extra = {}) => ({ game: "neon-survival-mp", run, match: 1, kind: "coop", ranking: [["pa"]], roster: { pa: A }, scores: { pa: score }, ...extra });
+		const ratingOf = async (token, game) => (await call("GET", "/api/me/matches", { token })).body.ratings.find((x) => x.game === game);
+		const fresh = async (token = ana, ms = 60_000) => {
+			const s = (await start(token, "neon-survival-mp")).body;
+			if (ms) await age(s.run, ms);
+			return s;
+		};
+
+		check("a run needs a sign-in", (await start(null, "neon-survival-mp")).status === 401);
+		check("…and a game id", (await start(ana, "../etc")).status === 400);
+		let r = await start(ana, "connect4");
+		check("…and a game that ranks games played alone (SOLO): others get no run", r.status === 400 && /alone/.test(r.body.error), r.body);
+		check("…nor does a game that does not exist", (await start(ana, "no-such-game")).status === 400);
+		const s = await fresh(ana, 0);
+		check("a run: a random id, a seed and the server's clock", typeof s.run === "string" && s.run.length >= 16 && Number.isInteger(s.seed) && s.seed >= 0 && s.seed < 2 ** 31 && Math.abs(s.at - Date.now()) < 60_000, s);
+		check("…a new one each time", (await start(ana, "neon-survival-mp")).body.run !== s.run);
+		await age(s.run, 60_000);
+		r = await report(ana, surv(s.run, 40));
+		check("a solo run with its run counts on its own report", r.body.counted === true, r.body);
+		const rt = await ratingOf(ana, "neon-survival-mp");
+		check("…as a run: games and best score, never a win", rt?.best === 40 && rt.games === 2 && rt.wins === 0, rt);
+		r = await report(ana, surv(s.run, 40));
+		check("…once (the same report again)", r.body.counted === true && r.body.already === true, r.body);
+		r = await report(ana, surv(s.run, 41, { match: 2 }));
+		check("a run is good for one report", r.body.counted === false && /already reported/.test(r.body.why), r.body);
+		r = await report(ana, surv("party-run-id", 12));
+		check("a solo report without a run from the server is refused, and says why", r.body.counted === false && /run the server issued/.test(r.body.why), r.body);
+		r = await report(ana, surv("AAAAAAAAAAAAAAAA", 12));
+		check("…so is a forged one", r.body.counted === false && /unknown/.test(r.body.why), r.body);
+		const theirs = await fresh(bo);
+		r = await report(ana, surv(theirs.run, 12));
+		check("…and another player's", r.body.counted === false && /another player/.test(r.body.why), r.body);
+		r = await report(bo, { ...surv(theirs.run, 12), roster: { pa: Bo } });
+		check("…which they can still use themselves", r.body.counted === true, r.body);
+		const other = await fresh();
+		r = await report(ana, { ...surv(other.run, 100), game: "lokeshmohanty/sudoku" });
+		check("…and one issued for another game", r.body.counted === false && /another game/.test(r.body.why), r.body);
+		const old = await fresh(ana, 7 * 3600_000);
+		r = await report(ana, surv(old.run, 12));
+		check("…and an expired one (six hours)", r.body.counted === false && /expired/.test(r.body.why), r.body);
+		const quick = await fresh(ana, 0);
+		r = await report(ana, surv(quick.run, 1));
+		check("a report sooner than the game's shortest run is refused", r.body.counted === false && /too fast/.test(r.body.why), r.body);
+		const greedy = await fresh(ana, 10_000);
+		r = await report(ana, surv(greedy.run, 100));
+		check("a score above what the time since the run began allows is refused", r.body.counted === false && /more than a 10-second run/.test(r.body.why), r.body);
+		for (const [bad, label] of [[1e308, "1e308"], [-1, "negative"], [2.5, "fractional"], [null, "missing"]]) {
+			r = await report(ana, surv(greedy.run, bad));
+			check(`…so is a ${label} score`, r.body.counted === false && /score/.test(r.body.why), r.body);
+		}
+		r = await report(ana, surv(greedy.run, 12, { match: 2 }));
+		check("a refused report does not use the run up (it is claimed only once it counts)", r.body.counted === true, r.body);
+
+		// Only SOLO games rank alone: no made-up score on any other game.
+		const forged = { game: "connect4", run: "party-run-x", match: 1, kind: "duel", ranking: [["pa"]], roster: { pa: A }, scores: { pa: 1e308 } };
+		r = await report(ana, forged);
+		check("a solo report for a game not in SOLO is refused", r.body.counted === false && /does not rank games played alone/.test(r.body.why), r.body);
+		r = await report(ana, { ...forged, game: "no-such-game" });
+		check("…so is one for a game that does not exist", r.body.counted === false && /does not rank games played alone/.test(r.body.why), r.body);
+		check("…and connect4's board is still a duel board", (await call("GET", "/api/lb/connect4")).body.kind === "duel");
+
+		// Neon Survival's board is best score whatever the latest match was:
+		// a multi-ship run (free-for-all) puts its scores on it too.
+		const ffa = { game: "neon-survival-mp", run: "ns-ffa-1", match: 1, kind: "ffa", ranking: [["pa"], ["pb"]], roster: { pa: A, pb: Bo }, scores: { pa: 70, pb: 3 } };
+		await report(ana, ffa);
+		r = await report(bo, ffa);
+		check("a multi-ship Neon Survival run counts (two players agree)", r.body.counted === true, r.body);
+		const ns = await call("GET", "/api/lb/neon-survival-mp");
+		check("…its board stays best score (not flipped to free-for-all)", ns.body.kind === "coop", ns.body.kind);
+		check("…with that run's score as Ana's best", ns.body.rows[0]?.id === A && ns.body.rows[0].best === 70, ns.body.rows);
+	}
+
+	console.log("\naccounts: a day's runs played alone");
+	{
+		// SOLO_PER_DAY is 8 here (50 deployed).
+		const dee = await testLogin("Dee");
+		const D = await id(dee);
+		let last = null;
+		for (let i = 0; i < 9; i++) {
+			const s = (await call("POST", "/api/run/start", { token: dee, body: { game: "neon-survival-mp" } })).body;
+			await call("POST", "/api/admin/age-run", { body: { run: s.run, ms: 60_000 } });
+			last = await call("POST", "/api/match/report", { token: dee, body: { game: "neon-survival-mp", run: s.run, match: 1, kind: "coop", ranking: [["pd"]], roster: { pd: D }, scores: { pd: i } } });
+			if (i === 7) check("eight runs played alone count in a day", last.body.counted === true, last.body);
+		}
+		check("…the ninth does not, and says why", last.body.counted === false && /8 games played alone rank a day/.test(last.body.why), last.body);
+	}
+
+	console.log("\naccounts: Sudoku, verified on the server");
+	{
+		// The server's generator is a copy of the game's (worker/api/sudoku.js):
+		// the same seed must deal the same puzzle in both.
+		const RULES = new URL("../../arcade-games-v2/sudoku/sudoku-rules.js", import.meta.url);
+		if (existsSync(RULES)) {
+			new Function(readFileSync(RULES, "utf8"))();
+			const G = globalThis.sudokuRules;
+			const seeds = [0, 1, 2, 7, 99, 12345, 2 ** 31 - 1, 1_000_003, 424242, 31337];
+			const diff = [];
+			for (const level of SU.LEVEL_IDS) {
+				for (const seed of seeds) {
+					const [a, b] = [G.puzzleFor(seed, level), SU.puzzleFor(seed, level)];
+					if (a.puzzle.join("") !== b.puzzle.join("") || a.solution.join("") !== b.solution.join("")) diff.push(`${level}/${seed}`);
+				}
+				if (G.dailyPuzzle("2026-11-15", level).puzzle.join("") !== SU.dailyPuzzle("2026-11-15", level).puzzle.join("")) diff.push(`${level}/daily`);
+			}
+			check(`the server's generator deals the game's puzzles (${seeds.length} seeds × ${SU.LEVEL_IDS.length} levels, and a daily)`, diff.length === 0, diff.join(" "));
+		} else console.log("  skip the server's generator against the game's: ../arcade-games-v2 is not checked out");
+
+		const GAME = "lokeshmohanty/sudoku";
+		const age = (run, ms) => call("POST", "/api/admin/age-run", { body: { run, ms } });
+		// A run `secs` old on the server's clock.
+		const start = async (token, secs) => {
+			const s = (await call("POST", "/api/run/start", { token, body: { game: GAME } })).body;
+			if (secs) await age(s.run, secs * 1000);
+			return s;
+		};
+		const text = (g) => g.join("");
+		const solved = (run, secs, proof, who = "pa", acct = A) => ({ game: GAME, run, match: 1, kind: "coop", ranking: [[who]], roster: { [who]: acct }, scores: { [who]: secs }, proof });
+		const report = (token, body) => call("POST", "/api/match/report", { token, body });
+		const fresh = (seed, level) => ({ start: "new", level, daily: null, grid: text(SU.puzzleFor(seed, level).solution) });
+		const ratings = async (token) => (await call("GET", "/api/me/matches", { token })).body.ratings;
+
+		let run = await start(ana, 100);
+		let r = await report(ana, solved(run.run, 95, fresh(run.seed, "easy")));
+		check("a solved puzzle from the run's seed counts", r.body.counted === true, r.body);
+		run = await start(ana, 90);
+		await report(ana, solved(run.run, 80, fresh(run.seed, "hard")));
+		run = await start(ana, 210);
+		await report(ana, solved(run.run, 200, fresh(run.seed, "easy")));
+		const mine = await ratings(ana);
+		const easy = mine.find((x) => x.game === `${GAME}@easy`);
+		const hard = mine.find((x) => x.game === `${GAME}@hard`);
+		check("each difficulty is its own board, its best the lowest time", easy?.best === 95 && easy.games === 2 && hard?.best === 80 && hard.games === 1 && easy.wins === 0, mine);
+		check("…and the game's own board is untouched by solo runs (races)", !mine.some((x) => x.game === GAME), mine.map((x) => x.game));
+
+		run = await start(ana, 300);
+		r = await report(ana, solved(run.run, 100, fresh(run.seed, "medium")));
+		const medium = (await ratings(ana)).find((x) => x.game === `${GAME}@medium`);
+		check("a reported time is raised to the server's clock less 60 s (100 reported, run 300 s old → 240)", r.body.counted === true && medium?.best === 240, { r: r.body, medium });
+
+		const today = new Date().toISOString().slice(0, 10);
+		const daily = (level) => ({ start: "daily", level, daily: today, grid: text(SU.dailyPuzzle(today, level).solution) });
+		run = await start(bo, 75);
+		r = await report(bo, solved(run.run, 70, daily("easy"), "pb", Bo));
+		check("today's puzzle counts too", r.body.counted === true, r.body);
+		run = await start(bo, 75);
+		r = await report(bo, solved(run.run, 65, daily("easy"), "pb", Bo));
+		check("…once a day at each difficulty: again is refused", r.body.counted === false && /already ranked that day's puzzle/.test(r.body.why), r.body);
+		r = await report(bo, solved(run.run, 65, daily("medium"), "pb", Bo));
+		check("…while another difficulty's daily counts (same run, not used up by the refusal)", r.body.counted === true, r.body);
+
+		// Racing: two daily reports at once on two runs, and one run twice at once.
+		const [d1, d2] = [await start(bo, 75), await start(bo, 75)];
+		const both = await Promise.all([report(bo, solved(d1.run, 70, daily("hard"), "pb", Bo)), report(bo, solved(d2.run, 70, daily("hard"), "pb", Bo))]);
+		check("two daily reports racing: exactly one counts", both.filter((x) => x.body.counted === true).length === 1, both.map((x) => x.body));
+		const one = await start(bo, 100);
+		const twice = await Promise.all([1, 2].map((m) => report(bo, { ...solved(one.run, 95, fresh(one.seed, "easy"), "pb", Bo), match: m })));
+		check("one run reported twice at once: exactly one counts", twice.filter((x) => x.body.counted === true).length === 1, twice.map((x) => x.body));
+
+		const lb = await call("GET", `/api/lb/${GAME}@easy`);
+		check("the easy board is a time board, lowest first", lb.body.kind === "time" && lb.body.rows[0]?.id === Bo && lb.body.rows[0].best === 70 && lb.body.rows[1]?.id === A, lb.body);
+		check("…and names the game's levels", JSON.stringify(lb.body.levels) === JSON.stringify(SU.LEVEL_IDS), lb.body.levels);
+		const me = (await call("GET", `/api/lb/${GAME}@easy?me=1`, { token: ana })).body.me;
+		check("…and says where you stand by it", me?.rank === 2, me);
+		const plain = await call("GET", `/api/lb/${GAME}`);
+		check("the game's own board is the races' (free-for-all), with the levels beside it", plain.body.kind === "ffa" && plain.body.levels?.length === 4, plain.body);
+		check("a level that is not one is not a board", (await call("GET", `/api/lb/${GAME}@nope`)).status === 400 && (await call("GET", "/api/lb/connect4@easy")).status === 400);
+
+		run = await start(ana, 600);
+		const swapped = SU.puzzleFor(run.seed, "easy").solution.slice();
+		[swapped[0], swapped[1]] = [swapped[1], swapped[0]];
+		r = await report(ana, solved(run.run, 590, { start: "new", level: "easy", daily: null, grid: text(swapped) }));
+		check("a grid that is not a solution is refused", r.body.counted === false && /not a solution/.test(r.body.why), r.body);
+		r = await report(ana, solved(run.run, 590, fresh(run.seed + 1, "easy")));
+		check("a valid solution of another puzzle is refused (the clues do not match)", r.body.counted === false && /clues/.test(r.body.why), r.body);
+		run = await start(ana, 40);
+		r = await report(ana, solved(run.run, 39, fresh(run.seed, "expert")));
+		check("a solve sooner than the difficulty allows is refused (the server's clock)", r.body.counted === false && /too fast/.test(r.body.why), r.body);
+		run = await start(ana, 50);
+		r = await report(ana, solved(run.run, 5, fresh(run.seed, "easy")));
+		check("…and so is a reported time below it", r.body.counted === false && /too fast/.test(r.body.why), r.body);
+		r = await report(ana, solved(run.run, 90, null));
+		check("a Sudoku report without its grid is refused", r.body.counted === false && /grid/.test(r.body.why), r.body);
+		r = await report(ana, solved(run.run, 45, { ...fresh(run.seed, "easy"), start: "resume" }));
+		check("…and so is a resumed puzzle (not dealt in this run)", r.body.counted === false && /resumed/.test(r.body.why), r.body);
+		r = await report(ana, solved(run.run, 45, { start: "daily", level: "easy", daily: "2020-01-01", grid: text(SU.dailyPuzzle("2020-01-01", "easy").solution) }));
+		check("…and an old day's puzzle", r.body.counted === false && /today/.test(r.body.why), r.body);
+		check("none of those moved the bests", (await ratings(ana)).find((x) => x.game === `${GAME}@easy`)?.best === 95);
 	}
 
 	console.log("\naccounts: friends, presence and invites");

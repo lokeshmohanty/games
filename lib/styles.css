@@ -605,21 +605,28 @@ canvas {
 }
 
 /* SDK v2 managed games: the platform's own end card (lib/sdk-managed.js),
-   over the game frame. SEE THE BOARD tucks it to the bottom edge. */
+   over the game frame. SEE THE BOARD tucks it to the bottom edge. The
+   card stays clear of the top band (the portal link, the top-right
+   buttons); with DETAILS open its middle scrolls and the buttons stay. */
 .managed-over {
   position: fixed;
   inset: 0;
   z-index: 44;
   display: grid;
   place-items: center;
+  box-sizing: border-box;
+  padding: calc(env(safe-area-inset-top) + 60px) 16px calc(env(safe-area-inset-bottom) + 16px);
   background: var(--scrim);
   transition: background 0.2s;
 }
 .managed-over > div {
-  display: grid;
+  display: flex;
+  flex-direction: column;
   gap: 12px;
-  justify-items: center;
+  align-items: center;
   width: min(320px, calc(100vw - 32px));
+  max-height: 100%;
+  min-height: 0;
   box-sizing: border-box;
   padding: 20px 16px;
   border: 1px solid var(--accent);
@@ -638,6 +645,121 @@ canvas {
   margin: 0;
   color: var(--ink-2);
 }
+.managed-body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  align-self: stretch;
+  min-height: 0;
+  overflow-y: auto;
+}
+.managed-rank {
+  display: grid;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  text-align: left;
+}
+.managed-rank li {
+  display: grid;
+  grid-template-columns: 1.4em 10px 1fr auto;
+  gap: 8px;
+  align-items: center;
+  padding: 4px 8px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+}
+.managed-rank li.is-you {
+  border-color: var(--accent);
+  background: var(--surface);
+}
+.managed-place,
+.managed-score {
+  font-family: var(--font-mono);
+}
+.managed-place {
+  color: var(--ink-2);
+}
+.managed-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+}
+.managed-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.managed-name small {
+  color: var(--accent);
+  font-size: 0.72rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.managed-toggle {
+  align-self: center;
+  min-height: 32px;
+  padding: 4px 14px;
+  border: 1px solid var(--rule);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--ink-2);
+  font-family: var(--font);
+  font-size: 0.78rem;
+  letter-spacing: 1px;
+  cursor: pointer;
+}
+.managed-toggle::after {
+  content: " \25BE";
+}
+.managed-toggle[aria-expanded="true"]::after {
+  content: " \25B4";
+}
+.managed-toggle:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.managed-details {
+  display: grid;
+  gap: 10px;
+}
+.managed-details[hidden] {
+  display: none;
+}
+.managed-details table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.85rem;
+  text-align: left;
+}
+.managed-details caption {
+  padding-bottom: 2px;
+  color: var(--ink-3);
+  font-size: 0.72rem;
+  letter-spacing: 0.08em;
+  text-align: left;
+  text-transform: uppercase;
+}
+.managed-details th,
+.managed-details td {
+  padding: 3px 0;
+  border-top: 1px solid var(--rule);
+}
+.managed-details th {
+  font-weight: normal;
+  color: var(--ink-2);
+}
+.managed-details td {
+  font-family: var(--font-mono);
+  text-align: right;
+}
+.managed-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  align-items: center;
+}
 .managed-over.is-peek {
   place-items: end center;
   padding-bottom: max(12px, env(safe-area-inset-bottom));
@@ -648,7 +770,8 @@ canvas {
   pointer-events: auto;
 }
 .managed-over.is-peek h2,
-.managed-over.is-peek p {
+.managed-over.is-peek p,
+.managed-over.is-peek .managed-body {
   display: none;
 }
 
@@ -787,6 +910,69 @@ canvas {
   margin: 12px 0 0;
   color: var(--muted);
   font-size: 0.8rem;
+}
+/* lib/rules.js: a game's RULES.md over the game ("?" in .top-actions). The
+   body scrolls between a fixed head and a fixed GOT IT. */
+.top-rules .icon {
+  font-family: var(--font-display);
+  font-weight: 700;
+}
+.rules-sheet[open] {
+  display: flex;
+  flex-direction: column;
+}
+.rules-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  max-height: none;
+  overflow-wrap: anywhere;
+  line-height: 1.45;
+}
+.rules-body h1 {
+  margin: 4px 0 8px;
+  font-family: var(--font-display);
+  font-size: 1.3rem;
+  color: var(--ink);
+}
+.rules-body h2,
+.rules-body h3 {
+  margin: 18px 0 6px;
+  font-family: var(--font-display);
+  font-size: 0.95rem;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+.rules-body p {
+  margin: 0 0 10px;
+}
+.rules-body ul,
+.rules-body ol {
+  margin: 0 0 10px;
+  padding-left: 1.3em;
+}
+.rules-body li {
+  margin: 0 0 4px;
+}
+.rules-body code {
+  font-family: var(--font-mono);
+  font-size: 0.88em;
+}
+.rules-body pre {
+  overflow-x: auto;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg);
+}
+.rules-foot {
+  display: flex;
+  justify-content: center;
+  padding: 10px 18px max(14px, env(safe-area-inset-bottom));
+  border-top: 1px solid var(--border);
+}
+.rules-ok {
+  min-width: 10rem;
 }
 .fb-form {
   display: flex;
@@ -1016,6 +1202,16 @@ canvas {
 @media (max-width: 380px) {
   .site-link {
     padding: 6px 10px;
+  }
+}
+/* Four tabs (Collections, 2026-11-15) in a 390px phone. */
+@media (max-width: 480px) {
+  .site-tabs {
+    gap: 2px;
+  }
+  .site-tab {
+    padding: 0 7px;
+    font-size: 0.82rem;
   }
 }
 

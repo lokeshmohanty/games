@@ -104,3 +104,45 @@
   overflow-wrap: anywhere;
   color: var(--ink-2);
 }
+/* Their collections (lib/contributors.js collectionRow): one per games repo. */
+.view-contributors .person-collections {
+  list-style: none;
+  margin: 12px 0 0;
+  padding: 0;
+  display: grid;
+  gap: 8px;
+}
+.view-contributors .person-collection {
+  border: 1px solid var(--rule);
+  border-radius: 10px;
+  background: var(--surface-2);
+  padding: 8px 12px;
+  min-width: 0;
+}
+.view-contributors .person-collection-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.view-contributors .person-collection-name,
+.view-contributors .person-collection-gh {
+  display: inline-flex;
+  align-items: center;
+  min-height: 40px;
+}
+.view-contributors .person-collection-name {
+  color: var(--accent);
+  font-family: var(--font-mono);
+  font-size: 0.85rem;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.view-contributors .person-collection-gh {
+  flex: none;
+  color: var(--ink-2);
+  font-size: 0.78rem;
+}
+.view-contributors .person-collection .person-update {
+  margin-top: 6px;
+}

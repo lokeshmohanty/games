@@ -33,9 +33,12 @@ refused by Chrome, and nothing visible said so.
 ## When you add or rename a page or a lib/ file
 
 Nothing to list, since 2026-11-15: `just build` (scripts/assemble.mjs) derives
-the precache list from what it built and copied — pages, `lib/`, `games/`, frame
-runtimes, the app's chunks — and writes `dist/sw.js` with a `VERSION` hashed over
-exactly those bytes. Only a file outside those (an icon, a font) goes in the
+the precache list from what it built and copied — pages, `lib/`, every file in
+`games/`, frame runtimes, posters, the app's chunks — and writes `dist/sw.js` with
+a `VERSION` hashed over exactly those bytes. Every game must play offline in
+single player; `test-pwa` plays each one from the portal with the network cut
+(a new game needs a `PLAY` driver there). Pyodide is the one exception: cached
+on first use, in `RUNTIME` ([[caching-split]]). Only a file outside those (an icon, a font) goes in the
 template's `SHELL` in `sw.js`; assemble fails the build if a listed file is
 missing. Never edit `VERSION` (the repo's says `arcade-dev`). docs/spa.md.
 

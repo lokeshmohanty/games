@@ -39,6 +39,9 @@
 // A hash of SHELL's files and this one — written by scripts/sw-version.mjs,
 // never by hand.
 const VERSION = "arcade-dev"; // dist/sw.js: a hash of what it precaches (scripts/assemble.mjs)
+// The Python runtime's own cache (isAsset): named by a hash of sdk/v1/pyodide/,
+// so it outlives deploys that leave Pyodide alone and goes when it changes.
+const RUNTIME = "arcade-pyodide-dev"; // dist/sw.js: scripts/assemble.mjs
 // Network-first for code, for development (see above).
 const DEV = ["localhost", "127.0.0.1", "[::1]"].includes(self.location.hostname) && !new URL(self.location.href).searchParams.has("snapshot");
 
@@ -178,7 +181,7 @@ async function pinnedCache(clientId) {
 async function prune() {
 	const open = new Set((await self.clients.matchAll({ includeUncontrolled: true })).map((c) => c.id));
 	const pins = await caches.open(PINS);
-	const keep = new Set([VERSION, PINS]);
+	const keep = new Set([VERSION, PINS, RUNTIME]);
 	for (const req of await pins.keys()) {
 		const id = new URL(req.url).pathname.split("/__pin/")[1];
 		const [version, at] = (await (await pins.match(req)).text()).split(" ");
@@ -190,20 +193,26 @@ async function prune() {
 
 /**
  * Assets are big and stable; code is small and must agree with its siblings.
- * The Python runtime (sdk/v1/pyodide/, ~15 MB, lib/py-server.js) is not in the
- * precache — only a host running a web app's server needs it — so it is
- * cached the first time it is used, and it is versioned, so it never goes
- * stale under its own name.
+ *
+ * The Python runtime (sdk/v1/pyodide/: ~13 MB for a Python game's core, more
+ * for a web app's server, lib/py-server.js) is not in the precache: few
+ * players open a Python game, and 13 MB is not a thing to pull down on mobile
+ * data at install for everybody. It is cached the first time it is used —
+ * a Python game picked online (lib/sdk-host.js prefetchWasm) — in a cache of
+ * its own (RUNTIME), which a deploy does not prune: a Python game played once
+ * online then plays offline for good. Offline before that, lib/sdk-host.js
+ * says so (docs/sdk-v2.md, "Python").
  */
 function isAsset(url) {
 	return /\/assets\/|\/sdk\/v1\/pyodide\/|\.(?:png|jpg|jpeg|gif|svg|webp|ico|woff2?)$/i.test(url.pathname);
 }
+const isRuntime = (url) => /\/sdk\/v1\/pyodide\//.test(new URL(url).pathname);
 
 /** Put a copy in the cache, ignoring the failures that are none of our business. */
 async function store(request, response) {
 	if (!response || !response.ok || response.type === "opaque") return response;
 	try {
-		const cache = await caches.open(VERSION);
+		const cache = await caches.open(isRuntime(request.url) ? RUNTIME : VERSION);
 		await cache.put(request, response.clone());
 	} catch {
 		// Quota, or a response that cannot be cached. Not worth failing a page over.
