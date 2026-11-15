@@ -7,7 +7,7 @@
 // anywhere else fails this check, unless its line says `theme-exempt` and why
 // (a QR code stays black on white for the camera).
 //
-//   node scripts/check-colours.mjs [extra dirs…]   e.g. ../arcade-games
+//   node scripts/check-colours.mjs [extra dirs…]   e.g. ../web-games
 
 import { readFileSync, readdirSync, statSync } from "node:fs";
 import { join, relative, resolve } from "node:path";

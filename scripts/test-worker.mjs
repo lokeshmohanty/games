@@ -70,7 +70,7 @@ const PW_CACHE = join(homedir(), ".cache", "game-previews");
 // Served, not file://: framed games are fetched and inlined by the shell.
 const SITE = await serve(8738);
 const PARTY = SITE.url("party.html");
-// The games that come from lokeshmohanty/arcade-games (registry/) carry
+// The games that come from lokeshmohanty/web-games (registry/) carry
 // their owner in their id.
 const COMMUNITY = ["battleship", "draw-guess", "liars-dice", "light-cycles"];
 const gid = (g) => (COMMUNITY.includes(g) ? `lokeshmohanty/${g}` : g);

@@ -80,7 +80,7 @@ state, a move channel, a bot, `ctx.reportResult`, and the handle hooks
 (`onRoster`, `onPeerJoin`, `takeOver`, `unmount`). Worked examples of
 larger games: Connect 4, Neon Bid (hidden information), Undercover (one phone
 passed around) and Neon Survival (real-time co-op) in [`games/`](games), and
-six more in [lokeshmohanty/arcade-games](https://github.com/lokeshmohanty/arcade-games).
+six more in [lokeshmohanty/web-games](https://github.com/lokeshmohanty/web-games).
 
 ### How to play: RULES.md
 

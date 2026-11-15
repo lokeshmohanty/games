@@ -230,7 +230,7 @@ test-social:
     node scripts/test-social.mjs
 
 # No colour named outside lib/theme.css (pages, styles, SDK, games). Pass
-# other repos to check too: `just check-colours ../arcade-games`.
+# other repos to check too: `just check-colours ../web-games`.
 check-colours *dirs:
     node scripts/check-colours.mjs {{dirs}}
 

@@ -105,16 +105,16 @@ try {
 	await p.unroute("**/summary.json");
 	// Favourites: games starred (lib/stats.js), in the order starred; a starred
 	// contributor or collection is a search for its games.
-	await p.evaluate(() => localStorage.setItem("neon.favs", JSON.stringify(["lokeshmohanty/sudoku", "connect4", "gone-game", "contributor:lokeshmohanty", "collection:lokeshmohanty/arcade-games"])));
+	await p.evaluate(() => localStorage.setItem("neon.favs", JSON.stringify(["lokeshmohanty/sudoku", "connect4", "gone-game", "contributor:lokeshmohanty", "collection:lokeshmohanty/web-games"])));
 	await p.reload();
 	await p.waitForSelector('[data-section="favs"]:not([hidden]) .game-card');
 	h = await home();
 	check("favourites first, above Popular", h.order.join() === "favs,popular,arcade,party,strategy,solo,examples", h.order);
 	check("…the games starred, in that order (a game no longer listed left out)", h.rows.favs.join() === "lokeshmohanty/sudoku,connect4", h.rows.favs);
 	const more = await p.locator('[data-section="favs"] .fav-more-item').allTextContents();
-	check("…and the contributors and collections starred", more.join() === "lokeshmohanty,lokeshmohanty/arcade-games", more);
-	await p.locator('[data-section="favs"] .fav-more-item', { hasText: "lokeshmohanty/arcade-games" }).click();
-	check("…a tap lists that collection's games, as a search", (await p.locator("[data-search]").inputValue()) === "from:lokeshmohanty/arcade-games" && (await shown()).length > 0 && (await shown()).every((t) => !t.startsWith("Tic Tac")), await shown());
+	check("…and the contributors and collections starred", more.join() === "lokeshmohanty,lokeshmohanty/web-games", more);
+	await p.locator('[data-section="favs"] .fav-more-item', { hasText: "lokeshmohanty/web-games" }).click();
+	check("…a tap lists that collection's games, as a search", (await p.locator("[data-search]").inputValue()) === "from:lokeshmohanty/web-games" && (await shown()).length > 0 && (await shown()).every((t) => !t.startsWith("Tic Tac")), await shown());
 	await p.locator("[data-search]").fill("");
 	await p.evaluate(() => localStorage.removeItem("neon.favs"));
 	await p.reload();
@@ -270,12 +270,12 @@ try {
 
 	console.log("\nportal: contributors");
 	// The play counts, played here (the server's /api/stats/summary): the
-	// arcade's own repo is played more than arcade-games.
+	// arcade's own repo is played more than web-games.
 	const PLAYS = { connect4: 500, "neon-bid": 1, "lokeshmohanty/battleship": 100 };
 	await ctx.route("**/api/stats/summary", (route) =>
 		route.fulfill({ status: 200, contentType: "application/json", headers: { "Access-Control-Allow-Origin": "*" }, body: JSON.stringify({ games: Object.fromEntries(Object.entries(PLAYS).map(([g, played]) => [g, { played }])) }) }),
 	);
-	const repoGames = await p.evaluate(() => Object.fromEntries(["lokeshmohanty/games", "lokeshmohanty/arcade-games"].map((r) => [r, NeonArcade.CATALOG.filter((g) => g.repo === `https://github.com/${r}`).length])));
+	const repoGames = await p.evaluate(() => Object.fromEntries(["lokeshmohanty/games", "lokeshmohanty/web-games"].map((r) => [r, NeonArcade.CATALOG.filter((g) => g.repo === `https://github.com/${r}`).length])));
 	await p.goto(site.url("contributors.html"));
 	await p.locator(".person").first().waitFor({ timeout: TIMEOUT });
 	await p.waitForFunction(() => !document.querySelector(".person-plays")?.textContent.startsWith("…"), null, { timeout: TIMEOUT });
@@ -299,11 +299,11 @@ try {
 		});
 	const person = await readPerson();
 	const games = repoGames["lokeshmohanty/games"];
-	const arcadeGames = repoGames["lokeshmohanty/arcade-games"];
+	const arcadeGames = repoGames["lokeshmohanty/web-games"];
 	check("a card from contributor.json: name and bio", person.name === "Lokesh Mohanty" && !!person.bio, person);
-	check("…one person, both collections (games repos), most played first", person.cols.map((c) => c.repo).join() === "lokeshmohanty/games,lokeshmohanty/arcade-games", person.cols);
+	check("…one person, both collections (games repos), most played first", person.cols.map((c) => c.repo).join() === "lokeshmohanty/games,lokeshmohanty/web-games", person.cols);
 	check("…each with its games and plays", person.cols[0]?.meta === `${games} games · 501 plays` && person.cols[1]?.meta === `${arcadeGames} games · 100 plays`, person.cols);
-	check("…linking to its games in the portal, and to GitHub", person.cols[1]?.href === "./?q=from%3Alokeshmohanty%2Farcade-games" && person.cols[1]?.gh === "https://github.com/lokeshmohanty/arcade-games", person.cols[1]);
+	check("…linking to its games in the portal, and to GitHub", person.cols[1]?.href === "./?q=from%3Alokeshmohanty%2Fweb-games" && person.cols[1]?.gh === "https://github.com/lokeshmohanty/web-games", person.cols[1]);
 	check("…CHECK FOR UPDATES on a pinned collection only (the arcade's own has no pin)", !person.cols[0]?.update && person.cols[1]?.update, person.cols);
 	check("…and their games' total plays", person.facts === `${games + arcadeGames} games · 601 plays · 2 collections`, person.facts);
 	check("…SEE THEIR GAMES opens the portal searched by author", person.see === "index.html?q=author%3Alokeshmohanty", person.see);
@@ -326,9 +326,9 @@ try {
 	await p.waitForSelector(".game-card:visible");
 	check("…which lists their games", (await p.locator("[data-search]").inputValue()) === "author:lokeshmohanty" && (await shown()).length > 0);
 	await p.goto(site.url("contributors.html"));
-	await p.locator('.person-collection[data-repo="lokeshmohanty/arcade-games"] .person-collection-name').click();
+	await p.locator('.person-collection[data-repo="lokeshmohanty/web-games"] .person-collection-name').click();
 	await p.locator(".game-card:visible").first().waitFor({ timeout: TIMEOUT });
-	check("a collection's name lists its games (from:owner/repo)", (await p.locator("[data-search]").inputValue()) === "from:lokeshmohanty/arcade-games" && new Set(await shown()).size === arcadeGames, await shown());
+	check("a collection's name lists its games (from:owner/repo)", (await p.locator("[data-search]").inputValue()) === "from:lokeshmohanty/web-games" && new Set(await shown()).size === arcadeGames, await shown());
 
 	console.log("\nportal: collections");
 	await p.goto(site.url("./?page=collections"));
@@ -348,10 +348,10 @@ try {
 			})),
 		);
 	let cols = await readCols();
-	check("every collection, most played first (the summary's counts)", cols.map((c) => c.repo).join() === "lokeshmohanty/games,lokeshmohanty/arcade-games", cols.map((c) => c.repo));
-	check("…each: its name, owner, games and plays", cols[1]?.name === "arcade-games" && cols[1]?.owner === "@lokeshmohanty" && cols[1]?.meta === `${arcadeGames} games · 100 plays` && cols[0]?.meta === `${games} games · 501 plays`, cols);
+	check("every collection, most played first (the summary's counts)", cols.map((c) => c.repo).join() === "lokeshmohanty/games,lokeshmohanty/web-games", cols.map((c) => c.repo));
+	check("…each: its name, owner, games and plays", cols[1]?.name === "web-games" && cols[1]?.owner === "@lokeshmohanty" && cols[1]?.meta === `${arcadeGames} games · 100 plays` && cols[0]?.meta === `${games} games · 501 plays`, cols);
 	check("…a few posters and game names", cols.every((c) => c.previews > 0 && c.previews <= 3) && cols[1]?.names.includes("Battleship"), cols);
-	check("…and a link to its games: the portal searched by from:owner/repo", cols[1]?.see === "./?q=from%3Alokeshmohanty%2Farcade-games", cols[1]?.see);
+	check("…and a link to its games: the portal searched by from:owner/repo", cols[1]?.see === "./?q=from%3Alokeshmohanty%2Fweb-games", cols[1]?.see);
 	const sorted = await p.evaluate(() => {
 		const g = (id, repo) => ({ id, repo: `https://github.com/${repo}` });
 		const catalog = [g("a1", "z/zeta"), g("b1", "y/beta"), g("c1", "x/alpha"), g("c2", "x/alpha")];
@@ -365,20 +365,20 @@ try {
 		top: document.querySelector(".view-collections h1").getBoundingClientRect().top >= document.querySelector(".site-tabs").getBoundingClientRect().bottom,
 	}));
 	check("…fits the phone: no sideways scroll, ★ 44px, nothing under the bar", !layout.sideways && layout.star && layout.top, layout);
-	await p.locator('.collection[data-repo="lokeshmohanty/arcade-games"] .fav-star').click();
+	await p.locator('.collection[data-repo="lokeshmohanty/web-games"] .fav-star').click();
 	cols = await readCols();
-	check("★ makes a collection a favourite, and puts it first", cols[0]?.repo === "lokeshmohanty/arcade-games" && cols[0]?.star === "true" && cols[1]?.star === "false", cols.map((c) => [c.repo, c.star]));
-	check("…kept as collection:owner/repo beside the games' plain ids", await p.evaluate(() => JSON.stringify(NeonArcade.stats.favs()) === '["collection:lokeshmohanty/arcade-games"]'));
+	check("★ makes a collection a favourite, and puts it first", cols[0]?.repo === "lokeshmohanty/web-games" && cols[0]?.star === "true" && cols[1]?.star === "false", cols.map((c) => [c.repo, c.star]));
+	check("…kept as collection:owner/repo beside the games' plain ids", await p.evaluate(() => JSON.stringify(NeonArcade.stats.favs()) === '["collection:lokeshmohanty/web-games"]'));
 	await p.reload();
 	await p.locator(".collection").first().waitFor({ timeout: TIMEOUT });
 	cols = await readCols();
-	check("…which a reload keeps", cols[0]?.repo === "lokeshmohanty/arcade-games" && cols[0]?.star === "true", cols.map((c) => [c.repo, c.star]));
-	await p.locator('.collection[data-repo="lokeshmohanty/arcade-games"] .fav-star').click();
+	check("…which a reload keeps", cols[0]?.repo === "lokeshmohanty/web-games" && cols[0]?.star === "true", cols.map((c) => [c.repo, c.star]));
+	await p.locator('.collection[data-repo="lokeshmohanty/web-games"] .fav-star').click();
 	cols = await readCols();
 	check("…and ★ again puts it back in plays order", cols[0]?.repo === "lokeshmohanty/games" && cols.every((c) => c.star === "false"), cols.map((c) => [c.repo, c.star]));
-	await p.locator('.collection[data-repo="lokeshmohanty/arcade-games"] .collection-links a', { hasText: "SEE ITS GAMES" }).click();
+	await p.locator('.collection[data-repo="lokeshmohanty/web-games"] .collection-links a', { hasText: "SEE ITS GAMES" }).click();
 	await p.locator(".game-card:visible").first().waitFor({ timeout: TIMEOUT });
-	check("SEE ITS GAMES lists that collection's games, in the page", (await p.locator("[data-search]").inputValue()) === "from:lokeshmohanty/arcade-games" && new Set(await shown()).size === arcadeGames, await shown());
+	check("SEE ITS GAMES lists that collection's games, in the page", (await p.locator("[data-search]").inputValue()) === "from:lokeshmohanty/web-games" && new Set(await shown()).size === arcadeGames, await shown());
 	await p.locator("[data-search]").fill("from:lokeshmohanty/games");
 	check("…and from:lokeshmohanty/games the arcade's own", new Set(await shown()).size === games, await shown());
 
@@ -407,7 +407,7 @@ try {
 	await p.locator("[data-guide] h1").waitFor({ timeout: TIMEOUT });
 	check("…its link to Contributors and Back again never reload the page", await p.evaluate(() => window.__samePage === true && new URLSearchParams(location.search).get("page") === "contribute"));
 	console.log("\nportal: proposing games (GitHub's own page, filled in)");
-	// GitHub's API, played here: a new repo with two games, and arcade-games
+	// GitHub's API, played here: a new repo with two games, and web-games
 	// moved past its pin.
 	const NEW = "ada/minis";
 	const HEAD = "b".repeat(40);
@@ -433,11 +433,11 @@ try {
 	const value = href.searchParams.get("value") ?? "";
 	check("a new repo opens GitHub's new-file page in the arcade's registry", href.origin + href.pathname === "https://github.com/lokeshmohanty/games/new/main" && href.searchParams.get("filename") === `registry/${NEW}.json`, href.href);
 	check("…filled in: the repo, its head commit, every folder with a game.json", value.includes(`"https://github.com/${NEW}"`) && value.includes(HEAD) && value.includes('["chess", "go"]'), value);
-	await p.locator("[data-repo]").fill("https://github.com/lokeshmohanty/arcade-games");
+	await p.locator("[data-repo]").fill("https://github.com/lokeshmohanty/web-games");
 	await p.locator("[data-propose] button").click();
 	const pin = p.locator("[data-propose-out] a", { hasText: "COPY THE COMMIT & OPEN THE PIN" });
 	await pin.waitFor({ timeout: TIMEOUT });
-	check("a pinned repo that moved opens its pin's edit page, with the commit to paste", (await pin.getAttribute("href")) === "https://github.com/lokeshmohanty/games/edit/main/registry/lokeshmohanty/arcade-games.json" && (await p.locator("[data-propose-out] pre").textContent()) === HEAD);
+	check("a pinned repo that moved opens its pin's edit page, with the commit to paste", (await pin.getAttribute("href")) === "https://github.com/lokeshmohanty/games/edit/main/registry/lokeshmohanty/web-games.json" && (await p.locator("[data-propose-out] pre").textContent()) === HEAD);
 	await ctx.grantPermissions(["clipboard-read", "clipboard-write"], { origin: site.base });
 	const [tab] = await Promise.all([ctx.waitForEvent("page"), pin.click()]);
 	await tab.close();

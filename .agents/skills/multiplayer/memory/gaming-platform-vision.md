@@ -52,7 +52,7 @@ non-JS games could not exist at all (the CSP blocked WebAssembly).
   Managed rules run on the host, so a host who is also a player sees
   everything they hold.
 - **Landing order is forced:** the platform must deploy v2 support before
-  arcade-games' pin moves to v2 games (by its own PR), and sdk/v1 can only be
+  web-games' pin moves to v2 games (by its own PR), and sdk/v1 can only be
   deleted after that pin moves. Test unmerged contributor commits with
   `NEON_PIN_OVERRIDE`, never by editing registry/.
 - **Managed-state races** are the hard part, not the protocol: epochs per

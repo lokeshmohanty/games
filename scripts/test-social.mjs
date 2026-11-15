@@ -73,7 +73,7 @@ try {
 	await ana.p.locator(".top-fav").click({ timeout: TIMEOUT });
 	check("☆ at the top of a game stars it", (await ana.p.locator('.top-fav[aria-pressed="true"]').count()) === 1);
 	// A collection's ★ (lib/collections.js) rides in the same list.
-	await ana.p.evaluate(() => NeonArcade.stats.toggleFav("collection:lokeshmohanty/arcade-games"));
+	await ana.p.evaluate(() => NeonArcade.stats.toggleFav("collection:lokeshmohanty/web-games"));
 	await ana.p.waitForTimeout(1200); // the push is debounced
 	// That game hosted a party of its own; forget it, so the party below is new.
 	await ana.p.evaluate(() => localStorage.removeItem("neon.room"));
@@ -84,7 +84,7 @@ try {
 		.waitFor({ state: "attached", timeout: TIMEOUT })
 		.then(() => true, () => false);
 	check("a star on one device is a favourite on the other", starred);
-	check("…a collection's too", await tablet.p.evaluate(() => NeonArcade.stats.isFav("collection:lokeshmohanty/arcade-games")));
+	check("…a collection's too", await tablet.p.evaluate(() => NeonArcade.stats.isFav("collection:lokeshmohanty/web-games")));
 	await tablet.ctx.close();
 
 	console.log("\nsocial: friends in a party");
