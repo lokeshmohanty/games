@@ -464,7 +464,7 @@ const GAMES = {
 	},
 
 	"bubble-rush": {
-		file: "index.html?game=lokeshmohanty%2Fbubble-rush&fresh=1",
+		file: "?game=lokeshmohanty%2Fbubble-rush&fresh=1",
 		peers: 2,
 		seconds: 10, // constant motion: 14 s was 1.4MB even at the low profile
 		// Upright, like the phone it is made for: its 1 : 2 field is a thin

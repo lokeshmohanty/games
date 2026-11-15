@@ -712,7 +712,7 @@ try {
 	// with the bots on every other seat having played.
 
 	console.log("\nbots: bubble rush, a whole round against three bots");
-	await page.goto(url("index.html?game=lokeshmohanty%2Fbubble-rush&fresh=1"));
+	await page.goto(url("?game=lokeshmohanty%2Fbubble-rush&fresh=1"));
 	await page.locator("button", { hasText: "SINGLE PLAYER" }).first().click();
 	for (let i = 0; i < 3; i++) await page.locator("button", { hasText: "ADD BOT" }).first().click();
 	await page.locator("button", { hasText: "START GAME" }).first().click();
