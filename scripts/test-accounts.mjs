@@ -141,6 +141,10 @@ const w = await startWrangler({
 	LB_MIN_GAMES: "1",
 	SOLO_PER_DAY: "8",
 	BOTS_PER_DAY: "3",
+	// Small caps and a short invite life, so the tests can reach them.
+	FRIENDS_MAX: "3",
+	GROUPS_MAX: "2",
+	INVITE_TTL_MS: "4000",
 	GH_APP_CLIENT_ID: "app-client",
 	GH_APP_CLIENT_SECRET: "app-secret",
 	GITHUB_OAUTH_URL: FAKE,
@@ -356,7 +360,8 @@ try {
 		check("…hidden from public boards: no rank, and says why", hidden.body.me?.rank === null && hidden.body.me.hidden === true, hidden.body.me);
 		lb = await call("GET", "/api/lb/connect4");
 		check("hide me from public leaderboards: gone from the global board", !lb.body.rows.some((r) => r.id === Bo), lb.body.rows);
-		check("…and the public profile is gone", (await call("GET", `/api/u/${Bo}`)).status === 404);
+		const minimal = await call("GET", `/api/u/${Bo}`);
+		check("…and the public profile is down to a name to befriend: no ratings, no matches", minimal.status === 200 && minimal.body.hidden === true && minimal.body.id === Bo && minimal.body.ratings === undefined && minimal.body.matches === undefined, minimal.body);
 		await call("PATCH", "/api/me", { token: bo, body: { hidePublic: false } });
 		const prof = await call("GET", `/api/u/${A}`);
 		check("a public profile: name, ratings, recent matches", prof.body.name === "Ana P" && prof.body.ratings.length >= 2 && prof.body.matches.length >= 2, prof.body);
@@ -783,13 +788,17 @@ try {
 		check("a friend with a page open is online, in their game", boRow?.online === true && boRow.game === "connect4", boRow);
 		r = await call("POST", `/api/friends/${Bo}/invite`, { token: ana, body: { code: "123456" } });
 		await new Promise((res) => setTimeout(res, 300));
-		check("an invite reaches the friend's open page", r.body.delivered === 1 && heard.some((m) => m.t === "invite" && m.code === "123456" && m.from.id === A), heard);
+		check("an invite reaches the friend's open page", r.body.invited === true && heard.some((m) => m.t === "invite" && m.code === "123456" && m.from.id === A), heard);
+		check("…and the answer does not say how many pages got it (appear offline would leak)", r.body.delivered === undefined, r.body);
 		check("inviting someone who is not a friend is refused", (await call("POST", `/api/friends/${C}/invite`, { token: ana, body: { code: "123456" } })).status === 403);
 		check("an invite needs a six-digit code", (await call("POST", `/api/friends/${Bo}/invite`, { token: ana, body: { code: "12" } })).status === 400);
 		await call("PATCH", "/api/me", { token: bo, body: { appearOffline: true } });
 		list = await call("GET", "/api/friends", { token: ana });
 		check("appear offline: friends see them offline", list.body.friends.find((p) => p.id === Bo)?.online === false);
 		await call("PATCH", "/api/me", { token: bo, body: { appearOffline: false } });
+		list = await call("GET", "/api/friends", { token: ana });
+		const back = list.body.friends.find((p) => p.id === Bo);
+		check("…and turning it off shows them online again at once, in their game", back?.online === true && back.game === "connect4", back);
 		ws.close();
 		await new Promise((r) => setTimeout(r, 500));
 		list = await call("GET", "/api/friends", { token: ana });
@@ -827,6 +836,253 @@ try {
 		check("only the owner deletes it", (await call("DELETE", `/api/groups/${g.body.id}`, { token: cy })).status === 403);
 		check("…and the owner can", (await call("DELETE", `/api/groups/${g.body.id}`, { token: ana })).body.deleted === true);
 		check("my groups list is empty again", (await call("GET", "/api/groups", { token: ana })).body.groups.length === 0);
+	}
+
+	// A page's live socket for `token`: { heard, close }.
+	const listen = async (token) => {
+		const heard = [];
+		const ws = new WebSocket(`${B.replace("http", "ws")}/live`, ["neon", token]);
+		await new Promise((ok, bad) => {
+			ws.onopen = ok;
+			ws.onerror = bad;
+			setTimeout(bad, 8000);
+		}).catch(() => {});
+		ws.onmessage = (e) => heard.push(JSON.parse(e.data));
+		return { heard, close: () => ws.close() };
+	};
+	const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+	const person = async (name) => {
+		const token = await testLogin(name);
+		return { token, id: await id(token), name };
+	};
+
+	console.log("\naccounts: friend codes");
+	{
+		const fia = await person("Fia");
+		const gus = await person("Gil");
+		const me = (await call("GET", "/api/me", { token: fia.token })).body;
+		check("an account has a short friend code", /^[A-HJKMNP-Z2-9]{8}$/.test(me.friendCode ?? ""), me.friendCode);
+		check("…the same one every time", (await call("GET", "/api/me", { token: fia.token })).body.friendCode === me.friendCode);
+		const dashed = `${me.friendCode.slice(0, 4)}-${me.friendCode.slice(4)}`.toLowerCase();
+		const byCode = await call("GET", `/api/u/${dashed}`);
+		check("a profile by friend code (any case, a dash or not) is the account's", byCode.status === 200 && byCode.body.id === fia.id && byCode.body.name === "Fia", byCode.body);
+		check("…and is not cached publicly (it can be rotated)", !/public/.test(byCode.headers.get("cache-control") ?? ""), byCode.headers.get("cache-control"));
+		const asked = await call("POST", `/api/friends/${me.friendCode}`, { token: gus.token });
+		check("asking by friend code", asked.body.state === "pending" && (await call("GET", "/api/friends", { token: fia.token })).body.incoming.some((p) => p.id === gus.id), asked.body);
+		const rot = await call("POST", "/api/me/friend-code", { token: fia.token });
+		check("rotating gives a new code", /^[A-HJKMNP-Z2-9]{8}$/.test(rot.body.friendCode ?? "") && rot.body.friendCode !== me.friendCode, rot.body);
+		check("…the old one is dead", (await call("GET", `/api/u/${me.friendCode}`)).status === 404 && (await call("POST", `/api/friends/${me.friendCode}`, { token: gus.token })).status === 404);
+		check("…the new one works", (await call("GET", `/api/u/${rot.body.friendCode}`)).body.id === fia.id);
+		check("…and an old link by account id still does", (await call("GET", `/api/u/${fia.id}`)).body.id === fia.id);
+		check("only you rotate yours (signed in)", (await call("POST", "/api/me/friend-code")).status === 401);
+		const ip = "10.98.0.1";
+		let last = 0;
+		for (let i = 0; i < 125 && last !== 429; i++) last = (await call("GET", `/api/u/ZZZZ${String(i).padStart(4, "2").replace(/[01]/g, "2")}`, { ip })).status;
+		check("guessing friend codes from one address is cut off (enumeration)", last === 429, last);
+		check("…while a profile by account id is still a public read", (await call("GET", `/api/u/${fia.id}`, { ip })).status === 200);
+	}
+
+	console.log("\naccounts: friend requests — pushed once, declined, blocked, capped");
+	{
+		const [p1, p2] = [await person("Pia"), await person("Quin")];
+		const ear = await listen(p2.token);
+		for (let i = 0; i < 3; i++) await call("POST", `/api/friends/${p2.id}`, { token: p1.token });
+		const ear1 = await listen(p1.token);
+		const acc = await call("POST", `/api/friends/${p1.id}`, { token: p2.token });
+		await call("POST", `/api/friends/${p2.id}`, { token: p1.token }); // already friends
+		await sleep(500);
+		const asks = ear.heard.filter((m) => m.t === "friend");
+		check("asking three times pushes one request", asks.length === 1 && asks[0].state === "asked" && asks[0].id === p1.id, ear.heard);
+		check("…the yes is pushed to the asker", acc.body.state === "friends" && ear1.heard.filter((m) => m.t === "friend" && m.state === "friends").length === 1, ear1.heard);
+		check("…and asking a friend again pushes nothing", ear.heard.filter((m) => m.t === "friend").length === 1);
+		ear.close();
+		ear1.close();
+
+		const [x, y] = [await person("Xan"), await person("Yul")];
+		await Promise.all([call("POST", `/api/friends/${y.id}`, { token: x.token }), call("POST", `/api/friends/${x.id}`, { token: y.token })]);
+		await call("POST", `/api/friends/${y.id}`, { token: x.token });
+		const lx = (await call("GET", "/api/friends", { token: x.token })).body;
+		check("crossing requests end as one friendship, nothing left pending", lx.friends.filter((p) => p.id === y.id).length === 1 && !lx.incoming.length && !lx.outgoing.length, lx);
+
+		const [d1, d2] = [await person("Dov"), await person("Eda")];
+		await call("POST", `/api/friends/${d2.id}`, { token: d1.token });
+		const no = await call("DELETE", `/api/friends/${d1.id}`, { token: d2.token });
+		check("declining", no.status === 200 && !(await call("GET", "/api/friends", { token: d2.token })).body.incoming.length);
+		const again = await call("POST", `/api/friends/${d2.id}`, { token: d1.token });
+		check("…is remembered: asking again soon is refused", again.status === 429 && /again/.test(again.body.error), again.body);
+		check("…withdrawing it does not reset that", (await call("DELETE", `/api/friends/${d2.id}`, { token: d1.token })).status === 200 && (await call("POST", `/api/friends/${d2.id}`, { token: d1.token })).status === 429);
+		check("…the asker's list shows nothing pending", !(await call("GET", "/api/friends", { token: d1.token })).body.outgoing.length);
+		const change = await call("POST", `/api/friends/${d1.id}`, { token: d2.token });
+		check("…but who declined may still ask (then it is the other's to accept)", change.body.state === "pending" && (await call("GET", "/api/friends", { token: d1.token })).body.incoming.some((p) => p.id === d2.id), change.body);
+
+		const [b1, b2] = [await person("Bea"), await person("Cal")];
+		await call("POST", `/api/friends/${b2.id}`, { token: b1.token });
+		await call("POST", `/api/friends/${b1.id}`, { token: b2.token });
+		const blk = await call("POST", `/api/friends/${b1.id}/block`, { token: b2.token });
+		const lb2 = (await call("GET", "/api/friends", { token: b2.token })).body;
+		check("blocking ends a friendship and lists the blocked", blk.body.state === "blocked" && !lb2.friends.length && lb2.blocked?.some((p) => p.id === b1.id), lb2);
+		check("…the blocked one no longer sees them", !(await call("GET", "/api/friends", { token: b1.token })).body.friends.length);
+		const ear2 = await listen(b2.token);
+		const tryAgain = await call("POST", `/api/friends/${b2.id}`, { token: b1.token });
+		await sleep(400);
+		check("…a request from them goes nowhere and pushes nothing (and does not say so)", tryAgain.status === 200 && !(await call("GET", "/api/friends", { token: b2.token })).body.incoming.length && !ear2.heard.some((m) => m.t === "friend"), { tryAgain: tryAgain.body, heard: ear2.heard });
+		ear2.close();
+		await call("DELETE", `/api/friends/${b2.id}`, { token: b1.token });
+		check("…they cannot lift the block themselves", (await call("GET", "/api/friends", { token: b2.token })).body.blocked?.some((p) => p.id === b1.id));
+		check("…you cannot ask someone you blocked", (await call("POST", `/api/friends/${b1.id}`, { token: b2.token })).status === 400);
+		await call("DELETE", `/api/friends/${b1.id}/block`, { token: b2.token });
+		check("unblocking: they may ask again", (await call("POST", `/api/friends/${b2.id}`, { token: b1.token })).body.state === "pending" && (await call("GET", "/api/friends", { token: b2.token })).body.incoming.some((p) => p.id === b1.id));
+
+		// FRIENDS_MAX is 3 here.
+		const t = await person("Tara");
+		const fans = [];
+		for (let i = 0; i < 4; i++) fans.push(await person(`Fan${i}`));
+		for (const f of fans) await call("POST", `/api/friends/${t.id}`, { token: f.token });
+		const own = await call("POST", `/api/friends/${p1.id}`, { token: t.token });
+		check("a flood of incoming requests does not use up your friend cap", own.body.state === "pending", own.body);
+		for (const f of fans.slice(0, 3)) await call("POST", `/api/friends/${f.id}`, { token: t.token });
+		const over = await call("POST", `/api/friends/${fans[3].id}`, { token: t.token });
+		check("…but accepting past the cap is refused", over.status === 400 && /at most 3/.test(over.body.error), over.body);
+		check("…and so is accepting for someone at theirs", (await call("POST", `/api/friends/${t.id}`, { token: p1.token })).status === 400);
+	}
+
+	console.log("\naccounts: party invites — waiting, muted, rate-limited");
+	{
+		const [h, g, m] = [await person("Hux"), await person("Gia"), await person("Mo")];
+		for (const o of [g, m]) {
+			await call("POST", `/api/friends/${o.id}`, { token: h.token });
+			await call("POST", `/api/friends/${h.id}`, { token: o.token });
+		}
+		const r = await call("POST", `/api/friends/${g.id}/invite`, { token: h.token, body: { code: "654321" } });
+		check("inviting a friend with no page open: the same answer", r.status === 200 && r.body.invited === true && r.body.delivered === undefined, r.body);
+		let waiting = await call("GET", "/api/invites", { token: g.token });
+		check("…the invite waits for their next visit", waiting.body.invites?.length === 1 && waiting.body.invites[0].code === "654321" && waiting.body.invites[0].from.id === h.id && waiting.body.invites[0].from.name === "Hux", waiting.body);
+		check("…only for them", (await call("GET", "/api/invites", { token: m.token })).body.invites.length === 0);
+		check("inviting the same friend again at once is refused", (await call("POST", `/api/friends/${g.id}/invite`, { token: h.token, body: { code: "654321" } })).status === 429);
+		check("NOT NOW (or JOIN) clears it", (await call("DELETE", `/api/invites/${h.id}`, { token: g.token })).status === 200 && (await call("GET", "/api/invites", { token: g.token })).body.invites.length === 0);
+		await call("POST", `/api/friends/${m.id}/invite`, { token: h.token, body: { code: "111222" } });
+		await sleep(4300); // INVITE_TTL_MS is 4 s here (10 minutes for real)
+		check("an invite left waiting expires", (await call("GET", "/api/invites", { token: m.token })).body.invites.length === 0);
+		await call("POST", `/api/friends/${h.id}/mute`, { token: m.token });
+		check("muting a friend: still a friend, marked muted", (await call("GET", "/api/friends", { token: m.token })).body.friends.find((p) => p.id === h.id)?.muted === true);
+		const ear = await listen(m.token);
+		const muted = await call("POST", `/api/friends/${m.id}/invite`, { token: h.token, body: { code: "333444" } });
+		await sleep(400);
+		check("…their invite answers the same, but is neither pushed nor kept", muted.body.invited === true && !ear.heard.some((x) => x.t === "invite") && (await call("GET", "/api/invites", { token: m.token })).body.invites.length === 0, { muted: muted.body, heard: ear.heard });
+		ear.close();
+		await call("DELETE", `/api/friends/${h.id}/mute`, { token: m.token });
+		check("…and unmuting", (await call("GET", "/api/friends", { token: m.token })).body.friends.find((p) => p.id === h.id)?.muted === false);
+		await call("DELETE", `/api/friends/${g.id}`, { token: h.token });
+		check("unfriending drops their waiting invites", (await call("GET", "/api/invites", { token: g.token })).body.invites.length === 0);
+	}
+
+	console.log("\naccounts: a hidden player — befriended by link, seen by friends, private elsewhere");
+	{
+		const [hid, fr, st] = [await person("Hid"), await person("Fren"), await person("Stra")];
+		// Hid and Stra play a ranked game; Hid then hides.
+		const gm = { game: "tic-tac-toe-js", run: "hidden-1", match: 1, kind: "duel", ranking: [["ps"], ["ph"]], roster: { ph: hid.id, ps: st.id } };
+		await call("POST", "/api/match/report", { token: hid.token, body: gm });
+		await call("POST", "/api/match/report", { token: st.token, body: gm });
+		await call("PATCH", "/api/me", { token: hid.token, body: { hidePublic: true } });
+		const code = (await call("GET", "/api/me", { token: hid.token })).body.friendCode;
+		const anon = await call("GET", `/api/u/${code}`);
+		check("a hidden player's friend link still names them, for ADD FRIEND", anon.status === 200 && anon.body.hidden === true && anon.body.name === "Hid" && anon.body.id === hid.id && !anon.body.ratings, anon.body);
+		check("…and the request goes through", (await call("POST", `/api/friends/${hid.id}`, { token: fr.token })).body.state === "pending");
+		await call("POST", `/api/friends/${fr.id}`, { token: hid.token });
+		const asFriend = await call("GET", `/api/u/${hid.id}`, { token: fr.token });
+		check("a friend sees their full profile", asFriend.body.hidden === true && Array.isArray(asFriend.body.ratings) && asFriend.body.matches?.length === 1, asFriend.body);
+		check("…personal, never cached publicly", !/public/.test(asFriend.headers.get("cache-control") ?? ""));
+		check("…anyone else does not", (await call("GET", `/api/u/${hid.id}`, { token: st.token })).body.ratings === undefined);
+		const strangers = await call("GET", `/api/u/${st.id}`);
+		const names = strangers.body.matches?.flatMap((x) => x.ranking.flat()) ?? [];
+		check("in other people's public profiles a hidden player is \"(hidden)\", with no id", names.length === 2 && names.some((p) => p.name === "(hidden)" && p.id === null) && !JSON.stringify(strangers.body).includes(hid.id), names);
+		check("…and their own name is still theirs", names.some((p) => p.id === st.id && p.name === "Stra"));
+		await call("PATCH", "/api/me", { token: hid.token, body: { hidePublic: false } });
+	}
+
+	console.log("\naccounts: players you just played");
+	{
+		const [r1, r2, r3, r4] = [await person("Ria"), await person("Rex"), await person("Roo"), await person("Rue")];
+		const play = async (run, others) => {
+			const roster = { p0: r1.id };
+			others.forEach((o, i) => (roster[`p${i + 1}`] = o.id));
+			const gm = { game: "neon-bid", run, match: 1, kind: "ffa", ranking: Object.keys(roster).map((k) => [k]), roster };
+			for (const t of [r1, ...others]) await call("POST", "/api/match/report", { token: t.token, body: gm });
+		};
+		await play("recent-1", [r2, r3, r4]);
+		await call("POST", `/api/friends/${r2.id}`, { token: r1.token });
+		await call("POST", `/api/friends/${r1.id}`, { token: r2.token });
+		await call("POST", `/api/friends/${r3.id}/block`, { token: r1.token });
+		await call("PATCH", "/api/me", { token: r4.token, body: { hidePublic: true } });
+		let rec = await call("GET", "/api/friends/recent", { token: r1.token });
+		check("recent players leave out friends, the blocked, the hidden and you", rec.status === 200 && rec.body.players?.length === 0, rec.body);
+		await call("PATCH", "/api/me", { token: r4.token, body: { hidePublic: false } });
+		rec = await call("GET", "/api/friends/recent", { token: r1.token });
+		check("…and list the rest, with the game", rec.body.players?.length === 1 && rec.body.players[0].id === r4.id && rec.body.players[0].game === "neon-bid", rec.body);
+		check("…signed in only", (await call("GET", "/api/friends/recent")).status === 401);
+	}
+
+	console.log("\naccounts: groups — bans, owners, caps");
+	{
+		const [o, m1, m2, j] = [await person("Oona"), await person("Mika"), await person("Mira"), await person("Jo")];
+		let g = (await call("POST", "/api/groups", { token: o.token, body: { name: "Crew" } })).body;
+		await call("POST", "/api/groups/join", { token: m1.token, body: { code: g.code } });
+		await sleep(5);
+		await call("POST", "/api/groups/join", { token: m2.token, body: { code: g.code } });
+		const kick = await call("DELETE", `/api/groups/${g.id}/members/${m2.id}`, { token: o.token });
+		check("kicking someone rotates the code", kick.body.removed === true && kick.body.code && kick.body.code !== g.code, kick.body);
+		check("…the old code is dead", (await call("POST", "/api/groups/join", { token: m2.token, body: { code: g.code } })).status === 404);
+		const back = await call("POST", "/api/groups/join", { token: m2.token, body: { code: kick.body.code } });
+		check("…and the new one does not let them back in", back.status === 403, back.body);
+		const view = (await call("GET", `/api/groups/${g.id}`, { token: o.token })).body;
+		check("the owner sees who was removed", view.bans?.some((b) => b.id === m2.id) && view.code === kick.body.code, view);
+		check("…members do not", (await call("GET", `/api/groups/${g.id}`, { token: m1.token })).body.bans === undefined);
+		await call("DELETE", `/api/groups/${g.id}/bans/${m2.id}`, { token: o.token });
+		check("letting them back: the current code works again", (await call("POST", "/api/groups/join", { token: m2.token, body: { code: kick.body.code } })).body.id === g.id);
+		check("only the owner rotates the code", (await call("POST", `/api/groups/${g.id}/code`, { token: m1.token })).status === 403);
+		const rot = await call("POST", `/api/groups/${g.id}/code`, { token: o.token });
+		check("…and the owner can", /^[A-Z2-9]{8}$/.test(rot.body.code ?? "") && rot.body.code !== kick.body.code, rot.body);
+		check("only the owner renames it", (await call("PATCH", `/api/groups/${g.id}`, { token: m1.token, body: { name: "Mine" } })).status === 403);
+		check("…and the owner can", (await call("PATCH", `/api/groups/${g.id}`, { token: o.token, body: { name: "Night crew" } })).body.name === "Night crew");
+
+		const tr = await call("POST", `/api/groups/${g.id}/owner`, { token: o.token, body: { account: m1.id } });
+		check("handing the group over", tr.body.owner === m1.id && (await call("GET", `/api/groups/${g.id}`, { token: m1.token })).body.mine === true, tr.body);
+		check("…to a member only", (await call("POST", `/api/groups/${g.id}/owner`, { token: m1.token, body: { account: j.id } })).status === 400);
+		check("…the old owner is now a member like any other", (await call("DELETE", `/api/groups/${g.id}/members/${m2.id}`, { token: o.token })).status === 403);
+		await call("POST", `/api/groups/${g.id}/owner`, { token: m1.token, body: { account: o.id } });
+		const left = await call("DELETE", `/api/groups/${g.id}/members/${o.id}`, { token: o.token });
+		const after = (await call("GET", `/api/groups/${g.id}`, { token: m1.token })).body;
+		check("the owner may leave: the longest-standing member owns it", left.body.removed === true && after.owner === m1.id && after.members.length === 2, after);
+
+		g = (await call("POST", "/api/groups", { token: m2.token, body: { name: "Duo" } })).body;
+		await call("POST", "/api/groups/join", { token: j.token, body: { code: g.code } });
+		await call("DELETE", "/api/me", { token: m2.token });
+		const kept = await call("GET", `/api/groups/${g.id}`, { token: j.token });
+		check("an owner deleting their account leaves the group to the next member", kept.status === 200 && kept.body.owner === j.id && kept.body.members.length === 1, kept.body);
+		const solo = (await call("POST", "/api/groups", { token: o.token, body: { name: "Just me" } })).body;
+		await call("DELETE", `/api/groups/${solo.id}/members/${o.id}`, { token: o.token });
+		check("…and the last member leaving deletes it", (await call("GET", `/api/groups/${solo.id}`, { token: o.token })).status === 404);
+
+		// GROUPS_MAX is 2 here: Jo is in Duo; one more, then joining is refused.
+		const third = (await call("POST", "/api/groups", { token: o.token, body: { name: "Third" } })).body;
+		check("joining up to the cap", (await call("POST", "/api/groups/join", { token: j.token, body: { code: third.code } })).body.id === third.id);
+		const fourth = (await call("POST", "/api/groups", { token: m1.token, body: { name: "Fourth" } })).body;
+		const capped = await call("POST", "/api/groups/join", { token: j.token, body: { code: fourth.code } });
+		check("…joining past it is refused, as making one is", capped.status === 400 && /at most 2/.test(capped.body.error), capped.body);
+		check("…joining one you are in again is not", (await call("POST", "/api/groups/join", { token: j.token, body: { code: third.code } })).status === 200);
+		const gv = (await call("GET", `/api/groups/${third.id}`, { token: j.token })).body;
+		check("a group says which games its members play, for its boards", Array.isArray(gv.games), gv);
+	}
+
+	console.log("\naccounts: a profile's boards say their own kind and unit");
+	{
+		const prof = await call("GET", `/api/u/${A}`);
+		const lc = prof.body.ratings.find((r) => r.game === "lokeshmohanty/light-cycles@alone");
+		check("Light Cycles alone: best score, in seconds", lc?.kind === "coop" && lc.unit === "s", lc);
+		const mine = await call("GET", "/api/me/matches", { token: ana });
+		check("…on your own profile too", mine.body.ratings.find((r) => r.game === "lokeshmohanty/light-cycles@alone")?.unit === "s");
+		const su = mine.body.ratings.find((r) => r.game.startsWith("lokeshmohanty/sudoku@"));
+		check("Sudoku's level boards: a time", !su || su.kind === "time", su);
 	}
 
 	console.log("\naccounts: feedback, from the player's own GitHub account");
