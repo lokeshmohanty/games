@@ -33,6 +33,8 @@ const ROOT = resolvePath(dirname(fileURLToPath(import.meta.url)), "..");
 const PW_CACHE = join(homedir(), ".cache", "game-previews");
 const SITE = await serve(8734);
 const url = SITE.url;
+// The portal's address (LEAVE PARTY goes there): the shell with no query.
+const PORTAL = (u) => u.pathname === "/" && !u.search;
 const TIMEOUT = 30_000;
 
 function chromePath() {
@@ -152,7 +154,7 @@ try {
 	// wrong person**. Both are asserted; the rest happens between people.
 
 	console.log("\nlocal: undercover needs no second device");
-	await page.goto(url("undercover.html"));
+	await page.goto(url("?game=undercover&fresh=1"));
 	await page.waitForFunction(() => window.__game?.handle, null, { timeout: TIMEOUT });
 	check("it opens straight into the game: no lobby button was needed", !(await page.locator("#party:not([hidden]) button", { hasText: "START" }).isVisible().catch(() => false)));
 	G = await gameScope(page, TIMEOUT);
@@ -316,7 +318,7 @@ try {
 	// to *before* the bidding, and that lifting them audits clean.
 
 	console.log("\nbots: liar's dice commits every cup before a bid");
-	await startSolo(page, "liars-dice.html", "SINGLE PLAYER");
+	await startSolo(page, "?game=lokeshmohanty%2Fliars-dice&fresh=1", "SINGLE PLAYER");
 	G = await gameScope(page, TIMEOUT);
 	await readyToClick(page);
 	await sleep(1200);
@@ -402,7 +404,7 @@ try {
 	// table all fit without sideways scroll.
 
 	console.log("\nbots: neon bid plays twelve sealed lots at a full table");
-	await page.goto(url("neon-bid.html"));
+	await page.goto(url("?game=neon-bid&fresh=1"));
 	await page.locator("button", { hasText: "SINGLE PLAYER" }).first().click();
 	for (let i = 0; i < 6; i++) await page.locator("button", { hasText: "ADD BOT" }).first().click();
 	await page.locator("button", { hasText: "START GAME" }).first().click();
@@ -539,7 +541,7 @@ try {
 	// decoration.
 
 	console.log("\nbots: battleship commits, fires and audits");
-	await startSolo(page, "battleship.html", "SINGLE PLAYER");
+	await startSolo(page, "?game=lokeshmohanty%2Fbattleship&fresh=1", "SINGLE PLAYER");
 	G = await gameScope(page, TIMEOUT);
 	await readyToClick(page);
 
@@ -648,7 +650,7 @@ try {
 	// rather than a game.
 
 	console.log("\nbots: light cycles runs a whole round on a phone");
-	await page.goto(url("light-cycles.html"));
+	await page.goto(url("?game=lokeshmohanty%2Flight-cycles&fresh=1"));
 	await page.locator("button", { hasText: "SINGLE PLAYER" }).first().click();
 	for (let i = 0; i < 3; i++) {
 		await page.locator("button", { hasText: "ADD BOT" }).first().click();
@@ -823,7 +825,7 @@ try {
 
 	console.log("\nbots: connect 4 plays a real opponent");
 	// The game page is a party shortcut; its quick start must suit a phone.
-	await page.goto(url("connect4.html"));
+	await page.goto(url("?game=connect4&fresh=1"));
 	// First the choice, and nothing else: no code, no roster (Lokesh, 2026-11-13).
 	await page.locator("button", { hasText: "MULTI-PLAYER" }).first().waitFor({ timeout: TIMEOUT });
 	const choice = await page.evaluate(() => ({
@@ -1115,7 +1117,7 @@ try {
 	// ------------------------------------------------------ neon survival
 
 	console.log("\nbots: neon survival runs for one player, and for one plus bots");
-	await startSolo(page, "neon-survival-mp.html", "SINGLE PLAYER");
+	await startSolo(page, "?game=neon-survival-mp&fresh=1", "SINGLE PLAYER");
 	G = await gameScope(page, TIMEOUT);
 	await sleep(600);
 	let solo = await G.evaluate(() => ({
@@ -1127,7 +1129,7 @@ try {
 	check("playing alone adds no bots", solo.ships === 0 && solo.peers === 0);
 
 	// Now the same page with company.
-	await page.goto(url("neon-survival-mp.html"));
+	await page.goto(url("?game=neon-survival-mp&fresh=1"));
 	await page.locator("button", { hasText: "SINGLE PLAYER" }).first().click();
 	const addBot = page.locator("button", { hasText: "ADD BOT" }).first();
 	await addBot.click();
@@ -1163,7 +1165,7 @@ try {
 	// ------------------------------------------------------- draw & guess
 
 	console.log("\nbots: draw & guess says it needs people");
-	await page.goto(url("draw-guess.html"));
+	await page.goto(url("?game=lokeshmohanty%2Fdraw-guess&fresh=1"));
 	await page.locator("button", { hasText: "MULTI-PLAYER" }).first().waitFor();
 	const solos = await page.locator("button", { hasText: /SINGLE PLAYER/ }).count();
 	check("no bot option is offered for a game a bot cannot play", solos === 0);
@@ -1210,7 +1212,7 @@ try {
 				failures++;
 			});
 		}
-		await inviter.goto(url("draw-guess.html"));
+		await inviter.goto(url("?game=lokeshmohanty%2Fdraw-guess&fresh=1"));
 		await inviter.locator("button", { hasText: "MULTI-PLAYER" }).first().click();
 		await inviter.locator("button", { hasText: "INVITE A FRIEND" }).first().click();
 		const inviteBox = inviter.locator("textarea.share-code").first();
@@ -1301,7 +1303,7 @@ try {
 			.catch(() => false);
 		check("LEAVE PARTY asks before it walks out on the other player", asked);
 		await Promise.all([
-			replier.waitForURL(/index\.html/, { timeout: TIMEOUT }),
+			replier.waitForURL(PORTAL, { timeout: TIMEOUT }),
 			replier.locator('dialog.neon-ask[open] [data-ask="yes"]').click(),
 		]);
 		const told = await inviter
@@ -1326,7 +1328,7 @@ try {
 				failures++;
 			});
 		}
-		await hostP.goto(url("connect4.html"));
+		await hostP.goto(url("?game=connect4&fresh=1"));
 		await hostP.locator("button", { hasText: "MULTI-PLAYER" }).first().click();
 		await hostP.locator("button", { hasText: "INVITE A FRIEND" }).first().click();
 		const box = hostP.locator("textarea.share-code").first();
@@ -1366,12 +1368,10 @@ try {
 		if (after && midGame) {
 			after = await (await gameScope(guestP, TIMEOUT))
 				.waitForFunction(() => {
-					const { handle, ctx } = window.__game;
-					const d = handle.debug();
-					// v2 (sdk/v2/runtime.js) knows the party as arcade.party; v1 as ctx.room.
-					const self = window.arcade?.party.self ?? ctx.room.selfId;
-					const host = window.arcade ? window.arcade.party.host === self : ctx.room.isHost();
-					return host && d.winner === (d.yellow === self ? 2 : 1);
+					const d = window.__game.handle.debug();
+					// The party as the game's frame knows it (sdk/v2/runtime.js).
+					const { self, host } = window.arcade.party;
+					return host === self && d.winner === (d.yellow === self ? 2 : 1);
 				}, null, { timeout: TIMEOUT })
 				.then(() => true, () => false);
 		}
@@ -1385,11 +1385,11 @@ try {
 	console.log("\nleaving: one person against the bots is never asked");
 	{
 		const lone = await context.newPage();
-		await startSolo(lone, "connect4.html", "SINGLE PLAYER");
+		await startSolo(lone, "?game=connect4&fresh=1", "SINGLE PLAYER");
 		// LEAVE PARTY with only bots in it: nobody to walk out on, so no question.
 		// Mid-game it is on the party screen, pulled up over the game (PARTY).
 		await lone.locator(".party-pill").click({ timeout: TIMEOUT });
-		await Promise.all([lone.waitForURL(/index\.html/, { timeout: TIMEOUT }), lone.locator("a[data-leaves]", { hasText: "LEAVE PARTY" }).click()]);
+		await Promise.all([lone.waitForURL(PORTAL, { timeout: TIMEOUT }), lone.locator("a[data-leaves]", { hasText: "LEAVE PARTY" }).click()]);
 		check("LEAVE PARTY from a bots-only game goes straight to the portal", (await lone.locator("dialog.neon-ask").count()) === 0);
 		await lone.close();
 	}
@@ -1406,7 +1406,7 @@ try {
 		});
 	}
 
-	await host.goto(url("party.html"));
+	await host.goto(url("?party"));
 	await host.locator(".party-member").first().waitFor({ timeout: TIMEOUT });
 	await host.locator("button", { hasText: "ADD PLAYER" }).first().click();
 	const inviteBox = host.locator("textarea.share-code").first();

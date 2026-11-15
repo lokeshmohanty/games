@@ -228,7 +228,7 @@ Asset = TypedDict(
 class Result(TypedDict):
     """
     `result`, frame to shell. The outcome, for stats and leaderboards
-    (docs/sdk.md, "Results"). Every peer may send it; it counts once.
+    (docs/platform.md, "Results"). Every peer may send it; it counts once.
     """
 
     v: Literal[2]
@@ -695,8 +695,8 @@ class RuntimeFile(TypedDict):
     """
     `runtime.file`, frame to shell. Request: a file of a runtime the platform
     ships, for a game whose language needs one (manifest `runtime: "python"`:
-    Pyodide, from sdk/v1/pyodide/). Reply `{ bytes, type }`. Only that folder;
-    it does not count toward the game's size cap.
+    Pyodide, from sdk/pyodide/). Reply `{ bytes, type }`. Only that folder; it
+    does not count toward the game's size cap.
     """
 
     v: Literal[2]

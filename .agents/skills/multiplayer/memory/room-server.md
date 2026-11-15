@@ -263,7 +263,7 @@ same UI paths run, and no game or test notices its absence.
   starts `wrangler dev` itself; `wrangler dev` passes a client's own
   `CF-Connecting-IP` through, which is how it tests two IPs. Point pages at
   it with `localStorage["neon.rs"]` (init script), not `?rs=` — NEW PARTY
-  navigates to `party.html?fresh=1` and drops the query (test-nat does the
+  navigates to `./?fresh=1` (was `party.html?fresh=1`) and drops the query (test-nat does the
   same: its 198.51.100.1 server could not be a `?rs=` anyway). The STUN
   override is storage-only on purpose (`neon.stun`, plain host:port): as a
   `?stun=` param a stranger's link could pick a forging STUN server.

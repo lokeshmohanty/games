@@ -1,12 +1,10 @@
 # The game SDK v2: a protocol, so a game can be written in any language
 
-*Built 2026-11-14 on branch `platform-v2` (Phase 2 of the plan of record,
-`~/.claude/plans/ethereal-honking-beaver.md`). The protocol, the shell's end
-of it (`lib/sdk-host.js`), the frame runtime, WebAssembly, the generated
-bindings and two examples (JavaScript, Rust) are built and tested. Still to
-come: managed state (Layer 2), adapters for the other languages, porting the
-ten games and dropping v1 (Phase 3). v1 ([sdk.md](sdk.md)) keeps working
-until then.*
+*Built 2026-11-14 (Phase 2 of the platform plan); managed state, the
+adapters and the ports of every game followed (Phase 3). SDK v1 was removed
+on 2026-11-15: every game and web app says `"sdk": 2`. What the platform
+does around a game — the sandbox, the manifest's base fields, the theme,
+results, the registry and the checks — is [platform.md](platform.md).*
 
 ## What changed, and why
 
@@ -27,7 +25,7 @@ written in. Every helper a game used to carry is now a **shell service**: the
 game sends a message and hears the result. The clock, the turn-wait banner,
 the host pause and sealing all run in the shell, against the real party.
 
-The sandbox has not changed (sdk.md, "What changed"): the frame is still
+The sandbox has not changed (platform.md, "The sandbox, and why"): the frame is still
 `sandbox="allow-scripts"` with an opaque origin and a CSP that allows no
 network. What changed is only what crosses the port.
 
@@ -106,7 +104,7 @@ arcade.managed({
   view({ seat }) { return … },                // what this seat may see; seat null = a spectator
   turn() { return [ids…] },                   // whose move it is: drives bots and the turn-wait banner
   bot({ seat }) { return action },            // a bot's move (null: none)
-  result() { return null | { kind, ranking, scores?, title?, details?, names? } },   // sdk.md "Reporting a result"; title, details, names: the end card's (below)
+  result() { return null | { kind, ranking, scores?, title?, details?, names? } },   // platform.md "Results"; title, details, names: the end card's (below)
   snapshot() { return state },                // for the heir
   restore({ snapshot }) { … },
   skip({ seat }) { … return true },           // optional: the host chose SKIP TURN
@@ -138,7 +136,16 @@ How it runs:
   server can deal the same. A result may carry `proof` (any JSON) for a
   server-side check of the run; Sudoku sends its solved grid. Offline or
   signed out, `seed` is local and the run does not rank. docs/accounts.md
-  "Solo runs".
+  "Solo runs". A game that ranks alone by a score sends it in `scores`
+  (Light Cycles: the seconds survived, to the tenth).
+- **Won against bots, counted apart.** When a signed-in player is the only
+  person in a match and every other seat is a bot, the shell asks the
+  server for a run as the match begins (not waited for; a game that runs
+  its own matches gets one at its start and after each result), and a win
+  goes to the game's board of wins against bots — never a rating. Nothing
+  for a game to do, with one exception: bot seats that are really people
+  on this phone must be named in the result's `names` (below), and then
+  the win does not count against bots. docs/accounts.md "Against bots".
 - **The end card** (Lokesh, 2026-11-15: everything, with the extra
   information behind a toggle so the screen stays simple). Always shown:
   - the title: `title` (≤ 40 characters) if the result has one, else YOU
@@ -253,7 +260,7 @@ The schema is the authority; this table is the map.
 What the services do, briefly. The long explanations are in the files they
 come from, which the shell now runs:
 
-- **Channels.** These work as in v1. A channel is wired as `g:<name>`, so a
+- **Channels.** A channel is wired as `g:<name>`, so a
   game cannot speak on the party's own channels. Messages for a channel the
   frame has not opened yet are held (up to 500) and delivered on `listen`.
   `to` addresses one player, but **addressed is not private**: the message
@@ -284,7 +291,7 @@ come from, which the shell now runs:
 - **`asset`** reads a file from the game's folder (never outside it) as
   bytes or text. A frame cannot load a `blob:` URL that the shell made, so to
   get a URL, make one in the frame from the bytes.
-- **`result`** works as in v1 (sdk.md, "Reporting a result"). Every peer may
+- **`result`** is the outcome (platform.md, "Results"). Every peer may
   send it, and it counts once.
 
 ### The theme, as values
@@ -299,7 +306,7 @@ fonts }`:
 These are values, not CSS, so a canvas, a WASM renderer or Python can use
 them directly. DOM games also have the CSS variables (`var(--accent)`).
 Colours from the theme are still the rule, and a literal colour is still only
-a warning (sdk.md, "Colours and type").
+a warning (platform.md, "Colours and type: the theme").
 
 ### Binary
 
@@ -438,11 +445,11 @@ and code generators for it. Not chosen:
 
 ## The manifest
 
-v2 adds these fields to sdk.md's `game.json`:
+These fields add to the base `game.json` (platform.md, "`game.json`"):
 
 | Field | |
 |---|---|
-| `"sdk": 2` | required for v2 |
+| `"sdk": 2` | required for every game and web app |
 | `"runtime"` | `"js"` (default), `"wasm"`, or `"python"` (the platform's Pyodide; adapters/python) |
 | `"state"` | `"managed"`: the platform runs the rules (Layer 2) |
 | `"tick"`, `"viewRate"` | managed and real-time: steps and views per second |
@@ -470,10 +477,9 @@ player can see this anytime"). `lib/rules.js` draws the file, with
   `just test-rules-screen` tests it at 390×844 in every theme, offline too.
 - **Content.** CONTRIBUTING.md, "How to play: RULES.md".
 
-**Web apps** (`app`, `kind: "shared"`; sdk.md "Web apps") run on v2 since
-2026-11-14, **whatever their manifest's `sdk` says**. A `shared` sdk 1 app
-such as Locale is upgraded as it mounts, so it needs no change. The frame
-gets `sdk/v2/runtime.js` and `sdk/v2/web-shim.js`, which speaks three
+**Web apps** (`app`, `kind: "shared"`; platform.md, "Web apps") run on v2,
+and since 2026-11-15 their manifest must say `"sdk": 2` like any game's (an
+`"sdk": 1` app was upgraded as it mounted until then). The frame gets `sdk/v2/runtime.js` and `sdk/v2/web-shim.js`, which speaks three
 protocol messages:
 - `asset`, for the app's own files, from `app.web`;
 - `http`, a request answered by the app's server on the host's phone (body
@@ -501,7 +507,7 @@ and `RTCDataChannel` are rejected outright.
 - **Why:** WebRTC is outside CSP. The review of 2026-11-14 had a sandboxed
   frame under the bridge's exact CSP gather candidates from a public STUN
   server.
-- **Known gap, as in v1:** a frame may also navigate itself (`location =
+- **Known gap:** a frame may also navigate itself (`location =
   …`), which CSP does not stop either. Its URL could carry data out. The
   static check and review are what stand between a game and that.
 
@@ -518,13 +524,15 @@ and `RTCDataChannel` are rejected outright.
   - Every message type must have been exercised, except `join`, `leave` and
     `hostNew`, which need a player to come and go.
   - The test watches through `NeonArcade.sdkTrace(direction, message)`.
-- **`just test-devkit`** plays each example (v1, v2 JavaScript, v2 Rust)
-  against a bot to the end, through the dev kit, at 390×844. It checks that
-  a v2 frame has no v1 runtime in it.
+- **`just test-devkit`** plays the examples (the unlisted `tic-tac-toe` and
+  the managed JavaScript, Rust, HTML/CSS, TypeScript, Go and C ones) against
+  a bot to the end, through the dev kit, at 390×844. It checks that a frame
+  has none of the shell's globals in it (only the protocol), that a `?dev=`
+  off this machine is refused, and that the dev kit's old address
+  (`sdk/v1/dev-server.mjs`, until 2027-02-15) serves the same file.
 
 ## What is deliberately not here yet
 
-- **Ports (rest of Phase 3).** Porting the ten games and dropping v1.
 - **The roster event.** The shell still compares the party every 250 ms,
   because away and reconnecting change without a roster event. It only
   *sends* on a change. A net.js event replaces the poll in Phase 4.

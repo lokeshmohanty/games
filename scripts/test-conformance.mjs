@@ -137,7 +137,7 @@ async function runInPage({ game, script }) {
 			waiting.delete(m.re);
 		} else if (m.t === "runtime.file" || m.t === "asset") {
 			// What sdk-host answers: the platform's runtime folder, or the game's own.
-			const base = m.t === "runtime.file" ? new URL("sdk/v1/pyodide/", document.baseURI) : new URL(game.base);
+			const base = m.t === "runtime.file" ? new URL("sdk/pyodide/", document.baseURI) : new URL(game.base);
 			try {
 				const res = await fetch(new URL(m.path, base));
 				if (!res.ok) throw new Error(res.status);

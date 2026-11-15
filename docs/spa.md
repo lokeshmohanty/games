@@ -1,7 +1,7 @@
 # The shell is one page (Solid + Vite)
 
-*Built 2026-11-15 on branch `platform-spa` (Phase 4 of the plan of record,
-`~/.claude/plans/ethereal-honking-beaver.md`). Lokesh chose pnpm.*
+*Built 2026-11-15 on branch `platform-spa` (Phase 4 of the platform plan).
+Lokesh chose pnpm.*
 
 ## Why
 
@@ -27,18 +27,31 @@ GitHub Pages has no rewrites, and the hash already carries invites (`#i=`,
 |---|---|
 | `./` | the portal |
 | `./?page=leaderboard` (or `profile`, `contribute`, `contributors`, `collections`) | that view; its own query parameters ride along |
-| `./?game=connect4`, `?mode`, `?fresh`, `?dev`, `?party`, or an invite or code hash | the party |
+| `./?game=connect4`, `?mode`, `?fresh`, `?dev`, `?party`, or an invite or code hash (`./?party#i=…`) | the party |
 
-The old pages (`party.html`, `leaderboard.html`, …) are redirect stubs that
-keep their query and hash, so links, bookmarks and installed shortcuts
-still work. The game shortcut pages (`connect4.html`, …) go straight to
-`./?game=…`.
+These are the only addresses. The old pages (`party.html`,
+`leaderboard.html`, `connect4.html`, …) were redirect stubs into them until
+2026-11-15, when they were deleted (Lokesh's decision): every link in the
+shell, the manifest's `start_url` (`./`) and shortcut (`./?party`), and the
+dev kit's printed links use the addresses above. **Every `party.html` link
+now 404s**, which Lokesh accepted on 2026-11-15. That covers:
 
-Every same-origin link to an old page name, including those in the shell's
-vanilla code, is caught by one click handler and becomes an in-app
-navigation (`navigate()`, `history.pushState`). party.js and net.js always
-leave a party word in the address when they rewrite it, so Back and Forward
-find the party again.
+- invites, codes and bookmarks made on an old page (`party.html#i=…`);
+- invites, party codes and friend JOIN links made *after* the deploy by a
+  phone still running the previous version, until it reloads — an installed
+  app's first session after a deploy runs the old snapshot;
+- an old installed app's "Party" shortcut;
+- a dev kit downloaded before the deploy, which prints `party.html?dev=`
+  links.
+
+A phone whose service worker is older than the shell (2026-11-14's snapshot)
+may show the old portal for a new invite once, until its worker updates.
+
+Every same-origin link to the shell (`./` or `index.html`, with any query
+and hash), including those in the shell's vanilla code, is caught by one
+click handler and becomes an in-app navigation (`navigate()`,
+`history.pushState`). party.js and net.js always leave a party word in the
+address when they rewrite it, so Back and Forward find the party again.
 
 ## The party layer
 
@@ -61,10 +74,9 @@ stage.
   Recently played, JOIN WITH A CODE, an invite): `mountParty` runs once per
   page, so the router's guard (App) asks the leave question when the old
   party is live, then does a full load of the new address.
-- **Share links** (invite, code, QR) are built on `party.html` with the
-  query, minus `page=` (`NeonArcade.shareBase`). A phone whose service
-  worker predates the shell then gets its old, working party page, and a
-  link made while the host looks at another view still opens the party.
+- **Share links** (invite, code, QR) are built on `./?party` with the
+  query, minus `page=` (`NeonArcade.shareBase`), so a link made while the
+  host looks at another view still opens the party.
 - **A view's chunk gone after a deploy** (hashed names): the view's
   ErrorBoundary reloads once, or shows RELOAD when a party is live. The
   service worker pins every page it takes over, a first visit included, so
@@ -88,7 +100,9 @@ stage.
    - It copies what is served as-is beside the build: lib/ (for the
      frames and the lazily loaded scripts), the frame runtimes in sdk/ (not
      its examples, adapters or bindings), games/, assets/, registry/,
-     community/, the old pages, the manifest, and CONTRIBUTING.md.
+     community/, the manifest, and CONTRIBUTING.md. It also publishes the
+     dev kit's transition copy at `sdk/v1/dev-server.mjs` (until 2027-02-15,
+     docs/platform.md).
    - It writes `dist/sw.js` from `sw.js`. The precache list is the
      template's own entries (icons, fonts) plus everything derived: every
      built chunk, page, lib/ script and stylesheet, frame runtime, preview
@@ -98,7 +112,9 @@ stage.
      `scripts/test-pwa.mjs` opens each from the portal with the network cut
      and plays it. The one exception is a Python game: Pyodide (~13 MB) is
      cached on first use, in a cache of its own that deploys do not prune
-     (`RUNTIME`, named by a hash of `sdk/v1/pyodide/`), so a Python game
+     (`RUNTIME`, named by a hash of `sdk/pyodide/`'s path, file names and
+     bytes, so moving the folder renames the cache and the old one is
+     pruned; it was `sdk/v1/pyodide/` until 2026-11-15), so a Python game
      needs one online play first; offline before that, the shell says so.
    - VERSION is a hash of exactly those bytes, with the community files.
      A deploy is therefore a new VERSION exactly when the offline copy
@@ -137,6 +153,13 @@ contribute, contributors; collections is new (no old page: the nav links
   weigh against lib/styles.css exactly as they did on their own page. A plain `.view-x a` prefix outranked
   `.neon-btn--accent` and turned button text the colour of its background.
 - **The site nav** is lib/nav.js, drawn into `nav[data-nav]` in `onMount`.
+  It is one row on phone and desktop: the tabs Games · Leaderboards ·
+  Community, and a ☰ menu at the right holding Add your game, Theme, sign in
+  or the profile, and the source on GitHub. Community has its own tabs,
+  Collections · Contributors, and opens on Collections. The row's height is
+  reserved in CSS, so the static first frame doesn't jump when it's drawn.
+  This replaced a bar of buttons above the tabs that crowded a phone
+  (2026-11-15).
 - **Room for the pill:** a live party's BACK TO GAME pill gets room at the
   bottom from one rule in lib/styles.css. The party's own top buttons
   (`.top-actions`) hide on every other view.

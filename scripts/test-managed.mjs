@@ -63,7 +63,7 @@ const site = await serve(8741);
 /** The dev kit's server for a folder of games; its base URL for `game`. */
 async function devServer(folder, port, game) {
 	port += PORT_OFFSET;
-	const dev = spawn("node", [join(ROOT, "sdk/v1/dev-server.mjs"), join(ROOT, folder), String(port)], { env: { ...process.env, NEON_PLATFORM: site.base }, stdio: "ignore" });
+	const dev = spawn("node", [join(ROOT, "sdk/dev-server.mjs"), join(ROOT, folder), String(port)], { env: { ...process.env, NEON_PLATFORM: site.base }, stdio: "ignore" });
 	process.on("exit", () => dev.kill());
 	const base = `http://127.0.0.1:${port}/${game}/`;
 	for (let i = 0; i < 50 && !(await fetch(base + "game.json").then((r) => r.ok, () => false)); i++) await new Promise((r) => setTimeout(r, 100));
@@ -94,7 +94,7 @@ async function party(devBase, n) {
 		u.searchParams.set("dev", devBase);
 		return u.href;
 	};
-	await pages[0].goto(`${site.base}/party.html?${new URLSearchParams({ dev: devBase, fresh: "1", rs: "http://127.0.0.1:1" })}`);
+	await pages[0].goto(`${site.base}/?${new URLSearchParams({ dev: devBase, fresh: "1", rs: "http://127.0.0.1:1" })}`);
 	await pages[0].locator(".party-member").first().waitFor({ timeout: TIMEOUT });
 	for (const joiner of pages.slice(1)) {
 		const host = pages[0];
@@ -184,7 +184,7 @@ try {
 		r.setTeam(p2Id, "B");
 		r.setTeam(p3Id, "spectator");
 	}, { hostId, p2Id, p3Id });
-	await host.locator(".party-game", { hasText: "TIC TAC TOE (JS)" }).first().click({ timeout: TIMEOUT });
+	await host.locator(".party-game", { hasText: "TIC TAC TOE" }).first().click({ timeout: TIMEOUT });
 	const [fh, f2, f3] = await Promise.all(A.pages.map((p) => gameFrame(p, TIMEOUT)));
 	const [vh, v2, v3] = await Promise.all([fh, f2, f3].map((f) => viewUntil(f, (v) => Array.isArray(v.board))));
 	check("each phone gets its own view: X, O and a spectator", vh?.you === 1 && v2?.you === 2 && v3?.you === 0, { host: vh?.you, p2: v2?.you, p3: v3?.you });

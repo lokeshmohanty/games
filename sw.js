@@ -1,9 +1,10 @@
 // sw.js — the service worker that makes the arcade installable and playable
 // offline.
 //
-// It lives at the repo root so its scope covers every page, and it is written
-// the same way as everything else here: a plain script, no build step, no
-// dependencies. Registered by lib/pwa.js, which knows not to try on file://.
+// It lives at the repo root so its scope covers the whole site. This file is
+// the template: scripts/assemble.mjs writes dist/sw.js from it, with the
+// precache list and VERSION filled in. Registered by lib/pwa.js, which does
+// nothing without a secure context.
 //
 // ## Why a snapshot (2026-11-14; was network-first since 2026-08-15)
 //
@@ -21,8 +22,7 @@
 // What is not in the snapshot comes from the network and is kept.
 //
 // What makes a deploy arrive: VERSION is a hash of every precached file
-// (scripts/sw-version.mjs, checked by `just test` and CI; the deploy rehashes
-// with the community games). A new deploy therefore means a new sw.js, which
+// (scripts/assemble.mjs, at build time, with the community games). A new deploy therefore means a new sw.js, which
 // the browser finds on its own update check and installs beside the old
 // snapshot — all of it, or not at all. The next page load is the new deploy,
 // whole; a page already open stays on the snapshot it was loaded from until it
@@ -36,10 +36,10 @@
 // real strategy register with `?snapshot` (lib/pwa.js reads localStorage
 // "neon.sw" = "snapshot").
 
-// A hash of SHELL's files and this one — written by scripts/sw-version.mjs,
+// A hash of SHELL's files and this one — written by scripts/assemble.mjs,
 // never by hand.
 const VERSION = "arcade-dev"; // dist/sw.js: a hash of what it precaches (scripts/assemble.mjs)
-// The Python runtime's own cache (isAsset): named by a hash of sdk/v1/pyodide/,
+// The Python runtime's own cache (isAsset): named by a hash of sdk/pyodide/,
 // so it outlives deploys that leave Pyodide alone and goes when it changes.
 const RUNTIME = "arcade-pyodide-dev"; // dist/sw.js: scripts/assemble.mjs
 // Network-first for code, for development (see above).
@@ -94,7 +94,7 @@ self.addEventListener("install", (event) => {
 			// would replace a whole one, leave holes offline, and refill them
 			// from whatever the network hands back. A failed install keeps the
 			// old worker, and the browser tries again on its next update check.
-			// (A file listed but absent fails scripts/sw-version.mjs, so a 404
+			// (A file listed but absent fails scripts/assemble.mjs, so a 404
 			// here is a network problem, not a stale list.)
 			//
 			// `no-cache`, not `reload`: the browser revalidates what its HTTP cache
@@ -194,7 +194,7 @@ async function prune() {
 /**
  * Assets are big and stable; code is small and must agree with its siblings.
  *
- * The Python runtime (sdk/v1/pyodide/: ~13 MB for a Python game's core, more
+ * The Python runtime (sdk/pyodide/: ~13 MB for a Python game's core, more
  * for a web app's server, lib/py-server.js) is not in the precache: few
  * players open a Python game, and 13 MB is not a thing to pull down on mobile
  * data at install for everybody. It is cached the first time it is used —
@@ -204,9 +204,9 @@ async function prune() {
  * says so (docs/sdk-v2.md, "Python").
  */
 function isAsset(url) {
-	return /\/assets\/|\/sdk\/v1\/pyodide\/|\.(?:png|jpg|jpeg|gif|svg|webp|ico|woff2?)$/i.test(url.pathname);
+	return /\/assets\/|\/sdk\/pyodide\/|\.(?:png|jpg|jpeg|gif|svg|webp|ico|woff2?)$/i.test(url.pathname);
 }
-const isRuntime = (url) => /\/sdk\/v1\/pyodide\//.test(new URL(url).pathname);
+const isRuntime = (url) => /\/sdk\/pyodide\//.test(new URL(url).pathname);
 
 /** Put a copy in the cache, ignoring the failures that are none of our business. */
 async function store(request, response) {
@@ -237,8 +237,8 @@ async function cacheFirst(request) {
 
 /**
  * Code, from this VERSION's snapshot. Not in it (a file outside SHELL): the
- * network, kept for offline. A navigation with a query (party.html?game=…) is
- * the precached page — the query only steers its script.
+ * network, kept for offline. A navigation with a query (./?game=…) is the
+ * precached page — the query only steers its script.
  */
 async function snapshot(request, event) {
 	const navigating = request.mode === "navigate";
@@ -286,8 +286,8 @@ async function networkFirst(request) {
 	const res = await fetching;
 	if (res) return res;
 
-	// A page we have seen, but not with this query: party.html?game=… is the
-	// precached party.html, and the query only steers its script. Whether the
+	// A page we have seen, but not with this query: ./?game=… is the
+	// precached shell, and the query only steers its script. Whether the
 	// exact URL was cached on an earlier visit is luck (test-pwa caught it).
 	if (request.mode === "navigate") {
 		const page = await caches.match(request, { ignoreSearch: true });

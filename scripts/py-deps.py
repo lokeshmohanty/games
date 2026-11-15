@@ -6,10 +6,10 @@ Called by scripts/app-build.mjs:
 
 Each dependency, and each of theirs, is one of:
 
-    in the lock  Pyodide's own build (sdk/v1/pyodide/): loaded by name
+    in the lock  Pyodide's own build (sdk/pyodide/): loaded by name
     a wheel      a pure-Python wheel from PyPI, saved to <out dir>
     missing      nothing that runs in a browser; the server imports it as a
-                 stub (sdk/v1/arcade_server.py), and so does every package
+                 stub (sdk/arcade_server.py), and so does every package
                  that needed it
 
 Printed as JSON: {"deps": [...], "wheels": [...], "missing": [...]}.

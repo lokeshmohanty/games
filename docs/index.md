@@ -1,6 +1,6 @@
 # games — Documentation
 
-*Last synced: 2026-11-12 (Neon Bid).*
+*Last synced: 2026-11-15 (SDK v1 and the old pages removed; docs/platform.md; lib/README.md's API and connectivity moved here).*
 
 Entry point for all project documentation. Any LLM should be able to answer
 questions about this project from this folder alone.
@@ -8,22 +8,23 @@ questions about this project from this folder alone.
 ## Contents
 
 - [The portal](#the-portal) — the home screen's sections, the phone layout and the search
-- [Connecting players](#connecting-players) — the serverless handshake, paid once per person
-- [Parties](#parties) — the persistent group, teams, switching games, host succession
+- [Connecting players](#connecting-players) — the serverless handshake, paid once per person; `scanQr`; connectivity (relaying, STUN, NAT classification, no TURN)
+- [Parties](#parties) — the persistent group, teams, switching games, host succession; the party API (`mountParty`, the room controller, lib/lobby.js)
 - [Bots](#bots) — why there is no single-player section, and what a bot actually is
 - [Hidden information](#hidden-information) — sealed private state, and commit-reveal
 - [Rounds and phases](#rounds-and-phases) — the shared clock for timed and simultaneous-turn games
-- [Adding a game](#adding-a-game) — the module contract
-- [Accounts and the social layer](accounts.md) — sign-in, ranked matches, leaderboards, friends, invites, groups, feedback, the public snapshot; what is stored; the one-time setup
+- [Adding a game](#adding-a-game) — where the author's guide and the protocol live
+- [Accounts and the social layer](accounts.md) — sign-in, ranked matches, leaderboards (ranked, solo runs, and wins against bots kept apart), friends, invites, groups, feedback, the public snapshot; what is stored; the one-time setup
 - [A prompt for contributors' AI](contributor-prompt.md) — paste into an AI assistant to adapt or write a game for the platform
 - [Suggestions](suggestions.md) — formalising and improving the platform: contract, contributors, quality, trust, players, operations
+- [Developing the arcade](development.md) — running it, where the code is, the stack and why, tests, the service worker, previews and icons
 - [The shell is one page](spa.md) — Solid + Vite, the query router, the party kept across views, the build and the generated service worker
-- [The game SDK v2](sdk-v2.md) — the language-neutral message protocol (sdk/v2/protocol.json), shell services, WebAssembly, bindings, examples (branch `platform-v2`)
-- [The game SDK](sdk.md) — framed games: sandbox, bridge protocol, manifest, rules for outside authors (branch `platform`)
+- [The game SDK v2](sdk-v2.md) — the language-neutral message protocol (sdk/v2/protocol.json), shell services, managed state, WebAssembly, adapters, bindings, examples
+- [The platform](platform.md) — the sandbox, the manifest's base fields, theme, results, the rules a game follows, the registry and pins, the submission check, the dev kit, validate-game, web apps
 - [Installing it](#installing-it) — the PWA: manifest, icons, service worker, offline
 - [Performance](perf.md) — the phone-speed harness (`just perf`), the 2026-11-14 baseline, and each refactor phase measured against it
 - [Testing across real networks](network-testing.md) — the NAT lab: symmetric NAT, network switches, lossy links, a blocked room server
-- [`../lib/README.md`](../lib/README.md) — the P2P core, registry, party, lobby and QR APIs
+- [`../lib/README.md`](../lib/README.md) — every lib/ file in a line, with pointers here for depth
 - [Neon Bid](neon-bid.md) — the sealed-bid gem auction's design, as approved
 - Neon Fission (`games/neon-fission/`, rules in its `RULES.md`) — the chain-reaction grid for 2–8: a managed ffa game; one person with bots can hand bot seats to people on the same phone before the first move (those seats' turns are reported as the person's, so no bot plays them; the end card names them via the result's `names`, docs/sdk-v2.md)
 - (still missing: design notes for the other games, decision log)
@@ -40,20 +41,20 @@ questions about this project from this folder alone.
 | Regenerate a portal preview gif | `scripts/make-preview.sh <game>` (or `all`) — plays the game headless and writes `assets/<game>.gif` |
 | Serve it locally | `just run` — http://127.0.0.1:8000. `just serve-lan` binds every interface for phone testing, but a plain LAN http:// address is not a secure context, so SCAN REPLY will not work there (use PASTE) |
 | Run everything | `just test`, or `just --list` for the rest |
-| Check the offline precache | `just check-precache` — every page and module in `sw.js`'s `SHELL`; nothing else warns when one is missed |
-| Play locally with several peers | open `party.html`, click ADD PLAYER, open the invite link in another tab, paste the reply back (`file://` works; `python3 -m http.server 8000` also fine) |
-| Test reply-code **scanning** | `node scripts/test-scan.mjs` — renders a real-sized reply code into a camera frame and feeds it to Chrome as a fake capture device. Scanning needs a camera *and* a secure context, so `file://` and plain `http://<ip>` will not do; the test serves the repo over `http://127.0.0.1` for that reason |
+| Check the offline precache | `just build` — `scripts/assemble.mjs` derives the precache list from what it built and copied, and fails if a listed file is missing; `just test-pwa` then plays every game offline |
+| Play locally with several peers | `just run`, open http://127.0.0.1:8000/?party, click ADD PLAYER, open the invite link in another tab, paste the reply back |
+| Test reply-code **scanning** | `node scripts/test-scan.mjs` — renders a real-sized reply code into a camera frame and feeds it to Chrome as a fake capture device. Scanning needs a camera *and* a secure context, so a plain `http://<ip>` will not do; the test serves the site over `http://127.0.0.1` for that reason |
 | Test installability and offline | `node scripts/test-pwa.mjs` — checks the manifest and icons, asserts the portal's layout at 390x844, asks **Chrome itself** whether anything blocks installing, then cuts the network and loads the pages |
 | Test that every game is playable alone | `node scripts/test-bots.mjs` — starts each game with bots and no second browser, checks the bots actually play (Connect 4 is never left an open win), and checks no peer opens a connection to one |
 | Test the private-state and round layers | `node scripts/test-plumbing.mjs` — real `Room` routing over a fake transport: a sealed message is unreadable by the peer relaying it, a tampered one is refused, commitments verify, phases advance |
-| Test Battleship's rules and audit | `node scripts/test-battleship.mjs` — fleets, sinking, and the audit tested by *breaking* it four ways |
+| Test Battleship's rules and audit | `node battleship/test-battleship.mjs` in the web-games repo (lokeshmohanty/web-games) — fleets, sinking, and the audit tested by *breaking* it four ways |
 | Test Undercover | `node scripts/test-undercover.mjs` — the deal, the win conditions, and the table sizes that survive a wrong vote |
-| Test Liar's Dice | `node scripts/test-liars-dice.mjs` — wilds, the bid ladder, the at-least rule, and the reveal race that once accused an honest player |
+| Test Liar's Dice | `node liars-dice/test-liars-dice.mjs` in the web-games repo — wilds, the bid ladder, the at-least rule, and the reveal race that once accused an honest player |
 | Test Neon Bid's rules, audit and bot | `node scripts/test-neon-bid.mjs` — second price, the reserve, tie refunds, scoring and tie-breaks, the bid audit broken six ways, and the bot measured against a random and an even-spending bidder |
 | Test Neon Fission's rules and bot | `node scripts/test-neon-fission.mjs` — capacities, a three-wave chain (RULES.md's example), conversion, knock-outs only after a first turn, the chain stopping once one player owns every orb, the bot (legal, fast, takes a win; vs random and greedy players), 210 whole bot games that all end, and the same-device seats in the managed layer |
-| Test the Light Cycles arena | `node scripts/test-light-cycles.mjs` — head-on collisions, spawn symmetry, and the bot measured against a rider that only avoids crashing |
+| Test the Light Cycles arena | `node light-cycles/test-light-cycles.mjs` in the web-games repo — head-on collisions, spawn symmetry, and the bot measured against a rider that only avoids crashing |
 | Rebuild the app icons | `node scripts/make-icons.mjs` after editing `assets/icon.svg` — renders the PNGs the manifest needs |
-| Get back to the portal | every page has a fixed `.portal-link` ("← ALL GAMES") linking to `index.html` |
+| Get back to the portal | the party has a fixed `.portal-link` ("← All games", in index.html) linking to `./`; it keeps the party (LEAVE PARTY leaves it) |
 
 Per-game recorder scenarios, the conversion profiles, and the NixOS/Playwright
 traps live in the `game-previews` skill (`.agents/skills/game-previews/SKILL.md`).
@@ -69,13 +70,13 @@ before changing either subsystem:
 
 ## The portal
 
-`index.html` is `start_url`, so it is the first thing an installed app shows.
+The portal (`./`, the manifest's `start_url`) is the first thing an installed app shows.
 **Since 2026-11-13 its cards are drawn, not written** (`lib/portal.js`): one
 per game in `NeonArcade.CATALOG` — this repo's manifests and every pinned
 outside repo's — so a merged registry PR appears with no edit here. Each card
 has your own record on this device and, for a community game, its author. A
 game is starred (☆, `lib/stats.js`) and given feedback (💬) from inside it:
-the top right of party.html, beside PARTY (2026-11-14; they were on every
+the party's top right, beside PARTY (2026-11-14; they were on every
 card). Its layout is asserted rather than eyeballed, in `test-pwa.mjs`; what
 is in each section, in `test-portal.mjs`.
 
@@ -239,9 +240,65 @@ working:
 `scripts/test-scan.mjs` covers both, including the aiming that precedes a real
 scan and a CPU throttled to phone speed.
 
+`NeonArcade.scanQr({ onResult, onError })` returns `{ video, stop }`: mount
+`video`, and always call `stop()`. `onError` is always delivered
+asynchronously, so `scanner = scanQr({ ... })` has finished assigning before
+any callback can try to clean `scanner` up. Camera access needs a secure
+context, so scanning works on the deployed `https://` site and on loopback but
+not over a plain `http://` LAN address; the lobby says so and falls back to
+pasting.
+
+### Connectivity
+
+Moved here from lib/README.md on 2026-11-15; net.js is the code.
+
+- **Relayed signalling.** Once any link exists, offers and answers for every
+  further pair travel over it (`_openRelayed` in `net.js`), which is why the
+  mesh costs a player nothing the star did not. The host is a field in the
+  party record, not the shape of the network.
+- **Relayed messages.** A pair that cannot connect directly is not fatal:
+  messages to it are relayed through a member who can reach both, capped at two
+  hops and deduplicated by envelope id. A relayed negotiation that has not
+  opened after 15 s is abandoned and, the first time, tried once more the other
+  way round ([Honest gaps](#honest-gaps)). Nobody offers to a seat held for a reconnect until
+  its owner is back.
+- **Big messages.** Anything over ~12 KB is chunked and reassembled, and sends
+  pause when the channel's buffer fills, so per-frame broadcasts cannot grow it
+  without bound.
+- **STUN is the only outside contact** (`stun.cloudflare.com`,
+  `stun.l.google.com`), used to discover each peer's public IP:port; it never
+  sees game data. Pass `iceServers` to `createHost`/`createGuest` to override,
+  or set `localStorage["neon.stun"] = "host:port"` (or two, comma-separated)
+  for a whole session — the NAT lab's hook (`scripts/test-nat.mjs`), STUN only.
+  Deliberately not a query param: a link anyone can send must not choose a
+  player's STUN server.
+- **NAT classification.** `NeonArcade.classifyNat(iceServers?, { fresh }?)`
+  asks those two STUN servers (two hosts, two ports) where one local socket
+  appears from, remembered per set of servers unless `fresh`. Two public ports
+  for one base mean a **hard** NAT (endpoint/port-dependent mapping), which
+  connects only as the ICE offerer. Resolves `true` (two ports for one base, at
+  once), `false` (an address family with one mapping and no STUN error of its
+  own, 2 s after its first mapping or at gathering complete — another family's
+  timeouts do not veto it), or `null` (fewer than two servers, every mapped
+  family erroring, nothing by 5 s). No traffic but STUN to servers already
+  configured. room-join stores it as `room.natHard`, marks that side's offers
+  `h.`, and its glare rule lets a hard offer stand over a plain one
+  ([room-server.md](room-server.md), "Who offers to whom").
+- **Gathering** stops shortly after the first server-reflexive candidate rather
+  than waiting for `complete` (the rest is usually redundant interfaces), which
+  is what makes the invite QR appear promptly. Candidates are otherwise kept,
+  including `.local` mDNS ones: peers resolve them over multicast DNS, and on a
+  LAN with no route to STUN they are the only way two browsers connect. The one
+  exception is the ICE-TCP `tcptype active` placeholder, which two browsers can
+  never pair.
+- **No TURN server**, deliberately: running one would reintroduce the
+  dependency this design removes. Networks that block direct connections
+  surface as an explicit error rather than an indefinite wait. To cover them
+  anyway, pass a TURN entry in `iceServers`.
+
 ## Parties
 
-`party.html` is the shell that keeps a group together. Because every game is a
+The party (`./?party`, lib/party.js) is the shell that keeps a group together. Because every game is a
 mountable module and the room is a mesh, **switching games is a DOM swap, not a
 page navigation** — nobody reconnects and nobody re-scans.
 
@@ -333,6 +390,102 @@ A page reload is the one case that cannot be rescued: WebRTC credentials are
 per-connection, so a reloaded browser must handshake again — though any member
 can invite them straight back in, and a room-server member does so on its own.
 
+### The party API
+
+Moved here from lib/README.md on 2026-11-15. The shell's internal contract:
+games never call it (they speak [sdk-v2.md](sdk-v2.md) from a frame).
+
+**`NeonArcade.mountParty(container, stage)`** (lib/party.js) mounts the party
+screen in `container`; mounted games build themselves into `stage`. It handles
+joining (`#i=` / `#c=` in the URL), recruiting, teams, switching and
+succession.
+
+**A game's address is a shortcut into it** (2026-11-13): `./?game=<id>&fresh=1`,
+a portal card's link ([spa.md](spa.md)). With `?game=` the host of a fresh
+party gets a **quick start** first: the game's name as the title, INVITE A
+FRIEND and PLAY A BOT / PLAY ALONE (enough bots to make it legal), then ADD
+BOT / REMOVE BOT and START GAME (START alone for a local game, which shows
+nothing else). START seats people by the rule the old game pages had — host on
+A; a one-against-one game puts the first other member on B and the rest watch;
+a bigger team game deals the others out alternately, B first; any other game
+seats everyone on one side; past the game's seats, the rest watch. After the
+first game it is an ordinary party. A party opened this way does not ask a
+lone host before leaving.
+
+**The room controller** (lib/net.js `createHost` / `createGuest`):
+
+| method | description |
+| --- | --- |
+| `selfId` | this peer's random id |
+| `peerCount()` | number of other members |
+| `getMembers()` | `[{ id, name, team, joined, bot? }]`, in join order |
+| `getMember(id)` / `self()` | one member record |
+| `isHost()` / `hostId()` | who holds the crown |
+| `directPeers()` | peers this browser has an actual connection to |
+| `getGame()` | the mounted game's id, or null |
+| `makeAction(name)` | `{ send(data, { target }?), onMessage }` — broadcast or targeted |
+| `setName(name)` | change your display name |
+| `setTeam(id, team)` | host only: `"A"`, `"B"` or `"spectator"` |
+| `setGame(id)` | host only: everyone mounts it; `null` returns to the party |
+| `transferHost(id)` | host only: hand over the crown (never to a bot) |
+| `heir()` | who would take the crown if we left now; skips us, bots and reconnecting seats; `null` if nobody |
+| `removeMember(id)` | host only: remove someone (a bot included) |
+| `addBot(team?)` | host only: seat a simulated member; defaults to the emptier side. Returns its id |
+| `bots()` | every bot in the roster (readable by anyone) |
+| `emitAs(botId, action, data, opts?)` | host only: send as a bot, and deliver locally too |
+| `NeonArcade.isBotId(id)` | a bot's id is prefixed `bot_`, so routing can tell without the record |
+| `deleteParty()` | host only: end it for everyone |
+| `leave()` | tell the party we are going (the seat drops at once), then close every connection. Never called on reload/unload |
+| `detach()` | close every connection *without* telling anyone, as a reload would — the seat is held as RECONNECTING. For when the same member id is reconnecting from elsewhere (another tab took the seat; room-join's "displaced") |
+| `createInvite({ forPeer, retry, hard }?)` | mint an invite (any member). Refuses with `err.reason === "full"` at `maxMembers` — unless `forPeer` names a member who already holds a seat (a reload coming back), whose own seat is not counted against them. `retry` marks the role-swapped second try (below); `NeonArcade._codec.isRetrySignal(code)` reads that mark synchronously. `hard` marks an offer from a hard-NAT network (`natHard`, below; `h.` prefix, `isHardSignal`) for the far side's glare rule. Rejects with `reason: "withdrawn"` if the invite was dropped while it gathered. Resolves `{ code, link, withdraw }`: `withdraw()` closes the invite's PeerConnection unless an answer already took it — call it when the invite is cancelled or replaced |
+| `natHard` | this network's NAT maps one local port to different public ports per destination (`true`), does not (`false`), or unknown (`null`). Set by room-join from `NeonArcade.classifyNat()` — in parallel with the dial, never awaited, and asked again on isolation and on `online` / `navigator.connection` `change`; pin it with the `natHard` option |
+| `dropInvites(forPeer)` | close every invite minted `forPeer` that no answer has taken — an invite never expires on its own, so whoever knows it will not be answered (the far side's glare rule set it aside, the peer went away) drops it. One that took an answer is left to finish. Returns how many it closed |
+
+`makeAction` is idempotent: calling it twice with one name returns the same
+channel, so `room.makeAction("state").send(...)` inside a helper is fine.
+
+`createHost`/`createGuest` take `onLeave(reason)`, called once on every exit:
+`"left"` (`leave()`), `"evicted"` (the host removed us), `"closed"` (the
+party was deleted) or `"detached"` (`detach()`). `lib/room-join.js` uses it to
+release the room-server claim — on every reason but `"detached"`.
+
+`onError(message, info?)` carries `info.reason === "no-route"` when a link
+failed ICE and we hold no other — the pair has no path (no TURN).
+`onRouteFailed(peerId, { offered, message })` comes first, for a link made
+with `createInvite`/`answerInvite` on its first try: return true when you can
+still signal that peer, and swap the roles — offer back with
+`createInvite({ forPeer, retry: true })` if we answered, or expect their offer
+if we offered (the no-route verdict then waits 8 s for it). room-join does
+this over the room server. And `onIsolated()` fires when the *last* link
+closes while the roster still has people: the mesh has nothing left to
+renegotiate over, so room-join re-dials the room server to be offered to again
+([network-testing.md](network-testing.md)).
+
+A direct link both ends have described that has not opened 20 s later
+(`room.openTimeoutMs`) is failed as ICE `failed` would be — once ICE is up
+(DTLS/SCTP still retrying) it gets one more period first. The offerer's clock
+starts in `acceptAnswer`. The answerer's starts only with
+`answerInvite(code, { watch: true })`, which is for an answer a machine
+delivers (room-join passes it). The scan/paste flows (party.js, lobby.js) call
+`answerInvite(code)` without it: a person carries that reply back, for as long
+as it takes.
+
+**Shared handshake pieces** (lib/lobby.js; `party.js` requires it to be loaded
+first, which `src/main.tsx`'s import order does):
+
+| export | description |
+| --- | --- |
+| `NeonArcade.el(tag, props)` | the small DOM builder the party screen uses |
+| `NeonArcade.savedName()` / `rememberName(name)` | the display name remembered in `localStorage` (`neon.name`) |
+| `NeonArcade.shareBlock({ label, hint, value, qrValue, linkValue, title })` | a code box with a copy button and a QR; a labelled `.share` card when `label` is given. `linkValue` adds a second copy-as-link button so the QR stays small |
+| `NeonArcade.replyEntry({ room, setStatus, placeholder, scanPrompt, onConnected })` | the inviter's reply box with CONNECT / PASTE / SCAN REPLY. Returns `{ nodes, row, close }` — place `nodes`, add buttons to `row`, and always call `close()` on teardown (it stops the camera) |
+| `NeonArcade.ask(question, { ok, cancel })` | a yes/no question in the page's own `<dialog class="neon-ask">` (buttons `[data-ask="yes"]` / `[data-ask="no"]`); resolves `true` for yes. Never `confirm()`: it freezes the page's JS — the host's game loop and the mesh's relaying with it. Escape and a tap outside mean no; a second question dismisses the first |
+| `NeonArcade.toast(text, kind)` | a notice over whatever is on screen (`.neon-toasts`, under the portal link), `kind` `"good"` / `"warn"`; takes no taps, gone after 4.5 s, at most 3 |
+| `NeonArcade.presence()` | `{ sync(room), left(room, id, info) }`: feed it every roster callback and it toasts what changed — joined, left (with the reason), lost connection (after 2.5 s still lost) and back, the crown moving (after 1.2 s still moved). The first sync with a room is silent |
+| `NeonArcade.guardParty({ room, askAlone })` | register the page's party: `room()` returns the live room or null. From then on "← All games" (and any `a[data-leaves]`), back / swipe-back (a history entry pushed on the first tap) and `beforeunload` (only with another person present) all go through `leaveParty`. `askAlone` (boolean or function): ask even with nobody else here (the party shell, except a party a game's address opened) |
+| `NeonArcade.leaveParty(question)` / `leaveQuestion(room, question)` | ask (naming the heir, for a host), then `leave()` and wait for `roomSettled()`; resolves `true` once it may navigate, `false` if they stayed. Not asked, it still leaves — that is what drops the rejoin token |
+| `NeonArcade.REPLY_NOW` / `NeonArcade.replyFailed(setStatus)` | the replier's side of a hand-carried reply: the "do it right away" sentence for the reply screen (between some networks a reply works for ~15 s — [Honest gaps](#honest-gaps)), and, on a `no-route` before the link ever opened, the error status plus `{ hint, again }` — a hint node and a MAKE A NEW REPLY button (a reload: the same `#i=` invite answered afresh) for the caller to place |
+
 ## Bots
 
 **There is no single-player section, and no single-player mode.** Every game is
@@ -392,7 +545,9 @@ the one browser running the bot would be the one that never saw it move).
 ## Hidden information
 
 Two problems stand between this architecture and any game with a secret, and
-they need different answers. `lib/secrets.js` has both.
+they need different answers. `lib/secrets.js` has both, and a game reaches
+them as SDK v2 shell services: `seal.*`, `commit`, `verify` (docs/sdk-v2.md,
+"The catalogue").
 
 **A "private" message is not private.** `makeAction().send(data, { target })`
 is *addressed*, not sealed. With no TURN server, a pair that cannot connect
@@ -401,11 +556,9 @@ peer can reach both — another player's browser. Your hand travels through the
 hands of the people you are hiding it from.
 
 ```js
-const secrets = NeonArcade.makeSecrets(room, { onError: (e) => show(e.reason) });
-await secrets.ready();
-const hand = secrets.channel("hand");
-hand.onMessage = (cards, { from, to }) => render(cards);
-await hand.send(playerId, cards);       // sealed end to end
+arcade.send("seal.listen", { ch: "hand" });   // every phone: publishes its key too
+arcade.on("sealed", ({ ch, d, from, to }) => ch === "hand" && render(d));
+await arcade.request("seal.send", { ch: "hand", to: playerId, d: cards });  // sealed end to end
 ```
 
 Each browser publishes an ECDH public key on its own **party record** — chosen
@@ -423,25 +576,27 @@ private state through the same handler a person's does.
 a legitimate recipient of. No addressing fixes that; commitment does.
 
 ```js
-const c = await secrets.commit(myFleet);   // { digest, nonce, value }
-publish(c.digest);                          // now
-publish({ value: c.value, nonce: c.nonce });// at the reveal
-await secrets.verify(opened);               // everyone checks
-secrets.keep("battleship", c);              // survives a reload of this tab
-secrets.kept("battleship");                 // ...and comes back after one
+const c = await arcade.request("commit", { value: myFleet });   // { digest, nonce }
+publish(c.digest);                                               // now
+publish({ value: myFleet, nonce: c.nonce });                     // at the reveal
+const { valid } = await arcade.request("verify", { digest, nonce, value });  // everyone checks
+arcade.send("session.set", { key: "fleet", value: JSON.stringify({ myFleet, ...c }) });  // survives a reload of this tab
+(await arcade.init).session.fleet;                               // ...and comes back after one
 ```
 
 **A reload must not turn an honest player into a cheat.** A reload keeps the
 seat but not the page, so a commitment held only in a closure is gone: the
-player cannot open it, and the audit then flags them. `keep`/`kept` hold it
-in this tab's `sessionStorage`, scoped by member id. A kept value is never
+player cannot open it, and the audit then flags them. `session.set` keeps it
+in this tab's session storage, which the shell holds for the frame (a
+sandboxed frame has none), and `init.session` hands it back after a reload
+(lib/secrets.js `keep`/`kept` is the same idea in the shell). A kept value is never
 trusted by itself — Battleship, Liar's Dice and Neon Bid take it back only
 when the digest the host published for them is its digest (or, for a bid
 still being collected, when the host already counts them in). Battleship
 also re-sends a returner the last volley, whose answer they owed while away.
 The re-sync itself comes from the party shell: a member who mounts a running
 game says so, and the host's game re-sends its state (`onPeerJoin(id,
-{ back: true })`, lib/README.md). Draw & Guess replays the canvas so far.
+{ back: true })`, lib/party.js). Draw & Guess replays the canvas so far.
 test-worker section 10 reloads a guest mid-game in six games.
 
 The digest is taken over a **canonical** serialisation — object keys sorted at
@@ -449,11 +604,11 @@ every depth — because `JSON.stringify` preserves insertion order, so a value
 that has been through the network can serialise differently from the one that
 was hashed. That is a verification failure with no bug behind it.
 
-Both halves need WebCrypto, which needs a secure context. `file://` **is** one
-in Chrome and Firefox, so the project's `file://` habit is safe here — but the
-check is made at runtime, and `secrets.privacy()` returns `"plain"` rather than
-silently sending in the clear. A game with a secret should refuse to deal on
-`"plain"` — Battleship does exactly that.
+Both halves need WebCrypto, which needs a secure context. The arcade is served
+over https (or loopback), which is one — but the check is made at runtime: with
+no WebCrypto, `seal.send` is refused ("no WebCrypto") rather than silently
+sending in the clear (lib/secrets.js `privacy()` is `"plain"`). A game with a
+secret should refuse to deal then.
 
 ### The worked example: Battleship
 
@@ -467,7 +622,7 @@ half right. A digest proves only that the fleet was decided before the shooting
 started; a player can commit honestly and then simply lie about a hit. So the
 reveal runs two checks — the digest against the revealed fleet, **and** every
 answer replayed against it. A third catches the fleet that was legal-looking but
-overlapping. `scripts/test-battleship.mjs` tests the audit by breaking it four
+overlapping. `battleship/test-battleship.mjs` (web-games) tests the audit by breaking it four
 ways, because a commitment nobody can fail is decoration.
 
 Battleship uses `commit`/`verify` but **not** the sealed channel: a fleet never
@@ -536,28 +691,32 @@ case where they cannot — and that case also needs a dealer nobody has to trust
 `lib/rounds.js` is the clock Draw & Guess wrote by hand, generalised. The host
 owns it and peers mirror; time crosses the wire as a **duration, never a
 timestamp**, because two phones' clocks disagree by more than these phases last.
+A game reaches it as the SDK v2 `timer.*` service (docs/sdk-v2.md); the shell
+runs the clock.
 
 ```js
-const rounds = NeonArcade.makeRounds(ctx, {
-  rounds: 5,
-  phases: [{ name: "lock", ms: 20000, collect: true }, { name: "resolve", ms: 3000 }],
-  botSubmit: (botId) => chooseFor(botId),
-  onPhase: (i) => render(i),
-  onCollect: ({ entries }) => resolve(entries),   // host only
+// every phone opens the same clock; the host's runs it
+arcade.send("timer.open", { name: "t", rounds: 5, bots: true,
+  phases: [{ name: "lock", ms: 20000, collect: true }, { name: "resolve", ms: 3000 }] });
+arcade.on("timer", (m) => {
+  if (m.ev === "phase") render(m.info);                          // every phone
+  if (m.ev === "bot") arcade.send("timer.do", { name: "t", op: "submitFor", bot: m.bot, value: chooseFor(m.bot) });  // host
+  if (m.ev === "collect") resolve(m.entries);                    // host only
 });
-rounds.start();          // host
-rounds.submit(answer);   // anybody
+if (arcade.isHost()) arcade.send("timer.do", { name: "t", op: "start" });
+arcade.send("timer.do", { name: "t", op: "submit", value: answer });   // anybody
 ```
 
 A phase marked `collect` ends **as soon as every seated player has submitted**,
 or at its deadline, whichever is first. That one rule is what makes
 simultaneous-turn games work over this transport: nobody is racing anybody, so
 a slow link costs its owner nothing and the host never arbitrates who acted
-first. `botSubmit` exists because a collecting phase would otherwise wait out
-its deadline for a seat with no browser behind it.
+first. The `bot` event (`botSubmit` in lib/rounds.js) exists because a
+collecting phase would otherwise wait out its deadline for a seat with no
+browser behind it.
 
 Peers see *who* has submitted, never *what* — the submissions themselves never
-leave the host until `onCollect` decides what is public.
+leave the host until its `collect` event decides what is public.
 
 Battleship runs **two** schedulers, which is what `name` is for: placement is a
 single collecting phase that ends the moment both fleets are committed, and the
@@ -567,7 +726,7 @@ fleet and commitment have to be built and cached *before* the placement phase
 opens. Liar's Dice cannot do that, because the number of dice changes every
 round; it uses `rounds.submitFor(botId, digest)` from inside the phase instead.
 
-`rounds.next()` ends the current phase immediately. Liar's Dice needed it — the
+`next` (`timer.do` op `next`, lib/rounds.js `rounds.next()`) ends the current phase immediately. Liar's Dice needed it — the
 bidding is over when somebody calls a bluff, which is a game event and not a
 clock — and Draw & Guess uses it too, so that everybody guessing correctly ends
 the drawing phase instead of running out its sixty seconds.
@@ -642,59 +801,38 @@ difficulty and still forbids a word in two pairs anywhere in the list.
 
 ## Adding a game
 
-One file in `games/`, one script tag in `party.html`, one in its own page.
-Nothing in the shell changes; the switcher lists whatever registered itself.
-The contract is documented at the top of `lib/games.js` and summarised in
-[`../lib/README.md`](../lib/README.md#adding-a-game).
+The author's guide is [CONTRIBUTING.md](../CONTRIBUTING.md) (layout, the
+seven Tic Tac Toe examples, the dev kit, checking, proposing); the protocol a
+game speaks is [sdk-v2.md](sdk-v2.md); what the platform asks of a game — the
+manifest, the sandbox, results, the rules — is [platform.md](platform.md). A
+game is a folder with a `game.json` (`"sdk": 2`) in this repo's `games/` or in
+the author's own repository, pinned in `registry/`.
 
-The rule that matters: `mount(ctx)` must return an object with `unmount()` that
-stops every loop, timer and window listener it started. Games are swapped
-without a page reload, so anything left running fights the next game for input.
-
-Each game keeps a page of its own (`connect4.html` and friends), and since
-2026-11-13 it is a **shortcut into the party shell**: it redirects to
-`party.html?game=<id>&fresh=1`, where the host gets a quick start for that game
-(INVITE A FRIEND, PLAY A BOT, START GAME) before the ordinary party screen
-(lib/README.md, `mountParty`). There used to be a separate two-player lobby
-here, without join by code, rejoin after a reload, PARTY, END GAME or the turn
-banner's choices; Lokesh chose one connection path over teaching it all that.
-A game is implemented exactly once, and connected exactly once.
-
-`lib/ui.js` supplies the furniture every game was rebuilding — an injected
-`<style>`, a centred stage, a status line and a full-bleed overlay:
-
-```js
-const shell = NeonArcade.gameShell(ctx.root, { css: `#board { ... }` });
-shell.stage.append(canvas);
-shell.setHud([{ key: "turn", text: "Your move" }]);
-```
-
-It is factory functions over plain DOM, not a reactive layer — see the
-[SolidJS decision](#adding-a-game) note below. The one idea borrowed from that
-world is that `setHud` **updates text nodes in place** instead of rebuilding the
-row. Two rules come with it: the stage reserves `52px` of top padding for the
-fixed "← ALL GAMES" link (centring without it puts the status line underneath),
-and the one child that should absorb leftover height takes `.g-fill` rather than
-setting its own full height, which would overflow the stage.
+A game's address, `./?game=<id>&fresh=1`, is a **shortcut into the party
+shell** (since 2026-11-13): the host gets a quick start for that game (INVITE
+A FRIEND, PLAY A BOT, START GAME) before the ordinary party screen
+([The party API](#the-party-api), `mountParty`). There used to be a separate two-player lobby on
+each game's own page, without join by code, rejoin after a reload, PARTY, END
+GAME or the turn banner's choices; Lokesh chose one connection path over
+teaching it all that, and the pages themselves were deleted on 2026-11-15. A
+game is implemented exactly once, and connected exactly once.
 
 **The shell is Solid + Vite since 2026-11-15** ([spa.md](spa.md)). It was
 weighed and rejected on 2026-08-10 and 2026-08-27, when the reactive surface
-was about a fifth of the code and `file://` was a supported way to run the
-arcade. The re-measure of 2026-11-14 found two things changed:
+was about a fifth of the code and opening the HTML from disk (`file://`) was a
+supported way to run the arcade. The re-measure of 2026-11-14 found two things changed:
 - **The reactive surface** had grown to 35–40% of the shell.
-- **`file://`** was already gone for games, and Lokesh dropped it for the
-  shell too.
+- **Running from disk** (`file://`) was already gone for games, and Lokesh
+  dropped it for the shell too.
 
 Moving between pages also dropped the party, which only one page can fix.
 The games stay framework-free in their frames, and so do the shell's
 libraries (lib/*.js, bundled as modules).
 
-No game the platform tests now has more than one player per side of a
-`teams` game: Tug of War was the one (where `seats("A")` was read as a group
-rather than as `seats("A")[0]`), and it was retired on 2026-11-14 (dropped from
-the registry; `tug-of-war.html` now redirects to the portal). Connect 4 reads `seats("A")[0]`; a game with several per side
-would be the first since to exercise the group reading — test it in the
-party with a 2-against-1 roster.
+No game the platform tests has more than one player per side of a `teams`
+game. Connect 4 reads `seats("A")[0]`; a game with several per side would be
+the first to exercise the group reading — test it in the party with a
+2-against-1 roster.
 
 ## Installing it
 
@@ -702,7 +840,8 @@ The arcade is a PWA: `manifest.webmanifest`, icons under `assets/`, and `sw.js`
 at the repo root so its scope covers every page. `lib/pwa.js` registers the
 worker and fills any `[data-install-slot]` element with an INSTALL APP button
 when the browser says the app can be installed (the portal has one under the
-title). On `file://` there is no secure context and none of this runs.
+title). Without a secure context (a plain `http://` LAN address) none of
+this runs, and the arcade works as before, online.
 
 **The install button is Chromium-only, and that is not a bug here.** It is
 driven by `beforeinstallprompt`, a non-standard event that only Chromium
@@ -728,8 +867,8 @@ new one breaks the app silently, days after the deploy responsible. So code is
 served from **one precached snapshot per `VERSION`**, written whole at install
 and never refreshed file by file. A page opens from the phone's own storage,
 and is always one coherent deploy. `VERSION` is a content hash of every
-precached file (`scripts/sw-version.mjs`; `just test` and CI fail on a stale
-one; the deploy rehashes over the community games), so a deploy is a new
+precached file, written by `scripts/assemble.mjs` into `dist/sw.js` at build
+time (with the community games; docs/spa.md), so a deploy is a new
 `sw.js`, which the browser's own update check installs beside the old snapshot
 and activates — the next page load is the new deploy, whole. The install is
 all or nothing: a deploy that cannot be fetched whole leaves the old snapshot in
@@ -750,11 +889,12 @@ request. The previews are not precached, which is why `assets/placeholder.svg`
 exists.
 
 **A page offline is matched without its query** when the exact URL was never
-cached: `party.html?game=connect4&fresh=1` gets the precached `party.html`,
-whose script reads the query. Before 2026-11-13 it fell straight to the
-portal, so a game link opened offline depended on having visited that exact
-URL online. A framed game's files (`games/<id>/`) are precached like the
-rest; the shell inlines them from the cache (docs/sdk.md).
+cached: `./?game=connect4&fresh=1` gets the precached shell, whose script
+reads the query. Before 2026-11-13 it fell straight to the portal, so a game
+link opened offline depended on having visited that exact URL online. A
+framed game's files (`games/<id>/`) are precached like the rest; the shell
+inlines them from the cache (docs/platform.md). The Python runtime
+(`sdk/pyodide/`) is the exception: cached on first use, in its own cache.
 
 **Do not put an SVG in the manifest's `icons`.** Listed with `sizes: "any"`,
 Chrome selects it as *the* install icon, refuses it, and reports
@@ -805,10 +945,6 @@ the icon for exactly this reason. `test-pwa` now parses the file.
   deal, and the phone cannot know. Two deliberate taps and an immediate hide are
   the whole defence, which is the same defence the card game it descends from
   has.
-- `scripts/test-party.mjs`'s host-succession section is **intermittently
-  flaky** — one failure in five runs on 2026-08-27, timing out waiting for the
-  crown to be offered after the host's page closes. The other four passed and
-  nothing else in the suite failed. Not investigated.
 - `scripts/test-bots.mjs`'s Neon Survival check "the bot ships are being
   flown, not parked" is **intermittently flaky** — failed 2 of 8 runs on
   2026-11-12 (both inside a full `just test`; standalone 0 of 5, and 0 of 1

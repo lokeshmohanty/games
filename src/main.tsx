@@ -1,7 +1,8 @@
 // src/main.tsx — the arcade's one page (docs/spa.md).
 //
 // The shell's libraries are the same framework-free files they always were
-// (lib/*.js hang off window.NeonArcade; the game frames inline some of them),
+// (lib/*.js hang off window.NeonArcade; the game frames inline lib/theme.css
+// and lib/styles.css),
 // imported here in the order the old pages loaded them. theme.js and the
 // shared CSS are not among them: index.html links them as-is, so the saved
 // theme applies before the first paint and the frames share the same files. The community catalog is fetched at

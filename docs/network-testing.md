@@ -31,7 +31,8 @@ runs the real pages, the real room server and real headless Chrome across them.
   Playwright still drives all of them over its ordinary pipe. Separate
   browsers, so separate `localStorage` — rejoin tokens behave as on real
   phones.
-- **Pages** load `party.html`, and each browser context's init script sets
+- **Pages** load the party (`./?party`; `party.html` in the runs recorded
+  below, before 2026-11-15), and each browser context's init script sets
   `localStorage["neon.rs"] = "http://198.51.100.1:8787"` and
   `localStorage["neon.stun"] = "198.51.100.1:3478,198.51.100.1:3479"` — two
   ports, as DEFAULT_ICE has two servers on two ports, so net.js

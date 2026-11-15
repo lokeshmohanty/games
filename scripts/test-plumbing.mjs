@@ -23,7 +23,7 @@
 import { readFileSync } from "node:fs";
 
 globalThis.window = globalThis;
-globalThis.location = { href: "https://example.test/party.html", hash: "", pathname: "/party.html", search: "" };
+globalThis.location = { href: "https://example.test/?party", hash: "", pathname: "/", search: "?party" };
 globalThis.history = { replaceState() {} };
 
 for (const file of ["../lib/net.js", "../lib/secrets.js", "../lib/rounds.js"]) {

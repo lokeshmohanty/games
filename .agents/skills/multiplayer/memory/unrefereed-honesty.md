@@ -35,7 +35,7 @@ So the reveal runs **two** checks:
 | digest matches the revealed fleet | swapping the fleet after the fact |
 | every answer replayed against that fleet | lying about any individual shot |
 
-`auditAnswers()` is the second one, and `scripts/test-battleship.mjs` tests it
+`auditAnswers()` is the second one, and `battleship/test-battleship.mjs` in web-games tests it
 by *breaking* it four ways — denying a real hit, inventing one, announcing a
 sinking that never happened, suppressing a real one. A commitment nobody can
 fail is decoration.

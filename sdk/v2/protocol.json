@@ -621,7 +621,7 @@
       }
     },
     "result": {
-      "description": "The outcome, for stats and leaderboards (docs/sdk.md, \"Results\"). Every peer may send it; it counts once.",
+      "description": "The outcome, for stats and leaderboards (docs/platform.md, \"Results\"). Every peer may send it; it counts once.",
       "type": "object",
       "required": [
         "v",
@@ -1589,7 +1589,7 @@
       }
     },
     "runtime.file": {
-      "description": "Request: a file of a runtime the platform ships, for a game whose language needs one (manifest `runtime: \"python\"`: Pyodide, from sdk/v1/pyodide/). Reply `{ bytes, type }`. Only that folder; it does not count toward the game's size cap.",
+      "description": "Request: a file of a runtime the platform ships, for a game whose language needs one (manifest `runtime: \"python\"`: Pyodide, from sdk/pyodide/). Reply `{ bytes, type }`. Only that folder; it does not count toward the game's size cap.",
       "type": "object",
       "required": [
         "v",

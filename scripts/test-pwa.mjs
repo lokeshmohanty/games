@@ -20,7 +20,8 @@
  */
 import { createRequire } from "node:module";
 import { execFileSync, spawn } from "node:child_process";
-import { cpSync, existsSync, globSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { cpSync, existsSync, globSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { dirname, join, resolve as resolvePath } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -223,20 +224,18 @@ if (m) {
 // into a browser tab.
 console.log("\npwa: every page is part of the app");
 for (const p of [
-	"party.html",
-	"profile.html",
-	"leaderboard.html",
-	"connect4.html",
-	"light-cycles.html",
-	"draw-guess.html",
-	"neon-survival.html",
-	"neon-survival-mp.html",
-	// Retired 2026-11-14, kept as a redirect to the portal for old shortcuts.
-	"tug-of-war.html",
+	"./?party",
+	"./?page=profile",
+	"./?page=leaderboard",
+	"./?page=contributors",
+	"./?page=contribute",
+	"./?game=connect4&fresh=1",
+	"./?game=lokeshmohanty%2Flight-cycles&fresh=1",
+	"./?game=lokeshmohanty%2Fdraw-guess&fresh=1",
+	"./?game=neon-survival-mp&fresh=1",
 ]) {
-	// The old pages forward into the one-page shell (docs/spa.md): what is
-	// checked is where they land, once the shell's code (pwa.js among it,
-	// bundled) has run.
+	// One page (docs/spa.md): every view is the shell, so what is checked is
+	// the view once the shell's code (pwa.js among it, bundled) has run.
 	await page.goto(`${BASE}/${p}`);
 	await page.waitForFunction(() => !!window.NeonArcade?.isInstalled, null, { timeout: 15_000 }).catch(() => {});
 	const has = await page.evaluate(() => ({
@@ -291,22 +290,24 @@ check(
 check("it is called Arcade Games", /arcade games/i.test(portal.title ?? ""), portal.title);
 
 // Counted against the registry rather than against a number written here.
-// A game added to `games/` and to party.html but never given a portal card is
+// A game added to `games/` and to the catalog but never given a portal card is
 // a game nobody outside the party screen can find, and a hard-coded 4 turns
 // that into a test that has to be edited every time rather than one that
 // catches it.
 // (Kept whole for "every game offline in single player", below.)
 const catalog = await (async () => {
 	const probe = await ctx.newPage();
-	await probe.goto(`${BASE}/party.html`);
+	await probe.goto(`${BASE}/?party`);
 	await probe.waitForFunction(() => window.NeonArcade?.listGames, null, { timeout: 20_000 });
+	// The listed games, then the unlisted ones (the SDK's other examples):
+	// playable by their address, on no list.
 	const games = await probe.evaluate(() =>
-		window.NeonArcade.listGames().map((g) => ({ id: g.id, name: g.name, bots: !!g.bots, local: !!g.local, runtime: g.runtime ?? null })),
+		[...window.NeonArcade.listGames(), ...(window.NeonArcade.UNLISTED ?? []).map((u) => window.NeonArcade.getGame(u.id))].map((g) => ({ id: g.id, name: g.name, bots: !!g.bots, local: !!g.local, runtime: g.runtime ?? null, listed: g.listed !== false })),
 	);
 	await probe.close();
 	return games;
 })();
-const registered = catalog.map((g) => g.id);
+const registered = catalog.filter((g) => g.listed).map((g) => g.id);
 
 // --------------------------------------------------------- the portal, small
 //
@@ -386,8 +387,8 @@ check(
 	`missing: ${registered.filter((id) => !portal.games.includes(id)).join(", ")}`,
 );
 check(
-	"no card still points at the retired single-player page",
-	!portal.links.includes("neon-survival.html"),
+	"every card's play link is the shell's own address (./?game=…), no old page",
+	portal.links.length > 0 && portal.links.every((l) => l.startsWith("./?") && !/\.html/.test(l)),
 	portal.links.join(" "),
 );
 check("the install slot sits in the flow, not over the cards", portal.slotInFlow);
@@ -468,11 +469,10 @@ await ctx.setOffline(true);
 // `#lobby` has no height whether this works or not.
 for (const [p, marker, expect, what] of [
 	["index.html", "h1", /arcade games/i, "the portal"],
-	["party.html", ".lobby", /party/i, "the party screen"],
-	// neon-survival.html is a redirect into the co-op module, so what has to
-	// survive offline is the page it lands on, not the page it starts from.
-	["neon-survival-mp.html", ".lobby", /neon survival/i, "Neon Survival"],
-	["connect4.html", ".lobby", /connect 4/i, "Connect 4"],
+	["./", "h1", /arcade games/i, "the portal at ./ (start_url)"],
+	["./?party", ".lobby", /party/i, "the party screen"],
+	["./?game=neon-survival-mp&fresh=1", ".lobby", /neon survival/i, "Neon Survival"],
+	["./?game=connect4&fresh=1", ".lobby", /connect 4/i, "Connect 4"],
 ]) {
 	let ok = false;
 	let detail = "";
@@ -493,7 +493,7 @@ for (const [p, marker, expect, what] of [
 {
 	let detail = "";
 	const played = await (async () => {
-		await page.goto(`${BASE}/connect4.html`, { waitUntil: "domcontentloaded" });
+		await page.goto(`${BASE}/?game=connect4&fresh=1`, { waitUntil: "domcontentloaded" });
 		await page.locator("button", { hasText: "SINGLE PLAYER" }).first().click({ timeout: 8000 });
 		await page.locator("button", { hasText: "START GAME" }).first().click({ timeout: 8000 });
 		const frame = await gameFrame(page, 10_000);
@@ -674,6 +674,13 @@ console.log("\npwa: every game offline in single player");
 
 	/** From the portal, offline: the card's SINGLE PLAYER. Null when the card has none. */
 	const openSolo = async (id) => {
+		// An unlisted game has no card: its SINGLE PLAYER address, as the
+		// "Add your game" guide links it.
+		if (catalog.find((g) => g.id === id)?.listed === false) {
+			await page.goto(`${BASE}/?game=${id}&fresh=1&mode=bots`, { waitUntil: "domcontentloaded" });
+			await page.waitForSelector(".game-frame", { timeout: 15_000 });
+			return gameFrame(page, 20_000);
+		}
 		await page.goto(`${BASE}/index.html`, { waitUntil: "domcontentloaded" });
 		const card = page.locator(`.game-card[data-game="${id}"]`).first();
 		await card.waitFor({ timeout: 10_000 });
@@ -690,9 +697,10 @@ console.log("\npwa: every game offline in single player");
 		await page.waitForSelector(".game-card", { timeout: 10_000 }).catch(() => {});
 		return page.evaluate(() => [...new Set([...document.querySelectorAll(".game-card")].map((c) => c.dataset.game))]);
 	})();
-	check(`offline, the portal lists all ${catalog.length} games (community and examples too)`, portalCards.length === catalog.length, `${portalCards.length}: ${catalog.map((g) => g.id).filter((id) => !portalCards.includes(id)).join(", ")} missing`);
+	const listed = catalog.filter((g) => g.listed);
+	check(`offline, the portal lists all ${listed.length} listed games (community too), and no unlisted example`, portalCards.length === listed.length && listed.every((g) => portalCards.includes(g.id)), `${portalCards.length}: ${listed.map((g) => g.id).filter((id) => !portalCards.includes(id)).join(", ")} missing`);
 
-	const vendored = existsSync(join(SITE, "sdk", "v1", "pyodide", "pyodide.asm.wasm"));
+	const vendored = existsSync(join(SITE, "sdk", "pyodide", "pyodide.asm.wasm"));
 	const python = [];
 	for (const g of catalog) {
 		missed = [];
@@ -805,6 +813,20 @@ console.log("\npwa: an update reaches a player who already has the old copy");
 	writeFileSync(join(SITE, "lib", "games.js"), "// redeployed\n");
 	check("one file changed alone is not mixed into the deploy the page runs (the snapshot holds)", (await text("lib/games.js")) === before);
 
+	// Pyodide's cache from before it moved (sdk/v1/pyodide/ → sdk/pyodide/,
+	// 2026-11-15): assemble.mjs hashes the path into RUNTIME's name, so the
+	// old cache is not this worker's, and the next prune drops it.
+	const runtimeName = swText.match(/const RUNTIME = "([^"]+)"/)[1];
+	const pyDir = join(SITE, "sdk", "pyodide");
+	if (existsSync(join(pyDir, "pyodide.asm.wasm"))) {
+		const oldHash = createHash("sha256");
+		for (const f of readdirSync(pyDir).sort()) oldHash.update(`\0${f}\0`).update(readFileSync(join(pyDir, f)));
+		const oldRuntime = `arcade-pyodide-${oldHash.digest("hex").slice(0, 12)}`;
+		check("the Python runtime's cache is renamed by the move (its path is in the hash)", runtimeName !== oldRuntime && /^arcade-pyodide-[0-9a-f]{12}$/.test(runtimeName), `${runtimeName} vs ${oldRuntime}`);
+		await page.evaluate(async (n) => (await caches.open(n)).put("sdk/v1/pyodide/pyodide.asm.wasm", new Response("old")), oldRuntime);
+	}
+	const staleRuntime = (await keys()).find((k) => k.startsWith("arcade-pyodide-") && k !== runtimeName);
+
 	// A real deploy changes sw.js too (scripts/assemble.mjs rehashes VERSION).
 	const newVersion = oldVersion + "-next";
 	writeFileSync(swFile, swText.replace(oldVersion, newVersion));
@@ -829,8 +851,9 @@ console.log("\npwa: an update reaches a player who already has the old copy");
 	check("…after which the old snapshot is dropped", dropped, (await keys()).join());
 	// Pyodide, cached by the Python game played above, is in a cache of its
 	// own (sw.js RUNTIME) that a deploy leaving it alone does not prune.
-	if (existsSync(join(SITE, "sdk", "v1", "pyodide", "pyodide.asm.wasm")))
-		check("…while the Python runtime played once stays on the device", await page.evaluate(async () => !!(await caches.match("sdk/v1/pyodide/pyodide.asm.wasm"))), (await keys()).join());
+	if (existsSync(join(SITE, "sdk", "pyodide", "pyodide.asm.wasm")))
+		check("…while the Python runtime played once stays on the device", await page.evaluate(async () => !!(await caches.match("sdk/pyodide/pyodide.asm.wasm"))), (await keys()).join());
+	if (staleRuntime) check("…and the cache from Pyodide's old address (sdk/v1/pyodide/) is dropped", !(await keys()).includes(staleRuntime), (await keys()).join());
 }
 
 await browser.close();

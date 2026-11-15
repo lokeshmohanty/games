@@ -57,11 +57,14 @@ import { homedir } from "node:os";
 import { dirname, join, resolve as resolvePath } from "node:path";
 import { fileURLToPath } from "node:url";
 import { DIAL_FAILS } from "../worker/hub.js";
+import { serve } from "./serve.mjs";
 
 const require = createRequire(import.meta.url);
 const ROOT = resolvePath(dirname(fileURLToPath(import.meta.url)), "..");
 const PW_CACHE = join(homedir(), ".cache", "game-previews");
-const PARTY = `file://${join(ROOT, "party.html")}`;
+// The built site, served (the one-page shell does not run from file://).
+const SITE = await serve(8747);
+const PARTY = SITE.url("?party");
 const TIMEOUT = 40_000;
 const NO_ANSWER_WAIT = 50_000;
 
@@ -395,7 +398,7 @@ async function exchange(pages, ms = 10_000) {
 }
 async function host(page) {
 	const start = Date.now();
-	await page.goto(PARTY + "?fresh=1");
+	await page.goto(PARTY + "&fresh=1");
 	await page.locator(".party-code-digits").waitFor({ timeout: TIMEOUT });
 	return { ...(await token(page)), ms: Date.now() - start };
 }

@@ -7,24 +7,24 @@
 //   lib/        the game frames inline lib/theme.css, styles.css, games.js…
 //               (lib/bridge.js), and lib/load.js loads qr-decode.js,
 //               py-server.js, secrets.js, rounds.js on first use
-//   sdk/        the frames' runtimes (v1 client, v2 runtime, web shim) and,
-//               when vendored, Pyodide — not the examples, adapters, bindings
+//   sdk/        the frames' runtimes (v2 runtime, web shim), a web app's
+//               Python glue, the dev kit and, when vendored, Pyodide — not
+//               the adapters, bindings or the unlisted Tic Tac Toe example
 //   games/  assets/  registry/  community/ (if fetched)
-//   the old pages (redirect stubs into the shell), manifest, contributor.json
+//   manifest, contributor.json
 //
 // Then dist/sw.js is written from sw.js: its precache list is every file the
 // shell needs offline — the template's own entries (icons, fonts, a few
 // extras) plus, derived, every built chunk, every lib/ script and stylesheet,
 // every game's files and the frame runtimes — and its VERSION is a hash of
-// exactly those bytes (with community/precache.js's, when present). This
-// replaces the hand-kept list and scripts/sw-version.mjs: a file can no
-// longer be forgotten, and a deploy is a new VERSION exactly when the
-// offline copy changed.
+// exactly those bytes (with community/precache.js's, when present). A file
+// can therefore not be forgotten, and a deploy is a new VERSION exactly when
+// the offline copy changed.
 //
 //   node scripts/assemble.mjs        (pnpm build runs it after vite build)
 
 import { createHash } from "node:crypto";
-import { cpSync, existsSync, globSync, readFileSync, readdirSync, statSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, globSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from "node:fs";
 import { basename, dirname, join, posix, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -45,10 +45,14 @@ for (const dir of ["lib", "sdk", "games", "assets", "registry", "community"]) {
 	if (!existsSync(from)) continue;
 	cpSync(from, join(DIST, dir), { recursive: true, filter: (src) => keep(relative(ROOT, src).split("\\").join("/")) });
 }
-const pages = readdirSync(ROOT).filter((f) => f.endsWith(".html") && f !== "index.html");
 // …and any other root file sw.js names (CONTRIBUTING.md: the contribute view renders it).
 const rootListed = [...readFileSync(join(ROOT, "sw.js"), "utf8").matchAll(/"\.\/([^"/]+\.[a-z]+)"/g)].map((m) => m[1]).filter((f) => f !== "index.html");
-for (const f of new Set([...pages, "manifest.webmanifest", "contributor.json", ...rootListed])) if (existsSync(join(ROOT, f))) cpSync(join(ROOT, f), join(DIST, f));
+for (const f of new Set(["manifest.webmanifest", "contributor.json", ...rootListed])) if (existsSync(join(ROOT, f))) cpSync(join(ROOT, f), join(DIST, f));
+// The dev kit's old public address, for authors who fetched it from there
+// (CONTRIBUTING.md once said so). A copy of sdk/dev-server.mjs, not kept in
+// the source tree. Transition only: remove on 2027-02-15 (docs/platform.md).
+mkdirSync(join(DIST, "sdk", "v1"), { recursive: true });
+cpSync(join(ROOT, "sdk", "dev-server.mjs"), join(DIST, "sdk", "v1", "dev-server.mjs"));
 
 // ---- the service worker -------------------------------------------------------
 
@@ -68,7 +72,7 @@ const derived = [
 	// Files only: a folder in the list (a 301 on Pages, a 404 once it has no
 	// index.html) would fail the install for everyone (review, 2026-11-15).
 	...files("games/**/*").filter((p) => statSync(join(DIST, p)).isFile() && !basename(p).startsWith("test-") && !/\.(?:gif|webm|mp4)$/i.test(p)),
-	...files("sdk/v1/*.{js,py}"),
+	...files("sdk/*.{js,py}"),
 	...files("sdk/v2/*.js"),
 	// The listed examples: their pages, scripts, styles, modules, Python,
 	// RULES.md and images (not sources or build files).
@@ -100,11 +104,14 @@ for (const p of [...shell, ...communityFiles].filter(Boolean).sort()) {
 }
 hash.update(template.replace(/^const VERSION = "[^"]*";.*$/m, ""));
 const version = `arcade-${hash.digest("hex").slice(0, 12)}`;
-// Pyodide's own cache (sw.js RUNTIME): named by its files, so it survives
-// every deploy that does not change it.
-const pyodide = join(DIST, "sdk", "v1", "pyodide");
+// Pyodide's own cache (sw.js RUNTIME): named by its files — their path,
+// names and bytes — so it survives every deploy that does not change them,
+// and a move (sdk/v1/pyodide/ → sdk/pyodide/, 2026-11-15) renames it, which
+// lets the worker's prune drop the cache keyed by the old addresses.
+const PYODIDE = "sdk/pyodide";
+const pyodide = join(DIST, PYODIDE);
 const runtimeHash = createHash("sha256");
-for (const f of existsSync(pyodide) ? readdirSync(pyodide).sort() : []) runtimeHash.update(`\0${f}\0`).update(readFileSync(join(pyodide, f)));
+for (const f of existsSync(pyodide) ? readdirSync(pyodide).sort() : []) runtimeHash.update(`\0${PYODIDE}/${f}\0`).update(readFileSync(join(pyodide, f)));
 const runtime = `arcade-pyodide-${runtimeHash.digest("hex").slice(0, 12)}`;
 const list = shell.map((p) => `\t"./${p}",`).join("\n");
 const sw = template

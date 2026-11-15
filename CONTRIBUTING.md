@@ -6,8 +6,12 @@ handover, offline play and the installed app all come from the platform.
 Your code stays in **your own public GitHub repository**; the arcade lists it
 at a commit you choose.
 
-The full reference is [`docs/sdk.md`](docs/sdk.md). This page is the
-workflow.
+The full reference is [`docs/sdk-v2.md`](docs/sdk-v2.md). This page is the
+workflow. If you work with an AI assistant, give it
+[`docs/contributor-prompt.md`](docs/contributor-prompt.md).
+
+*Changing the arcade itself rather than adding a game? See
+[Working on the arcade itself](#working-on-the-arcade-itself) at the end.*
 
 ## Already have a web app? Bring it as it is
 
@@ -20,7 +24,7 @@ repository and propose it (step 4):
 
 ```json
 {
-  "sdk": 1, "id": "my-game", "name": "My Game", "blurb": "…",
+  "sdk": 2, "id": "my-game", "name": "My Game", "blurb": "…",
   "kind": "shared", "seats": { "min": 1, "max": 8 }, "bots": false,
   "entry": "index.html", "license": "MIT",
   "author": "<your-github-user>", "repo": "https://github.com/<you>/<repo>",
@@ -60,27 +64,41 @@ To try it: build it, then run the dev kit (step 2) in the folder with
 `game.json`. Packages Pyodide does not ship are stubs in the dev kit; the
 arcade's build fetches them.
 
-## 1. Start from the example
+## 1. Start from an example
 
-Copy [`sdk/v1/example/tic-tac-toe/`](sdk/v1/example/tic-tac-toe) into your
-repository. One folder per game; a repository may hold several games.
+The same small game, Tic Tac Toe, is written once for each language the
+arcade takes. Copy the one for your language into your repository. Each is a
+complete managed game: the rules, a bot, a drawing, `game.json` and `RULES.md`.
+The platform does the rest: syncing the phones, host handover, rejoining and
+the end card. Play each one first to see what you'll get.
+
+- **JavaScript**, no build: [code](sdk/v2/examples/tic-tac-toe-js) · [play it](https://www.lokeshmohanty.in/games/?game=tic-tac-toe-js)
+- **HTML and CSS**, no drawing code, only `data-arcade-*` attributes: [code](sdk/v2/examples/tic-tac-toe-html) · [play it](https://www.lokeshmohanty.in/games/?game=tic-tac-toe-html)
+- **TypeScript**, with the view in Solid, built by Vite: [code](sdk/v2/examples/tic-tac-toe-ts) · [play it](https://www.lokeshmohanty.in/games/?game=tic-tac-toe-ts)
+- **Rust**, compiled to WebAssembly with wasm-bindgen: [code](sdk/v2/examples/tic-tac-toe-rust) · [play it](https://www.lokeshmohanty.in/games/?game=tic-tac-toe-rust)
+- **C/C++**, compiled to WebAssembly with Emscripten: [code](sdk/v2/examples/tic-tac-toe-c) · [play it](https://www.lokeshmohanty.in/games/?game=tic-tac-toe-c)
+- **Go**, compiled to WebAssembly with TinyGo: [code](sdk/v2/examples/tic-tac-toe-go) · [play it](https://www.lokeshmohanty.in/games/?game=tic-tac-toe-go)
+- **Python**, run by the arcade's own Pyodide: [code](sdk/v2/examples/tic-tac-toe-python) · [play it](https://www.lokeshmohanty.in/games/?game=tic-tac-toe-python)
+
+A language with a build has a `build.sh`, and its adapter, with a README, is
+in [`sdk/v2/adapters/`](sdk/v2/adapters). One folder per game; a repository
+may hold several games:
 
 ```
 my-games/
   laser-chess/
-    game.json        the manifest — id, name, seats, kind, licence…
+    game.json        the manifest: "sdk": 2, id, name, seats, kind, licence…
     index.html       your page: only your own <script> and <link> tags
-    laser-chess.js   NeonArcade.registerGame({ id, name, mount(ctx) { … } })
-    preview.gif      shown on the portal (optional)
+    laser-chess.js   your rules and drawing: arcade.managed({ init, apply, view, … })
     RULES.md         how to play: shown on a first open and behind "?"
+    preview.gif      shown on the portal (optional)
 ```
 
-The example is ~170 lines and has everything a game needs: host-authoritative
-state, a move channel, a bot, `ctx.reportResult`, and the handle hooks
-(`onRoster`, `onPeerJoin`, `takeOver`, `unmount`). Worked examples of
-larger games: Connect 4, Neon Bid (hidden information), Undercover (one phone
-passed around) and Neon Survival (real-time co-op) in [`games/`](games), and
-six more in [lokeshmohanty/web-games](https://github.com/lokeshmohanty/web-games).
+The contract (the messages, managed state, the manifest) is
+[`docs/sdk-v2.md`](docs/sdk-v2.md). Larger worked examples are Connect 4,
+Neon Bid (hidden information), Neon Fission, Undercover (one phone passed
+around) and Neon Survival (real time) in [`games/`](games), with more in
+[lokeshmohanty/web-games](https://github.com/lokeshmohanty/web-games).
 
 ### How to play: RULES.md
 
@@ -107,7 +125,7 @@ own, and your game keeps running under it, for them and for everyone else.
 ## 2. Play it in the real arcade, from your machine
 
 ```sh
-curl -fsSLO https://www.lokeshmohanty.in/games/sdk/v1/dev-server.mjs
+curl -fsSLO https://www.lokeshmohanty.in/games/sdk/dev-server.mjs
 node dev-server.mjs          # serves this folder on http://127.0.0.1:5174
 ```
 
@@ -130,7 +148,7 @@ network, and then mounts the game with bots at phone size (390×844) and plays
 sideways scrolling. The pull-request check runs
 exactly this.
 
-**The rules** (why: [`docs/sdk.md`](docs/sdk.md)). Rules 1–3 are for games
+**The rules** (why: [`docs/sdk-v2.md`](docs/sdk-v2.md#the-rules-a-game-must-follow-v2)). Rules 1–3 are for games
 written for the SDK; a web app (above) is held to them by the arcade itself.
 
 1. Each `<script>` is a complete bundle — plain JS needs nothing; with a
@@ -156,7 +174,7 @@ tooling, it copies the folder at the pinned commit.
 ## Your card on the Contributors page
 
 Optional: a `contributor.json` at the root of your repository says how you
-appear on the [Contributors](contributors.html) page — your GitHub avatar
+appear on the [Contributors](https://www.lokeshmohanty.in/games/?page=contributors) page — your GitHub avatar
 and login are shown anyway.
 
 ```json
@@ -174,7 +192,7 @@ pin bump.
 
 ## 4. Open a pull request
 
-On the [Add your game](contribute.html) page, type your repository
+On the [Add your game](https://www.lokeshmohanty.in/games/?page=contribute) page, type your repository
 (`owner/name`) under **Propose your games**: it opens GitHub's page for your
 registry file, filled in with your latest commit and every folder holding a
 `game.json`. Commit it there and GitHub offers the pull request. (From a
@@ -207,7 +225,7 @@ it is checked again. Once a maintainer merges it, the site deploys by itself
 and lists your games as `<your-github-user>/<id>`.
 
 **To update**, push to your repo, then press **Check for updates** on your
-card on the [Contributors](contributors.html) page (or use Propose your games
+card on the [Contributors](https://www.lokeshmohanty.in/games/?page=contributors) page (or use Propose your games
 again, or `just propose`). One tap copies your new commit and opens your
 pin's edit page: select the old commit in the `"commit"` line, paste, then
 *Commit changes → Create a new branch… and start a pull request*. (GitHub can
@@ -220,3 +238,30 @@ A maintainer reads the diff of what will be served (the pinned folders) and
 plays the game. A game can be removed — by reverting its registry file — for
 breaking the rules above, for content that is hateful, sexual or harmful,
 or on its author's request.
+
+## Working on the arcade itself
+
+For changes to the platform (the shell, the party, the SDK, the Worker), not
+to a game in your own repository.
+
+1. **Run it:** `just run` serves the site at http://127.0.0.1:8000, and edits
+   reload. You need Node 24 and pnpm; the recipes install the dependencies
+   from the lockfile. [docs/development.md](docs/development.md) covers the
+   LAN server, the build and where the code is.
+2. **Read first:** [`docs/`](docs/index.md) explains how things work and why,
+   and records the decisions taken. Read the part you're changing before you
+   change it.
+3. **House rules:**
+   - Phones come first. Check every UI change at 390×844, with no sideways
+     scroll and tap targets of at least 44 px.
+   - Colours come only from the theme tokens in `lib/theme.css`
+     (`just check-colours`).
+   - The games and `lib/` stay framework-free.
+   - Nothing reaches outside the site except STUN. That means no
+     third-party services, CDNs or trackers.
+4. **Test:** `just test` runs every suite. The Worker suites
+   (`just test-worker`, `just test-accounts`, `just test-social`) run under
+   wrangler. A change to how something behaves comes with a test that fails
+   without it.
+5. **Pull request:** work on a branch and open a pull request against `main`.
+   Update the matching page in `docs/` in the same pull request.

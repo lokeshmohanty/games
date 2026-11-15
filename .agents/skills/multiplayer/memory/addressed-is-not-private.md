@@ -62,8 +62,9 @@ with a secret usually needs both.
 - **A private message to a bot never reaches the wire.** The host plays it, so
   the channel delivers locally with `to` naming the bot — the same trick
   `emitAs` plays for public moves. See [[bots-as-members]].
-- **WebCrypto needs a secure context, and `file://` is one** in Chrome and
-  Firefox — verified by running it, not assumed. It is still checked at runtime:
+- **WebCrypto needs a secure context.** `file://` is one in Chrome and Firefox
+  (verified by running it, when the arcade still ran from disk); the arcade is
+  now served over https or loopback, which are too. It is still checked at runtime:
   `secrets.privacy()` returns `"plain"` rather than downgrading silently, and a
   game with a secret should refuse to deal on `"plain"`.
 
