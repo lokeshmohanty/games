@@ -58,7 +58,9 @@ export async function api(request, env, { gate = async () => true } = {}) {
 		if (path === "/live") return await live(request, env);
 		// Withdrawing a match start is exempt: refusing it would leave the start
 		// standing, which only ever counts against its own account (match.js).
-		const exempt = method === "DELETE" && path === "/api/match/start";
+		// A match start charges the gate itself, and only when it is new: its
+		// beats (every 60 s while a match runs) are free (match.js startMatch).
+		const exempt = path === "/api/match/start" && (method === "DELETE" || method === "POST");
 		if (WRITE.has(method) && !exempt && !(await gate())) throw new HttpError(429, "too many changes from this address; wait a few minutes");
 
 		const seg = path.split("/").slice(2).map(decodeURIComponent); // after /api/
@@ -118,7 +120,7 @@ export async function api(request, env, { gate = async () => true } = {}) {
 			if (b && method === "DELETE") return send(await dismissInvite(env, await me(), b));
 		}
 		if (a === "match" && b === "report" && method === "POST") return send(await report(env, await me(), request));
-		if (a === "match" && b === "start" && method === "POST") return send(await startMatch(env, await me(), request));
+		if (a === "match" && b === "start" && method === "POST") return send(await startMatch(env, await me(), request, { gate }));
 		if (a === "match" && b === "start" && method === "DELETE") return send(await withdrawStart(env, await me(), request));
 		if (a === "run" && b === "start" && method === "POST") return send(await startRun(env, await me(), request));
 		if (a === "feedback" && b && method === "POST") return send(await postFeedback(env, await me(), seg.slice(1).join("/"), request));

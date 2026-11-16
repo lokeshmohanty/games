@@ -72,8 +72,8 @@
 //   3. the grace has passed with no report of its own (its own, different,
 //      report would have voided the match);
 //   4. its seated page has stopped beating: a page in a match re-posts its
-//      start every 2 minutes (lib/account.js), and a departure needs the
-//      start's last beat older than MATCH_STALE_MS (3 min) — whatever any
+//      start every 60 s (lib/account.js), and a departure needs the start's
+//      last beat older than MATCH_STALE_MS (4.5 min) — whatever any
 //      other page of that account says (a review, 2026-11-16: presence was
 //      one row per account, so a second page on the home screen made a
 //      player still in the match look gone).
@@ -89,7 +89,7 @@
 // "+12 → 1534" (lib/account.js endCard); so does a repeat after it counted.
 
 import { reportBotsWin } from "./bots.js";
-import { GAMES, NO_BOARD } from "./games.js";
+import { GAMES, KINDS as RESULT_KINDS, NO_BOARD } from "./games.js";
 import { HttpError, body, now, randomId, sha256 } from "./http.js";
 import { SOLO_PER_DAY, boardKind, checkSoloRun, claimRun } from "./runs.js";
 
@@ -98,8 +98,12 @@ export const REPORT_TTL_MS = 15 * 60_000;
 export const MATCH_GRACE_MS = 45_000;
 /** A start (POST /api/match/start) is kept this long after its last beat. */
 export const START_TTL_MS = 3600_000;
-/** A seated page beats (re-posts its start) every 2 min; older than this, it has stopped (env MATCH_STALE_MS). */
-export const MATCH_STALE_MS = 3 * 60_000;
+/**
+ * A seated page beats (re-posts its start) every 60 s, a failed beat once
+ * more 15 s later; older than this, it has stopped (env MATCH_STALE_MS) —
+ * room for three lost beats in a row.
+ */
+export const MATCH_STALE_MS = 4.5 * 60_000;
 /** A voided match stays void this long (kv `void:<match>`), then the row goes. */
 export const VOID_TTL_MS = 3600_000;
 export const ELO_START = 1200;
@@ -108,6 +112,12 @@ export const ELO_K = 32;
 export const ELO_K_PROVISIONAL = 48;
 export const PROVISIONAL_GAMES = 10;
 const KINDS = ["duel", "ffa", "teams", "coop"];
+/**
+ * Teams: a player's share of their side's change is scaled by the mean side
+ * size over their side's size (zero-sum with uneven sides), but never by
+ * more than this — 1 against 7 would otherwise swing ±4 × K.
+ */
+const SCALE_MAX = 2;
 /** The kinds with a winner, rated, and with the leaver rule. */
 export const RATED = ["duel", "ffa", "teams"];
 
@@ -155,14 +165,18 @@ export function ratingDeltas(kind, places, cur) {
 		// Teams: a side's change is its members' to share — each moves by it
 		// times the mean side size over their own side's size, so uneven sides
 		// (3 against 1) still sum to zero (a review, 2026-11-16).
-		const scale = kind === "teams" ? units.reduce((t, u) => t + u[0].length, 0) / n / members.length : 1;
+		const scale = kind === "teams" ? Math.min(SCALE_MAX, units.reduce((t, u) => t + u[0].length, 0) / n / members.length) : 1;
 		for (const a of members) out.set(a, (((cur.get(a)?.rated ?? 0) < PROVISIONAL_GAMES ? ELO_K_PROVISIONAL : ELO_K) * sum * scale) / (n - 1));
 	}
 	return out;
 }
 
-/** A result of `kind` for `game`: its manifest's kind (the table), or a scored free-for-all of a co-op game (Neon Survival's multi-ship runs). */
-export const kindFits = (game, kind) => kind === GAMES[game] || (GAMES[game] === "coop" && kind === "ffa");
+/**
+ * A result of `kind` for `game`: one of its kinds — the manifest's, or the
+ * table's extra ones (KINDS: Bubble Rush's teams mode on its ffa board) —
+ * or a scored free-for-all of a co-op game (Neon Survival's multi-ship runs).
+ */
+export const kindFits = (game, kind) => (RESULT_KINDS[game] ?? [GAMES[game]]).includes(kind) || (GAMES[game] === "coop" && kind === "ffa");
 
 /**
  * A ratings row as the API shows it: `rated`, the games behind its rating,
@@ -251,9 +265,12 @@ export function toAccounts({ kind, ranking, roster, scores, left, teams }) {
 		if (tail.length) places.push(tail);
 		places = places.map((slot) => slot.sort());
 		// Rated as teams: each team still here at its place; each team that left, last.
+		// `size`: the team's players as the match began — those still here and
+		// its leavers — so a teammate who stays shares the side's change with
+		// the one who left instead of carrying it alone.
 		sides = [
-			...[...at].map(([t, i]) => ({ members: kept[i].filter((a) => teamOf.get(a) === t), at: i })),
-			...goneTeams.map((t) => ({ members: departed.filter((a) => teamOf.get(a) === t), at: kept.length })),
+			...[...at].map(([t, i]) => ({ members: kept[i].filter((a) => teamOf.get(a) === t), size: [...kept[i], ...departed].filter((a) => teamOf.get(a) === t).length, at: i })),
+			...goneTeams.map((t) => ({ members: departed.filter((a) => teamOf.get(a) === t), size: departed.filter((a) => teamOf.get(a) === t).length, at: kept.length })),
 		];
 	} else {
 		// A place only leavers held goes with them (a guest's stays: it keeps the order).
@@ -286,12 +303,14 @@ export function sideDeltas(sides, forfeits, cur) {
 	const live = sides.filter((x) => x.members.length);
 	if (live.length > 1) {
 		const m = live.map((x) => mean(x.members));
-		const size = live.reduce((t, x) => t + x.members.length, 0) / live.length; // the mean side size
+		const sizeOf = (x) => x.size ?? x.members.length; // its players as the match began
+		const size = live.reduce((t, x) => t + sizeOf(x), 0) / live.length; // the mean side size
 		live.forEach((x, i) => {
 			let sum = 0;
 			for (let j = 0; j < live.length; j++) if (j !== i) sum += (x.at < live[j].at ? 1 : x.at === live[j].at ? 0.5 : 0) - 1 / (1 + 10 ** ((m[j] - m[i]) / 400));
-			// Shared by the side, scaled so uneven sides still sum to zero.
-			for (const a of x.members) out.set(a, (k(a) * sum * (size / x.members.length)) / (live.length - 1));
+			// Shared by the side, scaled so uneven sides still sum to zero —
+			// up to SCALE_MAX, so one against many never swings past 2 × K.
+			for (const a of x.members) out.set(a, (k(a) * sum * Math.min(SCALE_MAX, size / sizeOf(x))) / (live.length - 1));
 		});
 	}
 	for (const { a, against } of forfeits ?? []) {
@@ -325,18 +344,21 @@ export async function summary(env) {
  * every 2 minutes while the match runs — its heartbeat. One row per account
  * and match: `payload` keeps when it was first said, `at` the last beat.
  */
-export async function startMatch(env, me, request) {
+export async function startMatch(env, me, request, { gate = async () => true } = {}) {
 	const b = await body(request);
 	if (typeof b.game !== "string" || !RATED.includes(GAMES[b.game]) || NO_BOARD.has(b.game)) throw new HttpError(400, "only a ranked game with a winner records who began it");
 	if (typeof b.run !== "string" || !b.run || b.run.length > 40) throw new HttpError(400, "run is the party's run id");
 	if (!Number.isInteger(b.match) || b.match < 0) throw new HttpError(400, "match is the match's number in its run");
 	const t = now();
-	await env.DB.prepare(
-		`INSERT INTO reports (match, account, digest, payload, at) VALUES (?, ?, 'start', ?, ?)
-		 ON CONFLICT (match, account) DO UPDATE SET at = excluded.at WHERE digest = 'start'`,
-	)
-		.bind(await startKey(b.game, b.run, b.match), me.id, String(t), t)
-		.run();
+	const key = await startKey(b.game, b.run, b.match);
+	// A beat — the start is already there — is one UPDATE of one row of the
+	// signed-in account's own, idempotent: free of the per-address write
+	// limit, so a page that beats every minute never spends its writes. A
+	// new start is charged like any write (index.js passes the gate here).
+	const beat = await env.DB.prepare("UPDATE reports SET at = ? WHERE match = ? AND account = ? AND digest = 'start'").bind(t, key, me.id).run();
+	if (beat.meta?.changes) return { started: true, beat: true };
+	if (!(await gate())) throw new HttpError(429, "too many changes from this address; wait a few minutes");
+	await env.DB.prepare("INSERT OR IGNORE INTO reports (match, account, digest, payload, at) VALUES (?, ?, 'start', ?, ?)").bind(key, me.id, String(t), t).run();
 	return { started: true };
 }
 

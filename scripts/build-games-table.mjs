@@ -26,6 +26,15 @@ import { fileURLToPath } from "node:url";
 import { runInNewContext } from "node:vm";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+
+/**
+ * Games whose results come in more kinds than their manifest's one: the
+ * results a game sends of each are accepted, on its one board (of the
+ * manifest's kind). Bubble Rush is "ffa" but its teams mode reports "teams"
+ * (a review, 2026-11-16). Kept here so it survives regeneration; a later
+ * manifest field ("kinds", docs/platform.md) would replace it.
+ */
+const EXTRA_KINDS = { "lokeshmohanty/bubble-rush": ["ffa", "teams"] };
 const OUT = join(ROOT, "worker", "api", "games.js");
 const SOURCES = ["lib/catalog.js", "community/catalog.js"];
 
@@ -68,6 +77,10 @@ ${ids.map((id) => `\t${JSON.stringify(id)}: ${JSON.stringify(table[id])},`).join
 // ranking means nothing there): known, counted as played, never ranked —
 // no results, runs, wins against bots or boards.
 export const NO_BOARD = new Set(${JSON.stringify([...noBoard].sort(), null, "\t").replace(/\n/g, "\n")});
+
+// The kinds of result a game may report, where more than its manifest's one
+// (scripts/build-games-table.mjs EXTRA_KINDS); its board keeps GAMES' kind.
+export const KINDS = ${JSON.stringify(Object.fromEntries(Object.entries(EXTRA_KINDS).filter(([id]) => table[id]).sort()), null, "\t")};
 `;
 
 if (process.argv.includes("--check")) {

@@ -41,3 +41,12 @@ export const NO_BOARD = new Set([
 	"tic-tac-toe-ts",
 	"undercover"
 ]);
+
+// The kinds of result a game may report, where more than its manifest's one
+// (scripts/build-games-table.mjs EXTRA_KINDS); its board keeps GAMES' kind.
+export const KINDS = {
+	"lokeshmohanty/bubble-rush": [
+		"ffa",
+		"teams"
+	]
+};
