@@ -24,7 +24,8 @@ const check = (label, ok, detail = "") => {
 	if (!ok) failures++;
 };
 
-const w = await startWrangler({ AUTH_TEST: "1", SESSION_KEY: "social-test-key-0123456789", LB_MIN_GAMES: "1" });
+// MATCH_GRACE_MS: a match whose loser left counts after 3 s here (45 s deployed).
+const w = await startWrangler({ AUTH_TEST: "1", SESSION_KEY: "social-test-key-0123456789", LB_MIN_GAMES: "1", MATCH_GRACE_MS: "3000" });
 if (!w) process.exit(0);
 const site = await serve(8737);
 const RS = encodeURIComponent(w.base);
@@ -151,6 +152,19 @@ try {
 	});
 	const [fa, fb] = [await gameFrame(ana.p, TIMEOUT), await gameFrame(bo.p, TIMEOUT)];
 	await fa.waitForFunction(() => window.__game.handle.debug().started, null, { timeout: TIMEOUT });
+	// Every state the end card's rating line takes, on the node first drawn:
+	// the answer may land after the card, and must then fill it in place.
+	await ana.p.evaluate(() => {
+		window.__rating = { el: null, seen: [], toasts: [] };
+		new MutationObserver(() => {
+			for (const t of document.querySelectorAll(".neon-toast")) if (!window.__rating.toasts.includes(t.textContent)) window.__rating.toasts.push(t.textContent);
+			const el = document.querySelector(".managed-over .managed-rating");
+			if (!el) return;
+			window.__rating.el ??= el;
+			const t = el.hidden ? "(hidden)" : el.textContent;
+			if (window.__rating.seen.at(-1) !== t) window.__rating.seen.push(t);
+		}).observe(document.body, { subtree: true, childList: true, characterData: true, attributes: true });
+	});
 	// Ana is red (Team A) and moves first: four down column 0, Bo stacks column 1.
 	const drop = async (who, f, col) => {
 		await readyToClick(who);
@@ -168,12 +182,60 @@ try {
 	}
 	const won = await fa.waitForFunction(() => window.__game.handle.debug().winner === 1, null, { timeout: TIMEOUT }).then(() => true, () => false);
 	check("Ana wins four down", won);
-	const counted = await ana.p.locator(".neon-toast", { hasText: "Counted on the leaderboard" }).waitFor({ timeout: TIMEOUT }).then(() => true, () => false);
-	check("both reported, the server agreed: counted", counted);
+	// Any toast seen since the game began (the observer above): one shown
+	// for 4.5 s can be gone, or pushed out by others, before this looks.
+	const counted = await ana.p
+		.waitForFunction(() => window.__rating.toasts.some((t) => /^Counted: [+−]\d+ → \d+/.test(t)), null, { timeout: TIMEOUT })
+		.then(() => true, () => false);
+	check("both reported, the server agreed: counted, the toast says by how much", counted, await ana.p.evaluate(() => window.__rating.toasts));
+	const line = ana.p.locator(".managed-over .managed-rating");
+	const shown = await line.filter({ hasText: /Rating \+\d+ → \d+ · provisional/ }).waitFor({ timeout: TIMEOUT }).then(() => true, () => false);
+	check("the end card says the rating change: \"Rating +24 → 1224 · provisional\"", shown, await line.textContent().catch(() => null));
+	const inPlace = await ana.p.evaluate(() => ({ same: document.querySelector(".managed-over .managed-rating") === window.__rating.el, seen: window.__rating.seen }));
+	check("…filled in place on the card already drawn", inPlace.same && inPlace.seen.length >= 1, inPlace);
+	const fits = await line.evaluate((el) => {
+		const r = el.getBoundingClientRect();
+		return r.width > 0 && r.left >= 0 && r.right <= innerWidth && r.bottom <= innerHeight;
+	});
+	check("…inside the phone's screen (390x844), no side scroll", fits && (await noSideScroll(ana.p)));
 	const lb = await ana.p.evaluate(() => NeonArcade.account.leaderboard("connect4", "friends"));
 	check("the friends' board has both, Ana first", lb.rows.length === 2 && lb.rows[0].id === (/* Ana */ lb.rows.find((r) => r.name === "Ana Lima")?.id) && lb.rows[0].elo > 1200, lb.rows);
 	const local = await ana.p.evaluate(() => JSON.parse(localStorage.getItem("neon.stats")).connect4);
 	check("…and it is in this device's own stats too", local?.won >= 1 && local.vsPeople >= 1, local);
+
+	console.log("\nsocial: leaving a ranked game is a loss");
+	{
+		// PLAY AGAIN; Bo's page sees the match begin and says it is seated
+		// (POST /api/match/start); then Bo leaves the party for good.
+		const starts = [];
+		bo.p.on("request", (r) => r.url().includes("/api/match/start") && starts.push(JSON.parse(r.postData() ?? "{}")));
+		const anaRuns = watchRuns(ana.p);
+		await ana.p.locator(".managed-over button", { hasText: "PLAY AGAIN" }).click();
+		await fa.waitForFunction(() => window.__game.handle.debug().winner === null, null, { timeout: TIMEOUT });
+		for (const end = Date.now() + TIMEOUT; Date.now() < end && !starts.length; ) await bo.p.waitForTimeout(200);
+		check("a guest's page says it is seated as the match begins", starts[0]?.game === "connect4", starts);
+		await bo.p.evaluate(async () => {
+			window.__party.room.leave();
+			await NeonArcade.roomSettled?.();
+		});
+		await bo.p.goto(page("?page=profile"));
+		const won = await fa.waitForFunction(() => window.__game.handle.debug().winner === 1, null, { timeout: TIMEOUT }).then(() => true, () => false);
+		check("Bo leaves: the game gives Ana the win", won);
+		const rep = await (async () => {
+			for (const end = Date.now() + TIMEOUT; Date.now() < end; await ana.p.waitForTimeout(250)) {
+				const last = anaRuns.reports.at(-1);
+				if (last?.got?.counted) return last;
+			}
+			return anaRuns.reports.at(-1);
+		})();
+		check("…Ana's report names Bo as having left, from a match that began with two seats", rep?.sent.left?.length === 1 && rep.sent.seats === 2 && Object.values(rep.sent.roster).includes(boId), rep?.sent);
+		check("…it waits out the grace, then counts", anaRuns.reports[0]?.got?.pending === true && rep?.got?.counted === true, anaRuns.reports.map((x) => x.got));
+		const card = await line.filter({ hasText: /Rating \+\d+ → \d+/ }).waitFor({ timeout: TIMEOUT }).then(() => true, () => false);
+		check("…and the end card fills in Ana's change when it does", card, await line.textContent().catch(() => null));
+		const fr = await ana.p.evaluate(() => NeonArcade.account.leaderboard("connect4", "friends"));
+		const boRow = fr.rows.find((r) => r.id === boId);
+		check("…a loss for Bo: two games, no win", boRow?.games === 2 && boRow.wins === 0, boRow);
+	}
 
 	console.log("\nsocial: the leaderboards page");
 	await ana.p.goto(page("?page=leaderboard", "&game=connect4&scope=global"));
@@ -209,6 +271,36 @@ try {
 		const lb = await cy.p.evaluate(() => NeonArcade.account.leaderboard("neon-survival-mp"));
 		check("…a run with a best score on the board", lb.me?.games === 1 && lb.me.wins === 0 && Number.isFinite(lb.me.best), lb.me);
 		await cy.ctx.close();
+	}
+
+	console.log("\nsocial: an abandoned solo run never files a later match as solo");
+	{
+		// A solo run left over (Light Cycles alone, abandoned), then a match
+		// that began with two seats whose other player left: its result holds
+		// one id. It must go as a match with a departure, never as solo.
+		const sam = await device("Sam");
+		const seen = watchRuns(sam.p);
+		const sent = await sam.p.evaluate(async () => {
+			const A = NeonArcade.account;
+			const game = "lokeshmohanty/light-cycles";
+			const ticket = await A.startRun(game);
+			const members = new Map([
+				["sa", { id: "sa", name: "Sam", acct: { id: A.me.id } }],
+				["sb", { id: "sb", name: "Other", acct: { id: "someone-else" } }],
+			]);
+			const room = { selfId: "sa", isHost: () => false, getRun: () => "party-run-sam", getMember: (id) => members.get(id) ?? null, getMembers: () => [...members.values()] };
+			A.matchStart(game, { room, seats: ["sa", "sb"], kind: "ffa" });
+			members.delete("sb"); // the other rider left the party
+			NeonArcade.onResult({ game, run: "party-run-sam", result: { kind: "ffa", match: 1, ranking: [["sa"]], scores: { sa: 9 } }, room });
+			return ticket?.run ?? null;
+		});
+		for (const end = Date.now() + TIMEOUT; Date.now() < end && !seen.reports.length; ) await sam.p.waitForTimeout(200);
+		const rep = seen.reports[0]?.sent;
+		check("(the abandoned solo run was issued)", typeof sent === "string", sent);
+		check("the report names the party's run, not the stale solo one", rep?.run === "party-run-sam" && rep.run !== sent, rep);
+		check("…says the match began with two seats, and who left", rep?.seats === 2 && JSON.stringify(rep.left) === '["sb"]', rep);
+		check("…and the server does not count it as a run played alone", seen.reports[0]?.got?.counted !== true, seen.reports[0]?.got);
+		await sam.ctx.close();
 	}
 
 	console.log("\nsocial: a Light Cycles round alone, its time on the solo board");

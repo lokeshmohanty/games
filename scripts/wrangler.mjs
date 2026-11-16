@@ -66,11 +66,27 @@ export async function startWrangler(vars = {}) {
 		rmSync(state, { recursive: true, force: true });
 	};
 	process.on("exit", stop);
+	/**
+	 * Run SQL on the same local D1 the Worker uses (`wrangler d1 execute
+	 * --local`), for a test's setup or a query plan: the rows of each
+	 * statement, as wrangler's --json gives them.
+	 */
+	const sql = (command) => {
+		const out = spawnSync(cmd, [...pre, "d1", "execute", "arcade", "--local", "--persist-to", state, "--json", "--command", command], {
+			cwd: join(ROOT, "worker"),
+			env,
+			encoding: "utf8",
+			timeout: 120_000,
+			maxBuffer: 64 * 1024 * 1024,
+		});
+		if (out.status !== 0) throw new Error(`d1 execute failed: ${(out.stderr || out.stdout || "").split("\n").slice(-8).join("\n")}`);
+		return JSON.parse(out.stdout).map((r) => r.results ?? []);
+	};
 	const base = `http://127.0.0.1:${port}`;
 	const deadline = Date.now() + 180_000;
 	while (Date.now() < deadline && !exited) {
 		try {
-			if ((await fetch(base + "/not-a-room")).status === 404) return { base, stop, log: () => log };
+			if ((await fetch(base + "/not-a-room")).status === 404) return { base, stop, log: () => log, sql };
 		} catch {}
 		await sleep(500);
 	}
