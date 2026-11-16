@@ -29,7 +29,8 @@ import { loadPlaywright } from "./playwright.mjs";
 const SITE = await serve(8734);
 const url = SITE.url;
 // The portal's address (LEAVE PARTY goes there): the shell with no query.
-const PORTAL = (u) => u.pathname === "/" && !u.search;
+// The portal: ./, or ./ with its sub-tab named (src/router.ts portalAddress).
+const PORTAL = (u) => u.pathname === "/" && /^(\?page=games&tab=(mine|all))?$/.test(u.search);
 const TIMEOUT = 30_000;
 
 function chromePath() {
@@ -768,6 +769,12 @@ try {
 	check("a tap on empty field scores nothing, counts one miss on the host, and breaks the streak", missed && missed.after === missed.before && missed.misses === 1 && missed.streak === 0, JSON.stringify(missed));
 	// A phone turned sideways (844x390): the 1 : 2 field would be about 130px
 	// wide, so the game asks for the phone upright instead; turned back, it plays.
+	// The hint is for touch screens only (a short desktop window never gets
+	// it), and this context has a mouse: report a touch screen to the frame.
+	await G.evaluate(() => {
+		const mm = window.matchMedia.bind(window);
+		window.matchMedia = (q) => (q === "(pointer: coarse)" ? { matches: true, media: q } : mm(q));
+	});
 	await page.setViewportSize({ width: 844, height: 390 });
 	const sideways = await G.waitForFunction(() => window.__game.handle.debug().turnUpright, null, { timeout: 5000 }).then(() => true, () => false);
 	const sidewaysFit = await G.evaluate(() => {
@@ -779,6 +786,17 @@ try {
 	await page.setViewportSize({ width: 390, height: 844 });
 	const upright = await G.waitForFunction(() => !window.__game.handle.debug().turnUpright && window.__game.handle.debug().field.w >= 300, null, { timeout: 5000 }).then(() => true, () => false);
 	check("…and upright again, the field is back, at least 300px wide", upright, JSON.stringify((await debug(page)).field));
+	// A desktop window that is short and wide (a mouse, not a touch screen)
+	// plays on, with no hint.
+	await G.evaluate(() => {
+		const mm = window.matchMedia.bind(window);
+		window.matchMedia = (q) => (q === "(pointer: coarse)" ? { matches: false, media: q } : mm(q));
+	});
+	await page.setViewportSize({ width: 1280, height: 480 });
+	await sleep(600);
+	check("a short desktop window (1280x480, a mouse) gets no TURN YOUR PHONE UPRIGHT", !(await debug(page)).turnUpright, JSON.stringify((await debug(page)).field));
+	await page.setViewportSize({ width: 390, height: 844 });
+	await G.evaluate(() => window.dispatchEvent(new Event("resize")));
 
 	// Each bot pops bubbles of its own (popped, not score: a bomb can take a
 	// score to zero). Waited for rather than slept on.
@@ -959,11 +977,14 @@ try {
 	check("the finished game is in this device's stats, counted once", mine.stats?.[c4Id]?.played === 1, JSON.stringify(mine.stats?.[c4Id] ?? mine.stats));
 	check("…against a bot", mine.stats?.[c4Id]?.vsBots === 1);
 	check("…and it is the most recent game", mine.recent?.[0] === c4Id, JSON.stringify(mine.recent));
+	// A game played: ./ opens on My Games now, with Recently played; the
+	// cards with your record are All Games' (lib/portal.js).
 	await page.goto(url("index.html"));
+	check("…and under Recently played, on My Games", (await page.locator("[data-recent] .recent-game").first().textContent({ timeout: TIMEOUT }).catch(() => "")) === "Connect 4" && new URL(page.url()).searchParams.get("tab") === "mine", page.url());
+	await page.goto(url("index.html?page=games&tab=all"));
 	// A game has a card in every home-screen section it is in: the first will do.
 	const portalSays = await page.locator(`.game-card[data-game="${c4Id}"] .game-you`).first().textContent({ timeout: TIMEOUT }).catch(() => "");
 	check("the portal shows it on the game's card", /won of 1/.test(portalSays), portalSays);
-	check("…and under Recently played", (await page.locator("[data-recent] .recent-game").first().textContent().catch(() => "")) === "Connect 4");
 
 	// ------------------------------------------------------ neon fission
 	//
@@ -1260,14 +1281,14 @@ try {
 			.catch(() => false);
 		check("…and the new reply connects", linked);
 
-		// One page (docs/spa.md): "← All games" only moves to the portal — the
+		// One page (docs/spa.md): "← Games" only moves to the portal — the
 		// party stays, and BACK TO PARTY returns to it, nobody asked or told.
 		const guestName = await replier.evaluate(() => window.__game.room.self().name);
 		await replier.locator("a.portal-link").click();
 		const kept = await replier
 			.waitForFunction(() => document.body.dataset.view === "portal" && !window.__party.room.closed, null, { timeout: TIMEOUT })
 			.then(() => true, () => false);
-		check("← All games moves to the portal and keeps the party", kept && (await replier.locator("dialog.neon-ask[open]").count()) === 0);
+		check("← Games moves to the portal and keeps the party", kept && (await replier.locator("dialog.neon-ask[open]").count()) === 0);
 		await replier.locator(".back-to-game").click();
 		await replier.waitForFunction(() => document.body.dataset.view === "party", null, { timeout: TIMEOUT });
 		// LEAVE PARTY walks out: with somebody else in it, it asks first, and

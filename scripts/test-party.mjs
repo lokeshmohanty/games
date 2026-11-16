@@ -21,8 +21,9 @@ import { loadPlaywright } from "./playwright.mjs";
 const SITE = await serve(8733);
 const PARTY = SITE.url("?party");
 const TIMEOUT = 40_000;
-// The portal: the shell with no query (LEAVE PARTY and ALL GAMES go there).
-const PORTAL = (u) => u.pathname === "/" && !u.search;
+// The portal: the shell with no query (LEAVE PARTY and GAMES go there).
+// The portal: ./, or ./ with its sub-tab named (src/router.ts portalAddress).
+const PORTAL = (u) => u.pathname === "/" && /^(\?page=games&tab=(mine|all))?$/.test(u.search);
 
 function chromePath() {
 	const found = [
@@ -157,12 +158,16 @@ try {
 		`scrollWidth ${overflow.scroll} > clientWidth ${overflow.client}`,
 	);
 	const behindPill = await host.evaluate(() => {
-		// The fixed "all games" pill must not sit on top of the title.
+		// The fixed "← games" pill must not sit on top of the title.
 		const pill = document.querySelector(".portal-link")?.getBoundingClientRect();
 		const title = document.querySelector(".lobby-title")?.getBoundingClientRect();
 		return pill && title ? pill.bottom > title.top && pill.right > title.left : false;
 	});
 	check("the fixed portal pill does not overlap the title", !behindPill);
+	// Lokesh, 2026-11-16: "← GAMES" (it lands on the home screen's default
+	// sub-tab, My Games or All Games), every way back to it named the same.
+	const backLabel = await host.evaluate(() => document.querySelector(".portal-link")?.textContent.trim());
+	check("the pill back to the home screen says ← Games", backLabel === "← Games", backLabel);
 	check("host sees 2 members", await waitForMembers(host, 2, "host"), "roster did not grow");
 	check("p2 sees 2 members", await waitForMembers(p2, 2, "p2"));
 
@@ -346,7 +351,7 @@ try {
 	// still the host of a party of three afterwards.
 	const heirName = await p2.evaluate(() => window.__party.room.self().name);
 	const asked = nextDialog(host, false);
-	await host.locator("a.neon-btn", { hasText: "ALL GAMES" }).click();
+	await host.locator("a.neon-btn", { hasText: /^GAMES$/ }).click();
 	const question = await asked;
 	check(
 		"the host's leave confirmation names the heir",
@@ -371,7 +376,7 @@ try {
 		return { r: r && { left: r.left, right: r.right, bottom: r.bottom }, portalRight: l.right, vw: innerWidth };
 	});
 	check(
-		"a running game shows PARTY (with FEEDBACK and FAVOURITE), clear of ← All games, on the phone",
+		"a running game shows PARTY (with FEEDBACK and FAVOURITE), clear of ← Games, on the phone",
 		!!pill.r && pill.r.right <= pill.vw && pill.r.left > pill.portalRight && pill.r.bottom <= 52,
 		JSON.stringify(pill),
 	);
@@ -573,7 +578,7 @@ try {
 	check("the host is told who joined", await toastOn(host, `${p4Name} joined the party.`));
 	const stillIn = (page) => page.evaluate(() => !!window.__party.room && !window.__party.room.closed);
 
-	// LEAVE PARTY (one page, docs/spa.md: "← All games" only moves to the
+	// LEAVE PARTY (one page, docs/spa.md: "← Games" only moves to the
 	// portal and keeps the party; this is the way out).
 	const leaveLink = p4.locator("a[data-leaves]", { hasText: "LEAVE PARTY" });
 	let q = nextDialog(p4, false);
@@ -625,7 +630,7 @@ try {
 
 	// Now really leave: the others are told, and how.
 	q = nextDialog(p4, true);
-	// One page (docs/spa.md): "← All games" keeps the party; LEAVE PARTY leaves.
+	// One page (docs/spa.md): "← Games" keeps the party; LEAVE PARTY leaves.
 	await Promise.all([p4.waitForURL(PORTAL, { timeout: TIMEOUT }), p4.locator("a[data-leaves]", { hasText: "LEAVE PARTY" }).click()]);
 	await q;
 	check("LEAVE leaves for the portal", PORTAL(new URL(p4.url())));
@@ -847,7 +852,7 @@ try {
 		await pair.close();
 	}
 
-	console.log("\nparty: leaving through ALL GAMES");
+	console.log("\nparty: leaving through GAMES");
 	// Its own context, so the rejoin token under test is nobody else's.
 	// `?mockroom=1` gives the page a room server, so it hosts with a code and
 	// a token — the state the portal banner used to silently rejoin.
@@ -905,7 +910,7 @@ try {
 	const alone = nextDialog(leaver, true);
 	await Promise.all([
 		leaver.waitForURL(PORTAL, { timeout: TIMEOUT }),
-		leaver.locator("a.neon-btn", { hasText: "ALL GAMES" }).click(),
+		leaver.locator("a.neon-btn", { hasText: /^GAMES$/ }).click(),
 	]);
 	check(
 		"a host alone is told the party ends",
@@ -913,7 +918,7 @@ try {
 		await alone,
 	);
 	check(
-		"leaving through ALL GAMES drops the rejoin token",
+		"leaving through GAMES drops the rejoin token",
 		await leaver.evaluate(() => localStorage.getItem("neon.room") === null),
 	);
 	// What the portal's party banner does, with the mock still attached so a

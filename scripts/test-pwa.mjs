@@ -331,8 +331,8 @@ check("the blurb is dropped at this width", grid.blurbHidden, "the long descript
 // `.game-card p` outranks a bare `.game-meta`, so every rule written for the
 // meta line was silently ignored until it was scoped. The tell was the line
 // wrapping in two.
-check("the meta line is styled by its own rule, not the paragraph's",
-	grid.metaSize < 12, `${grid.metaSize}px — .game-card p is winning again`);
+check("the meta line is styled by its own rule, not the paragraph's: 12px, the least a card says (2026-11-15)",
+	grid.metaSize === 12, `${grid.metaSize}px — .game-card p is winning again`);
 check("and fits on one line", grid.metaLines <= 1, `${grid.metaLines} lines`);
 check("every card carries its tags", grid.tagged);
 
@@ -660,7 +660,8 @@ console.log("\npwa: every game offline in single player");
 			await page.waitForSelector(".game-frame", { timeout: 15_000 });
 			return gameFrame(page, 20_000);
 		}
-		await page.goto(`${BASE}/index.html`, { waitUntil: "domcontentloaded" });
+		// All Games by its address: after the first game, ./ opens on My Games.
+		await page.goto(`${BASE}/index.html?page=games&tab=all`, { waitUntil: "domcontentloaded" });
 		const card = page.locator(`.game-card[data-game="${id}"]`).first();
 		await card.waitFor({ timeout: 10_000 });
 		const solo = card.locator(".card-play.is-bots");
@@ -672,7 +673,7 @@ console.log("\npwa: every game offline in single player");
 	};
 
 	const portalCards = await (async () => {
-		await page.goto(`${BASE}/index.html`, { waitUntil: "domcontentloaded" });
+		await page.goto(`${BASE}/index.html?page=games&tab=all`, { waitUntil: "domcontentloaded" });
 		await page.waitForSelector(".game-card", { timeout: 10_000 }).catch(() => {});
 		return page.evaluate(() => [...new Set([...document.querySelectorAll(".game-card")].map((c) => c.dataset.game))]);
 	})();
@@ -732,6 +733,37 @@ console.log("\npwa: every game offline in single player");
 		check(`${g.name}: …with every file it asked for on the device`, missed.length === 0, [...new Set(missed)].join(", "));
 		check(`${g.name}: …without asking the room server`, refused.filter((u) => /\/ping(?:$|\?)/.test(u)).length === roomBefore);
 		if (errors.length) check(`${g.name}: …with no page errors`, false, errors.join(" | ").slice(0, 200));
+	}
+
+	// PLAY SOMETHING (lib/portal.js quickPick), offline: the SINGLE PLAYER of
+	// the popular game it picks, so it plays with the network cut like the card.
+	{
+		missed = [];
+		errors = [];
+		const roomBefore = refused.filter((u) => /\/ping(?:$|\?)/.test(u)).length;
+		await page.goto(`${BASE}/index.html?page=games&tab=all`, { waitUntil: "domcontentloaded" });
+		const quick = page.locator('[data-section="popular"] [data-quick]');
+		const id = await quick.getAttribute("data-game", { timeout: 10_000 }).catch(() => null);
+		const g = catalog.find((x) => x.id === id);
+		let played = null;
+		let detail = "";
+		try {
+			await quick.click();
+			await page.waitForSelector(".game-frame", { timeout: 15_000 });
+			played = await driver(id)(await gameFrame(page, 20_000));
+		} catch (err) {
+			detail = err.message.split("\n")[0];
+		}
+		// Single player: you and the game's bots only (Neon Survival seats none).
+		const how = await page
+			.evaluate(() => {
+				const room = window.__party?.room;
+				return { game: window.__party?.game, alone: !!room && room.getMembers().every((m) => m.id === room.selfId || m.id.startsWith("bot_")) };
+			})
+			.catch(() => ({}));
+		check(`PLAY SOMETHING offline: ${g?.name ?? id} in single player (you and its bots only), and it plays`, !!g && g.runtime !== "python" && (g.bots || g.local) && how.game === id && how.alone && !!played, detail || JSON.stringify(how));
+		check("…with every file it asked for on the device, and no room server", missed.length === 0 && refused.filter((u) => /\/ping(?:$|\?)/.test(u)).length === roomBefore, [...new Set(missed)].join(", "));
+		if (errors.length) check("…with no page errors", false, errors.join(" | ").slice(0, 200));
 	}
 
 	// The Python half: one online play brings Pyodide; offline it plays after.
