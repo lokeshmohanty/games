@@ -91,7 +91,7 @@ same UI paths run, and no game or test notices its absence.
   predecessor is already closed — so the client stands down: `room.detach()`
   (links closed with no `__gone`, since the id lives on in the other tab),
   claim and token untouched, party screen "open in another tab" + USE THIS
-  TAB INSTEAD. Never `leave()` there, and never START A NEW PARTY from the
+  USE IT HERE. Never `leave()` there, and never START A NEW PARTY from the
   displaced screen. **Nor from a stale tab's RETRY screen** (found
   2026-11-11, review): `releaseRejoin` used to dial `join` with the shared
   claim and `leave` — the join bound the seat and 4409'd the *live* tab,
@@ -103,7 +103,10 @@ same UI paths run, and no game or test notices its absence.
   the displaced screen instead of hosting (a new party would overwrite the
   shared token). Tests: test-hub "A claim released from a socket…",
   test-worker-do "released without binding", test-room 6e6 + the screens,
-  test-worker section 7. The owed leave (`oweLeave`) is a `release` too
+  test-worker section 7. **`busy` is only "a socket is bound"** (2026-11-15):
+  another tab is a live page holding the seat's Web Lock — a page in
+  Chrome's back/forward cache kept its socket open for 10 minutes and
+  stranded a phone; see [[ghost-seats]]. The owed leave (`oweLeave`) is a `release` too
   since 2026-11-12 (see below). The mock
   closes a replaced socket with 4409 too. Tests: test-room 6e5 (mock),
   test-worker section 7 (two pages, one context).

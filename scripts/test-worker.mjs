@@ -42,6 +42,9 @@
  *      reload mid-game rejoins it; another game page moves on.
  *  14. the host goes mid-game: in each game the heir carries it on from
  *      what everyone was sent (Battleship ends with a word).
+ *  15. a page in Chrome's back/forward cache never strands its seat: the
+ *      SINGLE PLAYER after it starts at once, the seat is given back, and
+ *      Back into the cached page starts over (bfcache on, as on a phone).
  *
  * Wrangler comes from $WRANGLER (a command line), else `wrangler` on PATH,
  * else `nix shell nixpkgs#wrangler` (npx wrangler cannot link workerd on
@@ -653,7 +656,7 @@ try {
 			.then(() => true)
 			.catch(() => false);
 		check("the first tab says the party is open in another tab", told);
-		check("and offers USE THIS TAB INSTEAD", (await g1.locator("button", { hasText: "USE THIS TAB INSTEAD" }).count()) === 1);
+		check("and offers USE IT HERE", (await g1.locator("button", { hasText: "USE IT HERE" }).count()) === 1);
 		check("its room is closed", await g1.evaluate(() => window.__party.room.closed));
 		await sleep(6000);
 		check("the first tab never re-dials", (await g1.evaluate(() => window.__dials)) === 0);
@@ -670,8 +673,8 @@ try {
 		check("and still holds the token", (await token(g2))?.id === tg.id);
 
 		// And back: the button reconnects this tab, and the other stands down.
-		await g1.locator("button", { hasText: "USE THIS TAB INSTEAD" }).click();
-		check("USE THIS TAB INSTEAD reconnects the first tab", await waitInParty(g1, NO_ANSWER_WAIT));
+		await g1.locator("button", { hasText: "USE IT HERE" }).click();
+		check("USE IT HERE reconnects the first tab", await waitInParty(g1, NO_ANSWER_WAIT));
 		const swapped = await g2
 			.locator(".lobby-status", { hasText: /open in another tab/i })
 			.waitFor({ timeout: TIMEOUT })
@@ -1344,6 +1347,86 @@ try {
 		check("battleship: cannot be carried on, so it ends and says so", await ended);
 		check("battleship: …everyone back on the party screen", await t.b.waitForFunction(() => window.__party.game === null, null, { timeout: TIMEOUT }).then(() => true, () => false));
 		await done(t);
+	}
+	// ------- 15. a page in the back/forward cache never strands its seat
+	// Found on a phone (2026-11-15): after a reload, every SINGLE PLAYER said
+	// "This party is open in another tab" for ten minutes. The reload's page,
+	// reconnecting its seat, was left by a plain navigation (the shell does
+	// one when no party is live, src/App.tsx) and went into Chrome's
+	// back/forward cache with its room socket still open; the server called
+	// the seat busy, and every release took that for another tab until the
+	// cache let the page go (its lifetime: 10 minutes). Playwright turns the
+	// cache off, so this browser turns it back on, as a phone has it.
+	console.log("\nworker: the back/forward cache never strands a seat");
+	{
+		const bfBrowser = await chromium.launch({
+			executablePath: chromePath(),
+			ignoreDefaultArgs: ["--disable-back-forward-cache"],
+			args: ["--no-sandbox", "--autoplay-policy=no-user-gesture-required"],
+		});
+		try {
+			const ctx = await bfBrowser.newContext({
+				viewport: { width: 390, height: 844 },
+				extraHTTPHeaders: { "CF-Connecting-IP": `10.77.0.${++personIp}` },
+			});
+			await ctx.route("**/ping", (route) => route.continue());
+			await ctx.addInitScript((rs) => {
+				try {
+					localStorage.setItem("neon.rs", rs);
+				} catch {}
+				addEventListener("pageshow", (e) => e.persisted && sessionStorage.setItem("bf.restored", "1"));
+			}, server.base);
+			const p = await ctx.newPage();
+			p.on("pageerror", (err) => {
+				console.log(`  FAIL page error on bf: ${err.message}`);
+				failures++;
+			});
+			const said = () => p.evaluate(() => document.querySelector(".lobby-status")?.textContent ?? "");
+			const t = await host(p); // a party with a code (a bots game's party gets one the same way)
+			await p.reload();
+			await p.locator(".lobby-sub", { hasText: "Reconnecting" }).waitFor({ timeout: TIMEOUT });
+			await sleep(2000); // its join has bound the seat; alone, nobody answers it for 30 s
+			await p.evaluate((u) => location.assign(u), SITE.url("?game=neon-survival-mp&fresh=1&mode=bots"));
+			const solo = await p.waitForFunction(() => window.__party?.game === "neon-survival-mp", null, { timeout: 15_000 }).then(() => true, () => false);
+			check("SINGLE PLAYER after leaving that page starts the bots game", solo && !/another tab/i.test(await said()), await said());
+			let seat = "id-taken";
+			for (let i = 0; i < 20 && seat === "id-taken"; i++) {
+				await sleep(500);
+				seat = await claimOf(t.code, t.id);
+			}
+			check("…and the old seat is given back, not held by the cached page", seat === "no-room", seat);
+			check("…with no token left for it", (await token(p))?.code !== t.code, JSON.stringify(await token(p)));
+
+			// Back into the cached page: it was really cached, and it does not
+			// come back claiming a seat this browser has given up.
+			await p.goBack({ waitUntil: "commit" });
+			await sleep(1500);
+			await p.waitForLoadState("load").catch(() => {});
+			const restored = await p.evaluate(() => sessionStorage.getItem("bf.restored") === "1").catch(() => false);
+			check("(Back restores the page from the back/forward cache)", restored);
+			const back = await p.locator(".party-code-digits, .lobby-sub").first().waitFor({ timeout: TIMEOUT }).then(() => true, () => false);
+			check("…and it starts over rather than say it is open in another tab", back && !/another tab/i.test(await said()), await said());
+
+			// The cache's own part: a page going into it hangs up its room
+			// socket, so the server never calls the seat busy at all.
+			const t2 = await host(p);
+			await p.reload();
+			await p.locator(".lobby-sub", { hasText: "Reconnecting" }).waitFor({ timeout: TIMEOUT });
+			await sleep(2000);
+			await p.evaluate(() => sessionStorage.removeItem("bf.restored"));
+			await p.evaluate((u) => location.assign(u), SITE.url("manifest.webmanifest"));
+			await sleep(1000);
+			const freed = await call(t2.code, { t: "release", id: t2.id, secret: t2.secret });
+			check("a page going into the cache hangs up: its seat is not busy", freed.t === "released", JSON.stringify(freed));
+			// …and it really was in the cache, not unloaded (an unload closes
+			// the socket anyway, and would prove nothing).
+			await p.goBack({ waitUntil: "commit" });
+			await sleep(1500);
+			check("(that page was in the back/forward cache: Back restores it)", await p.evaluate(() => sessionStorage.getItem("bf.restored") === "1").catch(() => false));
+			await ctx.close();
+		} finally {
+			await bfBrowser.close().catch(() => {});
+		}
 	}
 } catch (err) {
 	console.log(`  FAIL ${err.stack ?? err}`);
