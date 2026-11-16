@@ -52,6 +52,8 @@ export function catalogEntries(files, root) {
 			bots: m.bots !== false && m.kind !== "shared",
 			local: m.kind === "local",
 			kind: m.kind,
+			// No online boards for it (game.json "leaderboard": false); omitted when it has them.
+			...(m.leaderboard === false ? { leaderboard: false } : {}),
 			tags: m.tags ?? [],
 			categories: categoriesOf(m),
 			// The rules (Markdown, in the folder): shown on a first visit and behind "?".

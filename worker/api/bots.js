@@ -46,12 +46,10 @@ export const BOTS_PER_DAY = 20;
  * at least 600 ms a move (lib/sdk-managed.js BOT_MS). Adding a game is one
  * entry here.
  */
-export const BOTS = {
-	// The bot (win, block, centre, first free) is deterministic: every line
-	// searched, the fewest bot moves before a win is 3 (4 moving second).
-	"tic-tac-toe-js": { minMs: 800 },
-	// Depth-5 minimax, deterministic: no win in under 6 bot moves, either seat.
-	connect4: { minMs: 2_600 },
+export const BOTS = Object.assign(Object.create(null), {
+	// Tic Tac Toe and Connect 4 had boards here until 2026-11-16, when they
+	// lost their online boards ("leaderboard": false: a solved game, and
+	// Connect 4, Lokesh's choice). Their rows in bot_wins stay, unserved.
 	// The rules allow a win after one bot move (600 ms), though none was found
 	// within 3 human moves for any bot seed searched: two bot moves, 1.2 s, so
 	// no real win is refused (here the margin is the bot's own slowness).
@@ -69,7 +67,7 @@ export const BOTS = {
 	// A race: the human's own solve sets the pace (the bot fills a cell every
 	// few seconds), so the solo floor for the easiest puzzle (sudoku.js).
 	"lokeshmohanty/sudoku": { minMs: 29_000 },
-};
+});
 
 const KINDS = ["duel", "ffa", "teams"]; // a kind with a winner
 const isBot = (id) => typeof id === "string" && id.startsWith("bot_");
@@ -131,9 +129,9 @@ export async function reportBotsWin(env, me, b, t) {
 
 const all = async (stmt) => (await stmt.all()).results ?? [];
 
-/** An account's wins against bots, by game, most first (profiles). */
-export const botWinsOf = (env, account) =>
-	all(env.DB.prepare("SELECT game, wins FROM bot_wins WHERE account = ? ORDER BY wins DESC, game LIMIT 50").bind(account));
+/** An account's wins against bots, by game, most first (profiles) — of games that still have the board. */
+export const botWinsOf = async (env, account) =>
+	(await all(env.DB.prepare("SELECT game, wins FROM bot_wins WHERE account = ? ORDER BY wins DESC, game LIMIT 50").bind(account))).filter((r) => BOTS[r.game]);
 const row = (r, i) => ({ rank: i + 1, id: r.account, name: r.name, avatar: r.avatar ?? null, wins: r.wins, first: r.first, at: r.at });
 
 /**
@@ -149,8 +147,9 @@ export async function botsBoard(env, me, game, { only = null, includeHidden = fa
 	const args = [game];
 	if (!includeHidden) where.push("a.hide_public = 0");
 	if (only) {
-		where.push(`w.account IN (${only.map(() => "?").join(",")})`);
-		args.push(...only);
+		// One JSON parameter, not one `?` each: D1 allows 100 a query.
+		where.push("w.account IN (SELECT value FROM json_each(?))");
+		args.push(JSON.stringify(only));
 	}
 	const rows = (
 		await all(

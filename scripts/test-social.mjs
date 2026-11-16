@@ -24,7 +24,9 @@ const check = (label, ok, detail = "") => {
 	if (!ok) failures++;
 };
 
-const w = await startWrangler({ AUTH_TEST: "1", SESSION_KEY: "social-test-key-0123456789", LB_MIN_GAMES: "1" });
+// MATCH_GRACE_MS: a match whose loser left counts after 3 s here (45 s deployed).
+// MATCH_STALE_MS: a departure needs the leaver's page silent this long (3 min deployed).
+const w = await startWrangler({ AUTH_TEST: "1", SESSION_KEY: "social-test-key-0123456789", LB_MIN_GAMES: "1", MATCH_GRACE_MS: "3000", MATCH_STALE_MS: "4000" });
 if (!w) process.exit(0);
 const site = await serve(8737);
 const RS = encodeURIComponent(w.base);
@@ -157,11 +159,15 @@ try {
 	check("NOT NOW forgets the invite on the server too", (await boPortal.evaluate(() => NeonArcade.account.api("/api/invites"))).invites.length === 0);
 	await boPortal.close();
 
-	console.log("\nsocial: a ranked game between two signed-in people");
+	console.log("\nsocial: Connect 4 between two signed-in people: played, not ranked");
+	// Connect 4 has no online boards since 2026-11-16 ("leaderboard": false).
 	// The reload above made a new party; bring Bo into it.
 	const code2 = (await ana.p.locator(".party-code-digits").textContent()).replace(/\D/g, "");
 	await bo.p.goto(page("?party", `#c=${code2}`));
 	await ana.p.waitForFunction(() => document.querySelectorAll(".party-member").length === 2, null, { timeout: TIMEOUT });
+	const anaRuns = watchRuns(ana.p);
+	const anaStarts = [];
+	ana.p.on("request", (r) => r.url().includes("/api/match/start") && anaStarts.push(r.url()));
 	await ana.p.evaluate(() => {
 		const r = window.__party.room;
 		const [a, b] = r.getMembers();
@@ -186,22 +192,90 @@ try {
 			await fa.waitForFunction((n) => window.__game.handle.debug().board.flat().filter(Boolean).length >= n, 2 * i + 2, { timeout: TIMEOUT });
 		}
 	}
-	const won = await fa.waitForFunction(() => window.__game.handle.debug().winner === 1, null, { timeout: TIMEOUT }).then(() => true, () => false);
-	check("Ana wins four down", won);
-	const counted = await ana.p.locator(".neon-toast", { hasText: "Counted on the leaderboard" }).waitFor({ timeout: TIMEOUT }).then(() => true, () => false);
-	check("both reported, the server agreed: counted", counted);
-	const lb = await ana.p.evaluate(() => NeonArcade.account.leaderboard("connect4", "friends"));
-	check("the friends' board has both, Ana first", lb.rows.length === 2 && lb.rows[0].id === (/* Ana */ lb.rows.find((r) => r.name === "Ana Lima")?.id) && lb.rows[0].elo > 1200, lb.rows);
+	const c4won = await fa.waitForFunction(() => window.__game.handle.debug().winner === 1, null, { timeout: TIMEOUT }).then(() => true, () => false);
+	check("Ana wins four down", c4won);
+	await ana.p.locator(".managed-over").waitFor({ timeout: TIMEOUT });
+	await ana.p.waitForTimeout(2500);
+	check("…nothing is reported, and no match start was sent", anaRuns.reports.length === 0 && anaStarts.length === 0, { reports: anaRuns.reports.map((x) => x.sent), starts: anaStarts });
+	check("…the end card has no rating line", await ana.p.locator(".managed-over .managed-rating").isHidden());
+	check("…and no toast about it", (await ana.p.locator(".neon-toast", { hasText: /counted|ranked/i }).count()) === 0);
 	const local = await ana.p.evaluate(() => JSON.parse(localStorage.getItem("neon.stats")).connect4);
-	check("…and it is in this device's own stats too", local?.won >= 1 && local.vsPeople >= 1, local);
+	check("…while this device's own stats still count it", local?.won >= 1 && local.vsPeople >= 1, local);
+
+	console.log("\nsocial: leaving a ranked game is a loss, and the rating on the end card");
+	{
+		// Neon Fission between Ana and Bo; Bo's page says it is seated (POST
+		// /api/match/start), then Bo leaves the party for good.
+		const starts = [];
+		bo.p.on("request", (r) => r.url().includes("/api/match/start") && starts.push(JSON.parse(r.postData() ?? "{}")));
+		await ana.p.evaluate(() => window.__party.room.setGame("neon-fission"));
+		const nf = await gameFrame(ana.p, TIMEOUT);
+		await gameFrame(bo.p, TIMEOUT);
+		await nf.waitForFunction(() => window.__game?.handle?.debug?.()?.phase === "play", null, { timeout: TIMEOUT });
+		// Every state the end card's rating line takes, on the node first drawn:
+		// the answer lands after the card (the grace), and must fill it in place.
+		await ana.p.evaluate(() => {
+			window.__rating = { el: null, seen: [], toasts: [] };
+			new MutationObserver(() => {
+				for (const t of document.querySelectorAll(".neon-toast")) if (!window.__rating.toasts.includes(t.textContent)) window.__rating.toasts.push(t.textContent);
+				const el = document.querySelector(".managed-over .managed-rating");
+				if (!el) return;
+				window.__rating.el ??= el;
+				const t = el.hidden ? "(hidden)" : el.textContent;
+				if (window.__rating.seen.at(-1) !== t) window.__rating.seen.push(t);
+			}).observe(document.body, { subtree: true, childList: true, characterData: true, attributes: true });
+		});
+		for (const end = Date.now() + TIMEOUT; Date.now() < end && !starts.length; ) await bo.p.waitForTimeout(200);
+		check("a guest's page says it is seated as the match begins", starts[0]?.game === "neon-fission" && Number.isInteger(starts[0].match), starts);
+		const before = anaRuns.reports.length;
+		await bo.p.evaluate(async () => {
+			window.__party.room.leave();
+			await NeonArcade.roomSettled?.();
+		});
+		await bo.p.goto(page("?page=profile"));
+		const won = await nf.waitForFunction(() => window.__game.handle.debug().winner !== null, null, { timeout: TIMEOUT }).then(() => true, () => false);
+		check("Bo leaves: the game is Ana's", won);
+		const rep = await (async () => {
+			for (const end = Date.now() + TIMEOUT; Date.now() < end; await ana.p.waitForTimeout(250)) {
+				const last = anaRuns.reports.at(-1);
+				if (anaRuns.reports.length > before && last?.got?.counted) return last;
+			}
+			return anaRuns.reports.at(-1);
+		})();
+		check("…Ana's report names Bo as having left, from a match that began with two seats", rep?.sent.left?.length === 1 && rep.sent.seats === 2 && Object.values(rep.sent.roster).includes(boId), rep?.sent);
+		check("…it waits out the grace, then counts", anaRuns.reports[before]?.got?.pending === true && rep?.got?.counted === true, anaRuns.reports.slice(before).map((x) => x.got));
+		const counted = await ana.p
+			.waitForFunction(() => window.__rating.toasts.some((t) => /^Counted: [+−]\d+ → \d+/.test(t)), null, { timeout: TIMEOUT })
+			.then(() => true, () => false);
+		check("…the toast says by how much", counted, await ana.p.evaluate(() => window.__rating.toasts));
+		const line = ana.p.locator(".managed-over .managed-rating");
+		const shown = await line.filter({ hasText: /Rating \+\d+ → \d+ · provisional/ }).waitFor({ timeout: TIMEOUT }).then(() => true, () => false);
+		check("the end card says the rating change: \"Rating +24 → 1224 · provisional\"", shown, await line.textContent().catch(() => null));
+		const inPlace = await ana.p.evaluate(() => ({ same: document.querySelector(".managed-over .managed-rating") === window.__rating.el, seen: window.__rating.seen }));
+		check("…filled in place on the card already drawn (it said it was waiting first)", inPlace.same && inPlace.seen.some((t) => /waiting/.test(t)), inPlace);
+		const fits = await line.evaluate((el) => {
+			const r = el.getBoundingClientRect();
+			return r.width > 0 && r.left >= 0 && r.right <= innerWidth && r.bottom <= innerHeight;
+		});
+		check("…inside the phone's screen (390x844), no side scroll", fits && (await noSideScroll(ana.p)));
+		const fr = await ana.p.evaluate(() => NeonArcade.account.leaderboard("neon-fission", "friends"));
+		const boRow = fr.rows.find((r) => r.id === boId);
+		check("…a loss for Bo; Ana first on the friends' board", boRow?.games === 1 && boRow.wins === 0 && fr.rows[0]?.name === "Ana Lima" && fr.rows[0].elo > 1200, fr.rows);
+	}
 
 	console.log("\nsocial: the leaderboards page");
-	await ana.p.goto(page("?page=leaderboard", "&game=connect4&scope=global"));
+	await ana.p.goto(page("?page=leaderboard", "&game=neon-fission&scope=global"));
 	await ana.p.locator("[data-board] [data-player]").first().waitFor({ timeout: TIMEOUT });
 	check("the global board lists the ranked players", (await ana.p.locator("[data-board] [data-player]").count()) === 2);
 	check("…you highlighted", (await ana.p.locator("[data-board] [data-player].me").textContent()).includes("Ana Lima"));
 	check("…a Friends tab", (await ana.p.locator(".scope", { hasText: "Friends" }).count()) === 1);
 	check("…and it fits the phone", await noSideScroll(ana.p));
+	const picks = await ana.p.locator("[data-game]").evaluateAll((els) => els.map((e) => e.dataset.game));
+	check("the strip lists no game without a board (Connect 4, Tic Tac Toe, Undercover)", picks.length > 0 && !picks.some((g) => ["connect4", "tic-tac-toe-js", "undercover"].includes(g)), picks);
+	await ana.p.goto(page("?page=leaderboard", "&game=connect4"));
+	await ana.p.locator('[data-game][aria-pressed="true"]').waitFor({ timeout: TIMEOUT });
+	const fell = await ana.p.locator('[data-game][aria-pressed="true"]').getAttribute("data-game");
+	check("…an old ?game=connect4 link falls back to a game with a board", !!fell && fell !== "connect4" && !(await ana.p.locator("[data-board]").textContent()).includes("Could not load"), fell);
 
 	console.log("\nsocial: any member invites, the end card, requests up front");
 	{
@@ -268,7 +342,8 @@ try {
 		ana.p.off("request", onReq);
 		check("roster changes redraw the party screen without fetching the friends list again", fetches.length === 0, fetches.length);
 
-		// A ranked Connect 4 between Ana and Kit, who are not friends.
+		// A Connect 4 between Ana and Kit, who are not friends (the end card's
+		// "players you just played" comes from the party, board or not).
 		await ana.p.evaluate((kid) => {
 			const r = window.__party.room;
 			const k = r.getMembers().find((m) => m.acct?.id === kid);
@@ -296,7 +371,12 @@ try {
 		await kitCard.locator(`[data-add-friend="${anaId}"]`, { hasText: "ASKED" }).waitFor({ timeout: TIMEOUT });
 		check("…which asks", true);
 		check("the asked one sees the request at once, even mid-game", await ana.p.locator(".neon-request", { hasText: "Kit wants to be friends" }).waitFor({ timeout: TIMEOUT }).then(() => true, () => false));
-		await ana.p.locator(".neon-toast", { hasText: "Counted on the leaderboard" }).waitFor({ timeout: TIMEOUT }).catch(() => {});
+		// Connect 4 has no boards now, so their recent ranked match (the
+		// profile's "recent players") is a Battleship both report.
+		const bs = { game: "lokeshmohanty/battleship", run: "kit-ana-1", match: 1, kind: "duel", ranking: [["pa"], ["pk"]], roster: { pa: anaId, pk: kitId }, seats: 2 };
+		await ana.p.evaluate((b) => NeonArcade.account.api("/api/match/report", { method: "POST", body: b }), bs);
+		const kitCounted = await kit.p.evaluate((b) => NeonArcade.account.api("/api/match/report", { method: "POST", body: b }), bs);
+		check("(Ana and Kit's ranked Battleship counts)", kitCounted.counted === true, kitCounted);
 
 		// The badge: on ☰ and on your entry in it.
 		await ana.p.evaluate(() => localStorage.removeItem("neon.room"));
@@ -411,6 +491,71 @@ try {
 		await cy.ctx.close();
 	}
 
+	console.log("\nsocial: an abandoned solo run never files a later match as solo");
+	{
+		// A solo run left over (Light Cycles alone, abandoned), then a match
+		// that began with two seats whose other player left: its result holds
+		// one id. It must go as a match with a departure, never as solo.
+		const sam = await device("Sam");
+		const seen = watchRuns(sam.p);
+		const sent = await sam.p.evaluate(async () => {
+			const A = NeonArcade.account;
+			const game = "lokeshmohanty/light-cycles";
+			const ticket = await A.startRun(game);
+			const members = new Map([
+				["sa", { id: "sa", name: "Sam", acct: { id: A.me.id } }],
+				["sb", { id: "sb", name: "Other", acct: { id: "someone-else" } }],
+			]);
+			const room = { selfId: "sa", isHost: () => false, getRun: () => "party-run-sam", getMember: (id) => members.get(id) ?? null, getMembers: () => [...members.values()] };
+			A.matchStart(game, { room, seats: ["sa", "sb"], kind: "ffa" });
+			members.delete("sb"); // the other rider left the party
+			NeonArcade.onResult({ game, run: "party-run-sam", result: { kind: "ffa", match: 1, ranking: [["sa"]], scores: { sa: 9 } }, room });
+			return ticket?.run ?? null;
+		});
+		for (const end = Date.now() + TIMEOUT; Date.now() < end && !seen.reports.length; ) await sam.p.waitForTimeout(200);
+		const rep = seen.reports[0]?.sent;
+		check("(the abandoned solo run was issued)", typeof sent === "string", sent);
+		check("the report names the party's run, not the stale solo one", rep?.run === "party-run-sam" && rep.run !== sent, rep);
+		check("…says the match began with two seats, and who left", rep?.seats === 2 && JSON.stringify(rep.left) === '["sb"]', rep);
+		check("…and the server does not count it as a run played alone", seen.reports[0]?.got?.counted !== true, seen.reports[0]?.got);
+
+		// A page put in the back-forward cache and brought back (main e06b4da
+		// restores pages into the party) still withdraws its start when a match
+		// ends with no result: only a real unload latches.
+		const withdrawn = [];
+		sam.p.on("request", (r) => r.method() === "DELETE" && r.url().includes("/api/match/start") && withdrawn.push(JSON.parse(r.postData() ?? "{}")));
+		await sam.p.evaluate(() => {
+			const A = NeonArcade.account;
+			const members = new Map([
+				["sa", { id: "sa", name: "Sam", acct: { id: A.me.id } }],
+				["sb", { id: "sb", name: "Other", acct: { id: "someone-else" } }],
+			]);
+			const room = { selfId: "sa", closed: false, isHost: () => true, getRun: () => "party-run-bf", getMember: (id) => members.get(id) ?? null, getMembers: () => [...members.values()] };
+			A.matchStart("neon-fission", { room, seats: ["sa", "sb"], kind: "ffa", match: 0 });
+			dispatchEvent(new PageTransitionEvent("pagehide", { persisted: true }));
+			dispatchEvent(new PageTransitionEvent("pageshow", { persisted: true }));
+			A.matchEnd("neon-fission", { decided: false, room });
+		});
+		for (const end = Date.now() + TIMEOUT; Date.now() < end && !withdrawn.length; ) await sam.p.waitForTimeout(200);
+		check("after the back-forward cache, a match ended with no result still withdraws its start", withdrawn[0]?.run === "party-run-bf" && withdrawn[0].match === 0, withdrawn);
+		// A report that does not count (here: refused, 400) withdraws our start too.
+		await sam.p.route("**/api/match/report", (route) => route.fulfill({ status: 400, contentType: "application/json", body: '{"error":"refused"}' }));
+		await sam.p.evaluate(() => {
+			const A = NeonArcade.account;
+			const members = new Map([
+				["sa", { id: "sa", name: "Sam", acct: { id: A.me.id } }],
+				["sb", { id: "sb", name: "Other", acct: { id: "someone-else" } }],
+			]);
+			const room = { selfId: "sa", closed: false, isHost: () => false, getRun: () => "party-run-rf", getMember: (id) => members.get(id) ?? null, getMembers: () => [...members.values()] };
+			A.matchStart("neon-fission", { room, seats: ["sa", "sb"], kind: "ffa", match: 1 });
+			NeonArcade.onResult({ game: "neon-fission", run: "party-run-rf", result: { kind: "ffa", match: 1, ranking: [["sa"], ["sb"]] }, room });
+		});
+		for (const end = Date.now() + TIMEOUT; Date.now() < end && !withdrawn.some((x) => x.run === "party-run-rf"); ) await sam.p.waitForTimeout(200);
+		check("…and so does a report the server refused", withdrawn.some((x) => x.run === "party-run-rf" && x.match === 1), withdrawn);
+		await sam.p.unroute("**/api/match/report");
+		await sam.ctx.close();
+	}
+
 	console.log("\nsocial: a Light Cycles round alone, its time on the solo board");
 	{
 		// The pinned Light Cycles may predate its solo score (web-games
@@ -472,58 +617,66 @@ try {
 		const dee = await device("Dee");
 		const deeId = await dee.p.evaluate(() => NeonArcade.account.me.id);
 		const seen = watchRuns(dee.p);
-		await dee.p.goto(page("?party", "&game=tic-tac-toe-js&fresh=1&mode=bots"));
-		const f = await gameFrame(dee.p, TIMEOUT);
-		// The bot wins if it can, blocks if it must, else takes the centre, else
-		// the first free square: 0, 7, 6, 8 forks it, as X or as O (searched).
-		const marks = () => f.locator("#ttt button").allTextContents();
-		for (const square of [0, 7, 6, 8]) {
-			await f.locator("#hud", { hasText: "YOUR TURN" }).waitFor({ timeout: TIMEOUT });
-			const before = (await marks()).filter(Boolean).length;
-			await f.locator("#ttt button").nth(square).click();
-			await f.waitForFunction((n) => [...document.querySelectorAll("#ttt button")].filter((b) => b.textContent).length > n, before, { timeout: TIMEOUT });
-		}
 		const until = async (fn, ms) => {
 			for (const end = Date.now() + ms; Date.now() < end && !fn(); ) await dee.p.waitForTimeout(100);
 			return fn();
 		};
-		await until(() => seen.reports.length, TIMEOUT);
-		const start = seen.starts.find((x) => x.sent.vs === "bots");
-		const [rep] = seen.reports;
-		check("one person and a bot: a run against bots is asked for as the match begins", start?.sent.game === "tic-tac-toe-js" && typeof start.got?.run === "string", seen.starts);
-		check("…the win's report names it", rep?.sent.run === start?.got?.run && rep.sent.ranking.flat().some((id) => id.startsWith("bot_")), rep?.sent);
-		check("…and counts, on the board against bots", rep?.got?.counted === true && rep.got.board === "bots" && rep.got.wins === 1, rep?.got);
-		console.log(`  info: that win took ${((rep?.at - start?.got?.at) / 1000).toFixed(1)} s from the run (Tic Tac Toe's minimum: ${BOTS["tic-tac-toe-js"].minMs / 1000} s)`);
-		check("…and says so", await dee.p.locator(".neon-toast", { hasText: "1 win against bots" }).waitFor({ timeout: TIMEOUT }).then(() => true, () => false));
-		// PLAY AGAIN: a new run; the old one is spent, and nothing is sent twice.
-		await dee.p.locator(".managed-actions button", { hasText: "PLAY AGAIN" }).click();
-		await until(() => seen.starts.filter((x) => x.sent.vs === "bots").length === 2, TIMEOUT);
-		check("PLAY AGAIN asks for a new run; the first win was reported once", seen.starts.filter((x) => x.sent.vs === "bots").length === 2 && seen.reports.length === 1, { starts: seen.starts.length, reports: seen.reports.length });
-		await dee.p.goto(page("?page=profile"));
-		const line = await dee.p.locator(".bot-wins").textContent({ timeout: TIMEOUT }).catch(() => null);
-		check("the profile says it, under the ratings and apart from them", line === "Wins against bots: Tic Tac Toe 1", line);
-		const ranked = await dee.p.evaluate(() => NeonArcade.account.leaderboard("tic-tac-toe-js"));
-		check("the ranked board does not have it", !ranked.rows.some((r) => r.id === deeId) && ranked.botsBoard === true, ranked);
+		// Tic Tac Toe has no boards now ("leaderboard": false): played against
+		// the bot, no run is asked for and nothing is sent.
+		await dee.p.goto(page("?party", "&game=tic-tac-toe-js&fresh=1&mode=bots"));
+		await gameFrame(dee.p, TIMEOUT);
+		await dee.p.waitForTimeout(2500);
+		check("Tic Tac Toe against the bot: no run asked for, nothing sent", seen.starts.length === 0 && seen.reports.length === 0, seen);
 
-		// A bot removed mid-match hands most games to whoever is left: that is
-		// not a win against bots, and the page does not report it.
-		await dee.p.goto(page("?party", "&game=connect4&fresh=1&mode=bots"));
-		const c4 = await gameFrame(dee.p, TIMEOUT);
-		await c4.waitForFunction(() => window.__game?.handle?.debug?.().started, null, { timeout: TIMEOUT }).catch(() => {});
-		await until(() => seen.starts.filter((x) => x.sent.game === "connect4" && x.sent.vs === "bots").length === 1, TIMEOUT);
-		await dee.p.waitForTimeout(BOTS.connect4.minMs + 500);
-		const before = seen.reports.length;
+		// Neon Fission against a bot: the run is asked for as the match begins;
+		// removing the bot hands Dee the match, which is not reported.
+		await dee.p.goto(page("?party", "&game=neon-fission&fresh=1&mode=bots"));
+		const nfb = await gameFrame(dee.p, TIMEOUT);
+		await until(() => seen.starts.some((x) => x.sent.game === "neon-fission" && x.sent.vs === "bots"), TIMEOUT);
+		const start = seen.starts.find((x) => x.sent.vs === "bots");
+		check("one person and a bot: a run against bots is asked for as the match begins", start?.sent.game === "neon-fission" && typeof start.got?.run === "string", seen.starts);
+		await nfb.waitForFunction(() => window.__game?.handle?.debug?.()?.phase, null, { timeout: TIMEOUT }).catch(() => {});
+		await dee.p.waitForTimeout(BOTS["neon-fission"].minMs + 500);
 		await dee.p.evaluate(() => {
 			const r = window.__party.room;
 			r.removeMember(r.getMembers().find((m) => NeonArcade.isBotId(m.id)).id);
 		});
-		await dee.p.locator(".managed-actions").waitFor({ timeout: TIMEOUT });
+		await dee.p.locator(".managed-actions").waitFor({ timeout: TIMEOUT }).catch(() => {});
 		await dee.p.waitForTimeout(2500);
-		check("a win handed over by removing the bot is not reported", seen.reports.length === before, seen.reports.slice(before).map((x) => x.sent));
+		check("a win handed over by removing the bot is not reported", seen.reports.length === 0, seen.reports.map((x) => x.sent));
+
+		// A win, through the account layer and the real server: a run against
+		// bots, aged past the game's minimum, and a result Dee won alone.
+		const sent = await dee.p.evaluate(async ({ rs }) => {
+			const A = NeonArcade.account;
+			const game = "neon-fission";
+			const members = new Map([
+				["sd", { id: "sd", name: "Dee", acct: { id: A.me.id } }],
+				["bot_x", { id: "bot_x", name: "Bot" }],
+			]);
+			const room = { selfId: "sd", isHost: () => true, getRun: () => "party-run-dee", getMember: (id) => members.get(id) ?? null, getMembers: () => [...members.values()] };
+			A.matchStart(game, { room, seats: ["sd", "bot_x"], kind: "ffa", match: 0 });
+			const t = await A.startRun(game, { vs: "bots", bots: ["bot_x"] });
+			await fetch(`${rs}/api/admin/age-run`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ run: t.run, ms: 5000 }) });
+			NeonArcade.onResult({ game, run: "party-run-dee", result: { kind: "ffa", match: 0, ranking: [["sd"], ["bot_x"]] }, room });
+			return t.run;
+		}, { rs: w.base });
+		await until(() => seen.reports.length, TIMEOUT);
+		const [rep] = seen.reports;
+		check("…a win's report names its run", rep?.sent.run === sent && rep.sent.ranking.flat().some((id) => id.startsWith("bot_")), rep?.sent);
+		check("…and counts, on the board against bots", rep?.got?.counted === true && rep.got.board === "bots" && rep.got.wins === 1, rep?.got);
+		check("…and says so", await dee.p.locator(".neon-toast", { hasText: "1 win against bots" }).waitFor({ timeout: TIMEOUT }).then(() => true, () => false));
+		await dee.p.goto(page("?page=profile"));
+		const line = await dee.p.locator(".bot-wins").textContent({ timeout: TIMEOUT }).catch(() => null);
+		check("the profile says it, under the ratings and apart from them", line === "Wins against bots: Neon Fission 1", line);
+		const ranked = await dee.p.evaluate(() => NeonArcade.account.leaderboard("neon-fission"));
+		check("the ranked board does not have it", !ranked.rows.some((r) => r.id === deeId) && ranked.botsBoard === true, ranked);
+		const gone = await dee.p.evaluate(() => NeonArcade.account.leaderboard("tic-tac-toe-js", "global", "bots").then(() => 200, (e) => e.status));
+		check("Tic Tac Toe's board against bots is gone (404)", gone === 404, gone);
 
 		for (const [name, theme] of [["paper-light", { theme: "paper", mode: "light" }], ["paper-dark", { theme: "paper", mode: "dark" }], ["neon", { theme: "neon", mode: "system" }]]) {
 			await dee.p.evaluate((t) => localStorage.setItem("neon.theme", JSON.stringify(t)), theme);
-			await dee.p.goto(page("?page=leaderboard", "&game=tic-tac-toe-js&vs=bots"));
+			await dee.p.goto(page("?page=leaderboard", "&game=neon-fission&vs=bots"));
 			await dee.p.locator("[data-board] [data-player]").first().waitFor({ timeout: TIMEOUT });
 			const pressed = await dee.p.locator('.strip[data-vs] [aria-pressed="true"]').textContent();
 			const row = await dee.p.locator("[data-board] [data-player].me").textContent();
@@ -534,27 +687,27 @@ try {
 		}
 		const chip = await dee.p.locator('.pick[aria-pressed="true"] small').textContent();
 		check("the game's chip says what the board showing ranks by", chip === "Wins vs bots", chip);
-		await dee.p.goto(page("?page=leaderboard", "&game=connect4&vs=bots"));
+		await dee.p.goto(page("?page=leaderboard", "&game=lokeshmohanty/battleship&vs=bots"));
 		const empty = dee.p.locator("[data-board] .empty a");
 		await empty.waitFor({ timeout: TIMEOUT });
 		const href = await empty.getAttribute("href");
-		check("an empty board against bots offers SINGLE PLAYER, to the shell's own address", href?.startsWith("./?") && new URLSearchParams(href.slice(3)).get("mode") === "bots" && new URLSearchParams(href.slice(3)).get("game") === "connect4", href);
+		check("an empty board against bots offers SINGLE PLAYER, to the shell's own address", href?.startsWith("./?") && new URLSearchParams(href.slice(3)).get("mode") === "bots" && new URLSearchParams(href.slice(3)).get("game") === "lokeshmohanty/battleship", href);
 		await dee.p.goto(page("?page=leaderboard", "&game=neon-survival-mp&vs=bots"));
 		await dee.p.waitForFunction(() => new URL(location.href).searchParams.get("vs") === null && !document.querySelector("[data-board] .ghost"), null, { timeout: TIMEOUT });
 		check("a ?vs=bots link for a game without that board shows its ranked board", !(await dee.p.locator("[data-board]").textContent()).includes("Could not load") && (await dee.p.locator(".strip[data-vs]").isHidden()));
-		await dee.p.goto(page("?page=leaderboard", "&game=tic-tac-toe-js&vs=bots"));
+		await dee.p.goto(page("?page=leaderboard", "&game=neon-fission&vs=bots"));
 		await dee.p.locator("[data-board] [data-player]").first().waitFor({ timeout: TIMEOUT });
 		await dee.p.locator('.strip[data-vs] [data-against=""]').click();
 		await dee.p.locator('.strip[data-vs] [aria-pressed="true"]', { hasText: "Ranked" }).waitFor({ timeout: TIMEOUT });
 		await dee.p.waitForFunction(() => !document.querySelector("[data-board] .ghost"), null, { timeout: TIMEOUT });
-		check("Ranked: the same game's ranked board, without the win", (await dee.p.locator("[data-board] [data-player]").count()) === 0 && new URL(dee.p.url()).searchParams.get("vs") === null);
+		check("Ranked: the same game's ranked board, without the win", (await dee.p.locator("[data-board] [data-player].me").count()) === 0 && new URL(dee.p.url()).searchParams.get("vs") === null);
 		if (SHOTS) await dee.p.screenshot({ path: join(SHOTS, "ranked-neon.png") });
 		await dee.p.evaluate(() => localStorage.removeItem("neon.theme"));
 		await dee.ctx.close();
 		// Signed out, the bar under this board gives its own advice.
 		const anon = await browser.newContext(phone);
 		const ap = await anon.newPage();
-		await ap.goto(page("?page=leaderboard", "&game=tic-tac-toe-js&vs=bots"));
+		await ap.goto(page("?page=leaderboard", "&game=neon-fission&vs=bots"));
 		const bar = await ap.locator("[data-you] .sub").textContent({ timeout: TIMEOUT }).catch(() => null);
 		check("signed out, the bots board says to sign in and beat the bots, not to play people", /beat the bots/.test(bar ?? "") && !/play people/.test(bar ?? ""), bar);
 		await anon.close();
@@ -569,8 +722,11 @@ try {
 	check("a group gets a join code", /^[A-Z2-9]{8}$/.test(gcode), gcode);
 	await bo.p.goto(page(`?page=profile&join=${gcode}`));
 	check("a join link joins it", await bo.p.locator(".neon-toast", { hasText: "Joined" }).waitFor({ timeout: TIMEOUT }).then(() => true, () => false));
+	// The profile's ratings: a free-for-all's rating too (Neon Fission), marked provisional.
+	const nfCell = await ana.p.locator('tr[data-board="neon-fission"] td.n').first().textContent({ timeout: TIMEOUT }).catch(() => null);
+	check("the profile shows a free-for-all's rating, with \"prov.\" (not \"–\")", /^\d{3,4} prov\.$/.test(nfCell ?? ""), nfCell);
 	const gid = await ana.p.locator("[data-group]").getAttribute("data-group");
-	await ana.p.goto(page("?page=leaderboard", `&game=connect4&scope=${encodeURIComponent(`group:${gid}`)}`));
+	await ana.p.goto(page("?page=leaderboard", `&game=neon-fission&scope=${encodeURIComponent(`group:${gid}`)}`));
 	check("the group has its own tab on the leaderboards", (await ana.p.locator('[data-scopes] .scope[aria-pressed="true"]').textContent({ timeout: TIMEOUT })) === "Lunch table");
 	await ana.p.locator("[data-board] [data-player]").first().waitFor({ timeout: TIMEOUT }).catch(() => {});
 	const groupRows = await ana.p.locator("[data-board] [data-player]").count();
