@@ -2097,13 +2097,69 @@ try {
 		await a.goto(SERVED("?game=neon-survival-mp&fresh=1&mode=bots", "&mockroom=1"));
 		check("SINGLE PLAYER still starts the bots game beside it", await until(a, () => window.__party?.game === "neon-survival-mp", undefined, "bots beside live tab"));
 		check("…leaving that tab's token alone", (await a.evaluate(() => NeonArcade.rejoinToken()?.id)) === GHOST.id);
+		// The game ends: back on the party screen, which asks for a code
+		// (ensureCode) — hosting would write its token over the live tab's.
+		await a.evaluate(() => window.__party.room.setGame(null));
+		await a.locator(".party-member").first().waitFor({ timeout: TIMEOUT });
+		await new Promise((r) => setTimeout(r, 3000));
+		const after = await a.evaluate(() => ({ token: NeonArcade.rejoinToken()?.id, code: document.querySelector(".party-code-digits")?.textContent ?? null }));
+		check("…and still alone after its game ends: no code hosted over that tab's token", after.token === GHOST.id && after.code === null, JSON.stringify(after));
 		await seed();
 		await a.goto(SERVED("?fresh=1", "&mockroom=1"));
 		await a.locator("button", { hasText: "USE IT HERE" }).click({ timeout: TIMEOUT });
 		const moved = await a.locator(".lobby-sub", { hasText: `Reconnecting to party ${GHOST.code}` }).waitFor({ timeout: TIMEOUT }).then(() => true, () => false);
 		check("USE IT HERE reconnects here (not back to the same screen)", moved && !(await a.evaluate(() => location.search.includes("fresh"))), await said(a));
-		check("…and takes the seat from the other tab", await until(b, () => window.__stolen, undefined, "lock stolen"));
+		const bound = await until(
+			a,
+			(g) => {
+				const m = window.__neonRoomMock.rooms.get(g.code)?.get(g.id);
+				return !!m?.socket && m.socket !== window.__ghostSocket && m.socket.readyState === 1 && window.__ghostSocket.closedWith === 4409;
+			},
+			GHOST,
+			"seat bound here",
+		);
+		check("…the server binds the seat to this page (the old socket hung up, 4409)", bound);
+		check("…and the seat's lock follows it from the other tab", await until(b, () => window.__stolen, undefined, "lock stolen"));
 		await gctx.close();
+	}
+
+	// ------- 7c. a claimant whose dial fails does not orphan a live seat
+	// Found in review (2026-11-16): a second tab's reconnect stole the live
+	// tab's seat lock as it dialled, the dial failed, and the lock was never
+	// taken back — a live seat with no lock holder, which the next release
+	// from any tab would take for a ghost and give away. The lock now follows
+	// the server's binding, and a stolen one is queued for again.
+	console.log("\nroom: a failed claimant leaves the live tab its seat lock");
+	{
+		const sctx = await browser.newContext({ viewport: { width: 390, height: 844 } });
+		const a = await sctx.newPage();
+		await a.goto(SERVED("?fresh=1", "&mockroom=1"));
+		await a.locator(".party-code-digits").waitFor({ timeout: TIMEOUT });
+		const seat = await a.evaluate(() => NeonArcade.rejoinToken());
+		const holders = () => a.evaluate(async (id) => (await navigator.locks.query()).held.filter((l) => l.name === "neon.seat." + id).length, seat.id);
+		check("(the hosting tab holds its seat lock)", (await holders()) === 1);
+		const b = await sctx.newPage();
+		await b.addInitScript(() => {
+			let mock;
+			Object.defineProperty(window, "__neonRoomMock", {
+				configurable: true,
+				get: () => mock,
+				set(m) {
+					mock = m;
+					m.connect = () => {
+						throw new Error("offline");
+					};
+				},
+			});
+		});
+		await b.goto(SERVED("?party", "&mockroom=1"));
+		const failed = await until(b, () => /retry|could not/i.test(document.body.textContent), undefined, "B's reconnect fails");
+		check("a second tab's reconnect that cannot reach the server fails", failed);
+		check("…and the live tab still holds its seat lock", (await holders()) === 1 && (await a.evaluate(() => !window.__party.room.closed)));
+		await b.close();
+		await new Promise((r) => setTimeout(r, 500));
+		check("…after that tab closes too", (await holders()) === 1);
+		await sctx.close();
 	}
 
 	// `?rs=` is honoured only when it names this machine: a link that could

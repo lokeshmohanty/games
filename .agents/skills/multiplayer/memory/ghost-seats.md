@@ -30,6 +30,13 @@ minutes (19:19 → 19:29), and LEAVE PARTY did not help.
   else the party reloads. A fresh bots / one-device start never waits on
   any of it (release runs in the background). USE IT HERE must drop `fresh`
   from the URL or its reload lands on the same screen.
+- **Review traps (2026-11-16):** take the lock only after the server *bound*
+  the seat — a lock stolen at dial time by a reconnect that then failed left
+  the live tab with no lock, a "ghost" any release would hand away; and a
+  stolen lock is queued for again (never stolen back) while the page is
+  live. A bots start beside a live seat must not `ensureCode` (it would
+  overwrite that tab's token). A pre-fix tab holds no lock: after a deploy,
+  the first new-code release may take its seat once.
 - **Trap — a held Web Lock does not keep a page out of the cache**, but
   another page querying/requesting that lock evicts it (observed, not
   documented — VERIFY on other Chrome versions). Do not rely on it; the

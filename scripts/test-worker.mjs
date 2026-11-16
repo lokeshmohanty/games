@@ -1413,10 +1413,16 @@ try {
 			await p.reload();
 			await p.locator(".lobby-sub", { hasText: "Reconnecting" }).waitFor({ timeout: TIMEOUT });
 			await sleep(2000);
+			await p.evaluate(() => sessionStorage.removeItem("bf.restored"));
 			await p.evaluate((u) => location.assign(u), SITE.url("manifest.webmanifest"));
 			await sleep(1000);
 			const freed = await call(t2.code, { t: "release", id: t2.id, secret: t2.secret });
 			check("a page going into the cache hangs up: its seat is not busy", freed.t === "released", JSON.stringify(freed));
+			// …and it really was in the cache, not unloaded (an unload closes
+			// the socket anyway, and would prove nothing).
+			await p.goBack({ waitUntil: "commit" });
+			await sleep(1500);
+			check("(that page was in the back/forward cache: Back restores it)", await p.evaluate(() => sessionStorage.getItem("bf.restored") === "1").catch(() => false));
 			await ctx.close();
 		} finally {
 			await bfBrowser.close().catch(() => {});

@@ -481,9 +481,13 @@ LEAVE PARTY said "open in another tab" until the cache let it go, ten minutes
 later. Now:
 
 - the page whose room has a seat holds a **Web Lock** `neon.seat.<id>`, from
-  the dial until it leaves, stands down or is cached — every tab and the
-  installed app share it, and a page that dies lets go by itself. Taken with
-  `steal`, since the server gives the seat to its latest claimant;
+  the server's bind until it leaves, stands down or is cached — every tab
+  and the installed app share it, and a page that dies lets go by itself.
+  Taken with `steal` once bound, since the server gives the seat to its
+  latest claimant — never on the dial, which may still fail (review,
+  2026-11-16: a failed reconnect in a second tab stole the live tab's lock
+  and never gave it back, so the live seat read as a ghost). A page whose
+  lock is stolen while it is still live queues for it again;
 - `releaseRejoin` asks the lock on `busy`: held means a live page here (still
   `busy`); free means a ghost, so it takes the seat (`join`, which hangs the
   ghost up with 4409) and hands it straight back. Without Web Locks `busy`
@@ -493,6 +497,16 @@ later. Now:
   go of the lock. Restored (`pageshow`), a room whose seat a live page took
   stands down as for a 4409; otherwise the party reloads and its boot decides
   by the token (reconnect, or start over if the seat was given back).
+- a party that skipped the server (a bots start) asks for no code
+  (`ensureCode`) while the token names a seat a live page holds: hosting
+  would write its token over that page's, and that page's next reload would
+  walk into this party. The classic invite stays; the next ask looks again.
+
+**After deploying this, once:** a tab still running the old script holds no
+seat lock, so the first release from a new-code page reads that tab's live
+seat as a ghost and takes it over (the old tab gets 4409 and says "open in
+another tab"; USE IT HERE gets it back). Gone once every open tab has
+reloaded onto the new build.
 
 An offerer that cannot seat a newcomer (the party is full) says so (see the
 `"sdp":"full"` relay above) and the join rejects `full` at once instead of
