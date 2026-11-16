@@ -1,14 +1,20 @@
-// src/views/Portal.tsx — the home screen: brand, the party banner, search,
-// recently played, then the sections of cards (was index.html; docs/spa.md).
+// src/views/Portal.tsx — the home screen: brand, the party banner, then the
+// Games tab's two sub-tabs (was index.html; docs/spa.md):
+//   My Games   (./?page=games&tab=mine) recently played, ★ favourites, or
+//              how to star when there are none
+//   All Games  (./?page=games&tab=all) the search, Popular (with PLAY
+//              SOMETHING) and the categories
+// The router names the sub-tab for ./ (src/router.ts portalAddress); this
+// view follows the address, so Back moves between them.
 //
 // The sections, cards and search stay lib/portal.js's vanilla DOM
 // (NeonArcade.portal): it draws them into [data-sections] and .games-grid
 // on mount. lib/pwa.js fills the install slot, lib/nav.js the bar and tabs.
 // index.html's speculationrules prefetch of party.html is gone: the party is
 // this page.
-import { onCleanup, onMount } from "solid-js";
+import { createEffect, on, onCleanup, onMount } from "solid-js";
 import "../../lib/portal.js";
-import { navigate } from "../router";
+import { currentUrl, navigate, portalTab, viewOf } from "../router";
 import "./portal.css";
 
 const A = (window as any).NeonArcade;
@@ -30,15 +36,35 @@ function joinWithCode(event: MouseEvent) {
 
 export default function Portal() {
 	let main!: HTMLElement;
+	let nav!: HTMLElement;
+	const tab = () => portalTab(currentUrl()) ?? "all";
 	onMount(() => {
+		nav.dataset.page = tab();
 		A.nav.draw();
 		A.renderInstallOffer?.(); // the slot is new on every visit
-		onCleanup(A.portal.mount(main));
+		onCleanup(A.portal.mount(main, tab()));
 	});
+	// A sub-tab chosen, Back to the other one, or to another search: the same
+	// view, redrawn. (An address of another view: this one is going.)
+	createEffect(
+		on(
+			currentUrl,
+			(u) => {
+				const t = viewOf(u) === "portal" ? portalTab(u) : null;
+				if (!t) return;
+				if (nav.dataset.page !== t) {
+					nav.dataset.page = t;
+					A.nav.draw();
+				}
+				A.portal.show(t);
+			},
+			{ defer: true },
+		),
+	);
 	return (
 		<main class="view-portal" ref={main}>
-			{/* lib/nav.js: GitHub, Add your game | theme, account; and the tabs. */}
-			<nav class="site-nav" data-nav data-page="games" />
+			{/* lib/nav.js: the tabs, the ☰ menu, and the sub-tabs My Games · All Games. */}
+			<nav class="site-nav" data-nav ref={nav} />
 			<h1 class="brand">
 				<svg class="mark" viewBox="96 104 320 288" aria-hidden="true">
 					<g transform="translate(0 9)" stroke-linecap="round">
@@ -84,12 +110,35 @@ export default function Portal() {
 				</button>
 			</div>
 
+			{/* My Games: Recently played (with PLAY SOMETHING), then ★ Favourites
+			    (a section below); with neither, how to star a game. */}
+			<div class="recent" data-recent hidden>
+				<div class="section-head">
+					<h2>Recently played</h2>
+					<a class="quick-play-btn" data-quick href="./?page=games&tab=all">
+						PLAY SOMETHING
+					</a>
+				</div>
+				<div class="recent-list" />
+			</div>
+			<div class="my-empty" data-my-empty hidden>
+				<p>Nothing here yet. Star a game from inside it, with ★, and it appears here. So do the games you play.</p>
+				<div class="my-empty-actions">
+					<a class="quick-play-btn" data-quick href="./?page=games&tab=all">
+						PLAY SOMETHING
+					</a>
+					<a class="my-empty-all" href="./?page=games&tab=all">
+						ALL GAMES
+					</a>
+				</div>
+			</div>
+
 			{/*
-			  The search. Typed into, it replaces the sections below with one grid of
-			  what matches. lib/portal.js parseQuery: words, or author: type: tag:
-			  players: from:
+			  All Games: the search. Typed into, it replaces the sections below with
+			  one grid of what matches. lib/portal.js parseQuery: words, or author:
+			  type: tag: players: from:
 			*/}
-			<div class="search">
+			<div class="search" hidden>
 				<input
 					type="search"
 					data-search
@@ -102,11 +151,6 @@ export default function Portal() {
 			<p class="filter-empty" hidden>
 				Nothing matches that yet.
 			</p>
-
-			<div class="recent" data-recent hidden>
-				<h2>Recently played</h2>
-				<div class="recent-list" />
-			</div>
 
 			{/* Drawn by lib/portal.js from every game's manifest (lib/catalog.js,
 			    community/catalog.js): a registered game needs no edit here.

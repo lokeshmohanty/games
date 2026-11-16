@@ -7,14 +7,14 @@ questions about this project from this folder alone.
 
 ## Contents
 
-- [The portal](#the-portal) — the home screen's sections, the phone layout and the search
+- [The portal](#the-portal) — the home screen's sub-tabs (My Games · All Games), sections, PLAY SOMETHING, the phone layout and the search
 - [Connecting players](#connecting-players) — the serverless handshake, paid once per person; `scanQr`; connectivity (relaying, STUN, NAT classification, no TURN)
 - [Parties](#parties) — the persistent group, teams, switching games, host succession; the party API (`mountParty`, the room controller, lib/lobby.js)
 - [Bots](#bots) — why there is no single-player section, and what a bot actually is
 - [Hidden information](#hidden-information) — sealed private state, and commit-reveal
 - [Rounds and phases](#rounds-and-phases) — the shared clock for timed and simultaneous-turn games
 - [Adding a game](#adding-a-game) — where the author's guide and the protocol live
-- [Accounts and the social layer](accounts.md) — sign-in, ranked matches, leaderboards, friends, invites, groups, feedback, the public snapshot; what is stored; the one-time setup
+- [Accounts and the social layer](accounts.md) — sign-in, ranked matches, leaderboards (ranked, solo runs, and wins against bots kept apart), friends, invites, groups, feedback, the public snapshot; what is stored; the one-time setup
 - [A prompt for contributors' AI](contributor-prompt.md) — paste into an AI assistant to adapt or write a game for the platform
 - [Suggestions](suggestions.md) — formalising and improving the platform: contract, contributors, quality, trust, players, operations
 - [Developing the arcade](development.md) — running it, where the code is, the stack and why, tests, the service worker, previews and icons
@@ -26,7 +26,7 @@ questions about this project from this folder alone.
 - [Testing across real networks](network-testing.md) — the NAT lab: symmetric NAT, network switches, lossy links, a blocked room server
 - [`../lib/README.md`](../lib/README.md) — every lib/ file in a line, with pointers here for depth
 - [Neon Bid](neon-bid.md) — the sealed-bid gem auction's design, as approved
-- Neon Fission (`games/neon-fission/`, rules in its `RULES.md`) — the chain-reaction grid for 2–8: a managed ffa game; one person with bots can hand bot seats to people on the same phone before the first move (those seats' turns are reported as the person's, so no bot plays them; the end card names them via the result's `names`, docs/sdk-v2.md)
+- Neon Fission (`games/neon-fission/`, rules in its `RULES.md`) — the chain-reaction grid for 2–8: a managed ffa game; one person with bots can hand bot seats to people on the same phone before the first move (those seats' turns are reported as the person's, so no bot plays them; the end card names them via the result's `names`, docs/sdk-v2.md). Each move's chain is replayed on every phone, about 1.5 s at most, and a tap skips it. The move that ends the game plays wave by wave and then marks the cells it took: 5.25 s at most for any chain, its waves sharing a 4.3 s budget (at most 300 ms each, about 40 ms in a 104-wave chain), so it always ends inside the end card's 6 s hold. The turn line and chips wait for it, and so does the end card (`arcade.idle()`, docs/sdk-v2.md; rules.js `pace`). Under reduced motion nothing animates
 - (still missing: design notes for the other games, decision log)
 
 ## How-to (verified commands)
@@ -54,7 +54,7 @@ questions about this project from this folder alone.
 | Test Neon Fission's rules and bot | `node scripts/test-neon-fission.mjs` — capacities, a three-wave chain (RULES.md's example), conversion, knock-outs only after a first turn, the chain stopping once one player owns every orb, the bot (legal, fast, takes a win; vs random and greedy players), 210 whole bot games that all end, and the same-device seats in the managed layer |
 | Test the Light Cycles arena | `node light-cycles/test-light-cycles.mjs` in the web-games repo — head-on collisions, spawn symmetry, and the bot measured against a rider that only avoids crashing |
 | Rebuild the app icons | `node scripts/make-icons.mjs` after editing `assets/icon.svg` — renders the PNGs the manifest needs |
-| Get back to the portal | the party has a fixed `.portal-link` ("← All games", in index.html) linking to `./`; it keeps the party (LEAVE PARTY leaves it) |
+| Get back to the portal | the party has a fixed `.portal-link` ("← Games", in index.html) linking to `./`; it keeps the party (LEAVE PARTY leaves it) |
 
 Per-game recorder scenarios, the conversion profiles, and the NixOS/Playwright
 traps live in the `game-previews` skill (`.agents/skills/game-previews/SKILL.md`).
@@ -75,23 +75,51 @@ The portal (`./`, the manifest's `start_url`) is the first thing an installed ap
 per game in `NeonArcade.CATALOG` — this repo's manifests and every pinned
 outside repo's — so a merged registry PR appears with no edit here. Each card
 has your own record on this device and, for a community game, its author. A
-game is starred (☆, `lib/stats.js`) and given feedback (💬) from inside it:
-the party's top right, beside PARTY (2026-11-14; they were on every
-card). Its layout is asserted rather than eyeballed, in `test-pwa.mjs`; what
-is in each section, in `test-portal.mjs`.
+game is starred (☆, `lib/stats.js`) and given feedback (💬) only from
+inside it, at the party's top right beside PARTY (2026-11-14; a star on the
+cards was tried on 2026-11-15 and taken out the next day, Lokesh: "Only
+inside games"); a contributor or a collection is starred on its own page.
+Every star lands in My Games at once. Its layout is asserted rather than
+eyeballed, in `test-pwa.mjs` and `test-portal.mjs` "My Games · All Games"
+(390x844, Lokesh's phone at 354x696, and 320x640); what is in each section,
+in `test-portal.mjs`.
+
+**Two sub-tabs** (Lokesh, 2026-11-15: "All favourites land under My
+Games"). Under the tab row, Games has **My Games · All Games**, each an
+address (`./?page=games&tab=mine` / `tab=all`); `./` opens on My Games once
+the device has a favourite or a recently played game, else on All Games,
+decided before the first paint ([spa.md](spa.md) "The portal's sub-tabs").
+Under the brand and the party banner:
+
+- **My Games** — the Recently played row (PLAY SOMETHING at its heading's
+  right), then ★ Favourites (the button in its heading instead when nothing
+  was played yet). With neither, a line on how to star (★, from inside a
+  game), PLAY SOMETHING and ALL GAMES.
+- **All Games** — the search, then Popular (with **PLAY SOMETHING** at its
+  right: one tap into the single player of a popular game with bots, never
+  people-only or Python, varied per visit) and the categories.
+
+Changing sub-tab closes any card left open, so a row on the other sub-tab is
+never held back as "in use" and is current when you return (review,
+2026-11-16).
 
 **The home screen is sections** (Lokesh, 2026-11-15: "show the favourites,
 then the top 3~5 games based on popularity, and then pre-defined
-categories"). Under the brand, party banner, search and the Recently played
-row, top to bottom (`lib/portal.js` `SECTIONS`; an empty one is hidden):
+categories"). Top to bottom (`lib/portal.js` `SECTIONS`, each with its
+sub-tab; an empty one is hidden):
 
-- **★ Favourites** — the games starred, in the order starred, then the
-  contributors and collections starred (`contributor:<login>`,
-  `collection:<owner>/<repo>`) as buttons that search for their games.
+- **★ Favourites** (My Games) — the games starred, in the order starred,
+  then the contributors and collections starred (`contributor:<login>`,
+  `collection:<owner>/<repo>`) as buttons that search for their games on
+  All Games.
 - **Popular** — the five most played (`/api/stats/summary`, else the public
   snapshot), examples aside. The counts are kept on the device
   (`neon.plays`), so the row paints at once and in the same order offline;
-  with no counts ever, the catalog's order.
+  with no counts ever, the catalog's order. Counts that land late never
+  replace a row someone is using (a card tapped open, hovered with a mouse,
+  or reached by keyboard): the row is redrawn when they leave it, at the
+  scroll it had (`lib/portal.js` `inUse`; a slow phone had the card close
+  under the finger, review 2026-11-16).
 - **Arcade · Party · Strategy · Puzzle / Single player · Examples** — the
   catalog's `categories` (`scripts/manifest.mjs`); a game sits in every one
   it is in. Puzzle / Single player also takes any game one person can start
@@ -101,8 +129,20 @@ A game therefore has several cards. Preview videos get their sources only
 when the card nears the screen and play only while at least half of it is
 on screen, so the home screen plays a handful, not dozens; on a phone each
 section is one row that scrolls sideways inside itself (two cards and the
-edge of a third). **Search** replaces the sections (and Recently played)
-with one grid of the matches, one card per game; the query stays in `?q=`.
+edge of a third), and every row (Recently played's too) scrolls to the
+screen's edges while its first card lines up with the column above, with no
+scrollbar. **Search** replaces All Games' sections with one grid of the
+matches, one card per game; the query stays in `?q=`.
+
+**Real-device findings (Lokesh's OnePlus, 354x696 at DPR 3.5, 2026-11-15)**,
+fixed and asserted: every home tap target is at least 44px (START A PARTY
+and JOIN WITH A CODE were 34px, the sub-tabs 36px); every line on a card is
+at least 12px (the meta line was 9.9px; it keeps one line by dropping its
+letter-spacing and narrowing the card's side margins to 4px); Recently
+played and the search were 80% wide on a phone, narrower than the cards,
+because their base rules came after the phone rules in portal.css. On a
+phone the party banner is its two buttons (the heading said what START A
+PARTY says), which paid for the sub-tab row.
 
 **Nine games have to fit a phone.** They did not: a `minmax(300px, 1fr)` column
 at 80% width is a single column on a 390px screen, and a 200px image plus a
@@ -343,7 +383,7 @@ leaver's own `__gone` first, so everyone drops the seat (and passes the crown,
 if it was the host's) immediately. A reload or a closed tab never calls it.
 
 **Every way out asks first, and everyone left is told** (lib/lobby.js
-`guardParty` / `leaveParty` / `presence`). The fixed "← All games" link, ALL
+`guardParty` / `leaveParty` / `presence`). The fixed "← Games" link, ALL
 GAMES, NEW PARTY, HOST A NEW GAME, opening another party's link, and the back
 button or swipe-back (a history entry of the page's own, pushed on the first
 tap — Chrome skips one pushed without a gesture) all raise the same in-page
@@ -482,7 +522,7 @@ first, which `src/main.tsx`'s import order does):
 | `NeonArcade.ask(question, { ok, cancel })` | a yes/no question in the page's own `<dialog class="neon-ask">` (buttons `[data-ask="yes"]` / `[data-ask="no"]`); resolves `true` for yes. Never `confirm()`: it freezes the page's JS — the host's game loop and the mesh's relaying with it. Escape and a tap outside mean no; a second question dismisses the first |
 | `NeonArcade.toast(text, kind)` | a notice over whatever is on screen (`.neon-toasts`, under the portal link), `kind` `"good"` / `"warn"`; takes no taps, gone after 4.5 s, at most 3 |
 | `NeonArcade.presence()` | `{ sync(room), left(room, id, info) }`: feed it every roster callback and it toasts what changed — joined, left (with the reason), lost connection (after 2.5 s still lost) and back, the crown moving (after 1.2 s still moved). The first sync with a room is silent |
-| `NeonArcade.guardParty({ room, askAlone })` | register the page's party: `room()` returns the live room or null. From then on "← All games" (and any `a[data-leaves]`), back / swipe-back (a history entry pushed on the first tap) and `beforeunload` (only with another person present) all go through `leaveParty`. `askAlone` (boolean or function): ask even with nobody else here (the party shell, except a party a game's address opened) |
+| `NeonArcade.guardParty({ room, askAlone })` | register the page's party: `room()` returns the live room or null. From then on "← Games" (and any `a[data-leaves]`), back / swipe-back (a history entry pushed on the first tap) and `beforeunload` (only with another person present) all go through `leaveParty`. `askAlone` (boolean or function): ask even with nobody else here (the party shell, except a party a game's address opened) |
 | `NeonArcade.leaveParty(question)` / `leaveQuestion(room, question)` | ask (naming the heir, for a host), then `leave()` and wait for `roomSettled()`; resolves `true` once it may navigate, `false` if they stayed. Not asked, it still leaves — that is what drops the rejoin token |
 | `NeonArcade.REPLY_NOW` / `NeonArcade.replyFailed(setStatus)` | the replier's side of a hand-carried reply: the "do it right away" sentence for the reply screen (between some networks a reply works for ~15 s — [Honest gaps](#honest-gaps)), and, on a `no-route` before the link ever opened, the error status plus `{ hint, again }` — a hint node and a MAKE A NEW REPLY button (a reload: the same `#i=` invite answered afresh) for the caller to place |
 

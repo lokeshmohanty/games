@@ -3,6 +3,7 @@
 //   GET /api/lb/<game>?scope=global          everyone not hidden, ≥ LB_MIN_GAMES games
 //   GET /api/lb/<game>?scope=friends         you and your friends (signed in)
 //   GET /api/lb/<game>?scope=group:<id>      a group you are in (signed in)
+//   GET /api/lb/<game>?vs=bots&scope=…       wins against bots (worker/api/bots.js)
 //
 // Order: duel by Elo; free-for-all and teams by wins, then win rate; co-op by
 // best score; "time" (a game whose solo runs are timed, worker/api/runs.js
@@ -12,9 +13,15 @@
 // matches its members played *only against each other* (Lokesh, 2026-11-13: group leaderboards), with its
 // own Elo — so a group of friends has a ladder that the rest of the world
 // cannot move.
+//
+// The board of wins against bots is another table (`bot_wins`) and another
+// order — wins, then who reached them first — and never mixes with these. A
+// ranked board says whether its game has one (`botsBoard`), so the page can
+// offer it; its group scope lists the members' wins (bots play no member).
 
 import { ELO_START, elo } from "./match.js";
-import { boardOf, isBoardKey, levelsOf } from "./runs.js";
+import { BOTS, BOTS_PER_DAY, botsBoard } from "./bots.js";
+import { boardOf, isBoardKey, levelsOf, unitOf } from "./runs.js";
 import { HttpError } from "./http.js";
 import { friendIds } from "./social.js";
 
@@ -171,12 +178,17 @@ async function forGroup(env, game, kind, members) {
  * it, even below the rows shown (standing()). The global board without `me`
  * is the same for everyone, so it is the one that is cached.
  */
-export async function leaderboard(env, me, game, scope = "global") {
+export async function leaderboard(env, me, game, scope = "global", vs = null) {
+	if (vs === "bots") return againstBots(env, me, game, scope);
 	if (!isBoardKey(game)) throw new HttpError(400, "unknown game");
 	const kind = await kindOf(env, game);
-	// A game with a board per difficulty for its solo runs says which (Sudoku).
+	// A game with a board per difficulty for its solo runs says which (Sudoku),
+	// a board's score its unit (Light Cycles alone: seconds), and a game with a
+	// board of wins against bots that it has one.
 	const levels = levelsOf(game);
-	const out = (x) => (levels ? { ...x, levels } : x);
+	const unit = unitOf(game);
+	const bots = !!BOTS[game.split("@")[0]];
+	const out = (x) => ({ ...x, ...(levels ? { levels } : {}), ...(unit ? { unit } : {}), ...(bots ? { botsBoard: true } : {}) });
 	if (scope === "global") {
 		const min = Number(env.LB_MIN_GAMES ?? MIN_GAMES);
 		const rows = await fromRatings(env, game, kind, { min });
@@ -196,6 +208,23 @@ export async function leaderboard(env, me, game, scope = "global") {
 	const g = await env.DB.prepare("SELECT name FROM groups WHERE id = ?").bind(grp).first();
 	const rows = await forGroup(env, game, kind, members);
 	return out({ game, kind, scope, group: { id: grp, name: g?.name }, rows, me: rows.find((r) => r.id === me.id) ?? null });
+}
+
+/** A game's board of wins against bots, in the same scopes (bots.js botsBoard). */
+async function againstBots(env, me, game, scope) {
+	const head = { game, kind: "bots", vs: "bots", scope, perDay: Number(env.BOTS_PER_DAY ?? BOTS_PER_DAY) };
+	if (scope === "global") return { ...head, ...(await botsBoard(env, me, game)) };
+	if (!me) throw new HttpError(401, "sign in to see your friends' and groups' boards");
+	if (scope === "friends") {
+		const only = [me.id, ...(await friendIds(env, me.id))];
+		return { ...head, ...(await botsBoard(env, me, game, { only, includeHidden: true })) };
+	}
+	const grp = scope.startsWith("group:") ? scope.slice(6) : null;
+	if (!grp) throw new HttpError(400, "scope is global, friends or group:<id>");
+	const members = (await all(env.DB.prepare("SELECT account FROM group_members WHERE grp = ?").bind(grp))).map((r) => r.account);
+	if (!members.includes(me.id)) throw new HttpError(403, "you are not in that group");
+	const g = await env.DB.prepare("SELECT name FROM groups WHERE id = ?").bind(grp).first();
+	return { ...head, group: { id: grp, name: g?.name }, ...(await botsBoard(env, me, game, { only: members, includeHidden: true })) };
 }
 
 /** Every board with a ranked player (snapshot.js). */
