@@ -4,7 +4,9 @@
 // (#i=, #c=, #a=; lib/net.js, lib/room-join.js). So views are named in the
 // query, on index.html itself:
 //
-//   ./                         the portal
+//   ./                         the portal, on its default sub-tab (below)
+//   ./?page=games&tab=mine     the portal's sub-tabs: My Games | All Games
+//   ./?page=games&tab=all      (and its search, ?q=, on All Games)
 //   ./?page=leaderboard        leaderboard | profile | contribute | contributors
 //                              | collections
 //   ./?game=connect4 …         the party (its words: game, mode, fresh, dev,
@@ -12,6 +14,12 @@
 //
 // The old pages (party.html, leaderboard.html, …) and their redirect stubs
 // were removed on 2026-11-15: these are the only addresses.
+//
+// A portal address that names no sub-tab (./, ./?q=…, an old bookmark) is
+// given one as it is entered (portalAddress): All Games for a search, else
+// NeonArcade.homeTab() — index.html's, the rule the first paint used. So the
+// address always says which sub-tab shows, starring a game never moves you,
+// and Back returns to the sub-tab you left.
 import { createMemo, createRoot, createSignal } from "solid-js";
 
 export type View = "portal" | "party" | "leaderboard" | "profile" | "contribute" | "contributors" | "collections";
@@ -29,7 +37,32 @@ export function viewOf(url: URL): View {
 	return "portal";
 }
 
-const [url, setUrl] = createSignal(new URL(location.href));
+export type PortalTab = "mine" | "all";
+/** The sub-tab a portal address names, or null when it names none. */
+export function portalTab(url: URL): PortalTab | null {
+	const t = url.searchParams.get("tab");
+	return t === "mine" || t === "all" ? t : null;
+}
+/** `url` with its sub-tab named: the same URL when it has one or is not the portal. */
+export function portalAddress(url: URL): URL {
+	if (viewOf(url) !== "portal" || (url.searchParams.get("page") === "games" && portalTab(url))) return url;
+	const out = new URL(url);
+	const q = out.searchParams;
+	const tab = portalTab(url) ?? (q.has("q") ? "all" : ((window as any).NeonArcade?.homeTab?.() ?? "all"));
+	q.delete("page");
+	q.delete("tab");
+	out.search = `?${new URLSearchParams([["page", "games"], ["tab", tab], ...q])}`;
+	return out;
+}
+/** Name the sub-tab of the address now showing, in place (no new history entry). */
+const settle = () => {
+	const here = new URL(location.href);
+	const there = portalAddress(here);
+	if (there !== here) history.replaceState(history.state, "", there.href);
+	return there;
+};
+
+const [url, setUrl] = createSignal(settle());
 export const currentUrl = url;
 // A memo: a hash or query change within a view does not re-create it.
 export const currentView = createRoot(() => createMemo(() => viewOf(url())));
@@ -40,8 +73,9 @@ export const setNavigationGuard = (fn: (next: URL) => boolean) => (guard = fn);
 
 /** Go to `href` (relative to the page) without reloading: the party stays. */
 export function navigate(href: string, { replace = false } = {}) {
-	const next = new URL(href, location.href);
+	let next = new URL(href, location.href);
 	if (next.origin !== location.origin) return void (location.href = next.href);
+	next = portalAddress(next);
 	if (!guard(next)) return;
 	// How many of the arcade's own entries lie behind this one: lib/lobby.js's
 	// back guard asks only when Back would leave the arcade (depth 0).
@@ -50,7 +84,7 @@ export function navigate(href: string, { replace = false } = {}) {
 	setUrl(next);
 	scrollTo(0, 0);
 }
-addEventListener("popstate", () => setUrl(new URL(location.href)));
+addEventListener("popstate", () => setUrl(settle()));
 
 /**
  * A link to the shell (./ or index.html, with any query and hash) as the

@@ -52,6 +52,7 @@ const (
 	TypeVerify      = "verify"
 	TypeAct         = "act"
 	TypeInput       = "input"
+	TypeIdle        = "idle"
 	TypeRuntimeFile = "runtime.file"
 	TypeHttp        = "http"
 	TypeAddress     = "address"
@@ -100,6 +101,7 @@ var ToShellTypes = [...]string{
 	TypeVerify,
 	TypeAct,
 	TypeInput,
+	TypeIdle,
 	TypeRuntimeFile,
 	TypeHttp,
 	TypeAddress,
@@ -895,6 +897,22 @@ type Input struct {
 	I JSON `json:"i"`
 }
 
+// Idle: `idle`, frame to shell. Layer 2: this phone's frame has finished
+// showing view `seq` (its replay of the last move is over, or there was none).
+// Once a frame has sent one, the shell keeps the end card back after the final
+// move until the frame is idle on the newest view, at most a few seconds; the
+// result is still reported at once. A game that never sends it gets its card at
+// once.
+type Idle struct {
+	// Version.
+	V int `json:"v"`
+	// TypeIdle.
+	T string `json:"t"`
+	// The `seq` of the newest view this frame has finished showing (0: none yet).
+	// At least 0.
+	Seq int `json:"seq"`
+}
+
 // RulesCallFn: Values of RulesCallFn.
 type RulesCallFn string
 
@@ -973,7 +991,8 @@ type Rules struct {
 }
 
 // View: `view`, shell to frame. Layer 2: what this phone's player may see now
-// (the rules' `view({ seat })`), in `state`. Sent only when it changed.
+// (the rules' `view({ seat })`), in `state`. Sent only when it changed. `seq`
+// numbers the views sent to this frame, for `idle`.
 type View struct {
 	// Version.
 	V int `json:"v"`
@@ -981,6 +1000,9 @@ type View struct {
 	T string `json:"t"`
 	// May carry ArrayBuffers (see Json).
 	State JSON `json:"state"`
+	// This view's number on this frame, rising by one per view; a frame echoes the
+	// newest it has shown in `idle`. At least 1.
+	Seq *int `json:"seq,omitempty"`
 }
 
 // Rejected: `rejected`, shell to frame. Layer 2: the host's rules refused this
@@ -1116,6 +1138,8 @@ func DecodeToShell(b []byte) (any, error) {
 		m = &Act{}
 	case TypeInput:
 		m = &Input{}
+	case TypeIdle:
+		m = &Idle{}
 	case TypeRuntimeFile:
 		m = &RuntimeFile{}
 	case TypeHttp:
