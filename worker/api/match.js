@@ -71,11 +71,15 @@
 //      the one still there when everybody else left (a duel);
 //   3. the grace has passed with no report of its own (its own, different,
 //      report would have voided the match);
-//   4. its live socket has not said, in the last 4.5 minutes, that it is in
-//      this game — a socket that dropped keeps saying so (presence,
-//      worker/api/live.js).
+//   4. its seated page has stopped beating: a page in a match re-posts its
+//      start every 2 minutes (lib/account.js), and a departure needs the
+//      start's last beat older than MATCH_STALE_MS (3 min) — whatever any
+//      other page of that account says (a review, 2026-11-16: presence was
+//      one row per account, so a second page on the home screen made a
+//      player still in the match look gone).
 // A colluder therefore cannot name an account that never sat down with them
-// in that very match (1), nor one still playing it (3, 4). Only managed
+// in that very match (1), nor one still playing it (3, 4). A report from an
+// account recorded as having left is told the match counted against it. Only managed
 // games know a match's number as it begins (lib/sdk-managed.js), so only
 // they send starts; in a game that runs its own matches a departure is never
 // recorded (the leaver simply gets nothing).
@@ -92,8 +96,10 @@ import { SOLO_PER_DAY, boardKind, checkSoloRun, claimRun } from "./runs.js";
 export const REPORT_TTL_MS = 15 * 60_000;
 /** How long a match waits for every named account before it counts with the reporters only (env MATCH_GRACE_MS). */
 export const MATCH_GRACE_MS = 45_000;
-/** A start (POST /api/match/start) is kept this long: the longest match a departure can be proven for. */
-export const START_TTL_MS = 6 * 3600_000;
+/** A start (POST /api/match/start) is kept this long after its last beat. */
+export const START_TTL_MS = 3600_000;
+/** A seated page beats (re-posts its start) every 2 min; older than this, it has stopped (env MATCH_STALE_MS). */
+export const MATCH_STALE_MS = 3 * 60_000;
 /** A voided match stays void this long (kv `void:<match>`), then the row goes. */
 export const VOID_TTL_MS = 3600_000;
 export const ELO_START = 1200;
@@ -126,7 +132,7 @@ export function ratingDeltas(kind, places, cur) {
 	const out = new Map();
 	// Plain loops over arrays, no closures: a group board runs this for up to
 	// GROUP_REPLAY matches in one request (worker/api/lb.js, docs "CPU").
-	const units = []; // [members, rating, place]
+	const units = []; // [members, rating, place] — a side's change is shared by its members, scaled (zeroSum)
 	for (let i = 0; i < places.length; i++) {
 		const slot = places[i];
 		if (!slot.length) continue;
@@ -146,7 +152,11 @@ export function ratingDeltas(kind, places, cur) {
 			const py = units[y][2];
 			sum += (px < py ? 1 : px === py ? 0.5 : 0) - 1 / (1 + 10 ** ((units[y][1] - rx) / 400));
 		}
-		for (const a of members) out.set(a, (((cur.get(a)?.rated ?? 0) < PROVISIONAL_GAMES ? ELO_K_PROVISIONAL : ELO_K) * sum) / (n - 1));
+		// Teams: a side's change is its members' to share — each moves by it
+		// times the mean side size over their own side's size, so uneven sides
+		// (3 against 1) still sum to zero (a review, 2026-11-16).
+		const scale = kind === "teams" ? units.reduce((t, u) => t + u[0].length, 0) / n / members.length : 1;
+		for (const a of members) out.set(a, (((cur.get(a)?.rated ?? 0) < PROVISIONAL_GAMES ? ELO_K_PROVISIONAL : ELO_K) * sum * scale) / (n - 1));
 	}
 	return out;
 }
@@ -276,10 +286,12 @@ export function sideDeltas(sides, forfeits, cur) {
 	const live = sides.filter((x) => x.members.length);
 	if (live.length > 1) {
 		const m = live.map((x) => mean(x.members));
+		const size = live.reduce((t, x) => t + x.members.length, 0) / live.length; // the mean side size
 		live.forEach((x, i) => {
 			let sum = 0;
 			for (let j = 0; j < live.length; j++) if (j !== i) sum += (x.at < live[j].at ? 1 : x.at === live[j].at ? 0.5 : 0) - 1 / (1 + 10 ** ((m[j] - m[i]) / 400));
-			for (const a of x.members) out.set(a, (k(a) * sum) / (live.length - 1));
+			// Shared by the side, scaled so uneven sides still sum to zero.
+			for (const a of x.members) out.set(a, (k(a) * sum * (size / x.members.length)) / (live.length - 1));
 		});
 	}
 	for (const { a, against } of forfeits ?? []) {
@@ -307,19 +319,23 @@ export async function summary(env) {
 }
 
 /**
- * POST /api/match/start { game, run } — "I am seated in a match of this game
- * in this party run": the evidence a departure needs (the leaver rule,
- * above). The page sends it as a ranked match with people begins
- * (lib/account.js matchStart). One row per account, game and run; a later
- * match's start replaces it.
+ * POST /api/match/start { game, run, match } — "I am seated in this match":
+ * the evidence a departure needs (the leaver rule, above). The page sends it
+ * as a ranked match with people begins (lib/account.js matchStart) and again
+ * every 2 minutes while the match runs — its heartbeat. One row per account
+ * and match: `payload` keeps when it was first said, `at` the last beat.
  */
 export async function startMatch(env, me, request) {
 	const b = await body(request);
 	if (typeof b.game !== "string" || !RATED.includes(GAMES[b.game]) || NO_BOARD.has(b.game)) throw new HttpError(400, "only a ranked game with a winner records who began it");
 	if (typeof b.run !== "string" || !b.run || b.run.length > 40) throw new HttpError(400, "run is the party's run id");
 	if (!Number.isInteger(b.match) || b.match < 0) throw new HttpError(400, "match is the match's number in its run");
-	await env.DB.prepare("INSERT OR REPLACE INTO reports (match, account, digest, payload, at) VALUES (?, ?, 'start', '', ?)")
-		.bind(await startKey(b.game, b.run, b.match), me.id, now())
+	const t = now();
+	await env.DB.prepare(
+		`INSERT INTO reports (match, account, digest, payload, at) VALUES (?, ?, 'start', ?, ?)
+		 ON CONFLICT (match, account) DO UPDATE SET at = excluded.at WHERE digest = 'start'`,
+	)
+		.bind(await startKey(b.game, b.run, b.match), me.id, String(t), t)
 		.run();
 	return { started: true };
 }
@@ -407,7 +423,10 @@ async function countedFor(env, key, who) {
 	try {
 		outcome = m.outcome ? JSON.parse(m.outcome) : null;
 	} catch {}
-	return { counted: true, already: true, ...(outcome?.elo != null ? { rating: outcome } : {}) };
+	const rating = outcome?.elo != null ? { rating: { elo: outcome.elo, delta: outcome.delta, rated: outcome.rated, provisional: outcome.provisional } } : {};
+	// Recorded as having left it: not "counted" — counted against you.
+	if (outcome?.left) return { counted: false, left: true, why: "this match counted against you: the others reported that you left it", ...rating };
+	return { counted: true, already: true, ...rating };
 }
 
 /**
@@ -453,29 +472,20 @@ async function settle(env, key, who, t) {
 }
 
 /**
- * Presence newer than this says where a player is: a page pings every 4 min
- * (lib/account.js), and a closed socket keeps the game it was in, with when
- * (worker/api/live.js) — so a player still playing, or whose socket just
- * dropped, is always fresher than this. A closed tab only becomes a departure
- * after the party's 5-minute reconnect grace, by when it is staler.
- */
-const PRESENCE_FRESH_MS = 4.5 * 60_000;
-
-/**
  * Of `left`, the accounts a departure can be recorded for (rules 1 and 4 at
  * the top): seated as this match began by their own word, before its first
- * report (`first`), not used up or withdrawn since, still an account, and
- * not lately in this game by their live socket (open or just dropped,
- * whatever "appear offline" says). One query.
+ * report (`first`; the start's `payload`), not used up or withdrawn since,
+ * still an account, and its page no longer beating: the last beat (`at`)
+ * older than MATCH_STALE_MS. One query, one row per leaver.
  */
 async function departures(env, P, left, first, t) {
 	if (!Number.isInteger(P.match)) return [];
 	const rows = await all(
 		env.DB.prepare(
 			`SELECT s.account FROM reports s JOIN accounts a ON a.id = s.account
-			 WHERE s.match = ? AND s.digest = 'start' AND s.at <= ? AND s.account IN (SELECT value FROM json_each(?))
-			 AND NOT EXISTS (SELECT 1 FROM presence p WHERE p.account = s.account AND p.game = ? AND p.at > ?)`,
-		).bind(await startKey(P.game, P.run, P.match), first, JSON.stringify(left), P.game, t - PRESENCE_FRESH_MS),
+			 WHERE s.match = ? AND s.digest = 'start' AND s.account IN (SELECT value FROM json_each(?))
+			 AND CAST(s.payload AS INTEGER) <= ? AND s.at < ?`,
+		).bind(await startKey(P.game, P.run, P.match), JSON.stringify(left), first, t - Number(env.MATCH_STALE_MS ?? MATCH_STALE_MS)),
 	);
 	return rows.map((x) => x.account);
 }
@@ -545,8 +555,17 @@ async function commit(env, { id, game, kind, places, scores, sides = null, forfe
 				 ON CONFLICT (account, game) DO UPDATE SET elo = elo + ?, games = games + 1, wins = wins + excluded.wins, best = ${bestSql}`,
 			).bind(a, game, ELO_START + d, winners.has(a) ? 1 : 0, b, d);
 		}),
-		// Each reporter's outcome waits in its report for a repeat to read (countedFor).
-		...accounts.map((a) => env.DB.prepare("UPDATE reports SET digest = 'counted', payload = ?, at = ? WHERE match = ? AND account = ?").bind(JSON.stringify(outcome.get(a)), t, id, a)),
+		// Each player's outcome waits in a report row for a repeat to read
+		// (countedFor) — a leaver's too, marked, so a late report of theirs is
+		// told the match counted against them.
+		...accounts.map((a) =>
+			env.DB.prepare("INSERT OR REPLACE INTO reports (match, account, digest, payload, at) VALUES (?, ?, 'counted', ?, ?)").bind(
+				id,
+				a,
+				JSON.stringify(departed.includes(a) ? { ...outcome.get(a), left: true } : outcome.get(a)),
+				t,
+			),
+		),
 		env.DB.prepare("DELETE FROM reports WHERE match = ? AND digest <> 'counted'").bind(id),
 	];
 	// A departure uses up the leaver's start (rule 1): it counts once.

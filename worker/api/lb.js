@@ -131,15 +131,15 @@ async function standing(env, game, kind, me, rows, { only = null, includeHidden 
  * Worker (~1 ms a thousand, more on a cold isolate; docs/accounts.md "CPU"),
  * and the free plan allows 10 ms a request: past this, the oldest drop out.
  */
-export const GROUP_REPLAY = 1000;
+export const GROUP_REPLAY = 500;
 /**
  * And at most this many pairs of players across them: the rating compares
  * every two players of a match (match.js ratingDeltas), so a 16-player match
- * costs 240 pairs (it is 16 × 15) and a duel 2: ~670 four-player matches, or
- * 1000 duels. Measured with D1 faked as instant: at most ~2 ms warm, ~7 ms
- * jitless (docs/accounts.md "CPU").
+ * costs 240 pairs (it is 16 × 15) and a duel 2: ~330 four-player matches, or
+ * 500 duels — half the first budget, whose 9.2 ms jitless was at the 10 ms
+ * limit (a review, 2026-11-16; docs/accounts.md "CPU").
  */
-export const GROUP_PAIRS = 8_000;
+export const GROUP_PAIRS = 4_000;
 /**
  * And the most recent matches of the game it looks through for them: the
  * query is driven from the game's matches (index matches_game_at, newest

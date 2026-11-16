@@ -43,7 +43,10 @@ export async function api(request, env, { gate = async () => true } = {}) {
 		if (!env.DB) throw new HttpError(503, "accounts are not set up on this server (no D1 binding)");
 		if (path.startsWith("/auth/")) return await auth(request, env, path);
 		if (path === "/live") return await live(request, env);
-		if (WRITE.has(method) && !(await gate())) throw new HttpError(429, "too many changes from this address; wait a few minutes");
+		// Withdrawing a match start is exempt: refusing it would leave the start
+		// standing, which only ever counts against its own account (match.js).
+		const exempt = method === "DELETE" && path === "/api/match/start";
+		if (WRITE.has(method) && !exempt && !(await gate())) throw new HttpError(429, "too many changes from this address; wait a few minutes");
 
 		const seg = path.split("/").slice(2).map(decodeURIComponent); // after /api/
 		const [a, b, c, d] = seg;

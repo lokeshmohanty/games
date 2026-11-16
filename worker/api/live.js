@@ -59,10 +59,7 @@ export class UserLive {
 	async webSocketClose(ws) {
 		const [account] = this.state.getTags(ws);
 		const left = this.state.getWebSockets().filter((s) => s !== ws).length;
-		// Offline, but the game it was last in stays, with when: a dropped
-		// socket mid-match must not read as having left it (worker/api/match.js
-		// departures; friends never see a game while offline).
-		if (!left) await this.env.DB?.prepare("UPDATE presence SET online = 0, at = ? WHERE account = ?").bind(Date.now(), account).run().catch((err) => console.error("presence", err));
+		if (!left) await this.presence(account, 0, null);
 	}
 
 	async webSocketError(ws) {
