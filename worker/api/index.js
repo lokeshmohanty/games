@@ -11,7 +11,7 @@ import { botWinsOf } from "./bots.js";
 import { getFeedback, postFeedback } from "./feedback.js";
 import { HttpError, fail, json, preflight } from "./http.js";
 import { leaderboard } from "./lb.js";
-import { matchesOf, played, ratingsOf, report, summary } from "./match.js";
+import { matchesOf, played, ratingsOf, report, startMatch, summary, sweep, withdrawStart } from "./match.js";
 import { deleteMe, exportMe, getFavs, getMe, link, patchMe, putFavs, signOut, unlink } from "./me.js";
 import { publicProfile, withBoards } from "./people.js";
 import { ageRun, startRun } from "./runs.js";
@@ -56,7 +56,12 @@ export async function api(request, env, { gate = async () => true } = {}) {
 		if (!env.DB) throw new HttpError(503, "accounts are not set up on this server (no D1 binding)");
 		if (path.startsWith("/auth/")) return await auth(request, env, path);
 		if (path === "/live") return await live(request, env);
-		if (WRITE.has(method) && !(await gate())) throw new HttpError(429, "too many changes from this address; wait a few minutes");
+		// Withdrawing a match start is exempt: refusing it would leave the start
+		// standing, which only ever counts against its own account (match.js).
+		// A match start charges the gate itself, and only when it is new: its
+		// beats (every 60 s while a match runs) are free (match.js startMatch).
+		const exempt = path === "/api/match/start" && (method === "DELETE" || method === "POST");
+		if (WRITE.has(method) && !exempt && !(await gate())) throw new HttpError(429, "too many changes from this address; wait a few minutes");
 
 		const seg = path.split("/").slice(2).map(decodeURIComponent); // after /api/
 		const [a, b, c, d] = seg;
@@ -115,6 +120,8 @@ export async function api(request, env, { gate = async () => true } = {}) {
 			if (b && method === "DELETE") return send(await dismissInvite(env, await me(), b));
 		}
 		if (a === "match" && b === "report" && method === "POST") return send(await report(env, await me(), request));
+		if (a === "match" && b === "start" && method === "POST") return send(await startMatch(env, await me(), request, { gate }));
+		if (a === "match" && b === "start" && method === "DELETE") return send(await withdrawStart(env, await me(), request));
 		if (a === "run" && b === "start" && method === "POST") return send(await startRun(env, await me(), request));
 		if (a === "feedback" && b && method === "POST") return send(await postFeedback(env, await me(), seg.slice(1).join("/"), request));
 
@@ -176,9 +183,18 @@ async function live(request, env) {
 	return env.LIVE.get(env.LIVE.idFromName(me.id)).fetch(new Request(request.url, { headers }));
 }
 
-/** The cron (wrangler.toml [triggers]): the hourly public snapshot. */
+/**
+ * The cron (wrangler.toml [triggers]): the hourly public snapshot, after the
+ * reports' upkeep (match.js sweep: matches two agreed on but nobody asked
+ * about again still count, once their reports expire).
+ */
 export async function scheduledSnapshot(env) {
 	if (!env.DB) return;
+	try {
+		await sweep(env);
+	} catch (err) {
+		console.error("sweep failed", err);
+	}
 	try {
 		console.log("snapshot", JSON.stringify(await runSnapshot(env)));
 	} catch (err) {

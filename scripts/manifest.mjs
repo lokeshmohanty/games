@@ -116,6 +116,9 @@ export function validateManifest(m) {
 	if (typeof m.author !== "string" || !m.author) p.push('"author" is required (GitHub user)');
 	if (typeof m.repo !== "string" || !m.repo.startsWith("https://github.com/")) p.push('"repo" must be a https://github.com/ URL');
 	if (m.bots != null && typeof m.bots !== "boolean") p.push('"bots" must be true or false');
+	// Online boards are optional (Lokesh, 2026-11-16): false for a game where
+	// a ranking means nothing (a solved game, a party game). Local stats stay.
+	if (m.leaderboard != null && typeof m.leaderboard !== "boolean") p.push('"leaderboard" must be true or false');
 	if (m.app != null) p.push(...validateApp(m.app));
 	if ((m.kind === "shared") !== (m.app != null)) p.push('"kind": "shared" goes with "app", and only with it');
 	return p;

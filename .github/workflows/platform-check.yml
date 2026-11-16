@@ -16,6 +16,8 @@ on:
       - "scripts/app-build.mjs"
       - "scripts/py-deps.py"
       - "scripts/vendor-pyodide.mjs"
+      - "scripts/build-games-table.mjs"
+      - "worker/api/games.js"
 
 permissions:
   contents: read
@@ -45,6 +47,10 @@ jobs:
         run: node scripts/fetch-community.mjs
       - name: Catalog is up to date
         run: node scripts/build-catalog.mjs --check
+      # The room server's table of games (worker/api/games.js) must list
+      # what the site lists, with the same kinds (docs/accounts.md).
+      - name: The Worker's table of games is up to date
+        run: node scripts/build-games-table.mjs --check
       # The shell is built (docs/spa.md); validate-game mounts games in it.
       # Playwright is a dev dependency: the driver only, the runner's Chrome.
       - name: Install pnpm

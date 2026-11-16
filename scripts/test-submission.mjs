@@ -80,5 +80,22 @@ for (const [what, m] of [
 	check(`${what} is refused, saying to set "sdk": 2`, problems.some((p) => p.includes('set "sdk": 2')), problems);
 }
 
+console.log("\nmanifest: \"leaderboard\" (optional online boards, Lokesh 2026-11-16)");
+check('"leaderboard": false is accepted', validateManifest({ ...good, leaderboard: false }).length === 0, validateManifest({ ...good, leaderboard: false }));
+check('…so is true', validateManifest({ ...good, leaderboard: true }).length === 0);
+check("…anything else is refused", validateManifest({ ...good, leaderboard: "no" }).some((p) => p.includes('"leaderboard" must be true or false')));
+{
+	// The catalog carries it (catalog-lib.mjs) — and so the shell, the
+	// leaderboard view and the Worker's table of games see it.
+	globalThis.window = globalThis;
+	globalThis.NeonArcade = {};
+	globalThis.document = { baseURI: "http://x/" };
+	await import("../lib/catalog.js");
+	const all = [...(NeonArcade.CATALOG ?? []), ...(NeonArcade.UNLISTED ?? [])];
+	const off = all.filter((g) => g.leaderboard === false).map((g) => g.id).sort();
+	check("the catalog carries it: Connect 4, Undercover and the seven Tic Tac Toes have no boards", off.join() === "connect4,tic-tac-toe-c,tic-tac-toe-go,tic-tac-toe-html,tic-tac-toe-js,tic-tac-toe-python,tic-tac-toe-rust,tic-tac-toe-ts,undercover", off);
+	check("…and every other game leaves it out (default: boards)", all.filter((g) => g.leaderboard !== false).every((g) => !("leaderboard" in g)));
+}
+
 console.log(failures ? `\n${failures} submission check(s) failed` : "\nall submission checks passed");
 process.exit(failures ? 1 : 0);
