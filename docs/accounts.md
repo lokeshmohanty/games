@@ -18,6 +18,7 @@ groups with their own leaderboards, and feedback on games.
 | Profile, leaderboards views | the page | `./?page=profile` (`src/views/Profile.tsx` + `lib/profile.js`), `./?page=leaderboard` (`src/views/Leaderboard.tsx` + `lib/leaderboard.js`); docs/spa.md |
 | The API | the room server (Cloudflare Worker) | `worker/api/*.js` |
 | Accounts, matches, ratings, friends, groups | D1 database `arcade` | `worker/migrations/0001_accounts.sql` |
+| The games the server knows, and their kinds | generated from the catalogs, bundled with the Worker | `worker/api/games.js` (`scripts/build-games-table.mjs`) |
 | Friends, invites, groups (contract), public profiles | the room server + D1 (friend codes, bans, waiting invites, mutes) | `worker/api/social.js`, `worker/api/people.js`, `worker/migrations/0005_social.sql` |
 | Solo runs: issued runs and their seeds, the per-game limits, Sudoku's check | the room server + D1 `runs` | `worker/api/runs.js`, `worker/api/sudoku.js`, `worker/migrations/0003_runs.sql` |
 | Wins against bots: their runs, the per-game minimums, the boards | the room server + D1 `runs` (`vs` 'bots'), `bot_wins` | `worker/api/bots.js`, `worker/migrations/0004_bot_wins.sql` |
@@ -33,9 +34,17 @@ token lives in the party page's localStorage only.
 - **Bearer token in localStorage**, not a cookie: the Worker is on
   `*.workers.dev`, another site, so a cookie would be third-party.
 - **Leaderboards are human-only and confirmed**: a match counts when two
-  players who were in it, each signed in, report the same result. Bots,
-  one-phone games, dev-kit games and matches with fewer than two accounts
-  never count. A disagreement voids the match.
+  players who were in it, each signed in, report the same result — and
+  (2026-11-16, after an audit) only for the accounts that reported it
+  themselves; see "Who a match counts for". Bots, one-phone games,
+  dev-kit games and matches with fewer than two accounts never count. A
+  disagreement voids the match.
+- **Leaving a ranked match is a loss** (Lokesh, 2026-11-16), when the
+  server can confirm the departure — "Leaving is a loss" below.
+- **A skill rating for free-for-all and teams** (Lokesh, 2026-11-16):
+  pairwise Elo in the same `elo` column as duels, provisional for a
+  player's first 10 rated games; those boards order by it, wins still
+  shown; the rating change is on the end card — "The rating" below.
 - **A run played alone ranks on its own report** (2026-11-15) — one
   player, no bots, and only in the games the server has limits for
   (Neon Survival, Sudoku) — under a run the server issued as it began, and
@@ -69,18 +78,261 @@ token lives in the party page's localStorage only.
 1. A game sends `result` on every peer (docs/platform.md, "Results").
 2. `lib/party.js` records it on the device once per run + match + ranking
    (`lib/stats.js`), then calls `NeonArcade.onResult`.
-3. `lib/account.js`: the **host** sends `POST /api/stats/played` (anonymous,
-   one count per match). A **signed-in** player in a match with people sends
-   `POST /api/match/report` with `roster` — party member id → account id, read
-   from each member's `acct` meta (which `attach` publishes).
+3. `lib/account.js`: as each match begins, every phone notes who is seated
+   (`matchStart`, called by `lib/sdk-managed.js` — the host as it starts a
+   match, a guest at its first view — and by `lib/sdk-host.js` for a game that
+   runs its own matches); in a ranked match among signed-in people it also
+   sends `POST /api/match/start` ("I am seated"). At the result the **host**
+   sends `POST /api/stats/played` (anonymous, one count per match), and a
+   **signed-in** player in a match with people sends `POST /api/match/report`
+   with `roster` — party member id → account id, read from each member's
+   `acct` meta (which `attach` publishes), or from the start for a member who
+   has gone — `seats` (how many the match began with) and `left` (who of them
+   left the party for good).
 4. The server (`worker/api/match.js`) keys the match by
-   `sha256(game|run|match)`; the first report waits, the second matching one
-   **commits** it: `matches`, `match_players`, `ratings` (Elo for duels, K 32
-   from 1200; wins; best co-op score). A pending reporter re-sends after 3, 8
-   and 20 s so it hears that it counted.
+   `sha256(game|run|match)` and **commits** it when the rules below say so:
+   `matches`, `match_players`, `ratings` (the rating for duel, free-for-all
+   and teams; wins; best co-op score), all in one batch. A pending reporter
+   re-sends after 3, 8, 20 and 40 s (71 s in all, past the 45 s grace) so it
+   hears that it counted, and by how much: the answer's `rating` goes to the
+   end card ("Rating +12 → 1534") and the toast.
 5. Played alone, there is nobody to agree with — see "Solo runs". Played
    against bots and won, it goes to the game's board of wins against bots —
    see "Against bots".
+
+## Who a match counts for
+
+*An audit, 2026-11-15, found two colluding accounts could record a match —
+a loss — for a third that never played it (account ids are public), and that
+a party member's `acct` meta, being self-published, could name anyone. Fixed
+2026-11-16, branch `social-ratings`. Contract: `worker/api/match.js`.*
+
+A report names accounts; only the accounts that **reported the agreeing
+result themselves** are recorded — `match_players`, ratings, wins, games.
+
+- **At once**, when every account named in the result (except any it says
+  left) has sent the same result.
+- **After the grace** (`MATCH_GRACE_MS`, 45 s from the first report), with
+  only the reporters, when at least two agree. It is decided at the next
+  report of that match (the reporters' own re-sends reach past it), or when
+  its reports expire (15 min: every report request and the hourly cron settle
+  up to 5 expiring matches first — `sweep`).
+- A named account that did not report gets nothing: it is not in the stored
+  ranking, its profile does not list the match, and a late report of its own
+  is told "this match counted without your report". The one exception is the
+  leaver rule.
+- A different result from an account another report names voids the match
+  (kv `void:<match>`, kept 1 h, then deleted by the sweep).
+- So claiming another account's id in the party record is harmless: that
+  account would have to report the match, or have said itself that it sat
+  down in it (below).
+
+**Guests** (no account) drop out of their place but the place stays: in a
+free-for-all second behind a guest is second — not a win — though beating
+the signed-in player in third still raises the rating. On a team the side
+keeps its place, so the guest's side still wins or loses.
+
+**One atomic commit.** The match, its players, every rating and the
+reporters' outcomes are one D1 batch, whose first statement is a plain
+`INSERT` of the match: a second commit of the same match (two last reports
+at once) fails on its primary key and rolls back whole; an account that no
+longer exists is left out before the batch (it used to write `matches`, fail
+on the foreign key, and answer "counted, already" ever after). Ratings change
+by increments (`games + 1`, `wins + w`, `elo + delta`, `MAX`/`MIN` of best),
+computed from the ratings read just before, so two matches committing at
+once for one account both count (the old read-compute-overwrite lost one).
+
+## Leaving is a loss
+
+*Lokesh, 2026-11-16: "if a signed-in player leaves a ranked match that the
+others finish and report, it counts as a loss for the leaver, after the
+existing reconnect grace" — designed so it cannot be used against someone
+who did not leave.*
+
+A player has **left** when the party says so: LEAVE PARTY (onPeerLeave after
+2.5 s), or a seat no longer held once the 5-minute reconnect grace ran out —
+a closed tab is held, so a match that ends inside the grace is not a loss.
+Each reporter's page lists, in `left`, the people seated as the match began
+who are no longer members; it is part of the result, so the reporters must
+agree on it. Leaving forfeits (`toAccounts`): a place the game left empty
+for an emptied side goes first (games keep it for the devices' stats; a 1v1
+whose leaver was ahead, `[[], [host]]`, becomes host first, leaver last);
+then in a duel or free-for-all each leaver goes to a last place shared by the
+leavers (a place only leavers held goes). **Teams** are booked by team —
+each report carries `teams`, party id → team as the match began: a team all
+of whose players left forfeits as a side, last; a player who left a team
+that played on stays in their side's place (or, if that side won, goes last
+alone), so the others' outcome is the game's — a draw stays a draw, and no
+third side appears — and their loss is rated against the opposing teams
+only (`sideDeltas`), never their teammates. (A report without `teams`, from
+an older page, is booked as free-for-all. In a drawn team game the history
+shows the leaver in the draw; the loss is in their rating and they get no
+win. Group boards replay stored places without teams.) The server records
+such an account only if, when the match is settled:
+
+1. **its own page said it was seated in this very match** —
+   `POST /api/match/start { game, run, match }`, sent by the leaver's page as
+   the match began (the host as it starts it, a guest at its first view),
+   kept as a `reports` row (digest `start`, key
+   `sha256("start|game|run|match")`; `payload` keeps when it was first said,
+   `at` its last beat; kept 1 h after that) — first said before the match's
+   first report;
+   not used up by any report of its own of that match (sent first thing,
+   even when that report is then refused, voided or too late); and not
+   withdrawn: when a match ends **without a result** while the page is still
+   in the party — END GAME, the host leaving or switching games, being
+   removed, the party closed — the page sends `DELETE /api/match/start`
+   (`lib/account.js` `matchEnd`, `partyGone`). Leaving the party, or closing
+   the page, keeps it. A departure that counts uses the start up too;
+2. **two reporting accounts confirm it** — or the one player still there
+   when everyone else left (a duel: the winner's report alone counts, with
+   the leaver's own start as the evidence);
+3. **the grace has passed** with no report of its own — a player still there
+   who reports the real result voids the made-up one;
+4. **its seated page has stopped beating** — the page re-posts its start
+   every 60 s while the match runs, a failed beat once more 15 s later
+   (`lib/account.js` `HEARTBEAT_MS`; free of the per-address write limit —
+   only a new start is charged — but written at most once per 30 s per row
+   (`BEAT_WRITE_MS`; a beat sooner is answered, not written), and never past
+   2 h from the start (`START_MAX_MS`: then it ages out); an account keeps at
+   most 3 live starts, a new one evicting its oldest — so beats cannot flood
+   D1's 100 000 writes a day, a review, 2026-11-16), and a departure
+   needs the last beat older than `MATCH_STALE_MS` (4.5 min: three lost
+   beats in a row), whatever the account's other pages say. (The
+   first version read `presence`, one row per account: a second page on the
+   home screen made a player still in the match look gone, and one liar
+   could book them a loss — a review, 2026-11-16.) The beat stops with the
+   match's result, a withdrawal, the next match, or leaving the party. A
+   report naming a leaver is re-sent for 251 s (not 71), past the 4.5
+   minutes after a last beat at most 60 s before the leaving (a LEAVE PARTY
+   that settles later than that is settled by the sweep, unseen on the card);
+   a later report of the leaver's own is told the match counted **against**
+   them ("Counted as a loss: you left"), on the toast and the end card.
+
+So a colluder cannot name an account that never sat down with them in that
+very match (1) — not a match number they make up, not a match that was
+ended without a result — nor one still playing it (3, 4). An adversarial
+review (2026-11-16) found the first version keyed starts by run only, so one
+player could END GAME on a real opponent and then file a made-up "match 7"
+won against them alone; and that a refused report left the start usable.
+Both are closed above, as is the presence hole (rule 4). What it still does
+not stop: a victim whose seated page is frozen for 4.5 minutes (a phone that
+suspends the tab) while the match goes on; and a withdrawal lost to the
+network. A report of ours that does not count — offline to its last
+re-send, refused, or answered 429 or 5xx — withdraws our start, and reports
+and withdrawals are sent with `keepalive` so one sent as the page closes
+still goes; a withdrawal is exempt from the per-address write limit. A page
+restored from the back-forward cache keeps withdrawing (only a real unload
+latches).  **It
+binds unmodified pages only**: the start is the player's own word, so a
+modified page can withhold it, or withdraw it before leaving, and escape the
+loss — and a host losing a duel can still END GAME so nothing is recorded.
+It is a deterrent against leaving, not proof. A player whose connection drops for good
+mid-match takes the loss, as one who left. Pages may also disagree about a
+departure that lands right at the end (one saw the grace run out, one not):
+that voids the match, as any disagreement does.
+
+**Managed games only.** Only a managed game (`lib/sdk-managed.js`) knows a
+match's number as it begins, so only managed games send starts: Neon
+Fission, Light Cycles, Sudoku (and Draw & Guess until its pin moves to a
+manifest without boards). In a game
+that runs its own matches (Neon Bid, Battleship, Liar's Dice) a departure is
+never recorded; the leaver gets nothing, and the others' match counts with
+them only.
+
+## The rating
+
+*Lokesh, 2026-11-16 (approved: a skill rating for free-for-all and teams,
+provisional early; the rating change on the end card).*
+
+**Pairwise Elo** (`ratingDeltas`): every two players in different places are
+a game, the one ahead winning (the same place: a draw); a player's change is
+the sum over opponents of K × (score − expected), divided by the number of
+opponents — so beating a stronger player counts more, and a duel is plain
+Elo. **Teams**: each place is a side rated at its members' mean; the side's
+change is shared by its members — each moves by it times the mean side size
+over their own side's size (with their own K), so uneven sides still sum to
+zero (3 against 1: +16 each against −48; a review, 2026-11-16). A side's
+size is its players as the match began, leavers included, so a teammate
+who stays shares the change with the one who left (−24, not −36); and the
+factor is capped at 2, so one against many never swings past 2 × K (then
+not quite zero-sum). **K** is 48 for a player's first
+10 rated games of a game (`provisional`), then 32; everyone starts at 1200.
+Duels, free-for-all and teams share it; co-op has none.
+
+- **Boards** for duel, free-for-all and teams order by rating; rows keep
+  games and wins ("12 games · 5 wins") and say "provisional". The global
+  board still needs `LB_MIN_GAMES` (5) games; friends' and groups' show
+  everyone, provisional or not. A group board replays its matches with the
+  same rating.
+- **Existing rows**: free-for-all and teams ratings were never moved (all at
+  1200), so nobody is reset and no match is replayed (CPU); everyone starts
+  provisional. **No migration**: a free-for-all or teams board has no best
+  score, so its rows count rated games in `ratings.best` (0 for every
+  existing row); the API shows that as `rated` and `provisional`, and `best`
+  as null (`shownRating`). On a duel board `rated` is `games`.
+- **The answer** to a report that counted (and a repeat after) carries
+  `rating: { elo, delta, provisional, rated }`; each reporter's is kept in
+  its report row (digest `counted`, 15 min) for its re-send to read. The end
+  card (`lib/sdk-managed.js`) leaves a line for the account layer
+  (`NeonArcade.account.endCard`), which shows "Ranked: waiting for the other
+  players to confirm…", then "Rating +12 → 1534 · provisional" — in place,
+  however late the answer lands, on every card drawn for that match.
+
+## The games the server knows
+
+*An audit, 2026-11-15: a board's kind was its latest match's, sent by the
+reporter (a duel board could be flipped to wins), and any id matching the
+pattern got a board, a snapshot file and a play count.*
+
+`worker/api/games.js` lists every game the site lists and its manifest kind,
+generated from `lib/catalog.js` and `community/catalog.js` by
+`scripts/build-games-table.mjs` (`just games-table`) and committed, like
+`lib/catalog.js`, so the Worker bundles it. The Worker refuses any id
+not in it (the tables have no prototype: `constructor` or `__proto__` is not
+a game) — a result, a play count, a board, a match start; the snapshot and
+the summary leave out boards of games no longer in it — and a result of
+another kind than its game's — except the extra kinds the table lists
+(`KINDS`, from `EXTRA_KINDS` in the generator: Bubble Rush is `ffa` and its
+teams mode reports `teams`, rated as teams on its one free-for-all board)
+and a scored free-for-all of a co-op game (Neon Survival's multi-ship runs). A board's kind is SOLO's pin, else the
+table's; `@level` boards are SOLO's only. `just games-table --check` (in
+`just test`, the platform CI check, and `just deploy-worker`) fails when a
+catalog moved on — a registry pin that adds a game needs the table
+regenerated before the Worker is deployed, or that game simply does not rank.
+
+## Games without boards
+
+*Lokesh, 2026-11-16: "Leaderboard is optional, remove it for games which
+don't make sense (like tic-tac-toe since its a solved game)" — he chose Tic
+Tac Toe (all seven language versions), Connect 4, Undercover and Draw &
+Guess.*
+
+A manifest may say **`"leaderboard": false`** (default true; validated by
+`scripts/manifest.mjs`, carried into the catalog by `catalog-lib.mjs`, and
+into the Worker's table as `NO_BOARD`, `worker/api/games.js`). For such a
+game:
+
+- **The page** (`lib/account.js` `boardless`) sends no report, asks for no
+  run (alone or against bots) and posts no match start, silently — no
+  "Not ranked" toast; the end card has no rating line. The device's own
+  stats (`lib/stats.js`) still count it, wins and losses.
+- **The Worker** refuses a result (`{ counted: false, why: "this game has no
+  leaderboard", code: "no-board" }`), a run (400, `code: "no-board"`), a
+  match start, and a win against bots; its boards and levels answer **404**;
+  ratings and wins against bots of it are left out of profiles, `GET
+  /api/me/matches` and the snapshot. Tic Tac Toe and Connect 4 are out of
+  `BOTS`. Its **play count** still lands and is still in the summary: a
+  count is not a board.
+- **The leaderboard view** does not list it; an old `?game=connect4` link
+  shows the first game with a board.
+- **Existing rows** — the live D1 has `ratings` and `bot_wins` rows for
+  `connect4` and `tic-tac-toe-js` — are kept (no destructive migration) and
+  simply not served; the export still includes them, as the player's data.
+- **Draw & Guess** is in web-games: its manifest change is on web-games
+  branch `no-board-draw-guess` (commit 5521041); until the pin moves it is
+  still ranked, and after, it is not — the table follows the catalog (`just
+  games-table`).
 
 ## Solo runs (harder to fake)
 
@@ -209,7 +461,8 @@ CPU, and are not in these:
 |---|---|---|
 | Sudoku check, `solutionFor` | 2000 seeds per level: avg 0.08 ms, p95 0.10, p99.9 0.5, max 1.1 (warm); avg 3.0, max 4.9 (jitless); module load ~1.7 ms + first call ~2.5 ms on a fresh process | — |
 | Hourly snapshot | 12 boards × 100 rows + summary/index of 300 games, built, digested and all sent: median 2.0, max 5.5 ms; nothing changed: ~1.1; the App JWT on a cold isolate (RSA-2048 import + sign): 2–4 ms more | `BOARDS_PER_RUN` = 12, longest-unchecked first; only changed files are sent, over the last tree (`base_tree`); a board nobody is ranked on any more is deleted. Before: every board every run, ~4.8 ms at 30 boards and 17.5 at 120 |
-| A group's board (replays its matches) | ~1.7 ms per 1000 matches warm, ~2.2 jitless; 20 000 matches was 16.5 / 41 ms | the most recent `GROUP_REPLAY` = 2000 matches (worker/api/lb.js) |
+| A group's board (replays its matches, with the rating) | D1 faked as instant, 30 calls: 500 duels median 0.7 ms warm, 2.3 jitless; ~330 four-player free-for-alls (the pair budget) 0.8 / 2.9; 16-player 0.3 / 0.9; a fresh process's first call 2–5 ms (module compile). The first budget (1000 / 8000) measured 9.2 ms jitless, at the limit | the newest `GROUP_REPLAY` = 500 matches and at most `GROUP_PAIRS` = 4000 pairs of players, from the game's newest `GROUP_SCAN` = 3000 matches (worker/api/lb.js; was 2000 matches, all duels-only Elo) |
+| A match report (16 players: canonical, three digests, settling 16 reports, the rating) | 2000 calls, D1 faked: avg 0.18 ms, p99 0.47 warm; avg 0.31, p99 0.79 jitless; first call ~8–14 ms (WebCrypto's first digest) | D1 per report: the sweep (1 select + a 3-statement batch), whether it counted (1), the void mark (1), the report and our start (1 batch), its reports (1); committing adds accounts (1), ratings (1), departures (1, only with `left`) and one batch of 3 + 2 × players statements |
 | Export | ~0.75 ms per 1000 matches | `EXPORT_PAGE` = 2000 matches a page, `?page=`, `matchesNext`; the profile's EXPORT gathers every page |
 | Room server relay (hub) | a 1 MiB message (the WebSocket limit) parsed and relayed to one member: ~3 ms; rooms hold ≤ 8 | — |
 | Sign-in, sessions, vault | HMAC and AES-GCM on short strings: well under 1 ms | — |
@@ -240,8 +493,7 @@ ceiling — here a daily cap), within the free plan. Contract:
 `worker/api/bots.js`.*
 
 **Only the games in `BOTS` (worker/api/bots.js) have one** — every game
-with bots and a winner: Tic Tac Toe (`tic-tac-toe-js`, the listed one),
-Connect 4, Neon Fission, Neon Bid, Battleship, Liar's Dice, Light Cycles,
+with bots, a winner and boards: Neon Fission, Neon Bid, Battleship, Liar's Dice, Light Cycles,
 Sudoku. Neon Survival is co-op (nobody wins); Draw & Guess and Undercover
 have no bots. Adding a game is one entry (its `minMs`).
 
@@ -299,8 +551,8 @@ report's own trip adds back time, but nothing guarantees it.
 
 | Game | `minMs` | The fastest legal win, and how it was found |
 |---|---|---|
-| `tic-tac-toe-js` | 0.8 s (floor 1.8) | the bot (win, block, centre, first free) is deterministic: every human line searched, a win needs at least 3 bot moves × 600 ms (4 moving second); 15 of 505 lines win. Played in the browser: a 4-move fork took 3.8–4.3 s from the run |
-| `connect4` | 2.6 s (floor 3.6) | depth-5 minimax, deterministic: an exhaustive search proved no win within 6 human moves (first) or 5 (second), so at least 6 bot moves × 600 ms; a depth-8 human searcher's fastest of 8 wins in 20 games took 11 bot moves (6.6 s) |
+| ~~`tic-tac-toe-js`~~ (no boards since 2026-11-16) | 0.8 s (floor 1.8) | the bot (win, block, centre, first free) is deterministic: every human line searched, a win needs at least 3 bot moves × 600 ms (4 moving second); 15 of 505 lines win. Played in the browser: a 4-move fork took 3.8–4.3 s from the run |
+| ~~`connect4`~~ (no boards since 2026-11-16) | 2.6 s (floor 3.6) | depth-5 minimax, deterministic: an exhaustive search proved no win within 6 human moves (first) or 5 (second), so at least 6 bot moves × 600 ms; a depth-8 human searcher's fastest of 8 wins in 20 games took 11 bot moves (6.6 s) |
 | `neon-fission` | 1.2 s | the rules allow a win after one bot move (0.6 s: load a corner, burst it into the bot's cell); a search over the 54 cells found none within 3 human moves for 3 bot seeds (1.8 s, searched, not proven for every seed), so two bot moves, 1.2 s, refuses no real win; a greedy human's fastest of 153 wins in 300 games took 27 s |
 | `neon-bid` | 37 s (floor 38.4) | fixed: 12 lots, each ending with a 3.2 s show, and the result only after the last (lib/rounds.js onFinish) — 38.4 s whatever anyone bids |
 | `lokeshmohanty/battleship` | 8.5 s (floor 9.9) | 12 fleet cells, one shot a volley, 0.9 s resolve between volleys: 11 × 0.9 = 9.9 s; fastest of 9640 simulated wins: 14 volleys, 11.7 s |
@@ -321,7 +573,7 @@ saying when the count was reached, and a note that it is kept apart;
 signed out, the bar says to sign in and beat the bots alone. A `?vs=bots`
 link for a game without the board shows its Ranked board instead. The
 empty board's SINGLE PLAYER goes to `./?game=<id>&fresh=1&mode=bots`. The profile lists the wins under the ratings, not in
-them ("Wins against bots: Tic Tac Toe 1"); a counted win's toast says
+them ("Wins against bots: Neon Fission 1"); a counted win's toast says
 "Counted: 3 wins against bots." Not in the hourly snapshot, so no offline
 copy.
 
@@ -441,10 +693,11 @@ address per 5-minute window (IpGate `api`).
 |---|---|---|
 | `GET /auth/{github,google}/start?back=` → `…/callback` | anyone | sign in; back to `back#token=` |
 | `GET /auth/test?name=&uid=&back=` | tests only (`AUTH_TEST=1`, loopback host) | |
-| `GET/PATCH/DELETE /api/me`, `GET /api/me/export[?page=]`, `POST /api/me/signout` | signed in | profile, settings, delete, export (matches 2000 a page; `matchesNext`) |
+| `GET/PATCH/DELETE /api/me`, `GET /api/me/export[?page=]`, `POST /api/me/signout` | signed in | profile, settings, delete, export (matches 2000 a page; `matchesNext`; also runs, pending reports and starts, feedback posts, presence) |
 | `GET/PUT /api/me/favs`, `GET /api/me/matches` | signed in | favs: game ids, `contributor:<login>`, `collection:<owner>/<repo>` (2026-11-15; same table, no migration) |
 | `POST /api/stats/played`, `GET /api/stats/summary` | anyone | counts |
-| `POST /api/match/report` | signed in | ranked results; played alone: `run` is the server's, plus the game's `proof` |
+| `POST /api/match/report` | signed in | ranked results, with `seats` and `left`; played alone (`seats` 1): `run` is the server's, plus the game's `proof`. Answers `{ counted, rating? }`, `{ pending, settleAt }` or `{ counted: false, why }` |
+| `POST /api/match/start`, `DELETE /api/match/start` | signed in | `{ game, run, match }`: this account is seated in that ranked match with a winner (duel, ffa, teams) — the evidence a departure needs; DELETE withdraws it (the match ended without a result) |
 | `POST /api/run/start` | signed in | `{ game }` → `{ run, seed, at }`: a solo run (6 h, one counted report); `SOLO` games only. `{ game, vs: "bots" }`: a run for a match against bots; `BOTS` games only |
 | `POST /api/admin/age-run` | tests only (`AUTH_TEST=1`, loopback host) | `{ run, ms }`: move a run's start into the past |
 | `GET /api/lb/<game>?scope=global\|friends\|group:<id>` | global: anyone (`&me=1`: signed in) | signed in, also `me`: your row and rank even past the top 100, or `rank: null` with `need` (more games) or `hidden`; null with no ranked game. Global without `me=1` is the one cached publicly. Also `levels`, `unit` and `botsBoard` (the game has a board against bots) when they apply |
@@ -474,6 +727,7 @@ or loopback; public reads are open.
 | Friend code | D1 `accounts.friend_code` | to whoever you give it; rotatable |
 | Blocks, declines (7 days), mutes, group bans, waiting invites (10 minutes), when a request was last pushed | D1 `friends`, `mutes`, `group_bans`, `invites`, `request_pushes` | no; in the export (your own rows; never a block of someone else's on you; group bans of you and by you; when your requests were pushed); deleted with the account |
 | Ranked matches and ratings | D1 | on boards and public profiles, unless hidden |
+| Reports not yet settled, "I am seated" starts, outcomes waiting to be read | D1 `reports` (15 min; starts 1 h after their last beat) | no; in the export (`reports`); deleted with the account |
 | Solo runs and runs against bots: id, game, seed, start, used, counted, daily, `vs` | D1 `runs`, kept 4 days | no; deleted with the account |
 | Wins against bots: game, count, first win, when the count was reached | D1 `bot_wins` | on the boards against bots, unless hidden; in the export (`winsAgainstBots`); deleted with the account |
 | Play counts per game | D1 `plays` | yes (summary, snapshot) |
@@ -529,10 +783,41 @@ the snapshot are skipped.
    `wrangler secret put GH_APP_KEY < key.pem` (PKCS#1 as GitHub gives it is
    fine). On the repository: enable Discussions and add a category named
    **Game feedback** (announcement-style, so only the App starts threads).
-6. **Deploy**: `wrangler deploy` (the `UserLive` class migration `v3` and the
+6. **Deploy**: `just deploy-worker` — never a bare `wrangler deploy`, which skips the games-table check (the `UserLive` class migration `v3` and the
    hourly cron come with it).
 7. Check: sign in on the site with each provider; play a ranked game with a
    second account; wait for :07 past the hour and look at the `stats` branch.
+
+## Deploying the Worker
+
+**Always `just deploy-worker`, never a bare `wrangler deploy`.** It fetches
+the registry's games (`just community`) and checks the Worker's table of
+games against them (`just check-games`) before deploying: a Worker whose
+table lacks a game refuses that game's play counts and results (a review,
+2026-11-16: Bubble Rush was missing from this branch's table). After a pin
+PR that adds a game or changes one, the submission check warns; regenerate
+with `just games-table` and commit before deploying.
+
+## Deploying the ratings and integrity changes (branch `social-ratings`, 2026-11-16)
+
+**No migration**: the new rows live in existing tables (`reports` rows with
+digest `start` / `counted`; a free-for-all or teams board's rated games in
+`ratings.best`). From the repo root, after the merge:
+
+1. `just community` (the registry's games, for the table), then
+   `just check-games` — `worker/api/games.js` must match; if not,
+   `just games-table` and commit it.
+2. `just deploy-worker` (runs both of the above, then `wrangler deploy` in
+   `worker/`).
+3. Check: two signed-in players finish a Neon Fission — both end cards say
+   "Rating +24 → 1224 · provisional"; the leaderboard's Neon Bid board shows
+   "Rating"; `GET /api/lb/nobody/x` answers 400; `GET /api/lb/connect4`
+   answers 404 and a finished Connect 4 sends no report.
+
+Order with the site: the site and the Worker can go in either order. A page
+from before (cached by the service worker) sends no `seats`, so its solo
+runs are refused as "a ranked match needs two signed-in players" until it
+updates, and it never sends `left` or a start (no departures from it).
 
 ## Migrations
 
@@ -547,7 +832,7 @@ from `worker/`:
 
 1. `wrangler d1 migrations apply arcade --remote` (applies 0003 only; check
    with `wrangler d1 migrations list arcade --remote`).
-2. `wrangler deploy`.
+2. `just deploy-worker` (never a bare `wrangler deploy`).
 3. Check: signed in, play Neon Survival alone for a minute — "Counted on the
    leaderboard."; a Sudoku solved alone appears on its board as a time.
 
@@ -567,7 +852,7 @@ deployed before it — every run start and solo report would fail. So, from
 1. `wrangler d1 migrations list arcade --remote` — shows what is pending
    (0003 too, if it still is).
 2. `wrangler d1 migrations apply arcade --remote` — applies them in order.
-3. `wrangler deploy`.
+3. `just deploy-worker` (never a bare `wrangler deploy`).
 4. Check, signed in: win a Tic Tac Toe against the bot — "Counted: 1 win
    against bots."; the leaderboard's Tic Tac Toe → Against bots lists you;
    its Ranked board does not. Once the web-games pin moves past 4cc6e1a:
@@ -609,6 +894,27 @@ deploy**, from `worker/`, once the branch is merged:
   runs crossed, a kind with no winner, the daily cap per game —
   `BOTS_PER_DAY` is 3 there — ties to whoever got there first, `me`,
   friends, no rating or ranked board touched, export, delete).
+- `just test-accounts` also covers (2026-11-16): the rating with no server
+  (beating a stronger player counts more, provisional K, teams, guests'
+  places, leavers' places); the audit's collusion repro (two colluders
+  naming a third: counted for them only, after the grace) and the spoofed
+  `acct`; kind flipping and unknown ids (result, play count, board, level,
+  match start); guests in a free-for-all; leaving is a loss (duel on the
+  winner's word, not without the leaver's start, not while they are online
+  in the game, not when they report it, not with a start their own report
+  used up, not for a made-up match number, not after a withdrawal, not
+  after a refused report of theirs, not while their seated page still beats
+  even with a second page on the home screen (the review's repro), an emptied side's empty slot, free-for-all
+  confirmed by two, not by one; with no server: a 1v1 emptied side, 2v2 with
+  one leaver ahead, drawn and behind); a missing account in
+  the roster; two last reports at once; six commits for one player at once;
+  boards of 120 friends and 121 members; the group board's query plan
+  (`EXPLAIN QUERY PLAN` through `wrangler d1 execute`); a single id at the
+  end with `seats` 2 is not solo; the export's runs, reports, feedback posts
+  and presence; games without boards (a Connect 4 result refused, its
+  boards 404, no run or match start, old rows not served, the play count
+  still lands). `MATCH_GRACE_MS` is 3 s there. `just test-submission`
+  checks the `leaderboard` field and that the catalog carries it.
 - `just test-accounts` also covers friends, invites and groups (0005):
   friend codes (by code, any case, rotated, the old one dead, id links
   still working, guessing cut off), one push per request, crossing
@@ -623,11 +929,20 @@ deploy**, from `worker/`, once the branch is merged:
 - `just test-social` — the whole flow in two browsers at 390×844, and a
   Neon Survival run played alone: issued, reported under its run, counted;
   a Light Cycles round alone (skipped while the served Light Cycles has no
-  score: build from the branch, below); a Tic Tac Toe won against the bot
-  (run asked for as the match begins, reported once, PLAY AGAIN asks for a
-  new one, counted on the board against bots and not the ranked one), and
-  the board in Paper light, Paper dark and Neon (`NEON_SHOTS=dir` saves
-  screenshots). Friends: a pushed request accepted from its notice,
+  score: build from the branch, below); against bots (since 2026-11-16):
+  Tic Tac Toe asks for no run and sends nothing; Neon Fission asks for its
+  run as the match begins, a win handed over by removing the bot is not
+  reported, and a win through the account layer counts on the board
+  against bots and not the ranked one; the board in Paper light, Paper dark
+  and Neon (`NEON_SHOTS=dir` saves screenshots). Since 2026-11-16 also: a
+  Connect 4 between Ana and Bo is played but not reported (no end-card
+  line, the device's stats still count it); Neon Fission with Bo leaving —
+  his page said it was seated, Ana's report names him, waits out the grace
+  and counts, her end card says "Rating +24 → 1224 · provisional" in place
+  and inside the screen, and Bo has a loss; the leaderboard strip without
+  games that have no boards, an old `?game=connect4` falling back; and an
+  abandoned solo run never filing a later two-seat match as solo.
+  Friends: a pushed request accepted from its notice,
   "Invited" either way, NOT NOW forgetting an invite on the server, a member
   in by a classic invite inviting, no friends refetch on party redraws, the
   end card's "Players you just played", the ☰ badge, the profile at

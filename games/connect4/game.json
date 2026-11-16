@@ -15,6 +15,7 @@
   },
   "bots": true,
   "kind": "duel",
+  "leaderboard": false,
   "tags": [
     "alone",
     "duel",

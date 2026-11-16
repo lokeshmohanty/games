@@ -13,6 +13,8 @@
 port := "8000"
 # pnpm, from the system or through Nix (no global install needed on NixOS).
 pnpm := if `command -v pnpm || true` != "" { "pnpm" } else { "nix shell nixpkgs#pnpm nixpkgs#nodejs_24 -c pnpm" }
+# wrangler likewise (scripts/wrangler.mjs makes the same choice for the tests).
+wrangler := if `command -v wrangler || true` != "" { "wrangler" } else { "nix shell nixpkgs#wrangler -c wrangler" }
 
 # List the recipes.
 default:
@@ -50,7 +52,7 @@ serve-lan: install
     {{pnpm}} dev --host 0.0.0.0 --port {{port}}
 
 # Every suite, in the order they get slower.
-test: check-bindings check-colours community build test-stats test-submission test-codec test-hub test-worker-do test-plumbing test-rules test-room test-party test-scan test-pwa test-bots test-rules-screen test-devkit test-protocol test-managed test-conformance test-webapp test-theme test-portal
+test: check-bindings check-colours community check-games build test-stats test-submission test-codec test-hub test-worker-do test-plumbing test-rules test-room test-party test-scan test-pwa test-bots test-rules-screen test-devkit test-protocol test-managed test-conformance test-webapp test-theme test-portal
 
 # No browser needed — the signalling codec round-trip.
 test-codec:
@@ -187,6 +189,27 @@ check-bindings:
 # site needs no build step). `just catalog --check` fails if it is stale.
 catalog *args:
     node scripts/build-catalog.mjs {{args}}
+
+# The room server's table of games and their kinds (worker/api/games.js,
+# generated from lib/catalog.js + community/catalog.js; committed so the
+# Worker bundles it). `just games-table --check` fails if it is stale.
+
+# Write the Worker's table of games (worker/api/games.js) from the catalogs.
+games-table *args:
+    node scripts/build-games-table.mjs {{args}}
+
+# Fail if worker/api/games.js does not match the catalogs (needs community/).
+check-games:
+    node scripts/build-games-table.mjs --check
+
+# Not part of `test`: deploys the room server for real. Its table of games
+# must match what the site lists, so the registry's games are fetched and the
+# table checked first (docs/accounts.md "Deploying"). D1 migrations are
+# separate: `wrangler d1 migrations apply arcade --remote` (worker/).
+
+# Deploy the room server (worker/) after checking its table of games.
+deploy-worker: community check-games
+    cd worker && {{wrangler}} deploy
 
 # Fetch every registered outside repo at its pinned commit into community/
 # (git-ignored) and write community/catalog.js + precache.js. A clone at

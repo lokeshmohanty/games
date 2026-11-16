@@ -1023,7 +1023,10 @@ the icon for exactly this reason. `test-pwa` now parses the file.
 - A relayed negotiation is abandoned after 15 s and tried once the other way
   round (2026-11-12, for NATs that connect in one direction only); after
   that nothing retries it on a timer — the next roster change does. A pair that failed once stays
-  relay-only until somebody joins, leaves or is edited.
+  relay-only until somebody joins, leaves or is edited. A direct link that *drops* while
+  the member stays reachable is different: the first vouch for it dials it
+  again at once (net.js `_vouch`, 2026-11-16). Left relay-only, a pair split
+  in two when their relay — the host — left, each crowning itself.
 - The 3 s grace on `disconnected` is observed in the NAT lab, not on a phone:
   4 s and 8 s blackouts keep the link; Chrome itself declares `disconnected`
   some seconds in, so a link survives a blackout of roughly 9 s. It cannot

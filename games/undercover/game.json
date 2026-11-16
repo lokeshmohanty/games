@@ -18,6 +18,7 @@
   },
   "bots": false,
   "kind": "local",
+  "leaderboard": false,
   "tags": [
     "party",
     "one-phone"

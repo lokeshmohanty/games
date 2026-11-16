@@ -8,6 +8,7 @@
   "runtime": "wasm",
   "wasm": "pkg/tic_tac_toe_rust_bg.wasm",
   "kind": "duel",
+  "leaderboard": false,
   "shape": "teams",
   "seats": {
     "min": 2,
