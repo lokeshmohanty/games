@@ -6,7 +6,8 @@
 // after a game is added, removed or changes kind — `just games-table` — and
 // before deploying the Worker (`just deploy-worker` checks it).
 
-export const GAMES = {
+// No prototype: a looked-up id like "constructor" or "__proto__" is not a game.
+export const GAMES = Object.assign(Object.create(null), {
 	"connect4": "duel",
 	"lokeshmohanty/battleship": "duel",
 	"lokeshmohanty/bubble-rush": "ffa",
@@ -25,7 +26,7 @@ export const GAMES = {
 	"tic-tac-toe-rust": "duel",
 	"tic-tac-toe-ts": "duel",
 	"undercover": "local",
-};
+});
 
 // Games whose manifest says "leaderboard": false (Lokesh, 2026-11-16: a
 // ranking means nothing there): known, counted as played, never ranked —
@@ -44,9 +45,9 @@ export const NO_BOARD = new Set([
 
 // The kinds of result a game may report, where more than its manifest's one
 // (scripts/build-games-table.mjs EXTRA_KINDS); its board keeps GAMES' kind.
-export const KINDS = {
+export const KINDS = Object.assign(Object.create(null), {
 	"lokeshmohanty/bubble-rush": [
 		"ffa",
 		"teams"
 	]
-};
+});

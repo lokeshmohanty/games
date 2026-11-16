@@ -56,7 +56,8 @@ export const SOLO_PER_DAY = 50; // counted solo runs per account per game per da
  * `@alone`, beside its races). `unit`: what the board's score is in, for the
  * page to say (lb.js passes it on).
  */
-export const SOLO = {
+// No prototype (as every table looked up by a player's id): "constructor" is not a game.
+export const SOLO = Object.assign(Object.create(null), {
 	// A gem spawns with chance 0.02 per 60 Hz frame while fewer than 3 are out
 	// (games/neon-survival-mp: 1.2 a second at most, 2 to start), and a ship
 	// jumps to the finger, so even catching every one is under 1.2 a second.
@@ -89,7 +90,7 @@ export const SOLO = {
 		plain: "ffa",
 		unit: "s",
 	},
-};
+});
 
 /**
  * The pinned kind of a board: `game` (SOLO's `board`, or `plain` for a game

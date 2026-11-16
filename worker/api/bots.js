@@ -46,7 +46,7 @@ export const BOTS_PER_DAY = 20;
  * at least 600 ms a move (lib/sdk-managed.js BOT_MS). Adding a game is one
  * entry here.
  */
-export const BOTS = {
+export const BOTS = Object.assign(Object.create(null), {
 	// Tic Tac Toe and Connect 4 had boards here until 2026-11-16, when they
 	// lost their online boards ("leaderboard": false: a solved game, and
 	// Connect 4, Lokesh's choice). Their rows in bot_wins stay, unserved.
@@ -67,7 +67,7 @@ export const BOTS = {
 	// A race: the human's own solve sets the pace (the bot fills a cell every
 	// few seconds), so the solo floor for the easiest puzzle (sudoku.js).
 	"lokeshmohanty/sudoku": { minMs: 29_000 },
-};
+});
 
 const KINDS = ["duel", "ffa", "teams"]; // a kind with a winner
 const isBot = (id) => typeof id === "string" && id.startsWith("bot_");
