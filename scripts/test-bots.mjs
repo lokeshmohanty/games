@@ -1127,11 +1127,16 @@ try {
 		check("on Player 2's turn the phone says so: pass it", /Player 2/.test(passLine) && /pass the phone/.test(passLine), passLine);
 		check("Player 2's moves are exactly the taps made for them: no bot played that seat", seatMoves[1] > 0 && seatMoves[1] === taps[1], JSON.stringify({ seatMoves, taps }));
 		check("the real bot moved itself, and its turns were never this phone's", seatMoves[2] > 0 && neverOurs, JSON.stringify(seatMoves));
-		check("the game ends", v.winner !== null, `after ${v.moves} moves`);
-		const card = await hot.locator(".managed-over").first().textContent({ timeout: TIMEOUT }).catch(() => "");
-		const botName = v.players[2].name;
-		check("the end card names Player 2 and the bot by name", card.includes("Player 2") && card.includes(botName), card);
-		check("…and its title names the winner as the game does", card.toUpperCase().includes(`${v.players[v.winner].name.toUpperCase()} WINS`), card);
+		// No winner in 150 s (seen on a loaded machine, 2026-11-16): say where
+		// it stood, and skip the end card's checks rather than crash on it.
+		const ended = v.winner !== null;
+		check("the game ends", ended, `after ${v.moves} moves in 150 s: turn ${v.turn}, canPlay ${v.canPlay}, animating ${v.animating}`);
+		if (ended) {
+			const card = await hot.locator(".managed-over").first().textContent({ timeout: TIMEOUT }).catch(() => "");
+			const botName = v.players[2].name;
+			check("the end card names Player 2 and the bot by name", card.includes("Player 2") && card.includes(botName), card);
+			check("…and its title names the winner as the game does", card.toUpperCase().includes(`${v.players[v.winner].name.toUpperCase()} WINS`), card);
+		} else check("the end card names Player 2 and the bot by name (and its winner)", false, "skipped: the game did not end");
 		await ctx2.close();
 	}
 
