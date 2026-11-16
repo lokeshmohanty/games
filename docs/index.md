@@ -420,6 +420,31 @@ reconciles two hosts:
 - a member that computed an heir yields to a host still speaking at the old
   term, which is how a false "the host is gone" heals.
 
+**A split party: only the heir's side carries on** (Lokesh, 2026-11-16). The
+host's departure can leave the rest in pieces that cannot reach each other:
+two guests that talked only through the host (no TURN, by design), or a
+re-dial that had not landed yet. The heir is computed over the roster the
+host last published, not over what this browser's own probes have left of it,
+so every piece names the same member. The piece holding that heir crowns it,
+as above. Every other piece:
+
+- never crowns anyone. Having computed the heir, it waits up to 10 s for its
+  record (net.js `HEIR_WAIT_MS`). Silence, or concluding the heir gone itself
+  (anything but the heir's own goodbye), makes it **lost** (`room.lost`,
+  `onLost(true)`);
+- stops its game, and shows "Lost connection to the party", with TRY AGAIN
+  where a room server may still reach the others (`room.rejoin()`: the
+  re-announce an isolated member makes, also made at once) and LEAVE PARTY;
+- rejoins rather than forks when a path comes back: the heir's record, at the
+  newer term, ends the lost state (`onLost(false)`), and a member the heir
+  dropped meanwhile carries its own seat back in, like any member a crown
+  change left out.
+
+An heir that left by its own goodbye is not a split: the crown passes to the
+next in line. If the heir and the host fail together, nobody carries on, and
+everyone is lost. That trade is Lokesh's: one party, never two. Tested in
+test-plumbing ("a split party").
+
 A link reported `disconnected` gets 3 s to recover before it counts as dropped,
 because a phone on a briefly lost signal often recovers the same connection.
 The cost is paid by a closed tab, which also arrives as `disconnected`: in
@@ -469,6 +494,8 @@ lone host before leaving.
 | `setGame(id)` | host only: everyone mounts it; `null` returns to the party |
 | `transferHost(id)` | host only: hand over the crown (never to a bot) |
 | `heir()` | who would take the crown if we left now; skips us, bots and reconnecting seats; `null` if nobody |
+| `lost` / `onLost(on)` | this side of a split party cannot reach the heir's side (see "A split party") |
+| `canRejoin` / `rejoin()` | whether a room server may put us back in touch, and asking it to |
 | `removeMember(id)` | host only: remove someone (a bot included) |
 | `addBot(team?)` | host only: seat a simulated member; defaults to the emptier side. Returns its id |
 | `bots()` | every bot in the roster (readable by anyone) |
@@ -1022,9 +1049,15 @@ the icon for exactly this reason. `test-pwa` now parses the file.
   round (2026-11-12, for NATs that connect in one direction only); after
   that nothing retries it on a timer — the next roster change does. A pair that failed once stays
   relay-only until somebody joins, leaves or is edited. A direct link that *drops* while
-  the member stays reachable is different: the first vouch for it dials it
-  again at once (net.js `_vouch`, 2026-11-16). Left relay-only, a pair split
-  in two when their relay — the host — left, each crowning itself.
+  the member stays reachable is different. The second vouch for it, 2.5 s
+  after the drop, dials it again (net.js `_vouch`, 2026-11-16). The second,
+  not the first, so that a stale vouch for a member who is leaving does not
+  cost an offer. Left relay-only, a pair split in two when their relay, the
+  host, left. A drop is often seen at one end first. When the higher id still
+  holds the dead link, it sets aside the lower id's offer, and a resend of
+  that offer would be dropped as already seen. So when the higher id notices
+  and asks about the lower id (`__q`), the lower id abandons its offer and
+  makes a fresh one (`_redial`).
 - The 3 s grace on `disconnected` is observed in the NAT lab, not on a phone:
   4 s and 8 s blackouts keep the link; Chrome itself declares `disconnected`
   some seconds in, so a link survives a blackout of roughly 9 s. It cannot

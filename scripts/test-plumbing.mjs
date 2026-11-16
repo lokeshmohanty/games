@@ -560,5 +560,106 @@ const bare = (opts, host = true) => {
 	delete globalThis.RTCPeerConnection;
 }
 
+// ---------------------------------------------------------------------------
+console.log("\na split party: only the heir's side carries on");
+
+/** Cut a pair's direct link, as a network does: neither end is told why. */
+const cut = (a, b) => {
+	const la = a.links.get(b.selfId);
+	const lb = b.links.get(a.selfId);
+	if (la) a._linkClosed(la);
+	if (lb) b._linkClosed(lb);
+};
+/** The host's tab dies: no goodbye, its links just stop. */
+const vanish = (host, others) => {
+	host.detach();
+	for (const r of others) {
+		const l = r.links.get(host.selfId);
+		if (l) r._linkClosed(l);
+	}
+};
+const hosts = (rooms) => rooms.filter((r) => r.isHost()).map((r) => r.self().name).join(",");
+const DEPARTURE = 2800; // past net.js DEPARTURE_GRACE_MS
+
+{
+	// Three seats, and the two guests reach each other only through the host
+	// (a pair with no route: no TURN, by design). The host's tab dies. Ana is
+	// the heir; Bo cannot reach her, so Bo must not crown — and says so.
+	const [host, ana, bo] = await party(["Host", "Ana", "Bo"], [[0, 1], [0, 2]], { heirWaitMs: 300 });
+	const term = bo.party.term;
+	const told = [];
+	bo.onLost = (on) => told.push(on);
+	ana.onLost = (on) => told.push(`ana:${on}`);
+	vanish(host, [ana, bo]);
+	await sleep(DEPARTURE + 500);
+	check("one host after the split: the heir", hosts([ana, bo]) === "Ana", hosts([ana, bo]));
+	check("the side without the heir does not crown", !bo.isHost() && bo.party.term === term, `bo host=${bo.isHost()} term=${bo.party.term}`);
+	check("…and is lost, and told so once", bo.lost === true && told.join() === "true", told.join());
+	check("the heir's side is not lost", ana.lost === false);
+
+	// Bo regains a path to Ana: it rejoins her party — seat and all — rather
+	// than forking it.
+	const [toBo, toAna] = linkPair(ana, bo);
+	toAna.introducedName = "Ana";
+	toBo.introducedName = "Bo";
+	bo._linkOpened(toAna);
+	ana._linkOpened(toBo);
+	await sleep(60);
+	check("a lost side that finds the heir again rejoins its party", bo.lost === false && told.join() === "true,false" && bo.hostId() === ana.selfId, `${told.join()} host=${bo.hostId()}`);
+	check("…as a member of it, still one host", !!ana.getMember(bo.selfId) && hosts([ana, bo]) === "Ana", `${ids(ana)} / ${hosts([ana, bo])}`);
+	for (const r of [ana, bo]) r.leave();
+}
+
+for (const first of ["the pair", "the host"]) {
+	// A full mesh that splits as the host goes: the guests' own link drops
+	// too. Bo concludes both gone. Whichever probe ends first, Bo used to
+	// end up crowning itself — two hosts, two parties.
+	const [host, ana, bo] = await party(["Host", "Ana", "Bo"], [[0, 1], [0, 2], [1, 2]], { heirWaitMs: 300 });
+	if (first === "the pair") {
+		cut(ana, bo);
+		await sleep(50);
+	}
+	vanish(host, [ana, bo]);
+	if (first === "the host") {
+		await sleep(50);
+		cut(ana, bo);
+	}
+	await sleep(DEPARTURE + 600);
+	check(`split (${first} first): one host, the heir`, hosts([ana, bo]) === "Ana", hosts([ana, bo]) || "none");
+	check(`split (${first} first): the other side is lost, not a second party`, bo.lost === true && !bo.isHost());
+	for (const r of [ana, bo]) r.leave();
+}
+
+{
+	// The heir itself said goodbye: the crown passes on to the next in line,
+	// as before — a goodbye is not a split.
+	const [host, ana, bo, cy] = await party(["Host", "Ana", "Bo", "Cy"], [[0, 1], [0, 2], [0, 3], [1, 2], [1, 3], [2, 3]], { heirWaitMs: 300 });
+	host.leave();
+	await sleep(30);
+	ana.leave();
+	await sleep(400);
+	check("the heir leaving on purpose passes the crown on", hosts([bo, cy]) === "Bo" && !bo.lost && !cy.lost, `${hosts([bo, cy])} lost=${bo.lost},${cy.lost}`);
+	for (const r of [bo, cy]) r.leave();
+}
+
+{
+	// A drop seen at one end first: the lower id offered while the higher id
+	// still held the (dead) link, so the offer was set aside — and its
+	// resend, with the same id, would be dropped as seen. When the higher id
+	// notices and asks about us, we offer afresh.
+	const [host, ana, bo] = await party(["Host", "Ana", "Bo"], [[0, 1], [0, 2], [1, 2]]);
+	const [low, high] = ana.selfId < bo.selfId ? [ana, bo] : [bo, ana];
+	const dials = [];
+	low._openRelayed = (peer) => dials.push(peer);
+	const stale = { peerId: high.selfId, answered: false, close() { this.closed = true; } };
+	low.links.delete(high.selfId);
+	low.pending.set("r:" + high.selfId, stale);
+	low.negotiating.set(high.selfId, stale);
+	high._linkClosed(high.links.get(low.selfId)); // the higher id notices: it asks about us
+	await sleep(40);
+	check("asked about by a peer that lost its link to us, we offer afresh", dials.join() === high.selfId && stale.closed === true && !low.pending.has("r:" + high.selfId), `${dials.join()} closed=${stale.closed}`);
+	for (const r of [host, ana, bo]) r.leave();
+}
+
 console.log(failures ? `\n${failures} failing\n` : "\nall passing\n");
 process.exit(failures ? 1 : 0);

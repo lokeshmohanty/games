@@ -111,6 +111,9 @@ The browser suites serve the built site (`dist/`, scripts/serve.mjs) over
   popstate on fragment links, Playwright skipping `beforeunload`).
 - `memory/handover.md` — how a running game survives its host leaving: the
   per-game `takeOver`, `rounds.adopt` and its epoch, and what each game loses.
+- `memory/split-party.md` — Lokesh's "heir side only" rule for a party that
+  splits as its host leaves (who crowns, who is lost, how a lost side
+  rejoins), and the one-sided re-dial trap.
 - `memory/game-pages-are-party-shortcuts.md` — why a game's link is the party
   (`./?game=`; the old pages were deleted 2026-11-15), the quick start, and
   keeping tests off production.

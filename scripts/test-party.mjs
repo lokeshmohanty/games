@@ -759,6 +759,16 @@ try {
 		.waitForFunction(() => window.__game.handle.debug().board.flat().filter(Boolean).length === 2, null, { timeout: TIMEOUT })
 		.then(() => true, () => false);
 	check("…which the new host plays", botAnswered);
+	// The lost screen (net.js _lose → onLost; Lokesh, 2026-11-16: only the
+	// heir's side of a split party carries on, the rest stop and say so).
+	// The split itself is forced in test-plumbing; this is the shell's half.
+	await p3.evaluate(() => window.__party.room.onLost(true));
+	const lostSaid = await p3.locator(".lobby-sub", { hasText: "Lost connection to the party" }).waitFor({ timeout: 5000 }).then(() => true, () => false);
+	const lostStopped = await p3.evaluate(() => !document.querySelector(".game-frame") && !document.getElementById("party").hidden);
+	check("a phone cut off from the heir's side says so, and its game stops", lostSaid && lostStopped, `said=${lostSaid} stopped=${lostStopped}`);
+	await p3.evaluate(() => window.__party.room.onLost(false));
+	const lostBack = await p3.locator(".game-frame").first().waitFor({ timeout: TIMEOUT }).then(() => true, () => false);
+	check("…and back in touch, the game comes back", lostBack);
 	await p2.evaluate((id) => {
 		window.__party.room.setGame(null);
 		window.__party.room.removeMember(id);
