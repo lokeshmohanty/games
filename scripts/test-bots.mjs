@@ -792,6 +792,12 @@ try {
 	check("a tap on empty field scores nothing, counts one miss on the host, and breaks the streak", missed && missed.after === missed.before && missed.misses === 1 && missed.streak === 0, JSON.stringify(missed));
 	// A phone turned sideways (844x390): the 1 : 2 field would be about 130px
 	// wide, so the game asks for the phone upright instead; turned back, it plays.
+	// The hint is for touch screens only (a short desktop window never gets
+	// it), and this context has a mouse: report a touch screen to the frame.
+	await G.evaluate(() => {
+		const mm = window.matchMedia.bind(window);
+		window.matchMedia = (q) => (q === "(pointer: coarse)" ? { matches: true, media: q } : mm(q));
+	});
 	await page.setViewportSize({ width: 844, height: 390 });
 	const sideways = await G.waitForFunction(() => window.__game.handle.debug().turnUpright, null, { timeout: 5000 }).then(() => true, () => false);
 	const sidewaysFit = await G.evaluate(() => {
@@ -803,6 +809,17 @@ try {
 	await page.setViewportSize({ width: 390, height: 844 });
 	const upright = await G.waitForFunction(() => !window.__game.handle.debug().turnUpright && window.__game.handle.debug().field.w >= 300, null, { timeout: 5000 }).then(() => true, () => false);
 	check("…and upright again, the field is back, at least 300px wide", upright, JSON.stringify((await debug(page)).field));
+	// A desktop window that is short and wide (a mouse, not a touch screen)
+	// plays on, with no hint.
+	await G.evaluate(() => {
+		const mm = window.matchMedia.bind(window);
+		window.matchMedia = (q) => (q === "(pointer: coarse)" ? { matches: false, media: q } : mm(q));
+	});
+	await page.setViewportSize({ width: 1280, height: 480 });
+	await sleep(600);
+	check("a short desktop window (1280x480, a mouse) gets no TURN YOUR PHONE UPRIGHT", !(await debug(page)).turnUpright, JSON.stringify((await debug(page)).field));
+	await page.setViewportSize({ width: 390, height: 844 });
+	await G.evaluate(() => window.dispatchEvent(new Event("resize")));
 
 	// Each bot pops bubbles of its own (popped, not score: a bomb can take a
 	// score to zero). Waited for rather than slept on.
