@@ -22,12 +22,10 @@ import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";
 import { cpSync, existsSync, globSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
-import { dirname, join, resolve as resolvePath } from "node:path";
-import { fileURLToPath } from "node:url";
+import { join } from "node:path";
 import { PORT_OFFSET, SITE_DIR, gameFrame } from "./serve.mjs";
 import { loadPlaywright } from "./playwright.mjs";
 
-const ROOT = resolvePath(dirname(fileURLToPath(import.meta.url)), "..");
 // NEON_PORT_OFFSET moves it, as every suite's (scripts/serve.mjs), so two runs
 // on one machine do not share a server.
 const PORT = 8732 + PORT_OFFSET;
@@ -283,7 +281,7 @@ const catalog = await (async () => {
 	// The listed games, then the unlisted ones (the SDK's other examples):
 	// playable by their address, on no list.
 	const games = await probe.evaluate(() =>
-		[...window.NeonArcade.listGames(), ...(window.NeonArcade.UNLISTED ?? []).map((u) => window.NeonArcade.getGame(u.id))].map((g) => ({ id: g.id, name: g.name, bots: !!g.bots, local: !!g.local, runtime: g.runtime ?? null, listed: g.listed !== false })),
+		[...window.NeonArcade.listGames(), ...(window.NeonArcade.UNLISTED ?? []).map((u) => window.NeonArcade.getGame(u.id))].map((g) => ({ id: g.id, name: g.name, bots: !!g.bots, local: !!g.local, runtime: g.runtime ?? null, listed: g.listed !== false, community: !!g.community })),
 	);
 	await probe.close();
 	return games;
@@ -716,10 +714,21 @@ console.log("\npwa: every game offline in single player");
 		}
 		const play = driver(g.id);
 		let played = null;
-		if (G && !play) detail = "no driver in test-pwa.mjs PLAY: add one";
+		// A community game's pin moves by a registry-only pull request, which
+		// cannot add a driver here (check-submission refuses other files) — and
+		// a failure here blocks every deploy. So without one it must mount
+		// offline and say ready (the SDK's `ready`); its play is not driven,
+		// and the missing driver is an info line. Ours must have a driver.
+		const readyOnly = G && !play && g.community;
+		if (readyOnly) {
+			const ready = await page.waitForSelector('.game-frame[data-ready="1"]', { timeout: 20_000 }).then(() => true, () => false);
+			if (ready) played = "ready";
+			else detail = "it never said ready (the SDK's `ready`)";
+			console.log(`  info ${g.name}: no driver in test-pwa.mjs PLAY — checked that it mounts offline and says ready, not that it plays`);
+		} else if (G && !play) detail = "no driver in test-pwa.mjs PLAY: add one";
 		else if (G) played = await play(G).catch((err) => ((detail = err.message.split("\n")[0]), null));
 		if (G && !played && !detail) detail = `stuck at ${JSON.stringify(await debug(G)).slice(0, 160)}`;
-		check(`${g.name}: opens from the portal offline in SINGLE PLAYER and plays (mounted in ${(mountMs / 1000).toFixed(1)} s)`, !!played, detail);
+		check(`${g.name}: opens from the portal offline in SINGLE PLAYER and ${readyOnly ? "says ready" : "plays"} (mounted in ${(mountMs / 1000).toFixed(1)} s)`, !!played, detail);
 		check(`${g.name}: …with every file it asked for on the device`, missed.length === 0, [...new Set(missed)].join(", "));
 		check(`${g.name}: …without asking the room server`, refused.filter((u) => /\/ping(?:$|\?)/.test(u)).length === roomBefore);
 		if (errors.length) check(`${g.name}: …with no page errors`, false, errors.join(" | ").slice(0, 200));
