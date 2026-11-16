@@ -1093,7 +1093,26 @@ try {
 		check("asking someone who blocked you looks like asking anyone: it is in your outgoing list", out.includes(v.id) && out.includes(x.id), out);
 		check("…and not in theirs", !(await call("GET", "/api/friends", { token: v.token })).body.incoming.length);
 		await call("DELETE", `/api/friends/${wv.id}/block`, { token: v.token });
-		check("unblocking drops the request made while blocked", !(await call("GET", "/api/friends", { token: v.token })).body.incoming.length && !(await call("GET", "/api/friends", { token: wv.token })).body.outgoing.some((p) => p.id === v.id));
+		check("unblocking: the request made while blocked turns up as incoming, to answer", (await call("GET", "/api/friends", { token: v.token })).body.incoming.some((p) => p.id === wv.id));
+		check("…and nothing changed for the asker", (await call("GET", "/api/friends", { token: wv.token })).body.outgoing.some((p) => p.id === v.id));
+
+		// Blocked while a request waited, or after a decline: the asker cannot
+		// tell a block from a request nobody answered, or from the decline.
+		const [ya, za, yd] = [await person("Yan"), await person("Zed"), await person("Yda")];
+		await call("POST", `/api/friends/${za.id}`, { token: ya.token });
+		await call("POST", `/api/friends/${ya.id}/block`, { token: za.token });
+		check("a request waiting when its asker is blocked stays in their outgoing list", (await call("GET", "/api/friends", { token: ya.token })).body.outgoing.some((p) => p.id === za.id));
+		const reask = await call("POST", `/api/friends/${za.id}`, { token: ya.token });
+		check("…and asking again answers as for a request nobody answered", reask.status === 200 && reask.body.state === "pending", reask);
+		check("…while the blocker still sees nothing", !(await call("GET", "/api/friends", { token: za.token })).body.incoming.length);
+		await call("POST", `/api/friends/${za.id}`, { token: yd.token });
+		await call("DELETE", `/api/friends/${yd.id}`, { token: za.token });
+		await call("POST", `/api/friends/${yd.id}/block`, { token: za.token });
+		const cool = await call("POST", `/api/friends/${za.id}`, { token: yd.token });
+		check("declined, then blocked: the decline's cooldown still answers", cool.status === 429, cool);
+		await call("DELETE", `/api/friends/${ya.id}/block`, { token: za.token });
+		check("unblocking: their waiting request is incoming for the unblocker", (await call("GET", "/api/friends", { token: za.token })).body.incoming.some((p) => p.id === ya.id));
+		check("…and unchanged for the asker", (await call("GET", "/api/friends", { token: ya.token })).body.outgoing.some((p) => p.id === za.id));
 
 		const ear = await listen(x.token);
 		for (let i = 0; i < 3; i++) {

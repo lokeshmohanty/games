@@ -261,21 +261,25 @@ export async function block(env, me, who) {
 	const other = them.id;
 	if (other === me.id) throw new HttpError(400, "that is you");
 	await env.DB.batch([
-		// Everything between us goes, except a block of theirs on us.
-		env.DB.prepare("DELETE FROM friends WHERE (a = ? AND b = ?) OR (a = ? AND b = ? AND state != 'blocked')").bind(me.id, other, other, me.id),
+		// Our own rows go (a request of ours, a friendship). Of theirs, only a
+		// friendship: a request they are waiting on and a decline's cooldown
+		// stay exactly as they were, so nothing they can see tells a block
+		// from a request nobody answered (listFriends hides it from us).
+		env.DB.prepare("DELETE FROM friends WHERE a = ? AND b = ?").bind(me.id, other),
+		env.DB.prepare("DELETE FROM friends WHERE a = ? AND b = ? AND state = 'friends'").bind(other, me.id),
 		env.DB.prepare("INSERT INTO friends (a, b, state, at) VALUES (?, ?, 'blocked', ?)").bind(me.id, other, now()),
 		...forgetPair(env, me.id, other),
 	]);
 	return { state: "blocked" };
 }
 
-/** Lift a block; a request they made while blocked goes with it. */
+/**
+ * Lift a block. A request of theirs that waited through it is left alone:
+ * it shows as incoming now, to answer, and nothing changes on their side.
+ */
 export async function unblock(env, me, who) {
 	const other = (await findAccount(env, who, null, "id"))?.id ?? who;
-	const [lifted] = await env.DB.batch([
-		env.DB.prepare("DELETE FROM friends WHERE a = ? AND b = ? AND state = 'blocked'").bind(me.id, other),
-		env.DB.prepare("DELETE FROM friends WHERE a = ? AND b = ? AND state = 'pending'").bind(other, me.id),
-	]);
+	const lifted = await env.DB.prepare("DELETE FROM friends WHERE a = ? AND b = ? AND state = 'blocked'").bind(me.id, other).run();
 	return { state: "none", lifted: !!lifted.meta?.changes };
 }
 

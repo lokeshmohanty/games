@@ -354,8 +354,10 @@ anything pending and drops waiting invites. It is never told: a request
 from the blocked one is kept and sits in their outgoing list like any
 other, but the blocker never sees it and nothing is pushed; their export,
 friends list and recent players do not show the block (only the blocker's
-own blocks are applied there). Only the blocker lifts it, and unblocking
-drops a request made meanwhile. **Mute** (D1 `mutes`) keeps a friend but drops their invites quietly —
+own blocks are applied there). A request they were waiting on when blocked,
+and a decline's cooldown, stay as they were, so a block looks like a request
+nobody answered. Only the blocker lifts it; a request that waited through
+the block then shows as incoming, to answer. **Mute** (D1 `mutes`) keeps a friend but drops their invites quietly —
 the sender is answered the same. The cap (200, `FRIENDS_MAX`) counts your
 friends plus your own outgoing requests, never incoming ones (a flood
 cannot fill it), and holds on accept for both people.
@@ -470,7 +472,7 @@ or loopback; public reads are open.
 | Sessions (id, expiry; 60 days, sliding) | D1 `sessions` | no |
 | Favourites, friends, groups, presence | D1 | no (friends see each other online unless "appear offline") |
 | Friend code | D1 `accounts.friend_code` | to whoever you give it; rotatable |
-| Blocks, declines (7 days), mutes, group bans, waiting invites (10 minutes), when a request was last pushed | D1 `friends`, `mutes`, `group_bans`, `invites`, `request_pushes` | no; in the export (your own rows; never a block of someone else's on you; group bans of you and by you); deleted with the account |
+| Blocks, declines (7 days), mutes, group bans, waiting invites (10 minutes), when a request was last pushed | D1 `friends`, `mutes`, `group_bans`, `invites`, `request_pushes` | no; in the export (your own rows; never a block of someone else's on you; group bans of you and by you; when your requests were pushed); deleted with the account |
 | Ranked matches and ratings | D1 | on boards and public profiles, unless hidden |
 | Solo runs and runs against bots: id, game, seed, start, used, counted, daily, `vs` | D1 `runs`, kept 4 days | no; deleted with the account |
 | Wins against bots: game, count, first win, when the count was reached | D1 `bot_wins` | on the boards against bots, unless hidden; in the export (`winsAgainstBots`); deleted with the account |

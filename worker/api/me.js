@@ -153,6 +153,8 @@ export async function exportMe(env, me, page = 0) {
 			me.id,
 		),
 		mutes: await q("SELECT muted, at FROM mutes WHERE account = ?", me.id),
+		// When a request of ours was last pushed (one a pair a day).
+		requestPushes: await q("SELECT target, at FROM request_pushes WHERE asker = ?", me.id),
 		invites: await q("SELECT sender, recipient, code, at FROM invites WHERE recipient = ? OR sender = ?", me.id, me.id),
 		sessions: await q("SELECT created, exp FROM sessions WHERE account = ?", me.id),
 	};
