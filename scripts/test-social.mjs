@@ -230,6 +230,25 @@ try {
 		await kitInvite.click();
 		const kitBanner = boPortal.locator(".neon-invite", { hasText: "Kit invited you to a party" });
 		check("…and the friend gets JOIN for the host's party code", (await kitBanner.waitFor({ timeout: TIMEOUT }).then(() => true, () => false)) && ((await kitBanner.locator("a").getAttribute("href")) ?? "").endsWith(`#c=${partyCode}`));
+		// Two friend requests arrive as well (names too long for the line).
+		await boPortal.evaluate(() => {
+			NeonArcade.accountUi.requestNotice({ id: "fake-req-1", name: "Wolfeschlegelsteinhausen" });
+			NeonArcade.accountUi.requestNotice({ id: "fake-req-2", name: "Bartholomew Longname Jr" });
+		});
+		const stack = await boPortal.evaluate(() => {
+			const boxes = [...document.querySelectorAll(".neon-notices > .neon-invite")].map((b) => b.getBoundingClientRect());
+			const name = document.querySelector('.neon-request[data-request="fake-req-1"] .neon-invite-name');
+			const cs = name ? getComputedStyle(name) : {};
+			return {
+				n: boxes.length,
+				apart: boxes.every((b, i) => i === 0 || b.top >= boxes[i - 1].bottom - 0.5),
+				inside: boxes.every((b) => b.left >= 0 && b.right <= innerWidth && b.top >= 0 && b.bottom <= innerHeight),
+				oneLine: cs.whiteSpace === "nowrap" && cs.textOverflow === "ellipsis",
+			};
+		});
+		check("an invite and two friend requests stack, none on top of another, all on the screen", stack.n === 3 && stack.apart && stack.inside, stack);
+		check("…a long name ends in an ellipsis, never broken mid-word", stack.oneLine, stack);
+		if (OUT) await boPortal.screenshot({ path: join(OUT, "notices-stacked-390x844.png") });
 		await boPortal.close();
 
 		// The friends list is fetched once, not on every redraw (audit D15).
@@ -293,9 +312,11 @@ try {
 					const s = document.querySelector('[data-section="friends"]').getBoundingClientRect();
 					const r = document.querySelector("[data-incoming]").getBoundingClientRect();
 					const btns = [...document.querySelectorAll("[data-incoming] button")].map((b) => b.getBoundingClientRect());
-					return { friendsTop: s.top, requestBottom: r.bottom, inside: btns.every((b) => b.left >= 0 && b.right <= innerWidth), h: innerHeight, sideScroll: document.documentElement.scrollWidth > innerWidth };
+					const nmEl = document.querySelector("[data-incoming] .nm");
+					const nm = nmEl ? getComputedStyle(nmEl) : {};
+					return { friendsTop: s.top, requestBottom: r.bottom, inside: btns.every((b) => b.left >= 0 && b.right <= innerWidth), h: innerHeight, sideScroll: document.documentElement.scrollWidth > innerWidth, ellipsis: nm.textOverflow === "ellipsis" && nm.whiteSpace === "nowrap" };
 				});
-				check(`${vw}x${vh} ${name}: the friend request, with its buttons, is on the first screen and the page fits`, where.requestBottom <= where.h && where.inside && !where.sideScroll, where);
+				check(`${vw}x${vh} ${name}: the friend request, with its buttons, is on the first screen and the page fits`, where.requestBottom <= where.h && where.inside && !where.sideScroll && where.ellipsis, where);
 				if (OUT) await ana.p.screenshot({ path: join(OUT, `profile-${vw}x${vh}-${name}.png`) });
 			}
 		}
@@ -307,16 +328,44 @@ try {
 		await ana.p.locator(`[data-section="friends"] [data-friend="${kitId}"]`).waitFor({ timeout: TIMEOUT });
 		check("ACCEPT on the profile: a friend, and the count is gone", (await ana.p.locator(".site-menu-btn .site-badge").count()) === 0);
 
-		// An invite to a friend with no page open waits for their next visit.
+		const ell = await ana.p.evaluate(() => {
+			const cs = getComputedStyle(document.querySelector("[data-friend] .grow, [data-section=friends] .item .grow.line") ?? document.body);
+			return cs.textOverflow === "ellipsis" && cs.whiteSpace === "nowrap";
+		});
+		check("friend rows cut a long name with an ellipsis", ell);
+
+		// The party screen lists every friend, online first: Kit is not on,
+		// and Bo appears offline — the two must look the same.
 		await kit.ctx.close();
-		await ana.p.waitForTimeout(500);
-		await ana.p.evaluate((id) => NeonArcade.account.api(`/api/friends/${id}/invite`, { method: "POST", body: { code: "246810" } }), kitId);
+		await bo.p.evaluate(() => NeonArcade.account.api("/api/me", { method: "PATCH", body: { appearOffline: true } }));
+		await ana.p.evaluate(() => localStorage.removeItem("neon.room"));
+		await ana.p.goto(page("?party"));
+		await ana.p.locator(".party-code-digits").waitFor({ timeout: TIMEOUT });
+		const code3 = (await ana.p.locator(".party-code-digits").textContent()).replace(/\D/g, "");
+		await ana.p.evaluate(() => NeonArcade.accountUi.loadFriends(true));
+		const kitRow = ana.p.locator(`.party-friend[data-friend="${kitId}"]`);
+		await kitRow.waitFor({ timeout: TIMEOUT });
+		const rows = await ana.p.evaluate(([k, b]) => {
+			const look = (id) => {
+				const r = document.querySelector(`.party-friend[data-friend="${id}"]`);
+				const name = r?.querySelector(".party-friend-name")?.textContent;
+				return r && { cls: r.className, text: r.textContent.replace(name, "NAME"), button: r.querySelector("button")?.textContent, disabled: r.querySelector("button")?.disabled };
+			};
+			return { kit: look(k), bo: look(b), label: document.querySelector(".party-friends .share-label")?.textContent };
+		}, [kitId, boId]);
+		check("a friend not on the site is listed, softly, with INVITE", rows.kit?.cls.includes("is-away") && /not on now/.test(rows.kit.text) && rows.kit.button === "INVITE" && rows.kit.disabled === false && rows.label === "Friends", rows);
+		check("…and a friend who appears offline looks exactly the same", JSON.stringify(rows.bo) === JSON.stringify(rows.kit), rows);
+		await bo.p.evaluate(() => NeonArcade.account.api("/api/me", { method: "PATCH", body: { appearOffline: false } }));
+		if (OUT) await ana.p.screenshot({ path: join(OUT, "party-friends-390x844.png") });
+		// INVITE to Kit, who is not on: it waits for their next visit.
+		await kitRow.locator("button", { hasText: "INVITE" }).click();
+		check("…which says Invited", await ana.p.locator(".neon-toast", { hasText: "Invited Kit." }).waitFor({ timeout: TIMEOUT }).then(() => true, () => false));
 		const kitAgain = await browser.newContext(phone);
 		const kp = await kitAgain.newPage();
 		await kp.goto(`${w.base}/auth/test?name=Kit&uid=Kit&back=${encodeURIComponent(page("index.html"))}`);
 		const waiting = kp.locator(".neon-invite", { hasText: "Ana Lima invited you to a party" });
 		check("an invite waits for a friend who was away, shown when they open the arcade", await waiting.waitFor({ timeout: TIMEOUT }).then(() => true, () => false));
-		check("…with JOIN for that code", ((await waiting.locator("a").getAttribute("href")) ?? "").endsWith("#c=246810"));
+		check("…with JOIN for that code", ((await waiting.locator("a").getAttribute("href")) ?? "").endsWith(`#c=${code3}`));
 		if (OUT) await kp.screenshot({ path: join(OUT, "waiting-invite-390x844.png") });
 		await waiting.locator("button", { hasText: "NOT NOW" }).click();
 		await kp.reload();
@@ -524,6 +573,11 @@ try {
 	check("a group page lists its members, the owner first", (await ana.p.locator("[data-member]").count()) === 2 && (await ana.p.locator("[data-member]").first().textContent()).includes("owner"));
 	check("…links to the group's boards", ((await ana.p.locator('[data-section="boards"] a').first().getAttribute("href")) ?? "").includes(`scope=${encodeURIComponent(`group:${gid}`)}`));
 	check("…and fits the phone", await noSideScroll(ana.p));
+	check("…a member's long name ends in an ellipsis", await ana.p.evaluate(() => {
+		const nm = document.querySelector("[data-member] .nm");
+		const cs = nm ? getComputedStyle(nm) : {};
+		return cs.textOverflow === "ellipsis" && cs.whiteSpace === "nowrap";
+	}));
 	if (SHOTS) await ana.p.screenshot({ path: join(SHOTS, "group-page.png"), fullPage: true });
 	await ana.p.locator(`[data-member="${boId}"] button`, { hasText: "REMOVE" }).click();
 	await ana.p.locator("dialog.neon-sheet button", { hasText: "REMOVE" }).click();

@@ -171,6 +171,17 @@
 .view-profile .item.request {
   flex-wrap: wrap;
 }
+/* A long name ends in an ellipsis on one line, never broken mid-word. */
+.view-profile .item .nm,
+.view-profile .item .grow.line {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  overflow-wrap: normal;
+}
+.view-profile .item .nm {
+  font-weight: 600;
+}
 .view-profile .blocked {
   margin-top: 10px;
 }
