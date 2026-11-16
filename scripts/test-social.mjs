@@ -77,7 +77,14 @@ try {
 	check("the name is saved on the server", (await ana.p.evaluate(() => NeonArcade.account.api("/api/me"))).name === "Ana Lima");
 	const methods = await ana.p.evaluate(() => [...document.querySelectorAll("[data-method]")].map((r) => `${r.dataset.method}:${r.querySelector("button")?.textContent}`));
 	check("the profile lists its sign-in methods, each to connect", methods.join() === "github:CONNECT,google:CONNECT", methods);
-	check("…and a friend code with a QR is shown", (await ana.p.locator("canvas.qr").count()) === 1 && (await ana.p.locator(".code").first().textContent()).includes(`?page=profile&u=${anaId}`));
+	const anaCode = await ana.p.evaluate(() => NeonArcade.account.me.friendCode);
+	check("…and a short friend code, its link and a QR are shown", /^[A-Z2-9]{4}-[A-Z2-9]{4}$/.test(await ana.p.locator(".friend-code").textContent()) && (await ana.p.locator("p.code.link").textContent()).includes(`?page=profile&u=${anaCode}`) && !(await ana.p.locator("p.code.link").textContent()).includes(anaId));
+	const qr = await ana.p.evaluate(() => {
+		const q = document.querySelector("[data-profile] .qr");
+		const r = q?.getBoundingClientRect();
+		return { tag: q?.tagName.toLowerCase(), crisp: q?.getAttribute("shape-rendering"), css: r?.width, canvases: document.querySelectorAll("[data-profile] canvas").length };
+	});
+	check("the QR is drawn as SVG with crisp edges, sharp at any density (no stretched canvas)", qr.tag === "svg" && qr.crisp === "crispEdges" && qr.css >= 132 && qr.canvases === 0, qr);
 
 	console.log("\nsocial: the portal and favourites on two devices");
 	await ana.p.goto(page("index.html"));
@@ -124,11 +131,11 @@ try {
 	await addFriend.click();
 	await ana.p.locator(".party-member button", { hasText: "ASKED" }).waitFor({ timeout: TIMEOUT });
 	check("…which asks", true);
-	const told = await bo.p.locator(".neon-toast", { hasText: "wants to be friends" }).waitFor({ timeout: TIMEOUT }).then(() => true, () => false);
-	check("the other player is told at once (live socket)", told);
-	await bo.p.waitForFunction(() => document.querySelector(".party-member button")?.textContent.includes("ACCEPT FRIEND") || [...document.querySelectorAll(".party-member button")].some((b) => b.textContent === "ACCEPT FRIEND"), null, { timeout: TIMEOUT });
-	await bo.p.locator(".party-member button", { hasText: "ACCEPT FRIEND" }).click();
-	check("accepting from the party", await bo.p.locator(".party-member button", { hasText: "FRIENDS ✓" }).waitFor({ timeout: TIMEOUT }).then(() => true, () => false));
+	const notice = bo.p.locator(".neon-request", { hasText: "wants to be friends" });
+	const told = await notice.waitFor({ timeout: TIMEOUT }).then(() => true, () => false);
+	check("the other player is told at once (live socket), with ACCEPT and DECLINE right there", told && (await notice.locator("button").allTextContents()).join() === "ACCEPT,DECLINE");
+	await notice.locator("button", { hasText: "ACCEPT" }).click();
+	check("accepting from the notice: the party's button says so", await bo.p.locator(".party-member button", { hasText: "FRIENDS ✓" }).waitFor({ timeout: TIMEOUT }).then(() => true, () => false));
 
 	// Bo opens another page (the portal); Ana invites from the party screen.
 	const boPortal = await bo.ctx.newPage();
@@ -140,9 +147,14 @@ try {
 	const invite = ana.p.locator(".party-friend button", { hasText: "INVITE" }).first();
 	check("friends online are listed with INVITE", await invite.waitFor({ timeout: TIMEOUT }).then(() => true, () => false));
 	await invite.click();
-	const banner = boPortal.locator(".neon-invite", { hasText: "invites you" });
+	check("…which says Invited, whether or not a page of theirs is open (nothing leaked)", await ana.p.locator(".neon-toast", { hasText: "Invited Bo." }).waitFor({ timeout: TIMEOUT }).then(() => true, () => false));
+	const banner = boPortal.locator(".neon-invite", { hasText: "invited you to a party" });
 	check("the invite reaches the friend's other page", await banner.waitFor({ timeout: TIMEOUT }).then(() => true, () => false));
 	check("…with a JOIN for this party's code", ((await banner.locator("a", { hasText: "JOIN" }).getAttribute("href")) ?? "").endsWith(`#c=${(await ana.p.locator(".party-code-digits").textContent()).replace(/\D/g, "")}`));
+	// Unanswered, it would wait on the server for Bo's next page; NOT NOW forgets it.
+	await banner.locator("button", { hasText: "NOT NOW" }).click();
+	await boPortal.waitForTimeout(500);
+	check("NOT NOW forgets the invite on the server too", (await boPortal.evaluate(() => NeonArcade.account.api("/api/invites"))).invites.length === 0);
 	await boPortal.close();
 
 	console.log("\nsocial: a ranked game between two signed-in people");
@@ -190,6 +202,186 @@ try {
 	check("…you highlighted", (await ana.p.locator("[data-board] [data-player].me").textContent()).includes("Ana Lima"));
 	check("…a Friends tab", (await ana.p.locator(".scope", { hasText: "Friends" }).count()) === 1);
 	check("…and it fits the phone", await noSideScroll(ana.p));
+
+	console.log("\nsocial: any member invites, the end card, requests up front");
+	{
+		const OUT = process.env.NEON_SHOTS ?? SHOTS;
+		// Kit comes in by a classic invite (ADD PLAYER: no party code on Kit's
+		// side), and is Bo's friend.
+		const kit = await device("Kit");
+		const kitId = await kit.p.evaluate(() => NeonArcade.account.me.id);
+		await kit.p.evaluate((rs) => localStorage.setItem("neon.rs", rs), w.base);
+		await kit.p.evaluate((id) => NeonArcade.account.api(`/api/friends/${id}`, { method: "POST" }), boId);
+		await bo.p.evaluate((id) => NeonArcade.account.api(`/api/friends/${id}`, { method: "POST" }), kitId);
+		await ana.p.evaluate(() => localStorage.removeItem("neon.room"));
+		await ana.p.goto(page("?party"));
+		await ana.p.locator(".party-code-digits").waitFor({ timeout: TIMEOUT });
+		const partyCode = (await ana.p.locator(".party-code-digits").textContent()).replace(/\D/g, "");
+		await ana.p.locator("button", { hasText: "ADD PLAYER" }).first().click();
+		const inviteBox = ana.p.locator("textarea.share-code").first();
+		await inviteBox.waitFor({ timeout: TIMEOUT });
+		const link = await inviteBox.inputValue();
+		await kit.p.goto(link);
+		const replyBox = kit.p.locator("textarea.share-code").first();
+		await replyBox.waitFor({ timeout: TIMEOUT });
+		await ana.p.locator("textarea.share-code").last().fill(await replyBox.inputValue());
+		await ana.p.locator("button.neon-btn", { hasText: /^CONNECT$/ }).first().click();
+		await kit.p.locator(".party-member").first().waitFor({ timeout: TIMEOUT });
+		check("(Kit joined by a classic invite: no party code on Kit's screen)", (await kit.p.locator(".party-code-digits").count()) === 0);
+		const boPortal = await bo.ctx.newPage();
+		await boPortal.goto(page("index.html"));
+		await boPortal.locator(".site-menu .acct-me").waitFor({ state: "attached", timeout: TIMEOUT });
+		await kit.p.evaluate(() => NeonArcade.accountUi.loadFriends(true));
+		const kitInvite = kit.p.locator(`.party-friend[data-friend="${boId}"] button`);
+		await kitInvite.waitFor({ timeout: TIMEOUT });
+		check("a member who is not the host, and never saw the code, can INVITE", !(await kitInvite.isDisabled()));
+		await kitInvite.click();
+		const kitBanner = boPortal.locator(".neon-invite", { hasText: "Kit invited you to a party" });
+		check("…and the friend gets JOIN for the host's party code", (await kitBanner.waitFor({ timeout: TIMEOUT }).then(() => true, () => false)) && ((await kitBanner.locator("a").getAttribute("href")) ?? "").endsWith(`#c=${partyCode}`));
+		// Two friend requests arrive as well (names too long for the line).
+		await boPortal.evaluate(() => {
+			NeonArcade.accountUi.requestNotice({ id: "fake-req-1", name: "Wolfeschlegelsteinhausen" });
+			NeonArcade.accountUi.requestNotice({ id: "fake-req-2", name: "Bartholomew Longname Jr" });
+		});
+		const stack = await boPortal.evaluate(() => {
+			const boxes = [...document.querySelectorAll(".neon-notices > .neon-invite")].map((b) => b.getBoundingClientRect());
+			const name = document.querySelector('.neon-request[data-request="fake-req-1"] .neon-invite-name');
+			const cs = name ? getComputedStyle(name) : {};
+			return {
+				n: boxes.length,
+				apart: boxes.every((b, i) => i === 0 || b.top >= boxes[i - 1].bottom - 0.5),
+				inside: boxes.every((b) => b.left >= 0 && b.right <= innerWidth && b.top >= 0 && b.bottom <= innerHeight),
+				oneLine: cs.whiteSpace === "nowrap" && cs.textOverflow === "ellipsis",
+			};
+		});
+		check("an invite and two friend requests stack, none on top of another, all on the screen", stack.n === 3 && stack.apart && stack.inside, stack);
+		check("…a long name ends in an ellipsis, never broken mid-word", stack.oneLine, stack);
+		if (OUT) await boPortal.screenshot({ path: join(OUT, "notices-stacked-390x844.png") });
+		await boPortal.close();
+
+		// The friends list is fetched once, not on every redraw (audit D15).
+		const fetches = [];
+		const onReq = (r) => r.url().endsWith("/api/friends") && fetches.push(r.url());
+		ana.p.on("request", onReq);
+		for (let i = 0; i < 4; i++) await ana.p.evaluate((n) => window.__party.room.setMeta({ tick: n }), i);
+		await ana.p.waitForTimeout(800);
+		ana.p.off("request", onReq);
+		check("roster changes redraw the party screen without fetching the friends list again", fetches.length === 0, fetches.length);
+
+		// A ranked Connect 4 between Ana and Kit, who are not friends.
+		await ana.p.evaluate((kid) => {
+			const r = window.__party.room;
+			const k = r.getMembers().find((m) => m.acct?.id === kid);
+			r.setTeam(r.selfId, "A");
+			r.setTeam(k.id, "B");
+			r.setGame("connect4");
+		}, kitId);
+		const [fa, fk] = [await gameFrame(ana.p, TIMEOUT), await gameFrame(kit.p, TIMEOUT)];
+		await fa.waitForFunction(() => window.__game.handle.debug().started, null, { timeout: TIMEOUT });
+		for (let i = 0; i < 4; i++) {
+			await drop(ana.p, fa, 0);
+			await fa.waitForFunction((n) => window.__game.handle.debug().board.flat().filter(Boolean).length >= n, 2 * i + 1, { timeout: TIMEOUT });
+			if (i < 3) {
+				await kit.p.waitForTimeout(150);
+				await drop(kit.p, fk, 1);
+				await fa.waitForFunction((n) => window.__game.handle.debug().board.flat().filter(Boolean).length >= n, 2 * i + 2, { timeout: TIMEOUT });
+			}
+		}
+		const kitCard = kit.p.locator(".managed-over .just-played");
+		check("the end card offers the players you just played", await kitCard.waitFor({ timeout: TIMEOUT }).then(() => true, () => false));
+		const addAna = kitCard.locator(`[data-add-friend="${anaId}"]`);
+		check("…with ADD FRIEND on someone who is not a friend", (await addAna.textContent()) === "ADD FRIEND");
+		check("…and leaves you out", (await kitCard.locator("[data-add-friend]").count()) === 1);
+		await addAna.click();
+		await kitCard.locator(`[data-add-friend="${anaId}"]`, { hasText: "ASKED" }).waitFor({ timeout: TIMEOUT });
+		check("…which asks", true);
+		check("the asked one sees the request at once, even mid-game", await ana.p.locator(".neon-request", { hasText: "Kit wants to be friends" }).waitFor({ timeout: TIMEOUT }).then(() => true, () => false));
+		await ana.p.locator(".neon-toast", { hasText: "Counted on the leaderboard" }).waitFor({ timeout: TIMEOUT }).catch(() => {});
+
+		// The badge: on ☰ and on your entry in it.
+		await ana.p.evaluate(() => localStorage.removeItem("neon.room"));
+		await ana.p.goto(page("index.html"));
+		const badge = ana.p.locator(".site-menu-btn .site-badge");
+		check("a waiting request shows as a count on ☰", (await badge.textContent({ timeout: TIMEOUT }).catch(() => null)) === "1");
+		await ana.p.locator(".site-menu-btn").click();
+		check("…and on your entry in the menu", (await ana.p.locator(".site-menu-item.acct-me .site-badge").textContent({ timeout: TIMEOUT }).catch(() => null)) === "1");
+
+		// The profile: requests and friends at the top, at both phone sizes, in every theme.
+		const themes = [["paper-light", { theme: "paper", mode: "light" }], ["paper-dark", { theme: "paper", mode: "dark" }], ["neon", { theme: "neon", mode: "system" }]];
+		for (const [vw, vh] of [[390, 844], [354, 696]]) {
+			await ana.p.setViewportSize({ width: vw, height: vh });
+			for (const [name, theme] of themes) {
+				await ana.p.evaluate((t) => localStorage.setItem("neon.theme", JSON.stringify(t)), theme);
+				await ana.p.goto(page("?page=profile"));
+				const req = ana.p.locator(`[data-section="friends"] [data-incoming="${kitId}"]`);
+				await req.waitFor({ timeout: TIMEOUT });
+				await ana.p.locator(`[data-section="recent"] [data-recent="${kitId}"]`).waitFor({ timeout: TIMEOUT }).catch(() => {});
+				const where = await ana.p.evaluate(() => {
+					const s = document.querySelector('[data-section="friends"]').getBoundingClientRect();
+					const r = document.querySelector("[data-incoming]").getBoundingClientRect();
+					const btns = [...document.querySelectorAll("[data-incoming] button")].map((b) => b.getBoundingClientRect());
+					const nmEl = document.querySelector("[data-incoming] .nm");
+					const nm = nmEl ? getComputedStyle(nmEl) : {};
+					return { friendsTop: s.top, requestBottom: r.bottom, inside: btns.every((b) => b.left >= 0 && b.right <= innerWidth), h: innerHeight, sideScroll: document.documentElement.scrollWidth > innerWidth, ellipsis: nm.textOverflow === "ellipsis" && nm.whiteSpace === "nowrap" };
+				});
+				check(`${vw}x${vh} ${name}: the friend request, with its buttons, is on the first screen and the page fits`, where.requestBottom <= where.h && where.inside && !where.sideScroll && where.ellipsis, where);
+				if (OUT) await ana.p.screenshot({ path: join(OUT, `profile-${vw}x${vh}-${name}.png`) });
+			}
+		}
+		await ana.p.evaluate(() => localStorage.removeItem("neon.theme"));
+		await ana.p.setViewportSize(phone.viewport);
+		await ana.p.goto(page("?page=profile"));
+		check("players you just played are on the profile too", await ana.p.locator(`[data-section="recent"] [data-recent="${kitId}"]`).waitFor({ timeout: TIMEOUT }).then(() => true, () => false));
+		await ana.p.locator(`[data-incoming="${kitId}"] button`, { hasText: "ACCEPT" }).click();
+		await ana.p.locator(`[data-section="friends"] [data-friend="${kitId}"]`).waitFor({ timeout: TIMEOUT });
+		check("ACCEPT on the profile: a friend, and the count is gone", (await ana.p.locator(".site-menu-btn .site-badge").count()) === 0);
+
+		const ell = await ana.p.evaluate(() => {
+			const cs = getComputedStyle(document.querySelector("[data-friend] .grow, [data-section=friends] .item .grow.line") ?? document.body);
+			return cs.textOverflow === "ellipsis" && cs.whiteSpace === "nowrap";
+		});
+		check("friend rows cut a long name with an ellipsis", ell);
+
+		// The party screen lists every friend, online first: Kit is not on,
+		// and Bo appears offline — the two must look the same.
+		await kit.ctx.close();
+		await bo.p.evaluate(() => NeonArcade.account.api("/api/me", { method: "PATCH", body: { appearOffline: true } }));
+		await ana.p.evaluate(() => localStorage.removeItem("neon.room"));
+		await ana.p.goto(page("?party"));
+		await ana.p.locator(".party-code-digits").waitFor({ timeout: TIMEOUT });
+		const code3 = (await ana.p.locator(".party-code-digits").textContent()).replace(/\D/g, "");
+		await ana.p.evaluate(() => NeonArcade.accountUi.loadFriends(true));
+		const kitRow = ana.p.locator(`.party-friend[data-friend="${kitId}"]`);
+		await kitRow.waitFor({ timeout: TIMEOUT });
+		const rows = await ana.p.evaluate(([k, b]) => {
+			const look = (id) => {
+				const r = document.querySelector(`.party-friend[data-friend="${id}"]`);
+				const name = r?.querySelector(".party-friend-name")?.textContent;
+				return r && { cls: r.className, text: r.textContent.replace(name, "NAME"), button: r.querySelector("button")?.textContent, disabled: r.querySelector("button")?.disabled };
+			};
+			return { kit: look(k), bo: look(b), label: document.querySelector(".party-friends .share-label")?.textContent };
+		}, [kitId, boId]);
+		check("a friend not on the site is listed, softly, with INVITE", rows.kit?.cls.includes("is-away") && /not on now/.test(rows.kit.text) && rows.kit.button === "INVITE" && rows.kit.disabled === false && rows.label === "Friends", rows);
+		check("…and a friend who appears offline looks exactly the same", JSON.stringify(rows.bo) === JSON.stringify(rows.kit), rows);
+		await bo.p.evaluate(() => NeonArcade.account.api("/api/me", { method: "PATCH", body: { appearOffline: false } }));
+		if (OUT) await ana.p.screenshot({ path: join(OUT, "party-friends-390x844.png") });
+		// INVITE to Kit, who is not on: it waits for their next visit.
+		await kitRow.locator("button", { hasText: "INVITE" }).click();
+		check("…which says Invited", await ana.p.locator(".neon-toast", { hasText: "Invited Kit." }).waitFor({ timeout: TIMEOUT }).then(() => true, () => false));
+		const kitAgain = await browser.newContext(phone);
+		const kp = await kitAgain.newPage();
+		await kp.goto(`${w.base}/auth/test?name=Kit&uid=Kit&back=${encodeURIComponent(page("index.html"))}`);
+		const waiting = kp.locator(".neon-invite", { hasText: "Ana Lima invited you to a party" });
+		check("an invite waits for a friend who was away, shown when they open the arcade", await waiting.waitFor({ timeout: TIMEOUT }).then(() => true, () => false));
+		check("…with JOIN for that code", ((await waiting.locator("a").getAttribute("href")) ?? "").endsWith(`#c=${code3}`));
+		if (OUT) await kp.screenshot({ path: join(OUT, "waiting-invite-390x844.png") });
+		await waiting.locator("button", { hasText: "NOT NOW" }).click();
+		await kp.reload();
+		await kp.locator(".site-menu .acct-me").waitFor({ state: "attached", timeout: TIMEOUT });
+		await kp.waitForTimeout(1500);
+		check("…and NOT NOW forgets it, on every page", (await kp.locator(".neon-invite").count()) === 0);
+		await kitAgain.close();
+	}
 
 	console.log("\nsocial: a run played alone, issued by the server");
 	{
@@ -383,6 +575,25 @@ try {
 	await ana.p.locator("[data-board] [data-player]").first().waitFor({ timeout: TIMEOUT }).catch(() => {});
 	const groupRows = await ana.p.locator("[data-board] [data-player]").count();
 	check("…which counts the game they played together", groupRows === 2, groupRows);
+	// The group's own page: members, its boards; the owner removes someone.
+	await ana.p.goto(page(`?page=profile&group=${encodeURIComponent(gid)}`));
+	await ana.p.locator(`[data-section="members"] [data-member="${boId}"]`).waitFor({ timeout: TIMEOUT });
+	check("a group page lists its members, the owner first", (await ana.p.locator("[data-member]").count()) === 2 && (await ana.p.locator("[data-member]").first().textContent()).includes("owner"));
+	check("…links to the group's boards", ((await ana.p.locator('[data-section="boards"] a').first().getAttribute("href")) ?? "").includes(`scope=${encodeURIComponent(`group:${gid}`)}`));
+	check("…and fits the phone", await noSideScroll(ana.p));
+	check("…a member's long name ends in an ellipsis", await ana.p.evaluate(() => {
+		const nm = document.querySelector("[data-member] .nm");
+		const cs = nm ? getComputedStyle(nm) : {};
+		return cs.textOverflow === "ellipsis" && cs.whiteSpace === "nowrap";
+	}));
+	if (SHOTS) await ana.p.screenshot({ path: join(SHOTS, "group-page.png"), fullPage: true });
+	await ana.p.locator(`[data-member="${boId}"] button`, { hasText: "REMOVE" }).click();
+	await ana.p.locator("dialog.neon-sheet button", { hasText: "REMOVE" }).click();
+	await ana.p.locator(".neon-toast", { hasText: "the code changed" }).waitFor({ timeout: TIMEOUT });
+	const newCode = await ana.p.locator('[data-section="group"] .code').textContent();
+	check("removing someone changes the join code", newCode !== gcode && (await ana.p.locator("[data-member]").count()) === 1, { newCode, gcode });
+	const refused = await bo.p.evaluate((c) => NeonArcade.account.api("/api/groups/join", { method: "POST", body: { code: c } }).then(() => 200, (e) => e.status), newCode);
+	check("…and they cannot come back in with the new one", refused === 403, refused);
 
 	console.log("\nsocial: feedback");
 	await ana.p.goto(page("?party", "&game=connect4"));

@@ -51,7 +51,9 @@ export class UserLive {
 			const game = typeof msg.game === "string" && msg.game.length <= 80 ? msg.game : null;
 			await this.presence(account, 1, game);
 		} else if (msg?.t === "ping") {
-			await this.env.DB?.prepare("UPDATE presence SET at = ? WHERE account = ?").bind(Date.now(), account).run();
+			// A heartbeat comes from an open page: online, whatever an older
+			// Worker wrote (it once set online = 0 on "appear offline").
+			await this.env.DB?.prepare("UPDATE presence SET at = ?, online = 1 WHERE account = ?").bind(Date.now(), account).run();
 			ws.send(JSON.stringify({ t: "pong" }));
 		}
 	}
