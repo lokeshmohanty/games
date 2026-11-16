@@ -202,6 +202,8 @@ const w = await startWrangler({
 	MATCH_GRACE_MS: "3000",
 	// A seated page beats every 2 min deployed; a departure needs 3 min without (here 2 s).
 	MATCH_STALE_MS: "2000",
+	// A beat writes its row at most every 30 s deployed (here 0.5 s, under the 2 s above).
+	MATCH_BEAT_WRITE_MS: "500",
 	SOLO_PER_DAY: "8",
 	BOTS_PER_DAY: "3",
 	// Small caps and a short invite life, so the tests can reach them.
@@ -487,6 +489,20 @@ try {
 		check("…and its board", (await call("GET", "/api/lb/nobody/not-a-real-game")).status === 400);
 		check("…and a level that is not one", (await call("GET", "/api/lb/lokeshmohanty/battleship@alone")).status === 400);
 		check("…while a solo level's board still answers", (await call("GET", "/api/lb/lokeshmohanty/light-cycles@alone")).body.kind === "coop");
+		// Names on Object.prototype are not games (the tables have none).
+		for (const g of ["constructor", "__proto__", "toString", "hasOwnProperty"]) {
+			const codes = [
+				(await call("POST", "/api/stats/played", { body: { game: g } })).status,
+				(await report(ana, { game: g, run: "proto1", match: 1, kind: "ffa", ranking: [["pa"], ["pb"]], roster: { pa: A, pb: Bo }, seats: 2 })).status,
+				(await call("POST", "/api/run/start", { token: ana, body: { game: g } })).status,
+				(await call("POST", "/api/run/start", { token: ana, body: { game: g, vs: "bots" } })).status,
+				(await call("GET", `/api/lb/${g}`)).status,
+				(await call("GET", `/api/lb/${g}?vs=bots`)).status,
+				(await call("POST", "/api/match/start", { token: ana, body: { game: g, run: "proto1", match: 1 } })).status,
+			];
+			check(`"${g}" is no game: played, report, runs, boards and match start all 400`, codes.every((c) => c === 400), codes);
+		}
+		check("…and the summary lists none of them", !Object.keys((await call("GET", "/api/stats/summary")).body.games).some((g) => ["constructor", "__proto__", "toString"].includes(g)));
 		check("a match start for a game with no winner is refused", (await call("POST", "/api/match/start", { token: ana, body: { game: "neon-survival-mp", run: "x", match: 1 } })).status === 400);
 		check("…and one without its match number", (await call("POST", "/api/match/start", { token: ana, body: { game: "lokeshmohanty/battleship", run: "x" } })).status === 400);
 	}
@@ -595,10 +611,27 @@ try {
 		// starts are not.
 		const gateIp = "10.98.0.1";
 		const beats = [];
-		for (let i = 0; i < 130; i++) beats.push((await call("POST", "/api/match/start", { token: lou, ip: gateIp, body: { game: "lokeshmohanty/battleship", run: "lv3", match: 1 } })).status);
+		const beatWrites = [];
+		const beatT0 = Date.now();
+		for (let i = 0; i < 130; i++) {
+			const x = await call("POST", "/api/match/start", { token: lou, ip: gateIp, body: { game: "lokeshmohanty/battleship", run: "lv3", match: 1 } });
+			beats.push(x.status);
+			beatWrites.push(x.body.wrote === true);
+		}
+		const beatMs = Date.now() - beatT0;
 		check("130 beats from one address in a window: none refused", beats.every((x) => x === 200), beats.filter((x) => x !== 200).length);
+		const spent = await call("POST", "/api/stats/played", { ip: gateIp, body: { game: "neon-bid" } });
+		check("…and the address's write limit is unspent by them", spent.status === 200, spent.status);
+		check("…and they wrote at most once per beat interval (0.5 s here, 30 s deployed), not 130 times", beatWrites.filter(Boolean).length <= 1 + Math.ceil(beatMs / 500), { wrote: beatWrites.filter(Boolean).length, ms: beatMs });
+		// An account keeps its newest three starts: a fourth evicts the oldest.
+		const starts = (n) => call("POST", "/api/match/start", { token: lia, body: { game: "lokeshmohanty/battleship", run: `cap${n}`, match: 1 } });
+		for (let n = 0; n < 4; n++) await starts(n);
+		const live = w.sql(`SELECT COUNT(*) AS n FROM reports WHERE account = '${L3}' AND digest = 'start'`)[0][0].n;
+		const first = await starts(0);
+		check("an account keeps at most three live starts: a fourth evicts the oldest", live === 3 && first.body.wrote === true && first.body.beat !== true, { live, first: first.body });
 		let fresh = 0;
-		for (let i = 0; i < 125; i++) fresh = (await call("POST", "/api/match/start", { token: lou, ip: gateIp, body: { game: "lokeshmohanty/battleship", run: `gate${i}`, match: 1 } })).status;
+		const gat = await testLogin("Gat"); // not Lou: three live starts each, and Lou's lv3 must stay
+		for (let i = 0; i < 125; i++) fresh = (await call("POST", "/api/match/start", { token: gat, ip: gateIp, body: { game: "lokeshmohanty/battleship", run: `gate${i}`, match: 1 } })).status;
 		check("…while new starts are charged like any write (the 125th is told to wait)", fresh === 429, fresh);
 		// The beat stops (they really left): then it counts — and a late
 		// report of theirs is told it counted against them.

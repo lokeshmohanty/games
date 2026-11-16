@@ -191,8 +191,12 @@ such an account only if, when the match is settled:
    who reports the real result voids the made-up one;
 4. **its seated page has stopped beating** — the page re-posts its start
    every 60 s while the match runs, a failed beat once more 15 s later
-   (`lib/account.js` `HEARTBEAT_MS`; one UPDATE of one row, free of the
-   per-address write limit — only a new start is charged), and a departure
+   (`lib/account.js` `HEARTBEAT_MS`; free of the per-address write limit —
+   only a new start is charged — but written at most once per 30 s per row
+   (`BEAT_WRITE_MS`; a beat sooner is answered, not written), and never past
+   2 h from the start (`START_MAX_MS`: then it ages out); an account keeps at
+   most 3 live starts, a new one evicting its oldest — so beats cannot flood
+   D1's 100 000 writes a day, a review, 2026-11-16), and a departure
    needs the last beat older than `MATCH_STALE_MS` (4.5 min: three lost
    beats in a row), whatever the account's other pages say. (The
    first version read `presence`, one row per account: a second page on the
@@ -285,7 +289,8 @@ pattern got a board, a snapshot file and a play count.*
 generated from `lib/catalog.js` and `community/catalog.js` by
 `scripts/build-games-table.mjs` (`just games-table`) and committed, like
 `lib/catalog.js`, so the Worker bundles it. The Worker refuses any id
-not in it — a result, a play count, a board, a match start; the snapshot and
+not in it (the tables have no prototype: `constructor` or `__proto__` is not
+a game) — a result, a play count, a board, a match start; the snapshot and
 the summary leave out boards of games no longer in it — and a result of
 another kind than its game's — except the extra kinds the table lists
 (`KINDS`, from `EXTRA_KINDS` in the generator: Bubble Rush is `ffa` and its
