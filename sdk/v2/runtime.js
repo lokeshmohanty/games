@@ -272,7 +272,10 @@
 	// finishParts): the shell posts their @font-face rules, data: URLs inlined,
 	// once they have downloaded. The text swaps to them (font-display: swap);
 	// once they are loaded, the theme is announced again (`theme.set`, the
-	// same values), so a canvas that drew text in the fallback font redraws.
+	// same values), so a canvas that drew text in the fallback font redraws,
+	// and a `resize` is dispatched, so a game that measured its layout in the
+	// fallback font (Light Cycles sizes its board from text heights) measures
+	// again.
 	// The frame still fetches nothing: the fonts arrive as data.
 	addEventListener("message", (e) => {
 		if (e.source !== parent || e.data?.t !== "neon:fonts" || typeof e.data.css !== "string") return;
@@ -282,6 +285,7 @@
 		const faces = [...document.fonts].filter((f) => f.status !== "loaded");
 		Promise.all(faces.map((f) => f.load().catch(() => {}))).then(() => {
 			if (arcade.theme) emit({ v: V, t: "theme.set", theme: arcade.theme });
+			dispatchEvent(new Event("resize"));
 		});
 	});
 
