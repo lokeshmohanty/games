@@ -193,7 +193,7 @@ session's stdin/stdout, and kills the remote processes at the end. Not in
 both ends agreeing on one host, 30 ticks each way at ~30 Hz plus 10 ping/pong
 round trips, and reports the selected ICE pair from `getStats` on both ends;
 then a guest reload (remote; on failure the page's RETRY is tried), a host
-reload (local), and a deliberate guest leave (ALL GAMES) that the host must
+reload (local), and a deliberate guest leave (GAMES) that the host must
 see within 5 s. A phase that fails is followed by a fresh party, so later
 phases are still tested. Before the runs it classifies both NATs with a node
 STUN client and runs a **browserless hole-punch probe** between the machines.

@@ -200,7 +200,7 @@ const refuse = (why) => ({ ok: false, why });
  * daily puzzle — or { ok: false, why }.
  */
 export async function verifySudoku({ proof, seed, elapsed, score, at, dailyTaken = async () => false }) {
-	if (!proof || typeof proof !== "object") return refuse("a Sudoku run is ranked with its solved grid, and this report has none");
+	if (!proof || typeof proof !== "object") return { ...refuse("a Sudoku run is ranked with its solved grid, and this report has none"), code: "unrankable" };
 	const level = proof.level;
 	if (!Object.hasOwn(LEVELS, level)) return refuse("unknown Sudoku difficulty");
 	let date = null;

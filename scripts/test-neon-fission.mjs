@@ -310,6 +310,20 @@ console.log("\nwhole games, bots only");
 }
 
 // ---------------------------------------------------------------------------
+console.log("\nthe replay's pace");
+{
+	// lib/sdk-managed.js HOLD_MS: the end card waits at most this long for the
+	// frame, so the winning replay, settle included, must end well before it.
+	const HOLD_MS = 6000;
+	const finals = [1, 9, 18, 62, 85, 104, 300, R.MAX_WAVES].map((n) => [n, R.pace(n, true)]);
+	check("the winning chain always ends inside the end card's 6 s hold, even at 104 waves",
+		finals.every(([, p]) => p.total <= 5300 && p.total < HOLD_MS) && R.pace(104, true).total <= 5300,
+		finals.map(([n, p]) => `${n}: ${Math.round(p.total)} ms`).join(", "));
+	check("…wave by wave: 300 ms a wave for a short one, ~40 ms at 104", R.pace(9, true).waveMs === 300 && Math.abs(R.pace(104, true).waveMs - 41.3) < 0.1, R.pace(104, true).waveMs);
+	check("…and slower than an ordinary move, which stays within ~1.5 s", [1, 9, 18, 62, 104].every((n) => R.pace(n).total <= 1520 && R.pace(n, true).total > R.pace(n).total));
+}
+
+// ---------------------------------------------------------------------------
 console.log("\nthe managed layer: one phone, several people");
 {
 	// A stub page: every element and context call is a no-op.

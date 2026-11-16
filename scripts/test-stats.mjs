@@ -27,6 +27,11 @@ check("a draw: everyone in one slot", S.outcome({ kind: "duel", ranking: [["me",
 check("a duel whose other side left: I won alone", S.outcome({ kind: "duel", ranking: [["me"]] }, "me") === "won");
 check("a shared first place in a free-for-all is a win", S.outcome({ kind: "ffa", ranking: [["a", "me"], ["c"]] }, "me") === "won");
 check("my team lost", S.outcome({ kind: "teams", ranking: [["a", "b"], ["me", "c"]] }, "me") === "lost");
+// A side everyone left keeps its place as an empty slot (Bubble Rush): the
+// side still here won or lost by it, never drew.
+check("my team lost to a side that has left (an empty first place)", S.outcome({ kind: "teams", ranking: [[], ["me", "c"]] }, "me") === "lost");
+check("my team won against a side that has left (an empty last place)", S.outcome({ kind: "teams", ranking: [["me", "c"], []] }, "me") === "won");
+check("…and an empty place is well-formed", S.valid({ kind: "teams", ranking: [[], ["me"]] }));
 check("co-op is played, not won", S.outcome({ kind: "coop", ranking: [["me", "x"]] }, "me") === "played");
 check("a one-phone game is played", S.outcome({ kind: "local", ranking: [["me"]] }, "me") === "played");
 check("a spectator gets nothing", S.outcome({ kind: "duel", ranking: [["a"], ["b"]] }, "me") === null);
