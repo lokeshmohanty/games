@@ -85,7 +85,7 @@ function main() {
 	const strict = args.includes("--strict");
 	const outAt = args.indexOf("--out");
 	const out = outAt >= 0 ? resolve(args[outAt + 1]) : undefined;
-	const named = args.filter((a, i) => !a.startsWith("--") && i !== outAt + 1);
+	const named = args.filter((a, i) => !a.startsWith("--") && !(outAt >= 0 && i === outAt + 1));
 	if (out && named.length !== 1) {
 		console.error("preview-media: --out takes exactly one gif");
 		process.exit(2);
