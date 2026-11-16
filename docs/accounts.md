@@ -347,10 +347,15 @@ on the first screen). Two people asking each other at once end as one
 friendship. **Decline is remembered**: the row becomes `'declined'` and its
 asker cannot ask again for 7 days (`DECLINE_COOLDOWN_MS`; a 429 says how
 long); withdrawing does not reset that, and the one who declined may still
-ask. **Block** (`friends.state = 'blocked'`, a = who blocked) ends the
-friendship and anything pending, drops waiting invites, and swallows their
-requests without telling them (they see "asked"). Only the blocker lifts
-it. **Mute** (D1 `mutes`) keeps a friend but drops their invites quietly —
+ask. A request is pushed at most once a pair a day, however often it is
+withdrawn and asked again (D1 `request_pushes`). **Block**
+(`friends.state = 'blocked'`, a = who blocked) ends the friendship and
+anything pending and drops waiting invites. It is never told: a request
+from the blocked one is kept and sits in their outgoing list like any
+other, but the blocker never sees it and nothing is pushed; their export,
+friends list and recent players do not show the block (only the blocker's
+own blocks are applied there). Only the blocker lifts it, and unblocking
+drops a request made meanwhile. **Mute** (D1 `mutes`) keeps a friend but drops their invites quietly —
 the sender is answered the same. The cap (200, `FRIENDS_MAX`) counts your
 friends plus your own outgoing requests, never incoming ones (a flood
 cannot fill it), and holds on accept for both people.
@@ -369,7 +374,9 @@ cannot be walked (31⁸ ≈ 8.5 × 10¹¹ of them).
 **Public profiles and hidden players** (D5, D6). `GET /api/u/<who>` lives
 in `worker/api/people.js` now (match.js's `publicProfile` is unused). A
 player hidden from public boards is, to anyone but a friend, only
-`{ id, name, hidden: true }` — enough to add them from their friend link —
+`{ id, name, hidden: true }` (the people in groups they joined still see
+them on the group's member list and boards — joining a group is their
+choice, and the privacy text says so) — enough to add them from their friend link —
 and a signed-in friend sees the whole profile (so the profile page asks
 with the token). In anyone's recent matches a hidden player other than the
 profile's own and the one asking reads "(hidden)" with `id: null`, and
@@ -378,7 +385,12 @@ their score is left out. Signed in or by code, the answer is personal
 where the server pins them (`runs.js` SOLO), so the profile shows Sudoku's
 level boards as times and Light Cycles alone in seconds (D14).
 
-**Party invites.** **Any member can invite** (decision 1): whoever knows
+**Party invites.** The party screen lists every friend, online first, then
+those not on now ("not on now — they'll see it next time, for 10 min"), so
+a friend who appears offline looks exactly like one who is not on, and
+either can be invited. Notices — an invite, friend requests — go in one
+stack at the bottom of the screen (`NeonArcade.account.notices()`).
+**Any member can invite** (decision 1): whoever knows
 the six-digit code (the host, anyone in by code) publishes it in the party
 record as member meta `pcode`, and a member in by a classic invite reads it
 there, the host's first (`lib/party.js` `sharedCode`). The friend still
@@ -458,7 +470,7 @@ or loopback; public reads are open.
 | Sessions (id, expiry; 60 days, sliding) | D1 `sessions` | no |
 | Favourites, friends, groups, presence | D1 | no (friends see each other online unless "appear offline") |
 | Friend code | D1 `accounts.friend_code` | to whoever you give it; rotatable |
-| Blocks, declines (7 days), mutes, group bans, waiting invites (10 minutes) | D1 `friends`, `mutes`, `group_bans`, `invites` | no; in the export (mutes, invites); deleted with the account |
+| Blocks, declines (7 days), mutes, group bans, waiting invites (10 minutes), when a request was last pushed | D1 `friends`, `mutes`, `group_bans`, `invites`, `request_pushes` | no; in the export (your own rows; never a block of someone else's on you; group bans of you and by you); deleted with the account |
 | Ranked matches and ratings | D1 | on boards and public profiles, unless hidden |
 | Solo runs and runs against bots: id, game, seed, start, used, counted, daily, `vs` | D1 `runs`, kept 4 days | no; deleted with the account |
 | Wins against bots: game, count, first win, when the count was reached | D1 `bot_wins` | on the boards against bots, unless hidden; in the export (`winsAgainstBots`); deleted with the account |
@@ -564,7 +576,8 @@ or 404), so the page sends no win; nothing breaks while it waits.
 
 `worker/migrations/0005_social.sql` (branch `social-friends`, 2026-11-16)
 adds `accounts.friend_code` (with a UNIQUE index; filled lazily, so no
-backfill), `group_bans`, `invites` and `mutes`. Additive: it touches no
+backfill), `group_bans`, `invites`, `mutes` (indexed both ways) and
+`request_pushes`. Additive: it touches no
 existing row, and the deployed Worker never reads the new columns or
 tables. The new Worker reads all of them (every `/api/me`, friends list,
 invite, group join and account deletion), so **migrate first, then
