@@ -25,7 +25,8 @@ const check = (label, ok, detail = "") => {
 };
 
 // MATCH_GRACE_MS: a match whose loser left counts after 3 s here (45 s deployed).
-const w = await startWrangler({ AUTH_TEST: "1", SESSION_KEY: "social-test-key-0123456789", LB_MIN_GAMES: "1", MATCH_GRACE_MS: "3000" });
+// MATCH_STALE_MS: a departure needs the leaver's page silent this long (3 min deployed).
+const w = await startWrangler({ AUTH_TEST: "1", SESSION_KEY: "social-test-key-0123456789", LB_MIN_GAMES: "1", MATCH_GRACE_MS: "3000", MATCH_STALE_MS: "4000" });
 if (!w) process.exit(0);
 const site = await serve(8737);
 const RS = encodeURIComponent(w.base);
@@ -311,6 +312,41 @@ try {
 		check("the report names the party's run, not the stale solo one", rep?.run === "party-run-sam" && rep.run !== sent, rep);
 		check("…says the match began with two seats, and who left", rep?.seats === 2 && JSON.stringify(rep.left) === '["sb"]', rep);
 		check("…and the server does not count it as a run played alone", seen.reports[0]?.got?.counted !== true, seen.reports[0]?.got);
+
+		// A page put in the back-forward cache and brought back (main e06b4da
+		// restores pages into the party) still withdraws its start when a match
+		// ends with no result: only a real unload latches.
+		const withdrawn = [];
+		sam.p.on("request", (r) => r.method() === "DELETE" && r.url().includes("/api/match/start") && withdrawn.push(JSON.parse(r.postData() ?? "{}")));
+		await sam.p.evaluate(() => {
+			const A = NeonArcade.account;
+			const members = new Map([
+				["sa", { id: "sa", name: "Sam", acct: { id: A.me.id } }],
+				["sb", { id: "sb", name: "Other", acct: { id: "someone-else" } }],
+			]);
+			const room = { selfId: "sa", closed: false, isHost: () => true, getRun: () => "party-run-bf", getMember: (id) => members.get(id) ?? null, getMembers: () => [...members.values()] };
+			A.matchStart("neon-fission", { room, seats: ["sa", "sb"], kind: "ffa", match: 0 });
+			dispatchEvent(new PageTransitionEvent("pagehide", { persisted: true }));
+			dispatchEvent(new PageTransitionEvent("pageshow", { persisted: true }));
+			A.matchEnd("neon-fission", { decided: false, room });
+		});
+		for (const end = Date.now() + TIMEOUT; Date.now() < end && !withdrawn.length; ) await sam.p.waitForTimeout(200);
+		check("after the back-forward cache, a match ended with no result still withdraws its start", withdrawn[0]?.run === "party-run-bf" && withdrawn[0].match === 0, withdrawn);
+		// A report that does not count (here: refused, 400) withdraws our start too.
+		await sam.p.route("**/api/match/report", (route) => route.fulfill({ status: 400, contentType: "application/json", body: '{"error":"refused"}' }));
+		await sam.p.evaluate(() => {
+			const A = NeonArcade.account;
+			const members = new Map([
+				["sa", { id: "sa", name: "Sam", acct: { id: A.me.id } }],
+				["sb", { id: "sb", name: "Other", acct: { id: "someone-else" } }],
+			]);
+			const room = { selfId: "sa", closed: false, isHost: () => false, getRun: () => "party-run-rf", getMember: (id) => members.get(id) ?? null, getMembers: () => [...members.values()] };
+			A.matchStart("neon-fission", { room, seats: ["sa", "sb"], kind: "ffa", match: 1 });
+			NeonArcade.onResult({ game: "neon-fission", run: "party-run-rf", result: { kind: "ffa", match: 1, ranking: [["sa"], ["sb"]] }, room });
+		});
+		for (const end = Date.now() + TIMEOUT; Date.now() < end && !withdrawn.some((x) => x.run === "party-run-rf"); ) await sam.p.waitForTimeout(200);
+		check("…and so does a report the server refused", withdrawn.some((x) => x.run === "party-run-rf" && x.match === 1), withdrawn);
+		await sam.p.unroute("**/api/match/report");
 		await sam.ctx.close();
 	}
 

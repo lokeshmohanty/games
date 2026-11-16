@@ -62,7 +62,9 @@ console.log("\naccounts: the rating (worker/api/match.js ratingDeltas), no serve
 	const ahead = toAccounts({ kind: "teams", ranking: [["host", "a2"], ["b1"]], roster: ro, left: ["b2"], teams: tm });
 	const dA = sideDeltas(ahead.sides, ahead.forfeits, new Map());
 	check("2v2, one leaver, A ahead: [[A2, H], [B1, B2]] — no third side", JSON.stringify(ahead.places) === JSON.stringify([["A2", "H"], ["B1", "B2"]]), ahead.places);
-	check("…B1 loses to team A only (as a plain 1-side loss), B2 takes a loss too", Math.abs(dA.get("B1") + ELO_K_PROVISIONAL / 2) < 1e-9 && dA.get("B2") < 0 && dA.get("H") > 0, [...dA]);
+	check("…B1 loses to team A only — the sides' changes sum to zero — and B2 takes a loss too", Math.abs(dA.get("B1") + dA.get("H") + dA.get("A2")) < 1e-9 && dA.get("B1") < 0 && dA.get("B2") < 0 && dA.get("H") > 0, [...dA]);
+	const uneven = ratingDeltas("teams", [["a", "b", "c"], ["d"]], new Map(["a", "b", "c", "d"].map((x) => [x, est(1200)])));
+	check("teams of 3 against 1: zero-sum, each of the three a third of the one's loss", Math.abs([...uneven.values()].reduce((x, y) => x + y, 0)) < 1e-9 && Math.abs(uneven.get("a") * 3 + uneven.get("d")) < 1e-9 && uneven.get("d") < 0, [...uneven]);
 	// The same in a draw: the others' draw stays a draw; only the leaver loses.
 	const drawn = toAccounts({ kind: "teams", ranking: [["host", "a2", "b1", "b2"]], roster: ro, left: ["b2"], teams: tm });
 	const dT = sideDeltas(drawn.sides, drawn.forfeits, new Map());
@@ -195,6 +197,8 @@ const w = await startWrangler({
 	LB_MIN_GAMES: "1",
 	// A match waits this long for everyone named in it (45 s deployed).
 	MATCH_GRACE_MS: "3000",
+	// A seated page beats every 2 min deployed; a departure needs 3 min without (here 2 s).
+	MATCH_STALE_MS: "2000",
 	SOLO_PER_DAY: "8",
 	BOTS_PER_DAY: "3",
 	GH_APP_CLIENT_ID: "app-client",
@@ -481,7 +485,8 @@ try {
 
 	console.log("\naccounts: games without online boards (\"leaderboard\": false)");
 	{
-		// Lokesh, 2026-11-16: Tic Tac Toe (all seven), Connect 4, Undercover, Draw & Guess.
+		// Lokesh, 2026-11-16: Tic Tac Toe (all seven), Connect 4, Undercover — and
+		// Draw & Guess once its web-games pin moves (still ranked until then).
 		const c4 = { game: "connect4", run: "nb1", match: 1, kind: "duel", ranking: [["pa"], ["pb"]], roster: { pa: A, pb: Bo }, seats: 2 };
 		let r = await report(ana, c4);
 		check("a result for Connect 4 is refused, and says why", r.body.counted === false && /no leaderboard/.test(r.body.why) && r.body.code === "no-board", r.body);
@@ -547,35 +552,30 @@ try {
 		r = await report(lea, duel("lv2"));
 		check("not when the one named as leaving never said they were seated", r.body.counted !== true && (await ratingIn(lou, "lokeshmohanty/battleship")).games === 1, r.body);
 
-		// The "leaver" is still there: online, in this game (presence).
+		// The review's repro (2026-11-16): Lou is still playing, with a second
+		// page open on the home screen (its socket says "no game"); Lea alone
+		// reports that Lou left and waits out the grace. Lou's seated page
+		// keeps beating (re-posting its start), so it is never booked.
 		await begin(lea, "lv3");
 		await begin(lou, "lv3");
-		const ws = new WebSocket(`${B.replace("http", "ws")}/live`, ["neon", lou]);
-		await new Promise((ok, bad) => ((ws.onopen = ok), (ws.onerror = bad), setTimeout(bad, 8000))).catch(() => {});
-		ws.send(JSON.stringify({ t: "status", game: "lokeshmohanty/battleship" }));
+		const home = new WebSocket(`${B.replace("http", "ws")}/live`, ["neon", lou]);
+		await new Promise((ok, bad) => ((home.onopen = ok), (home.onerror = bad), setTimeout(bad, 8000))).catch(() => {});
+		home.send(JSON.stringify({ t: "status", game: null }));
 		await new Promise((res) => setTimeout(res, 400));
-		await call("PATCH", "/api/me", { token: lou, body: { appearOffline: true } }); // friends see offline; the socket still says where
 		await report(lea, duel("lv3"));
 		await grace();
+		await begin(lou, "lv3"); // the seated page's beat (every 2 min deployed; MATCH_STALE_MS is 2 s here)
 		r = await report(lea, duel("lv3"));
-		check("not when their live socket says they are in this game (even appearing offline)", r.body.counted !== true && (await ratingIn(lou, "lokeshmohanty/battleship")).games === 1, r.body);
-		await call("PATCH", "/api/me", { token: lou, body: { appearOffline: false } });
-		// Their socket drops mid-match: it still says where they were.
-		ws.close();
+		check("not while their seated page still beats — even with a second page on the home screen", r.body.counted !== true && (await ratingIn(lou, "lokeshmohanty/battleship")).games === 1, r.body);
+		home.close();
 		await new Promise((res) => setTimeout(res, 400));
-		await begin(lea, "lv3b");
-		await begin(lou, "lv3b");
-		await report(lea, duel("lv3b"));
-		await grace();
-		r = await report(lea, duel("lv3b"));
-		check("…nor when their socket just dropped mid-match", r.body.counted !== true && (await ratingIn(lou, "lokeshmohanty/battleship")).games === 1, r.body);
-		// Back on the portal (no game), for the cases below.
-		const ws2 = new WebSocket(`${B.replace("http", "ws")}/live`, ["neon", lou]);
-		await new Promise((ok, bad) => ((ws2.onopen = ok), (ws2.onerror = bad), setTimeout(bad, 8000))).catch(() => {});
-		ws2.send(JSON.stringify({ t: "status", game: null }));
-		await new Promise((res) => setTimeout(res, 400));
-		ws2.close();
-		await new Promise((res) => setTimeout(res, 400));
+		// The beat stops (they really left): then it counts — and a late
+		// report of theirs is told it counted against them.
+		await new Promise((res) => setTimeout(res, 2200)); // MATCH_STALE_MS is 2000 here
+		r = await report(lea, duel("lv3"));
+		check("…once the beat has stopped for MATCH_STALE_MS, the departure counts", r.body.counted === true && (await ratingIn(lou, "lokeshmohanty/battleship")).games === 2, r.body);
+		const late = await report(lou, { ...duel("lv3"), left: [] });
+		check("…and their own late report is told the match counted against them, not \"Counted\"", late.body.counted === false && late.body.left === true && /against you/.test(late.body.why) && late.body.rating?.delta < 0, late.body);
 
 		// They did not leave, and say so: a different result voids it.
 		await begin(lea, "lv4");
