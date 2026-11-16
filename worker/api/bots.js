@@ -149,8 +149,9 @@ export async function botsBoard(env, me, game, { only = null, includeHidden = fa
 	const args = [game];
 	if (!includeHidden) where.push("a.hide_public = 0");
 	if (only) {
-		where.push(`w.account IN (${only.map(() => "?").join(",")})`);
-		args.push(...only);
+		// One JSON parameter, not one `?` each: D1 allows 100 a query.
+		where.push("w.account IN (SELECT value FROM json_each(?))");
+		args.push(JSON.stringify(only));
 	}
 	const rows = (
 		await all(

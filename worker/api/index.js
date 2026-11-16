@@ -11,7 +11,7 @@ import { botWinsOf } from "./bots.js";
 import { getFeedback, postFeedback } from "./feedback.js";
 import { HttpError, fail, json, preflight } from "./http.js";
 import { leaderboard } from "./lb.js";
-import { matchesOf, played, publicProfile, ratingsOf, report, summary } from "./match.js";
+import { matchesOf, played, publicProfile, ratingsOf, report, startMatch, summary, sweep, withdrawStart } from "./match.js";
 import { deleteMe, exportMe, getFavs, getMe, link, patchMe, putFavs, signOut, unlink } from "./me.js";
 import { ageRun, startRun } from "./runs.js";
 import { runSnapshot } from "./snapshot.js";
@@ -90,6 +90,8 @@ export async function api(request, env, { gate = async () => true } = {}) {
 			return send({ matches: await matchesOf(env, m.id), ratings: await ratingsOf(env, m.id), botWins: await botWinsOf(env, m.id) });
 		}
 		if (a === "match" && b === "report" && method === "POST") return send(await report(env, await me(), request));
+		if (a === "match" && b === "start" && method === "POST") return send(await startMatch(env, await me(), request));
+		if (a === "match" && b === "start" && method === "DELETE") return send(await withdrawStart(env, await me(), request));
 		if (a === "run" && b === "start" && method === "POST") return send(await startRun(env, await me(), request));
 		if (a === "feedback" && b && method === "POST") return send(await postFeedback(env, await me(), seg.slice(1).join("/"), request));
 
@@ -140,9 +142,18 @@ async function live(request, env) {
 	return env.LIVE.get(env.LIVE.idFromName(me.id)).fetch(new Request(request.url, { headers }));
 }
 
-/** The cron (wrangler.toml [triggers]): the hourly public snapshot. */
+/**
+ * The cron (wrangler.toml [triggers]): the hourly public snapshot, after the
+ * reports' upkeep (match.js sweep: matches two agreed on but nobody asked
+ * about again still count, once their reports expire).
+ */
 export async function scheduledSnapshot(env) {
 	if (!env.DB) return;
+	try {
+		await sweep(env);
+	} catch (err) {
+		console.error("sweep failed", err);
+	}
 	try {
 		console.log("snapshot", JSON.stringify(await runSnapshot(env)));
 	} catch (err) {
