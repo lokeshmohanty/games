@@ -11,21 +11,34 @@ import { botWinsOf } from "./bots.js";
 import { getFeedback, postFeedback } from "./feedback.js";
 import { HttpError, fail, json, preflight } from "./http.js";
 import { leaderboard } from "./lb.js";
-import { matchesOf, played, publicProfile, ratingsOf, report, summary } from "./match.js";
+import { matchesOf, played, ratingsOf, report, summary } from "./match.js";
 import { deleteMe, exportMe, getFavs, getMe, link, patchMe, putFavs, signOut, unlink } from "./me.js";
+import { publicProfile, withBoards } from "./people.js";
 import { ageRun, startRun } from "./runs.js";
 import { runSnapshot } from "./snapshot.js";
 import {
 	addFriend,
+	block,
 	createGroup,
 	deleteGroup,
+	dismissInvite,
 	getGroup,
 	invite,
+	isFriendCode,
 	joinGroup,
 	listFriends,
 	listGroups,
+	listInvites,
+	mute,
+	recentPlayers,
 	removeFriend,
 	removeMember,
+	renameGroup,
+	rotateFriendCode,
+	rotateGroupCode,
+	transferGroup,
+	unban,
+	unblock,
 } from "./social.js";
 
 const WRITE = new Set(["POST", "PUT", "PATCH", "DELETE"]);
@@ -62,7 +75,14 @@ export async function api(request, env, { gate = async () => true } = {}) {
 			const lb = await leaderboard(env, who, game, scope, url.searchParams.get("vs"));
 			return who ? send(lb) : open(lb, "public, max-age=60");
 		}
-		if (method === "GET" && a === "u" && b) return open(await publicProfile(env, b), "public, max-age=60");
+		if (method === "GET" && a === "u" && b) {
+			// Signed in (a friend may see a hidden player) or by friend code (it
+			// can be rotated, and each lookup is charged against guessing):
+			// personal, never cached publicly.
+			const viewer = request.headers.has("Authorization") ? await sessionOf(env, request) : null;
+			const p = await publicProfile(env, b, { viewer, gate });
+			return viewer ? send(p) : open(p, isFriendCode(b) ? "no-store" : "public, max-age=60");
+		}
 		if (method === "GET" && a === "feedback" && b) return open(await getFeedback(env, seg.slice(1).join("/")));
 
 		// ------------------------------------------------ counts (no sign-in)
@@ -87,7 +107,12 @@ export async function api(request, env, { gate = async () => true } = {}) {
 		if (a === "me" && b === "identities" && c && method === "DELETE") return send(await unlink(env, await me(), c));
 		if (a === "me" && b === "matches" && method === "GET") {
 			const m = await me();
-			return send({ matches: await matchesOf(env, m.id), ratings: await ratingsOf(env, m.id), botWins: await botWinsOf(env, m.id) });
+			return send({ matches: await matchesOf(env, m.id), ratings: withBoards(await ratingsOf(env, m.id)), botWins: await botWinsOf(env, m.id) });
+		}
+		if (a === "me" && b === "friend-code" && method === "POST") return send(await rotateFriendCode(env, await me()));
+		if (a === "invites") {
+			if (!b && method === "GET") return send(await listInvites(env, await me()));
+			if (b && method === "DELETE") return send(await dismissInvite(env, await me(), b));
 		}
 		if (a === "match" && b === "report" && method === "POST") return send(await report(env, await me(), request));
 		if (a === "run" && b === "start" && method === "POST") return send(await startRun(env, await me(), request));
@@ -95,11 +120,18 @@ export async function api(request, env, { gate = async () => true } = {}) {
 
 		// ------------------------------------------------ friends
 		if (a === "friends" && !b && method === "GET") return send(await listFriends(env, await me()));
+		if (a === "friends" && b === "recent" && !c && method === "GET") return send(await recentPlayers(env, await me()));
 		if (a === "friends" && b && !c) {
+			// By friend code too; the write is charged already.
 			if (method === "POST") return send(await addFriend(env, await me(), b));
 			if (method === "DELETE") return send(await removeFriend(env, await me(), b));
 		}
 		if (a === "friends" && b && c === "invite" && method === "POST") return send(await invite(env, await me(), b, request));
+		if (a === "friends" && b && c === "block") {
+			if (method === "POST") return send(await block(env, await me(), b));
+			if (method === "DELETE") return send(await unblock(env, await me(), b));
+		}
+		if (a === "friends" && b && c === "mute" && (method === "POST" || method === "DELETE")) return send(await mute(env, await me(), b, method === "POST"));
 
 		// ------------------------------------------------ groups
 		if (a === "groups" && !b) {
@@ -109,9 +141,13 @@ export async function api(request, env, { gate = async () => true } = {}) {
 		if (a === "groups" && b === "join" && method === "POST") return send(await joinGroup(env, await me(), request));
 		if (a === "groups" && b && b !== "join" && !c) {
 			if (method === "GET") return send(await getGroup(env, await me(), b));
+			if (method === "PATCH") return send(await renameGroup(env, await me(), b, request));
 			if (method === "DELETE") return send(await deleteGroup(env, await me(), b));
 		}
+		if (a === "groups" && b && c === "code" && !d && method === "POST") return send(await rotateGroupCode(env, await me(), b));
+		if (a === "groups" && b && c === "owner" && !d && method === "POST") return send(await transferGroup(env, await me(), b, request));
 		if (a === "groups" && b && c === "members" && d && method === "DELETE") return send(await removeMember(env, await me(), b, d));
+		if (a === "groups" && b && c === "bans" && d && method === "DELETE") return send(await unban(env, await me(), b, d));
 
 		// ------------------------------------------------ tests only
 		if (a === "admin" && b === "snapshot" && method === "POST" && env.AUTH_TEST === "1" && /^127\.|^localhost$/.test(url.hostname)) {

@@ -117,6 +117,9 @@ The browser suites serve the built site (`dist/`, scripts/serve.mjs) over
 - `memory/reload-mid-game.md` — how a returner gets the running game back
   (the party shell's mounted notice, `secrets.keep/kept` checked against the
   published digest), and why net.js's own re-announce cannot be relied on.
+- `memory/ghost-seats.md` — why the server's `busy` is not "open in another
+  tab": Chrome's back/forward cache keeps a page's socket open up to 10 min;
+  the seat's Web Lock decides, and a cached page hangs up on `pagehide`.
 - `memory/room-server.md` — the room server's invariants (mesh is
   authoritative, room server is advisory), the progressive-enhancement rule,
   and the traps that caught two test failures.

@@ -144,15 +144,87 @@
   color: var(--accent);
   overflow-wrap: anywhere;
 }
-.view-profile canvas.qr {
-  width: 132px;
-  height: 132px;
-  image-rendering: pixelated;
+/* The friend link's QR: SVG, sharp at any density (lib/profile.js qrSvg). */
+.view-profile svg.qr {
+  display: block;
+  width: 160px;
+  height: 160px;
   border-radius: 6px;
+}
+.view-profile .friend-code {
+  font-size: 1.25rem;
+  letter-spacing: 2px;
+}
+.view-profile p.code.link {
+  font-size: 0.75rem;
+  margin: 8px 0;
+}
+.view-profile .item .party-mini.is-accent {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+.view-profile .item .party-mini.more {
+  min-width: 40px;
+  font-size: 1rem;
+  letter-spacing: 0;
+}
+.view-profile .item.request {
+  flex-wrap: wrap;
+}
+/* A long name ends in an ellipsis on one line, never broken mid-word. */
+.view-profile .item .nm,
+.view-profile .item .grow.line {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  overflow-wrap: normal;
+}
+.view-profile .item .nm {
+  font-weight: 600;
+}
+.view-profile .blocked {
+  margin-top: 10px;
+}
+.view-profile .blocked summary {
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  color: var(--muted);
+  cursor: pointer;
+}
+.view-profile .back {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  margin-bottom: 8px;
+  color: var(--accent);
+}
+.view-profile .boards {
+  display: grid;
+  gap: 10px;
+}
+.view-profile .chip {
+  display: inline-flex;
+  align-items: center;
+  min-height: 40px;
+  padding: 0 12px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--ink);
+  text-decoration: none;
+  font-size: 0.85rem;
+}
+.view-profile .chip:hover {
+  border-color: var(--accent);
+  color: var(--accent);
 }
 .view-profile .won {
   color: var(--good);
 }
 .view-profile .lost {
   color: var(--muted);
+}
+/* A draw, or a game played together: neither won nor lost. */
+.view-profile .even {
+  color: var(--ink-2);
 }
