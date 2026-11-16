@@ -104,6 +104,12 @@ export const START_TTL_MS = 3600_000;
  * room for three lost beats in a row.
  */
 export const MATCH_STALE_MS = 4.5 * 60_000;
+/** A beat writes its row at most this often; more often is answered, not written (env MATCH_BEAT_WRITE_MS; keep it well under MATCH_STALE_MS). */
+export const BEAT_WRITE_MS = 30_000;
+/** A start is kept alive by beats this long at most from when it was first said; then it ages out. */
+export const START_MAX_MS = 2 * 3600_000;
+/** An account's live starts: a new one evicts the oldest past this. */
+export const START_LIVE = 3;
 /** A voided match stays void this long (kv `void:<match>`), then the row goes. */
 export const VOID_TTL_MS = 3600_000;
 export const ELO_START = 1200;
@@ -351,15 +357,35 @@ export async function startMatch(env, me, request, { gate = async () => true } =
 	if (!Number.isInteger(b.match) || b.match < 0) throw new HttpError(400, "match is the match's number in its run");
 	const t = now();
 	const key = await startKey(b.game, b.run, b.match);
-	// A beat — the start is already there — is one UPDATE of one row of the
-	// signed-in account's own, idempotent: free of the per-address write
-	// limit, so a page that beats every minute never spends its writes. A
-	// new start is charged like any write (index.js passes the gate here).
-	const beat = await env.DB.prepare("UPDATE reports SET at = ? WHERE match = ? AND account = ? AND digest = 'start'").bind(t, key, me.id).run();
-	if (beat.meta?.changes) return { started: true, beat: true };
+	// A beat — the start is already there — is free of the per-address write
+	// limit, so a page that beats every minute never spends its writes; and
+	// it writes at most once per BEAT_WRITE_MS per row, and not past
+	// START_MAX_MS from the start, so beats can never be a flood of D1 writes
+	// nor keep a start alive for ever (a review, 2026-11-16: 400 beats in 4 s
+	// were 400 writes). A new start is charged like any write (index.js passes
+	// the gate here), and an account keeps at most START_LIVE of them.
+	const beat = await env.DB.prepare(
+		"UPDATE reports SET at = ? WHERE match = ? AND account = ? AND digest = 'start' AND at < ? AND CAST(payload AS INTEGER) > ?",
+	)
+		.bind(t, key, me.id, t - Number(env.MATCH_BEAT_WRITE_MS ?? BEAT_WRITE_MS), t - START_MAX_MS)
+		.run();
+	// `wrote`: whether this call wrote anything (tests count it).
+	if (beat.meta?.changes) return { started: true, beat: true, wrote: true };
+	// Nothing written: fresh already (or past its lifetime), or not there at all.
+	if (await env.DB.prepare("SELECT 1 FROM reports WHERE match = ? AND account = ? AND digest = 'start'").bind(key, me.id).first()) {
+		return { started: true, beat: true, wrote: false };
+	}
 	if (!(await gate())) throw new HttpError(429, "too many changes from this address; wait a few minutes");
-	await env.DB.prepare("INSERT OR IGNORE INTO reports (match, account, digest, payload, at) VALUES (?, ?, 'start', ?, ?)").bind(key, me.id, String(t), t).run();
-	return { started: true };
+	await env.DB.batch([
+		env.DB.prepare("INSERT OR IGNORE INTO reports (match, account, digest, payload, at) VALUES (?, ?, 'start', ?, ?)").bind(key, me.id, String(t), t),
+		// Only the account's newest START_LIVE starts stand.
+		env.DB.prepare(
+			`DELETE FROM reports WHERE account = ? AND digest = 'start' AND match NOT IN (
+				SELECT match FROM reports WHERE account = ? AND digest = 'start' ORDER BY CAST(payload AS INTEGER) DESC LIMIT ?
+			)`,
+		).bind(me.id, me.id, START_LIVE),
+	]);
+	return { started: true, wrote: true };
 }
 
 /**
