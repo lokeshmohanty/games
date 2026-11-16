@@ -9,18 +9,18 @@
 #   shard    `just test-shard <n>` against that artifact, one runner each
 #
 # Runs on every push except main's (deploy.yml calls this workflow first and
-# deploys only when it passes), and on pull requests — a branch of this repo
-# is tested by its push, so a pull request runs only from a fork. A pull
-# request that touches only registry/ is a game submission: submission.yml
-# judges it. No secrets, a read-only token.
+# deploys only when it passes, and deploys this build), and on pull requests
+# — a branch of this repo is tested by its push, so a pull request runs only
+# from a fork. That includes game submissions (registry/ only): submission.yml
+# judges the entry, and this shows before the merge whether the new pin
+# passes the suites the deploy will run (test-pwa mounts every community
+# game offline). No secrets, a read-only token.
 name: Test
 
 on:
   push:
     branches-ignore: [main]
   pull_request:
-    paths-ignore:
-      - "registry/**"
   workflow_call:
   workflow_dispatch:
 
@@ -97,10 +97,13 @@ jobs:
         run: node scripts/fetch-community.mjs
       - name: Build the site (type check, vite build, assemble + sw.js)
         run: pnpm build
+      # What the shards test and deploy.yml deploys, so all of dist/,
+      # dotfiles too.
       - uses: actions/upload-artifact@v7
         with:
           name: site
           path: dist/
+          include-hidden-files: true
           retention-days: 1
 
   shard:
