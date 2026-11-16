@@ -707,6 +707,9 @@ canvas {
 .managed-over p.managed-rating[data-state="pending"] {
   color: var(--ink-2);
 }
+.managed-over p.managed-rating[data-state="left"] {
+  color: var(--warn);
+}
 .managed-rating[hidden] {
   display: none;
 }
