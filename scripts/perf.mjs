@@ -91,15 +91,19 @@ function throttledProxy(target, port) {
 				gone = true;
 				r.destroy();
 			});
-			for await (const chunk of body) {
-				if (gone) break;
-				for (let i = 0; i < chunk.length && !gone; i += 16_384) {
-					const part = chunk.subarray(i, i + 16_384);
-					const now = Date.now();
-					free = Math.max(free, now) + (part.length / NETWORK.downloadThroughput) * 1000;
-					await sleep(free - now);
-					res.write(part);
+			try {
+				for await (const chunk of body) {
+					if (gone) break;
+					for (let i = 0; i < chunk.length && !gone; i += 16_384) {
+						const part = chunk.subarray(i, i + 16_384);
+						const now = Date.now();
+						free = Math.max(free, now) + (part.length / NETWORK.downloadThroughput) * 1000;
+						await sleep(free - now);
+						res.write(part);
+					}
 				}
+			} catch (err) {
+				if (!gone) throw err; // the upstream destroyed above ends the loop with an error
 			}
 			if (!gone) res.end();
 		});

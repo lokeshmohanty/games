@@ -337,3 +337,38 @@ faces.
 Not done: metric overrides (`size-adjust`, `ascent-override`) on a fallback
 face to make the swap still gentler; they need the fonts' metrics, and
 fontTools could not read the woff2 files here (no brotli module).
+
+### Review fixes: first paint, and a harness fault (2026-11-16)
+
+The review measured bots cold first paint 788–812 ms on base against
+460–1220 ms on this branch. Two causes, found with marks in the page:
+
+- **The party mounted before the first render painted.** With the
+  community catalog preloaded, `catalogs` often settled at once, and the
+  party mounted and built the frame in one run of settled promises before
+  the browser could paint. `catalogs` now also waits for one frame
+  (src/main.tsx). The evaluation-time warm-up (the template, the runtime's
+  files and the fonts asked for as lib/bridge.js is evaluated) cost ~30 ms of
+  first paint in the bundle's first task and, with the mount right after the
+  first paint, saved nothing measurable (deferred: 804 ms FCP, 1.26 s to
+  frame; removed: 802 ms, 1.24 s), so it is gone.
+- **The harness itself.** The throttling proxy kept sending, and booking the
+  shared link, after a run's page had closed (the service worker's install
+  still downloading). The next run's first requests waited behind it, which
+  made the second run of every pair look ~300 ms worse, more so for a build
+  whose runs end sooner. The proxy now stops when its response closes.
+- An FCP of ~450–520 ms in either build is the static portal heading in
+  index.html painting before its inline script removes it on a `?game=`
+  address (parser timing); those runs are outliers on both sides.
+
+Main (bf2a4ac) and this branch alternately, fixed harness, 4 rounds of 2:
+
+| | main | this branch |
+|---|---|---|
+| bots cold, to frame: median (range) | 1891 ms (1849–2024) | **1276 ms** (1224–1444) |
+| bots cold FCP, median | 820 ms | **820 ms** |
+| bots warm, to frame: median (range) | 418 ms (355–670) | **328 ms** (308–511) |
+| bots warm FCP, median | 144 ms | 102 ms |
+
+A full `just perf` run of each: bots cold to frame 1993 → 1221 ms, FCP 820 →
+800 ms; portal cold FCP 456 → 452 ms; leaderboard cold FCP 1192 → 1028 ms.
