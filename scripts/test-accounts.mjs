@@ -337,7 +337,7 @@ try {
 
 	console.log("\naccounts: confirmed matches");
 	const duel = (run, winner, loser, extra = {}) => ({
-		game: "connect4",
+		game: "lokeshmohanty/battleship",
 		run,
 		match: 1,
 		kind: "duel",
@@ -353,10 +353,10 @@ try {
 		r = await call("POST", "/api/match/report", { token: ana, body: duel("run1", "pa", "pb") });
 		check("…once", r.body.already === true, r.body);
 		const mine = await call("GET", "/api/me/matches", { token: ana });
-		const rating = mine.body.ratings.find((x) => x.game === "connect4");
+		const rating = mine.body.ratings.find((x) => x.game === "lokeshmohanty/battleship");
 		check("the winner's Elo goes up from 1200, games and wins counted", rating?.elo > 1200 && rating.games === 1 && rating.wins === 1, rating);
 		check("…and the match is in the history, with names", mine.body.matches[0]?.won === true && mine.body.matches[0].ranking[1][0].name === "Bo", mine.body.matches[0]);
-		const boR = (await call("GET", "/api/me/matches", { token: bo })).body.ratings.find((x) => x.game === "connect4");
+		const boR = (await call("GET", "/api/me/matches", { token: bo })).body.ratings.find((x) => x.game === "lokeshmohanty/battleship");
 		check("the loser's goes down by as much", Math.abs(boR.elo - 1200 + (rating.elo - 1200)) < 1e-6 && boR.wins === 0, boR);
 
 		await call("POST", "/api/match/report", { token: ana, body: duel("run2", "pa", "pb") });
@@ -399,29 +399,29 @@ try {
 
 	console.log("\naccounts: leaderboards");
 	{
-		let lb = await call("GET", "/api/lb/connect4");
+		let lb = await call("GET", "/api/lb/lokeshmohanty/battleship");
 		check("global: ranked by Elo", lb.body.kind === "duel" && lb.body.rows.length === 2 && lb.body.rows[0].elo >= lb.body.rows[1].elo, lb.body);
 		check("…public, cacheable for a minute", lb.headers.get("access-control-allow-origin") && /max-age=60/.test(lb.headers.get("cache-control") ?? ""));
 		const nb = await call("GET", "/api/lb/neon-bid");
 		check("free-for-all: by rating, wins still shown", nb.body.kind === "ffa" && nb.body.rows.filter((r) => r.wins === 1).length === 2 && nb.body.rows.at(-1).wins === 0 && nb.body.rows[0].elo > 1200 && nb.body.rows.at(-1).elo < 1200, nb.body.rows);
 		check("…each row provisional, with its rated games", nb.body.rows.every((r) => r.provisional === true && r.rated === 1 && r.best === null), nb.body.rows);
-		const mine = await call("GET", "/api/lb/connect4?me=1", { token: ana });
+		const mine = await call("GET", "/api/lb/lokeshmohanty/battleship?me=1", { token: ana });
 		const listed = mine.body.rows.find((r) => r.id === A);
 		check("?me=1: where you stand, the same as your row", mine.body.me?.id === A && mine.body.me.rank === listed?.rank, mine.body.me);
 		check("…and not publicly cached", !/public/.test(mine.headers.get("cache-control") ?? ""), mine.headers.get("cache-control"));
-		check("…needs a sign-in", (await call("GET", "/api/lb/connect4?me=1")).status === 401);
-		check("…null when you have no ranked game of it", (await call("GET", "/api/lb/connect4?me=1", { token: cy })).body.me === null);
+		check("…needs a sign-in", (await call("GET", "/api/lb/lokeshmohanty/battleship?me=1")).status === 401);
+		check("…null when you have no ranked game of it", (await call("GET", "/api/lb/lokeshmohanty/battleship?me=1", { token: cy })).body.me === null);
 		await call("PATCH", "/api/me", { token: bo, body: { hidePublic: true } });
-		const hidden = await call("GET", "/api/lb/connect4?me=1", { token: bo });
+		const hidden = await call("GET", "/api/lb/lokeshmohanty/battleship?me=1", { token: bo });
 		check("…hidden from public boards: no rank, and says why", hidden.body.me?.rank === null && hidden.body.me.hidden === true, hidden.body.me);
-		lb = await call("GET", "/api/lb/connect4");
+		lb = await call("GET", "/api/lb/lokeshmohanty/battleship");
 		check("hide me from public leaderboards: gone from the global board", !lb.body.rows.some((r) => r.id === Bo), lb.body.rows);
 		check("…and the public profile is gone", (await call("GET", `/api/u/${Bo}`)).status === 404);
 		await call("PATCH", "/api/me", { token: bo, body: { hidePublic: false } });
 		const prof = await call("GET", `/api/u/${A}`);
 		check("a public profile: name, ratings, recent matches", prof.body.name === "Ana P" && prof.body.ratings.length >= 2 && prof.body.matches.length >= 2, prof.body);
-		check("friends' board needs a sign-in", (await call("GET", "/api/lb/connect4?scope=friends")).status === 401);
-		const fr = await call("GET", "/api/lb/connect4?scope=friends", { token: cy });
+		check("friends' board needs a sign-in", (await call("GET", "/api/lb/lokeshmohanty/battleship?scope=friends")).status === 401);
+		const fr = await call("GET", "/api/lb/lokeshmohanty/battleship?scope=friends", { token: cy });
 		check("…and holds only you and your friends", fr.body.rows.length === 0, fr.body.rows);
 	}
 
@@ -454,29 +454,55 @@ try {
 		// A party member publishes someone else's account id as theirs (the
 		// `acct` meta is self-published, lib/account.js attach) and then
 		// "leaves": the leaver rule needs the victim's own start.
-		const spoof = { game: "connect4", run: "spoof1", match: 1, kind: "duel", ranking: [["p1"], ["p3"]], roster: { p1: M1, p3: V }, seats: 2, left: ["p3"] };
-		await call("POST", "/api/match/start", { token: mal, body: { game: "connect4", run: "spoof1", match: 1 } });
+		const spoof = { game: "lokeshmohanty/battleship", run: "spoof1", match: 1, kind: "duel", ranking: [["p1"], ["p3"]], roster: { p1: M1, p3: V }, seats: 2, left: ["p3"] };
+		await call("POST", "/api/match/start", { token: mal, body: { game: "lokeshmohanty/battleship", run: "spoof1", match: 1 } });
 		r = await report(mal, spoof);
 		check("a member claiming another's account and leaving: the report waits", r.body.pending === true, r.body);
 		await grace();
 		r = await report(mal, spoof);
-		check("…and never counts: the victim never said they sat down", r.body.counted !== true && !(await ratingIn(vic, "connect4")), r.body);
+		check("…and never counts: the victim never said they sat down", r.body.counted !== true && !(await ratingIn(vic, "lokeshmohanty/battleship")), r.body);
 	}
 
 	console.log("\naccounts: a game is the server's to know, and its kind");
 	{
-		const duelAsFfa = { game: "connect4", run: "kind1", match: 1, kind: "ffa", ranking: [["pa"], ["pb"]], roster: { pa: A, pb: Bo }, seats: 2 };
+		const duelAsFfa = { game: "lokeshmohanty/battleship", run: "kind1", match: 1, kind: "ffa", ranking: [["pa"], ["pb"]], roster: { pa: A, pb: Bo }, seats: 2 };
 		let r = await report(ana, duelAsFfa);
-		check("a result of another kind than the game's is refused (connect4 is a duel)", r.status === 400 && /duel game/.test(r.body.error), r.body);
-		check("…and the board keeps its kind", (await call("GET", "/api/lb/connect4")).body.kind === "duel");
+		check("a result of another kind than the game's is refused (Battleship is a duel)", r.status === 400 && /duel game/.test(r.body.error), r.body);
+		check("…and the board keeps its kind", (await call("GET", "/api/lb/lokeshmohanty/battleship")).body.kind === "duel");
 		r = await report(ana, { ...duelAsFfa, game: "nobody/not-a-real-game", kind: "duel" });
 		check("a result for a game the arcade does not list is refused", r.status === 400 && /unknown game/.test(r.body.error), r.body);
 		check("…so is its play count", (await call("POST", "/api/stats/played", { body: { game: "nobody/not-a-real-game" } })).status === 400);
 		check("…and its board", (await call("GET", "/api/lb/nobody/not-a-real-game")).status === 400);
-		check("…and a level that is not one", (await call("GET", "/api/lb/connect4@alone")).status === 400);
+		check("…and a level that is not one", (await call("GET", "/api/lb/lokeshmohanty/battleship@alone")).status === 400);
 		check("…while a solo level's board still answers", (await call("GET", "/api/lb/lokeshmohanty/light-cycles@alone")).body.kind === "coop");
 		check("a match start for a game with no winner is refused", (await call("POST", "/api/match/start", { token: ana, body: { game: "neon-survival-mp", run: "x", match: 1 } })).status === 400);
-		check("…and one without its match number", (await call("POST", "/api/match/start", { token: ana, body: { game: "connect4", run: "x" } })).status === 400);
+		check("…and one without its match number", (await call("POST", "/api/match/start", { token: ana, body: { game: "lokeshmohanty/battleship", run: "x" } })).status === 400);
+	}
+
+	console.log("\naccounts: games without online boards (\"leaderboard\": false)");
+	{
+		// Lokesh, 2026-11-16: Tic Tac Toe (all seven), Connect 4, Undercover, Draw & Guess.
+		const c4 = { game: "connect4", run: "nb1", match: 1, kind: "duel", ranking: [["pa"], ["pb"]], roster: { pa: A, pb: Bo }, seats: 2 };
+		let r = await report(ana, c4);
+		check("a result for Connect 4 is refused, and says why", r.body.counted === false && /no leaderboard/.test(r.body.why) && r.body.code === "no-board", r.body);
+		r = await report(bo, c4);
+		check("…even when both players report it", r.body.counted === false && !(await ratingIn(ana, "connect4")), r.body);
+		check("no board for it: 404", (await call("GET", "/api/lb/connect4")).status === 404);
+		check("…nor against bots (Tic Tac Toe's is gone too)", (await call("GET", "/api/lb/connect4?vs=bots")).status === 404 && (await call("GET", "/api/lb/tic-tac-toe-js?vs=bots")).status === 404);
+		check("…nor for a level of it", (await call("GET", "/api/lb/tic-tac-toe-js@alone")).status === 404);
+		const bots = await call("POST", "/api/run/start", { token: ana, body: { game: "tic-tac-toe-js", vs: "bots" } });
+		check("no run against bots for it", bots.status === 400 && bots.body.code === "no-board", bots.body);
+		check("no match start for it", (await call("POST", "/api/match/start", { token: ana, body: { game: "connect4", run: "nb1", match: 1 } })).status === 400);
+		const ttt = { game: "tic-tac-toe-js", run: "nb2", match: 1, kind: "duel", ranking: [["pa"], ["bot_1"]], roster: { pa: A } };
+		r = await report(ana, ttt);
+		check("no win against bots for it either", r.body.counted === false && r.body.code === "no-board", r.body);
+		// The live D1 has old rows for these games: they stay, and are not served.
+		w.sql(`INSERT INTO ratings (account, game, elo, games, wins, best) VALUES ('${A}', 'connect4', 1250, 7, 4, NULL); INSERT INTO bot_wins (account, game, wins, first, at) VALUES ('${A}', 'tic-tac-toe-js', 2, 1, 1);`);
+		const mm = await matchesOfTok(ana);
+		check("an old Connect 4 rating and Tic Tac Toe wins against bots are not served", !mm.ratings.some((x) => x.game === "connect4") && !mm.botWins.some((x) => x.game === "tic-tac-toe-js"), { ratings: mm.ratings, botWins: mm.botWins });
+		const pub = (await call("GET", `/api/u/${A}`)).body;
+		check("…nor on the public profile", !pub.ratings.some((x) => x.game === "connect4") && !pub.botWins.some((x) => x.game === "tic-tac-toe-js"), pub);
+		check("its play count still lands (counts are not a board)", (await call("POST", "/api/stats/played", { body: { game: "undercover" } })).body.counted === true);
 	}
 
 	console.log("\naccounts: guests in a free-for-all");
@@ -500,8 +526,8 @@ try {
 		const lou = await testLogin("Lou");
 		const lia = await testLogin("Lia");
 		const [L1, L2, L3] = [await id(lea), await id(lou), await id(lia)];
-		const begin = (token, run, game = "connect4", match = 1) => call("POST", "/api/match/start", { token, body: { game, run, match } });
-		const duel = (run, extra = {}) => ({ game: "connect4", run, match: 1, kind: "duel", ranking: [["p1"], ["p2"]], roster: { p1: L1, p2: L2 }, seats: 2, left: ["p2"], ...extra });
+		const begin = (token, run, game = "lokeshmohanty/battleship", match = 1) => call("POST", "/api/match/start", { token, body: { game, run, match } });
+		const duel = (run, extra = {}) => ({ game: "lokeshmohanty/battleship", run, match: 1, kind: "duel", ranking: [["p1"], ["p2"]], roster: { p1: L1, p2: L2 }, seats: 2, left: ["p2"], ...extra });
 
 		await begin(lea, "lv1");
 		await begin(lou, "lv1");
@@ -510,7 +536,7 @@ try {
 		await grace();
 		r = await report(lea, duel("lv1"));
 		check("…then counts on the winner's word, the leaver's start being its evidence", r.body.counted === true && r.body.rating?.delta > 0, r.body);
-		const lost = await ratingIn(lou, "connect4");
+		const lost = await ratingIn(lou, "lokeshmohanty/battleship");
 		check("…as a loss for the one who left", lost?.games === 1 && lost.wins === 0 && lost.elo < 1200, lost);
 		check("…in their history too", (await matchesOfTok(lou)).matches[0]?.won === false);
 
@@ -519,20 +545,20 @@ try {
 		await report(lea, duel("lv2"));
 		await grace();
 		r = await report(lea, duel("lv2"));
-		check("not when the one named as leaving never said they were seated", r.body.counted !== true && (await ratingIn(lou, "connect4")).games === 1, r.body);
+		check("not when the one named as leaving never said they were seated", r.body.counted !== true && (await ratingIn(lou, "lokeshmohanty/battleship")).games === 1, r.body);
 
 		// The "leaver" is still there: online, in this game (presence).
 		await begin(lea, "lv3");
 		await begin(lou, "lv3");
 		const ws = new WebSocket(`${B.replace("http", "ws")}/live`, ["neon", lou]);
 		await new Promise((ok, bad) => ((ws.onopen = ok), (ws.onerror = bad), setTimeout(bad, 8000))).catch(() => {});
-		ws.send(JSON.stringify({ t: "status", game: "connect4" }));
+		ws.send(JSON.stringify({ t: "status", game: "lokeshmohanty/battleship" }));
 		await new Promise((res) => setTimeout(res, 400));
 		await call("PATCH", "/api/me", { token: lou, body: { appearOffline: true } }); // friends see offline; the socket still says where
 		await report(lea, duel("lv3"));
 		await grace();
 		r = await report(lea, duel("lv3"));
-		check("not when their live socket says they are in this game (even appearing offline)", r.body.counted !== true && (await ratingIn(lou, "connect4")).games === 1, r.body);
+		check("not when their live socket says they are in this game (even appearing offline)", r.body.counted !== true && (await ratingIn(lou, "lokeshmohanty/battleship")).games === 1, r.body);
 		await call("PATCH", "/api/me", { token: lou, body: { appearOffline: false } });
 		// Their socket drops mid-match: it still says where they were.
 		ws.close();
@@ -542,7 +568,7 @@ try {
 		await report(lea, duel("lv3b"));
 		await grace();
 		r = await report(lea, duel("lv3b"));
-		check("…nor when their socket just dropped mid-match", r.body.counted !== true && (await ratingIn(lou, "connect4")).games === 1, r.body);
+		check("…nor when their socket just dropped mid-match", r.body.counted !== true && (await ratingIn(lou, "lokeshmohanty/battleship")).games === 1, r.body);
 		// Back on the portal (no game), for the cases below.
 		const ws2 = new WebSocket(`${B.replace("http", "ws")}/live`, ["neon", lou]);
 		await new Promise((ok, bad) => ((ws2.onopen = ok), (ws2.onerror = bad), setTimeout(bad, 8000))).catch(() => {});
@@ -566,11 +592,11 @@ try {
 		await report(lea, real);
 		r = await report(lou, real);
 		check("(a real match, both reporting, counts)", r.body.counted === true, r.body);
-		const before = (await ratingIn(lou, "connect4")).games;
+		const before = (await ratingIn(lou, "lokeshmohanty/battleship")).games;
 		await report(lea, duel("lv5", { match: 2 }));
 		await grace();
 		r = await report(lea, duel("lv5", { match: 2 }));
-		check("not with a start their own report already used up", r.body.counted !== true && (await ratingIn(lou, "connect4")).games === before, r.body);
+		check("not with a start their own report already used up", r.body.counted !== true && (await ratingIn(lou, "lokeshmohanty/battleship")).games === before, r.body);
 
 		// A real match number is needed: a start names its match.
 		await begin(lea, "lv8");
@@ -578,17 +604,17 @@ try {
 		await report(lea, duel("lv8", { match: 7 }));
 		await grace();
 		r = await report(lea, duel("lv8", { match: 7 }));
-		check("not for a match number they never started (a made-up 'match 7' of a real run)", r.body.counted !== true && (await ratingIn(lou, "connect4")).games === before, r.body);
+		check("not for a match number they never started (a made-up 'match 7' of a real run)", r.body.counted !== true && (await ratingIn(lou, "lokeshmohanty/battleship")).games === before, r.body);
 
 		// The match ended without a result while they were still in the party
 		// (END GAME, the host left): their page withdraws the start.
 		await begin(lea, "lv9");
 		await begin(lou, "lv9");
-		const wd = await call("DELETE", "/api/match/start", { token: lou, body: { game: "connect4", run: "lv9", match: 1 } });
+		const wd = await call("DELETE", "/api/match/start", { token: lou, body: { game: "lokeshmohanty/battleship", run: "lv9", match: 1 } });
 		await report(lea, duel("lv9"));
 		await grace();
 		r = await report(lea, duel("lv9"));
-		check("not when they withdrew their start (the match ended with no result)", wd.body.withdrawn === true && r.body.counted !== true && (await ratingIn(lou, "connect4")).games === before, r.body);
+		check("not when they withdrew their start (the match ended with no result)", wd.body.withdrawn === true && r.body.counted !== true && (await ratingIn(lou, "lokeshmohanty/battleship")).games === before, r.body);
 
 		// Any report of theirs of that match uses the start up, even one refused.
 		await begin(lea, "lv10");
@@ -597,7 +623,7 @@ try {
 		await report(lea, duel("lv10"));
 		await grace();
 		r = await report(lea, duel("lv10"));
-		check("not when they reported that match themselves, even a report that was refused", refused.body.counted === false && r.body.counted !== true && (await ratingIn(lou, "connect4")).games === before, { refused: refused.body, r: r.body });
+		check("not when they reported that match themselves, even a report that was refused", refused.body.counted === false && r.body.counted !== true && (await ratingIn(lou, "lokeshmohanty/battleship")).games === before, { refused: refused.body, r: r.body });
 
 		// The same, with nothing to stop it: counted (so the refusals above are the rules', not presence's).
 		await begin(lea, "lv11");
@@ -605,7 +631,7 @@ try {
 		await report(lea, duel("lv11"));
 		await grace();
 		r = await report(lea, duel("lv11"));
-		check("(and with a start of theirs, nothing withdrawn or reported, it counts again)", r.body.counted === true && (await ratingIn(lou, "connect4")).games === before + 1, r.body);
+		check("(and with a start of theirs, nothing withdrawn or reported, it counts again)", r.body.counted === true && (await ratingIn(lou, "lokeshmohanty/battleship")).games === before + 1, r.body);
 
 		// A game that keeps the emptied side's empty slot, the leaver's side ahead.
 		await begin(lea, "lv12");
@@ -614,7 +640,7 @@ try {
 		await report(lea, emptied);
 		await grace();
 		r = await report(lea, emptied);
-		const lw = await ratingIn(lea, "connect4");
+		const lw = await ratingIn(lea, "lokeshmohanty/battleship");
 		check("an emptied side's empty slot does not beat the one who stayed: a win by forfeit", r.body.counted === true && r.body.rating?.delta > 0 && (await matchesOfTok(lea)).matches[0]?.won === true, { r: r.body, lw });
 
 		// Free-for-all: confirmed by two reporters, or not at all.
@@ -651,9 +677,9 @@ try {
 		check("…a repeat says so, with the rating", r.body.counted === true && r.body.already === true && typeof r.body.rating?.elo === "number", r.body);
 
 		// Two last reports of one match at once: it counts once.
-		const both = { game: "connect4", run: "race1", match: 1, kind: "duel", ranking: [["p1"], ["p2"]], roster: { p1: A1, p2: A2 }, seats: 2 };
+		const both = { game: "lokeshmohanty/battleship", run: "race1", match: 1, kind: "duel", ranking: [["p1"], ["p2"]], roster: { p1: A1, p2: A2 }, seats: 2 };
 		const raced = await Promise.all([report(ada, both), report(abe, both)]);
-		const c4 = await ratingIn(ada, "connect4");
+		const c4 = await ratingIn(ada, "lokeshmohanty/battleship");
 		check("two players reporting the same match at the same moment: counted once", c4?.games === 1 && raced.some((x) => x.body.counted), { c4, raced: raced.map((x) => x.body) });
 
 		// Matches for one account committing at the same time all count (the
@@ -663,10 +689,10 @@ try {
 		const others = [];
 		for (let i = 0; i < 6; i++) others.push(await testLogin(`Rim${i}`));
 		const ids = await Promise.all(others.map(id));
-		const body = (i) => ({ game: "connect4", run: `hub${i}`, match: 1, kind: "duel", ranking: [["ph"], ["px"]], roster: { ph: H, px: ids[i] }, seats: 2 });
+		const body = (i) => ({ game: "lokeshmohanty/battleship", run: `hub${i}`, match: 1, kind: "duel", ranking: [["ph"], ["px"]], roster: { ph: H, px: ids[i] }, seats: 2 });
 		for (let i = 0; i < 6; i++) await report(others[i], body(i));
 		const done = await Promise.all(ids.map((_, i) => report(hub, body(i))));
-		const hr = await ratingIn(hub, "connect4");
+		const hr = await ratingIn(hub, "lokeshmohanty/battleship");
 		const sum = done.reduce((t, x) => t + (x.body.rating?.delta ?? 0), 0);
 		check("six matches of one player committing at once: all six counted", done.every((x) => x.body.counted) && hr?.games === 6 && hr.wins === 6, { hr, done: done.map((x) => x.body) });
 		check("…and the rating moved by all six", Math.abs(hr.elo - 1200 - sum) <= 6 && hr.elo > 1200 + 6 * 15, { elo: hr.elo, sum });
@@ -705,7 +731,7 @@ try {
 
 		check("a run needs a sign-in", (await start(null, "neon-survival-mp")).status === 401);
 		check("…and a game id", (await start(ana, "../etc")).status === 400);
-		let r = await start(ana, "connect4");
+		let r = await start(ana, "lokeshmohanty/battleship");
 		check("…and a game that ranks games played alone (SOLO): others get no run", r.status === 400 && /alone/.test(r.body.error), r.body);
 		check("…nor does a game that does not exist", (await start(ana, "no-such-game")).status === 400);
 		const s = await fresh(ana, 0);
@@ -749,12 +775,12 @@ try {
 		check("a refused report does not use the run up (it is claimed only once it counts)", r.body.counted === true, r.body);
 
 		// Only SOLO games rank alone: no made-up score on any other game.
-		const forged = { game: "connect4", run: "party-run-x", match: 1, kind: "duel", ranking: [["pa"]], roster: { pa: A }, scores: { pa: 1e308 }, seats: 1 };
+		const forged = { game: "lokeshmohanty/battleship", run: "party-run-x", match: 1, kind: "duel", ranking: [["pa"]], roster: { pa: A }, scores: { pa: 1e308 }, seats: 1 };
 		r = await report(ana, forged);
 		check("a solo report for a game not in SOLO is refused", r.body.counted === false && /does not rank games played alone/.test(r.body.why), r.body);
 		r = await report(ana, { ...forged, game: "no-such-game" });
 		check("…so is one for a game that does not exist (not in the table: 400)", r.status === 400 && /unknown game/.test(r.body.error), r.body);
-		check("…and connect4's board is still a duel board", (await call("GET", "/api/lb/connect4")).body.kind === "duel");
+		check("…and battleship's board is still a duel board", (await call("GET", "/api/lb/lokeshmohanty/battleship")).body.kind === "duel");
 
 		// Neon Survival's board is best score whatever the latest match was:
 		// a multi-ship run (free-for-all) puts its scores on it too.
@@ -894,7 +920,7 @@ try {
 		check("…and says where you stand by it", me?.rank === 2, me);
 		const plain = await call("GET", `/api/lb/${GAME}`);
 		check("the game's own board is the races' (free-for-all), with the levels beside it", plain.body.kind === "ffa" && plain.body.levels?.length === 4, plain.body);
-		check("a level that is not one is not a board", (await call("GET", `/api/lb/${GAME}@nope`)).status === 400 && (await call("GET", "/api/lb/connect4@easy")).status === 400);
+		check("a level that is not one is not a board", (await call("GET", `/api/lb/${GAME}@nope`)).status === 400 && (await call("GET", "/api/lb/lokeshmohanty/battleship@easy")).status === 400);
 
 		run = await start(ana, 600);
 		const swapped = SU.solutionFor(SU.seedKey(run.seed, "easy"), 0).slice();
@@ -984,28 +1010,28 @@ try {
 			return res;
 		};
 		const report = (token, body) => call("POST", "/api/match/report", { token, body });
-		const win = (run, who = "pe", acct = E, extra = {}) => ({ game: "connect4", run, match: 1, kind: "duel", ranking: [[who], ["bot_1"]], roster: { [who]: acct }, ...extra });
+		const win = (run, who = "pe", acct = E, extra = {}) => ({ game: "lokeshmohanty/battleship", run, match: 1, kind: "duel", ranking: [[who], ["bot_1"]], roster: { [who]: acct }, ...extra });
 		const ratingsOf = async (token) => (await call("GET", "/api/me/matches", { token })).body.ratings;
 
 		let s = await start(eve, "neon-survival-mp");
 		check("a run against bots is only for a game with that board (not co-op Neon Survival)", s.status === 400 && /against bots/.test(s.body.error), s.body);
-		s = await start(null, "connect4");
+		s = await start(null, "lokeshmohanty/battleship");
 		check("…and needs a sign-in", s.status === 401);
-		s = (await start(eve, "connect4")).body;
+		s = (await start(eve, "lokeshmohanty/battleship")).body;
 		check("a run against bots: an id, a seed, the server's clock", typeof s.run === "string" && Number.isInteger(s.seed), s);
 		let r = await report(eve, win(s.run));
 		check("a win against a bot, the one person in the match, under its run, counts", r.body.counted === true && r.body.board === "bots" && r.body.wins === 1, r.body);
 		r = await report(eve, win(s.run, "pe", E, { match: 2 }));
 		check("…once: the run is used up", r.body.counted === false && /already reported/.test(r.body.why), r.body);
-		check("…and it is not a rating: no connect4 rating, Elo or ranked match for Eve", !(await ratingsOf(eve)).some((x) => x.game === "connect4") && (await call("GET", "/api/me/matches", { token: eve })).body.matches.length === 0);
-		check("…nor on the ranked board", !(await call("GET", "/api/lb/connect4")).body.rows.some((x) => x.id === E));
-		let bb = await call("GET", "/api/lb/connect4?vs=bots");
+		check("…and it is not a rating: no battleship rating, Elo or ranked match for Eve", !(await ratingsOf(eve)).some((x) => x.game === "lokeshmohanty/battleship") && (await call("GET", "/api/me/matches", { token: eve })).body.matches.length === 0);
+		check("…nor on the ranked board", !(await call("GET", "/api/lb/lokeshmohanty/battleship")).body.rows.some((x) => x.id === E));
+		let bb = await call("GET", "/api/lb/lokeshmohanty/battleship?vs=bots");
 		check("…but on the board of wins against bots", bb.body.kind === "bots" && bb.body.vs === "bots" && bb.body.rows[0]?.id === E && bb.body.rows[0].wins === 1 && bb.body.perDay === 3, bb.body);
 
-		s = (await start(eve, "connect4", 0)).body;
+		s = (await start(eve, "lokeshmohanty/battleship", 0)).body;
 		r = await report(eve, win(s.run));
-		check(`a win sooner than the game's fastest legal one (${BOTS.connect4.minMs / 1000} s) is refused`, r.body.counted === false && /too fast/.test(r.body.why), r.body);
-		s = (await start(eve, "connect4")).body;
+		check(`a win sooner than the game's fastest legal one (${BOTS["lokeshmohanty/battleship"].minMs / 1000} s) is refused`, r.body.counted === false && /too fast/.test(r.body.why), r.body);
+		s = (await start(eve, "lokeshmohanty/battleship")).body;
 		r = await report(eve, win(s.run, "pe", E, { ranking: [["bot_1"], ["pe"]] }));
 		check("a loss does not count", r.body.counted === false && /only a win/.test(r.body.why), r.body);
 		r = await report(eve, win(s.run, "pe", E, { ranking: [["pe", "bot_1"]] }));
@@ -1018,7 +1044,7 @@ try {
 		check("…and is not on that board", !(await call("GET", "/api/lb/neon-fission?vs=bots")).body.rows.some((x) => x.id === E));
 		r = await report(eve, win("party-run-id"));
 		check("a win without a run from the server is refused", r.body.counted === false && /run the server issued/.test(r.body.why), r.body);
-		const fays = (await start(fay, "connect4")).body;
+		const fays = (await start(fay, "lokeshmohanty/battleship")).body;
 		r = await report(eve, win(fays.run));
 		check("…so is another player's run", r.body.counted === false && /another player/.test(r.body.why), r.body);
 		const solo = (await start(eve, "lokeshmohanty/light-cycles", 60_000, null)).body;
@@ -1027,16 +1053,16 @@ try {
 		const vb = (await start(eve, "lokeshmohanty/light-cycles", 60_000)).body;
 		r = await report(eve, { game: "lokeshmohanty/light-cycles", run: vb.run, match: 1, kind: "ffa", ranking: [["pe"]], roster: { pe: E }, scores: { pe: 3 }, seats: 1 });
 		check("…and a run against bots used for a round alone", r.body.counted === false && /against bots/.test(r.body.why), r.body);
-		r = await report(eve, { ...win(s.run), game: "connect4", kind: "coop" });
+		r = await report(eve, { ...win(s.run), game: "lokeshmohanty/battleship", kind: "coop" });
 		check("a kind of game with no winner does not count", r.body.counted === false && /no winner/.test(r.body.why), r.body);
 
-		// BOTS_PER_DAY is 3 here (20 deployed): Eve has 1 connect4 win.
-		for (let i = 0; i < 2; i++) await report(eve, win((await start(eve, "connect4")).body.run));
-		s = (await start(eve, "connect4")).body;
+		// BOTS_PER_DAY is 3 here (20 deployed): Eve has 1 battleship win.
+		for (let i = 0; i < 2; i++) await report(eve, win((await start(eve, "lokeshmohanty/battleship")).body.run));
+		s = (await start(eve, "lokeshmohanty/battleship")).body;
 		r = await report(eve, win(s.run));
 		check("past the day's wins against bots in a game, a win does not count, and says why", r.body.counted === false && /3 wins against bots count a day/.test(r.body.why), r.body);
-		const tt = (await start(eve, "tic-tac-toe-js")).body;
-		r = await report(eve, { ...win(tt.run), game: "tic-tac-toe-js" });
+		const tt = (await start(eve, "lokeshmohanty/liars-dice")).body;
+		r = await report(eve, { ...win(tt.run), game: "lokeshmohanty/liars-dice" });
 		check("…in that game only: another game's still counts", r.body.counted === true && r.body.wins === 1, r.body);
 
 		// Review, 2026-11-15: ten reports posted at once all passed a count read
@@ -1053,28 +1079,28 @@ try {
 		check("…a refused run is still unused, and says the cap, not \"already reported\"", !raced.some((x) => /already reported/.test(x.body.why ?? "")));
 		// One run posted five times at once: one win, however the posts land
 		// (the win is added only where the run carries this report's claim).
-		const one = (await start(gus, "tic-tac-toe-js")).body.run;
-		const same = await Promise.all(Array.from({ length: 5 }, () => report(gus, win(one, "pg", G, { game: "tic-tac-toe-js" }))));
-		const tw = (await call("GET", "/api/lb/tic-tac-toe-js?vs=bots&me=1", { token: gus })).body.me;
+		const one = (await start(gus, "lokeshmohanty/liars-dice")).body.run;
+		const same = await Promise.all(Array.from({ length: 5 }, () => report(gus, win(one, "pg", G, { game: "lokeshmohanty/liars-dice" }))));
+		const tw = (await call("GET", "/api/lb/lokeshmohanty/liars-dice?vs=bots&me=1", { token: gus })).body.me;
 		check("the same run posted five times at once counts once, and adds one win", same.filter((x) => x.body.counted).length === 1 && same.filter((x) => /already reported/.test(x.body.why ?? "")).length === 4 && tw?.wins === 1, { got: same.map((x) => x.body.counted || x.body.why), wins: tw?.wins });
 
 		// Fay reaches three later: the tie goes to whoever got there first.
-		for (let i = 0; i < 3; i++) await report(fay, win((await start(fay, "connect4")).body.run, "pf", F));
-		bb = await call("GET", "/api/lb/connect4?vs=bots");
+		for (let i = 0; i < 3; i++) await report(fay, win((await start(fay, "lokeshmohanty/battleship")).body.run, "pf", F));
+		bb = await call("GET", "/api/lb/lokeshmohanty/battleship?vs=bots");
 		check("ranked by wins; a tie goes to whoever reached it first", bb.body.rows.map((x) => `${x.id === E ? "E" : x.id === F ? "F" : "?"}${x.wins}`).join() === "E3,F3" && bb.body.rows[0].at < bb.body.rows[1].at, bb.body.rows);
-		const mine = await call("GET", "/api/lb/connect4?vs=bots&me=1", { token: fay });
+		const mine = await call("GET", "/api/lb/lokeshmohanty/battleship?vs=bots&me=1", { token: fay });
 		check("?me=1: where you stand on it", mine.body.me?.id === F && mine.body.me.rank === 2, mine.body.me);
-		check("friends' board against bots needs a sign-in", (await call("GET", "/api/lb/connect4?vs=bots&scope=friends")).status === 401);
-		check("…and holds only you and your friends", (await call("GET", "/api/lb/connect4?vs=bots&scope=friends", { token: fay })).body.rows.map((x) => x.id).join() === F);
+		check("friends' board against bots needs a sign-in", (await call("GET", "/api/lb/lokeshmohanty/battleship?vs=bots&scope=friends")).status === 401);
+		check("…and holds only you and your friends", (await call("GET", "/api/lb/lokeshmohanty/battleship?vs=bots&scope=friends", { token: fay })).body.rows.map((x) => x.id).join() === F);
 		check("a game with no such board says so", (await call("GET", "/api/lb/neon-survival-mp?vs=bots")).status === 400);
 		check("Fay's ratings are untouched by all of it", (await ratingsOf(fay)).length === 0, await ratingsOf(fay));
 		const mm = (await call("GET", "/api/me/matches", { token: eve })).body;
-		check("your matches answer carries the wins against bots, apart from the ratings", mm.botWins?.map((x) => `${x.game}:${x.wins}`).join() === "connect4:3,tic-tac-toe-js:1" && !mm.ratings.some((x) => x.game === "connect4"), mm);
+		check("your matches answer carries the wins against bots, apart from the ratings", mm.botWins?.map((x) => `${x.game}:${x.wins}`).join() === "lokeshmohanty/battleship:3,lokeshmohanty/liars-dice:1" && !mm.ratings.some((x) => x.game === "lokeshmohanty/battleship"), mm);
 		check("…and so does the public profile", (await call("GET", `/api/u/${E}`)).body.botWins?.length === 2);
 		const ex = await call("GET", "/api/me/export", { token: eve });
-		check("export: the wins against bots", ex.body.winsAgainstBots?.find((x) => x.game === "connect4")?.wins === 3, ex.body.winsAgainstBots);
+		check("export: the wins against bots", ex.body.winsAgainstBots?.find((x) => x.game === "lokeshmohanty/battleship")?.wins === 3, ex.body.winsAgainstBots);
 		await call("DELETE", "/api/me", { token: eve });
-		check("delete: gone from the board", !(await call("GET", "/api/lb/connect4?vs=bots")).body.rows.some((x) => x.id === E));
+		check("delete: gone from the board", !(await call("GET", "/api/lb/lokeshmohanty/battleship?vs=bots")).body.rows.some((x) => x.id === E));
 	}
 
 	console.log("\naccounts: friends, presence and invites");
@@ -1087,7 +1113,7 @@ try {
 		check("asking nobody is a 404", (await call("POST", "/api/friends/nobody123", { token: ana })).status === 404);
 		r = await call("POST", `/api/friends/${A}`, { token: bo });
 		check("asking back is the yes", r.body.state === "friends", r.body);
-		const fr = await call("GET", "/api/lb/connect4?scope=friends", { token: ana });
+		const fr = await call("GET", "/api/lb/lokeshmohanty/battleship?scope=friends", { token: ana });
 		check("now the friends' board holds both", fr.body.rows.length === 2, fr.body.rows);
 
 		// Bo opens a page: the live socket.
@@ -1138,14 +1164,14 @@ try {
 		check("a non-member cannot see it", (await call("GET", `/api/groups/${g.body.id}`, { token: bo })).status === 403);
 		const got = await call("GET", `/api/groups/${g.body.id}`, { token: cy });
 		check("members can", got.body.members.length === 2 && got.body.mine === false, got.body);
-		// Ana and Cy play connect4 together: only that match is the group's.
-		const gm = { game: "connect4", run: "g1", match: 1, kind: "duel", ranking: [["pc"], ["pa"]], roster: { pa: A, pc: C } };
+		// Ana and Cy play Battleship together: only that match is the group's.
+		const gm = { game: "lokeshmohanty/battleship", run: "g1", match: 1, kind: "duel", ranking: [["pc"], ["pa"]], roster: { pa: A, pc: C } };
 		await call("POST", "/api/match/report", { token: ana, body: gm });
 		await call("POST", "/api/match/report", { token: cy, body: gm });
-		const lb = await call("GET", `/api/lb/connect4?scope=group:${g.body.id}`, { token: ana });
+		const lb = await call("GET", `/api/lb/lokeshmohanty/battleship?scope=group:${g.body.id}`, { token: ana });
 		check("the group's board counts only matches among its members", lb.body.rows.length === 2 && lb.body.rows[0].id === C && lb.body.rows[0].games === 1, lb.body.rows);
 		check("…with its own rating, from 1200 (provisional K)", lb.body.rows[0].elo === 1200 + ELO_K_PROVISIONAL / 2 && lb.body.rows[1].elo === 1200 - ELO_K_PROVISIONAL / 2 && lb.body.rows[0].provisional === true, lb.body.rows);
-		check("someone else's group board is refused", (await call("GET", `/api/lb/connect4?scope=group:${g.body.id}`, { token: bo })).status === 403);
+		check("someone else's group board is refused", (await call("GET", `/api/lb/lokeshmohanty/battleship?scope=group:${g.body.id}`, { token: bo })).status === 403);
 		check("only the owner removes members", (await call("DELETE", `/api/groups/${g.body.id}/members/${A}`, { token: cy })).status === 403);
 		check("anyone may leave", (await call("DELETE", `/api/groups/${g.body.id}/members/${C}`, { token: cy })).body.removed === true);
 		check("only the owner deletes it", (await call("DELETE", `/api/groups/${g.body.id}`, { token: cy })).status === 403);
@@ -1194,8 +1220,9 @@ try {
 		const tree = fake.trees.get(fake.commits[0].tree);
 		const file = (p) => JSON.parse(tree.find((t) => t.path === p)?.content ?? "null");
 		check("…holding the play counts", file("stats/summary.json")?.games.connect4.played === 3);
-		const c4 = file("stats/lb/connect4.json");
+		const c4 = file("stats/lb/lokeshmohanty__battleship.json");
 		check("…and each game's board, without who hid themselves", c4?.rows.some((x) => x.id === A) && !c4.rows.some((x) => x.id === C), c4?.rows);
+		check("…and no board for a game without one (the old Connect 4 row)", !tree.some((t) => t.path === "stats/lb/connect4.json"), tree.map((t) => t.path));
 		const text = JSON.stringify(tree);
 		check("…and nothing private: no sessions, friends, groups or providers", !/session|friend|group|provider|test-session-key/i.test(text.replace(/"game"/g, "")));
 		r = await call("POST", "/api/admin/snapshot");
@@ -1206,14 +1233,14 @@ try {
 		const post = fake.treePosts.at(-1);
 		check("…sending only what changed, over the last tree (base_tree)", post.base_tree === fake.commits[0].tree && post.tree.length === 1 && post.tree[0].path === "stats/summary.json", post);
 		const kept = fake.trees.get(fake.commits[1].tree);
-		check("…the boards it did not send are still in the commit", kept.some((x) => x.path === "stats/lb/connect4.json") && JSON.parse(kept.find((x) => x.path === "stats/summary.json").content).games["neon-bid"].played >= 1, kept.map((x) => x.path));
+		check("…the boards it did not send are still in the commit", kept.some((x) => x.path === "stats/lb/lokeshmohanty__battleship.json") && JSON.parse(kept.find((x) => x.path === "stats/summary.json").content).games["neon-bid"].played >= 1, kept.map((x) => x.path));
 		await call("PATCH", "/api/me", { token: cy, body: { hidePublic: false } });
 	}
 
 	console.log("\naccounts: boards of 100+ friends and members, the group board's plan");
 	{
 		// Made in the database directly: 120 accounts befriending Ana, in a
-		// group with her, each rated at connect4, a few matches among them.
+		// group with her, each rated at Battleship, a few matches among them.
 		const N = 120;
 		const q = (v) => `'${v}'`;
 		const fid = (i) => `bulk${String(i).padStart(3, "0")}`;
@@ -1223,25 +1250,25 @@ try {
 			[
 				`INSERT INTO accounts (id, provider, provider_uid, name, created) VALUES ${Array.from({ length: N }, (_, i) => `(${q(fid(i))}, 'test', ${q(fid(i))}, ${q(`Bulk ${i}`)}, ${now})`).join(", ")};`,
 				`INSERT INTO friends (a, b, state, at) VALUES ${Array.from({ length: N }, (_, i) => `(${q(fid(i))}, ${q(A)}, 'friends', ${now})`).join(", ")};`,
-				`INSERT INTO ratings (account, game, elo, games, wins, best) VALUES ${Array.from({ length: N }, (_, i) => `(${q(fid(i))}, 'connect4', ${1000 + i}, 3, 1, NULL)`).join(", ")};`,
+				`INSERT INTO ratings (account, game, elo, games, wins, best) VALUES ${Array.from({ length: N }, (_, i) => `(${q(fid(i))}, 'lokeshmohanty/battleship', ${1000 + i}, 3, 1, NULL)`).join(", ")};`,
 				`INSERT INTO groups (id, name, owner, code, created) VALUES (${q(grp)}, 'Bulk', ${q(A)}, 'BULKBULK', ${now});`,
 				`INSERT INTO group_members (grp, account, joined) VALUES (${q(grp)}, ${q(A)}, ${now}), ${Array.from({ length: N }, (_, i) => `(${q(grp)}, ${q(fid(i))}, ${now})`).join(", ")};`,
-				`INSERT INTO matches (id, game, kind, ranking, scores, at) VALUES ${Array.from({ length: 10 }, (_, i) => `('bm${i}', 'connect4', 'duel', '[["${fid(2 * i)}"],["${fid(2 * i + 1)}"]]', NULL, ${now + i})`).join(", ")};`,
+				`INSERT INTO matches (id, game, kind, ranking, scores, at) VALUES ${Array.from({ length: 10 }, (_, i) => `('bm${i}', 'lokeshmohanty/battleship', 'duel', '[["${fid(2 * i)}"],["${fid(2 * i + 1)}"]]', NULL, ${now + i})`).join(", ")};`,
 				`INSERT INTO match_players (match, account, place) VALUES ${Array.from({ length: 10 }, (_, i) => `('bm${i}', ${q(fid(2 * i))}, 0), ('bm${i}', ${q(fid(2 * i + 1))}, 1)`).join(", ")};`,
 			].join("\n"),
 		);
-		const fr = await call("GET", "/api/lb/connect4?scope=friends", { token: ana });
+		const fr = await call("GET", "/api/lb/lokeshmohanty/battleship?scope=friends", { token: ana });
 		check(`a friends' board with ${N} friends (D1 allows 100 bound parameters)`, fr.status === 200 && fr.body.rows.length === 100, { status: fr.status, error: fr.body.error, n: fr.body.rows?.length });
 		check("…and where you stand on it", fr.body.me?.id === A, fr.body.me);
-		const gb = await call("GET", `/api/lb/connect4?scope=group:${grp}`, { token: ana });
+		const gb = await call("GET", `/api/lb/lokeshmohanty/battleship?scope=group:${grp}`, { token: ana });
 		check(`a group's board with ${N + 1} members`, gb.status === 200 && gb.body.rows.length === 20, { status: gb.status, error: gb.body.error, n: gb.body.rows?.length });
-		const bb = await call("GET", `/api/lb/connect4?vs=bots&scope=group:${grp}`, { token: ana });
+		const bb = await call("GET", `/api/lb/lokeshmohanty/battleship?vs=bots&scope=group:${grp}`, { token: ana });
 		check("…and its board against bots", bb.status === 200, { status: bb.status, error: bb.body.error });
 		const ex = await call("GET", `/api/u/${fid(0)}`);
 		check("a profile whose matches name many players", ex.status === 200, ex.body);
 		// The group board's query, as D1 plans it: driven from the game's
 		// matches (newest first, bounded), never a scan of match_players.
-		const bound = GROUP_MATCHES_SQL.replace("?", "'connect4'").replace("?", String(GROUP_SCAN)).replace("?", q(grp)).replace("?", String(GROUP_REPLAY));
+		const bound = GROUP_MATCHES_SQL.replace("?", "'lokeshmohanty/battleship'").replace("?", String(GROUP_SCAN)).replace("?", q(grp)).replace("?", String(GROUP_REPLAY));
 		const plan = w.sql(`EXPLAIN QUERY PLAN ${bound}`)[0].map((r) => r.detail);
 		console.log(`  (plan: ${plan.join(" | ")})`);
 		check("the group board's plan: the game's matches by index matches_game_at", plan.some((d) => /SEARCH matches USING (COVERING )?INDEX matches_game_at/.test(d)), plan);
@@ -1251,12 +1278,12 @@ try {
 	console.log("\naccounts: export and delete");
 	{
 		// Something of each kind to export: a run against bots, a pending report.
-		await call("POST", "/api/run/start", { token: ana, body: { game: "connect4", vs: "bots" } });
-		await report(ana, { game: "connect4", run: "exp1", match: 1, kind: "duel", ranking: [["pa"], ["pc"]], roster: { pa: A, pc: C }, seats: 2 });
+		await call("POST", "/api/run/start", { token: ana, body: { game: "lokeshmohanty/battleship", vs: "bots" } });
+		await report(ana, { game: "lokeshmohanty/battleship", run: "exp1", match: 1, kind: "duel", ranking: [["pa"], ["pc"]], roster: { pa: A, pc: C }, seats: 2 });
 		const ex = await call("GET", "/api/me/export", { token: ana });
 		check("export: the account, favourites, ratings, matches, friends", ex.body.account.id === A && ex.body.favourites.length === 2 && ex.body.ratings.length >= 2 && ex.body.matches.length >= 2 && ex.body.friends.length >= 1, Object.keys(ex.body));
 		check("…every run the server issued, alone and against bots", ex.body.runs?.some((x) => x.vs === "solo") && ex.body.runs.some((x) => x.vs === "bots"), ex.body.runs?.map((x) => x.vs));
-		check("…reports not yet settled", ex.body.reports?.some((x) => x.state === "pending" && x.result?.game === "connect4"), ex.body.reports);
+		check("…reports not yet settled", ex.body.reports?.some((x) => x.state === "pending" && x.result?.game === "lokeshmohanty/battleship"), ex.body.reports);
 		check("…the feedback posts and the presence row", ex.body.feedbackPosts?.length === 5 && "presence" in ex.body, { posts: ex.body.feedbackPosts, presence: ex.body.presence });
 		check("…its matches in pages, this one the last", ex.body.matchesPage === 0 && ex.body.matchesNext === null, { page: ex.body.matchesPage, next: ex.body.matchesNext });
 		check("…and a page past the end is empty", (await call("GET", "/api/me/export?page=3", { token: ana })).body.matches.length === 0);
@@ -1264,7 +1291,7 @@ try {
 		check("delete: done at once", del.body.deleted === true);
 		check("…the session is gone", (await call("GET", "/api/me", { token: ana })).status === 401);
 		check("…the public profile is gone", (await call("GET", `/api/u/${A}`)).status === 404);
-		const lb = await call("GET", "/api/lb/connect4");
+		const lb = await call("GET", "/api/lb/lokeshmohanty/battleship");
 		check("…and the leaderboards no longer list them", !lb.body.rows.some((r) => r.id === A), lb.body.rows);
 		const boList = await call("GET", "/api/friends", { token: bo });
 		check("…nor their friends' lists", boList.body.friends.length === 0, boList.body);
