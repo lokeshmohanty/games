@@ -96,6 +96,60 @@ try {
 	});
 	check("the frame has the fonts too (inlined: it may load nothing)", ff.some((x) => /Space Grotesk|Nunito|Cascadia/.test(x)), ff);
 	await ctx.close();
+
+	console.log("\ntheme: a first cold visit does not wait for the frame's fonts");
+	// The fonts not yet on the phone (no worker cache, still downloading)
+	// follow the frame (lib/bridge.js finishParts, `neon:fonts` in
+	// sdk/v2/runtime.js); a later visit has them in the document, no swap.
+	const faces = (fr) =>
+		fr.evaluate(() => ({
+			rules: [...document.styleSheets].flatMap((s) => [...s.cssRules]).filter((r) => r instanceof CSSFontFaceRule).length,
+			loaded: [...document.fonts].filter((x) => x.status === "loaded").map((x) => x.family),
+			late: [...document.querySelectorAll("style")].some((s) => /^\s*@font-face/.test(s.textContent)),
+		}));
+	const cold = await browser.newContext({ viewport: { width: 390, height: 844 }, serviceWorkers: "block" });
+	await cold.addInitScript(() => {
+		try {
+			localStorage.setItem("neon.rs", "http://127.0.0.1:9");
+		} catch {}
+	});
+	const slowFonts = (route) => setTimeout(() => route.continue().catch(() => {}), 2500);
+	await cold.route("**/assets/fonts/*.woff2", slowFonts);
+	const cp = await cold.newPage();
+	const refused = [];
+	cp.on("console", (m) => /Content Security Policy|Refused to/.test(m.text()) && refused.push(m.text()));
+	const t0 = Date.now();
+	await cp.goto(site.url("?game=neon-fission&fresh=1&mode=bots"), { waitUntil: "commit" });
+	const cf = await gameFrame(cp, TIMEOUT);
+	const mounted = Date.now() - t0;
+	const early = await faces(cf);
+	check("the frame comes up before the fonts have downloaded, without their faces", mounted < 2500 && early.rules === 0, { mounted, ...early });
+	await cf.evaluate(() => {
+		window.__themeSets = 0;
+		window.arcade.on("theme.set", () => window.__themeSets++);
+	});
+	await cf.waitForFunction(() => [...document.fonts].filter((x) => x.status === "loaded").length >= 4, null, { timeout: 15_000 }).catch(() => {});
+	const lateFaces = await faces(cf);
+	check("…then all four faces arrive as data and load", lateFaces.rules === 4 && lateFaces.late && ["Space Grotesk Variable", "Nunito Variable", "Cascadia Code Variable"].every((x) => lateFaces.loaded.includes(x)), lateFaces);
+	check("…and the theme is announced again, so a canvas redraws in them", (await cf.evaluate(() => window.__themeSets)) >= 1);
+	check("…with nothing the frame's CSP refuses", !refused.length, refused.slice(0, 2).join(" | "));
+	await cold.close();
+	const warmCtx = await browser.newContext({ viewport: { width: 390, height: 844 } });
+	await warmCtx.addInitScript(() => {
+		try {
+			localStorage.setItem("neon.rs", "http://127.0.0.1:9");
+			localStorage.setItem("neon.sw", "snapshot");
+		} catch {}
+	});
+	const wp = await warmCtx.newPage();
+	await wp.goto(site.url("?game=neon-fission&fresh=1&mode=bots"));
+	await gameFrame(wp, TIMEOUT);
+	await wp.evaluate(() => navigator.serviceWorker?.ready);
+	await wp.waitForFunction(() => !!navigator.serviceWorker?.controller, null, { timeout: 15_000 }).catch(() => {});
+	await wp.goto(site.url("?game=neon-fission&fresh=1&mode=bots"));
+	const warmFaces = await faces(await gameFrame(wp, TIMEOUT));
+	check("a later visit has every face in the document: no swap", warmFaces.rules === 4 && !warmFaces.late, warmFaces);
+	await warmCtx.close();
 } catch (err) {
 	check(`unexpected: ${err.message.split("\n")[0]}`, false);
 } finally {

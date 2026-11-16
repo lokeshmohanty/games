@@ -8,7 +8,8 @@
 // explains each message.
 //
 // The shell inlines this file ahead of the game's own scripts and then posts
-// `{ t: "neon:port" }` to the window with a MessagePort. From then on:
+// `{ t: "neon:port" }` to the window with a MessagePort (and, on a first cold
+// visit, `{ t: "neon:fonts" }` once the fonts arrive: below). From then on:
 //
 //   arcade.on("msg", (m) => …)            every message of a type → off()
 //   arcade.on("*", (m) => …)              every message (a dispatch-style game)
@@ -265,6 +266,23 @@
 	// the game has its `init`.
 	arcade.init.then(() => {
 		window.__game = { handle: { debug: () => arcade.debug?.() ?? null } };
+	});
+
+	// The fonts a first cold visit opened the frame without (lib/bridge.js
+	// finishParts): the shell posts their @font-face rules, data: URLs inlined,
+	// once they have downloaded. The text swaps to them (font-display: swap);
+	// once they are loaded, the theme is announced again (`theme.set`, the
+	// same values), so a canvas that drew text in the fallback font redraws.
+	// The frame still fetches nothing: the fonts arrive as data.
+	addEventListener("message", (e) => {
+		if (e.source !== parent || e.data?.t !== "neon:fonts" || typeof e.data.css !== "string") return;
+		const style = document.createElement("style");
+		style.textContent = e.data.css;
+		(document.head ?? document.documentElement).append(style);
+		const faces = [...document.fonts].filter((f) => f.status !== "loaded");
+		Promise.all(faces.map((f) => f.load().catch(() => {}))).then(() => {
+			if (arcade.theme) emit({ v: V, t: "theme.set", theme: arcade.theme });
+		});
 	});
 
 	// The shell sends the port once, as the frame's first message. Anything

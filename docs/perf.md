@@ -298,3 +298,42 @@ screen fetches the clip and every card plays the same `blob:` URL. The first
 screen alone: 13 (cache on) / 24 (cache off) requests on base, 6 on the
 branch. The committed first-party gifs (5 files, ~3.5 MB, never shown) are
 gone; the recorder keeps no gif.
+
+### Fonts after mount (branch improve-perf, 2026-11-16)
+
+Lokesh chose to let a first cold visit open the frame before its fonts
+(docs/sdk-v2.md "Fonts after mount"): a face not yet on the phone is left
+out of the frame, which opens in the fallback fonts and gets the face as
+data once it has downloaded (`neon:fonts`); a canvas game repaints on the
+`theme.set` the runtime then repeats. A face already in the page or in the
+worker's cache is inlined as before, so a warm visit has no swap
+(test-theme checks both, and that nothing breaks the CSP).
+
+Same harness, base (230d1f8) and this build alternately, bots scenario, 5
+rounds of 2 runs (load 2–7):
+
+| | base | fonts after mount |
+|---|---|---|
+| bots cold, to frame: median (range) | 1897 ms (1834–2001) | **1415 ms** (1093–1962) |
+| bots cold, runs whose navigation started on time | ~1.85–1.95 s | **1.09–1.20 s** |
+| bots warm, to frame: median (range), 9 more runs | 484 ms (403–753) | 517 ms (366–613) |
+| bots cold FCP, median | 792 ms | 890 ms |
+| bots cold, bytes before the frame | 240 KB | 95–117 KB |
+
+The cold spread comes from the runs, not from the fonts: in the slow ones
+the first request after navigation started at 500–590 ms instead of
+~190 ms (the machine was shared with other agents' tests). In every cold run
+the frame was up 330–630 ms after the bundle arrived; the fonts no longer
+gate it. Warm is unchanged within the noise. A full `just perf` run of each:
+bots cold 2000 → 1334 ms, warm 484 → 505 ms.
+
+Checked by eye at 390x844, the first cold visit with the fonts held back
+2.5 s, in paper light, paper dark and neon: Neon Bid and Undercover (DOM)
+open in the system sans and swap to Nunito, Space Grotesk and Cascadia Code
+with the layout essentially still; Neon Fission (canvas board, DOM header)
+the same. After the swap and on a warm visit the text is in the intended
+faces.
+
+Not done: metric overrides (`size-adjust`, `ascent-override`) on a fallback
+face to make the swap still gentler; they need the fonts' metrics, and
+fontTools could not read the woff2 files here (no brotli module).
