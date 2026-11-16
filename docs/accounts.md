@@ -190,14 +190,18 @@ such an account only if, when the match is settled:
 3. **the grace has passed** with no report of its own — a player still there
    who reports the real result voids the made-up one;
 4. **its seated page has stopped beating** — the page re-posts its start
-   every 2 minutes while the match runs (`lib/account.js` `HEARTBEAT_MS`,
-   one UPDATE of one row), and a departure needs the last beat older than
-   `MATCH_STALE_MS` (3 min), whatever the account's other pages say. (The
+   every 60 s while the match runs, a failed beat once more 15 s later
+   (`lib/account.js` `HEARTBEAT_MS`; one UPDATE of one row, free of the
+   per-address write limit — only a new start is charged), and a departure
+   needs the last beat older than `MATCH_STALE_MS` (4.5 min: three lost
+   beats in a row), whatever the account's other pages say. (The
    first version read `presence`, one row per account: a second page on the
    home screen made a player still in the match look gone, and one liar
    could book them a loss — a review, 2026-11-16.) The beat stops with the
    match's result, a withdrawal, the next match, or leaving the party. A
-   report naming a leaver is re-sent for 191 s (not 71), past the 3 minutes;
+   report naming a leaver is re-sent for 251 s (not 71), past the 4.5
+   minutes after a last beat at most 60 s before the leaving (a LEAVE PARTY
+   that settles later than that is settled by the sweep, unseen on the card);
    a later report of the leaver's own is told the match counted **against**
    them ("Counted as a loss: you left"), on the toast and the end card.
 
@@ -208,7 +212,7 @@ review (2026-11-16) found the first version keyed starts by run only, so one
 player could END GAME on a real opponent and then file a made-up "match 7"
 won against them alone; and that a refused report left the start usable.
 Both are closed above, as is the presence hole (rule 4). What it still does
-not stop: a victim whose seated page is frozen for 3 minutes (a phone that
+not stop: a victim whose seated page is frozen for 4.5 minutes (a phone that
 suspends the tab) while the match goes on; and a withdrawal lost to the
 network. A report of ours that does not count — offline to its last
 re-send, refused, or answered 429 or 5xx — withdraws our start, and reports
@@ -244,7 +248,11 @@ opponents — so beating a stronger player counts more, and a duel is plain
 Elo. **Teams**: each place is a side rated at its members' mean; the side's
 change is shared by its members — each moves by it times the mean side size
 over their own side's size (with their own K), so uneven sides still sum to
-zero (3 against 1: +16 each against −48; a review, 2026-11-16). **K** is 48 for a player's first
+zero (3 against 1: +16 each against −48; a review, 2026-11-16). A side's
+size is its players as the match began, leavers included, so a teammate
+who stays shares the change with the one who left (−24, not −36); and the
+factor is capped at 2, so one against many never swings past 2 × K (then
+not quite zero-sum). **K** is 48 for a player's first
 10 rated games of a game (`provisional`), then 32; everyone starts at 1200.
 Duels, free-for-all and teams share it; co-op has none.
 
@@ -279,8 +287,10 @@ generated from `lib/catalog.js` and `community/catalog.js` by
 `lib/catalog.js`, so the Worker bundles it. The Worker refuses any id
 not in it — a result, a play count, a board, a match start; the snapshot and
 the summary leave out boards of games no longer in it — and a result of
-another kind than its game's, except a scored free-for-all of a co-op game
-(Neon Survival's multi-ship runs). A board's kind is SOLO's pin, else the
+another kind than its game's — except the extra kinds the table lists
+(`KINDS`, from `EXTRA_KINDS` in the generator: Bubble Rush is `ffa` and its
+teams mode reports `teams`, rated as teams on its one free-for-all board)
+and a scored free-for-all of a co-op game (Neon Survival's multi-ship runs). A board's kind is SOLO's pin, else the
 table's; `@level` boards are SOLO's only. `just games-table --check` (in
 `just test`, the platform CI check, and `just deploy-worker`) fails when a
 catalog moved on — a registry pin that adds a game needs the table
