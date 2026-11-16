@@ -8,6 +8,7 @@
   "runtime": "wasm",
   "wasm": "pkg/rules.wasm",
   "kind": "duel",
+  "leaderboard": false,
   "shape": "teams",
   "seats": {
     "min": 2,

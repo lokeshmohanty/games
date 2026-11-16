@@ -31,6 +31,7 @@
 // impossible.
 
 import { BOTS } from "./bots.js";
+import { GAMES, NO_BOARD } from "./games.js";
 import { GAME_ID, HttpError, body, now, randomId } from "./http.js";
 import { LEVEL_IDS, verifySudoku } from "./sudoku.js";
 
@@ -55,7 +56,8 @@ export const SOLO_PER_DAY = 50; // counted solo runs per account per game per da
  * `@alone`, beside its races). `unit`: what the board's score is in, for the
  * page to say (lb.js passes it on).
  */
-export const SOLO = {
+// No prototype (as every table looked up by a player's id): "constructor" is not a game.
+export const SOLO = Object.assign(Object.create(null), {
 	// A gem spawns with chance 0.02 per 60 Hz frame while fewer than 3 are out
 	// (games/neon-survival-mp: 1.2 a second at most, 2 to start), and a ship
 	// jumps to the finger, so even catching every one is under 1.2 a second.
@@ -88,12 +90,12 @@ export const SOLO = {
 		plain: "ffa",
 		unit: "s",
 	},
-};
+});
 
 /**
  * The pinned kind of a board: `game` (SOLO's `board`, or `plain` for a game
- * with levels) or `game@level`; null when SOLO says nothing (the board then
- * follows its latest match, worker/api/lb.js).
+ * with levels) or `game@level`; null when SOLO says nothing (boardKind then
+ * takes the game's manifest kind from the table, worker/api/games.js).
  */
 export function boardOf(key) {
 	const at = key.indexOf("@");
@@ -102,13 +104,28 @@ export function boardOf(key) {
 	if (at >= 0) return s.levels?.includes(key.slice(at + 1)) ? s.board : null;
 	return s.levels ? (s.plain ?? null) : (s.board ?? null);
 }
+/** The kinds of game that rank (worker/api/games.js has every game's). */
+export const RANKED = ["duel", "ffa", "teams", "coop"];
+/**
+ * The kind of a board: SOLO's pin (boardOf), else its game's manifest kind
+ * from the generated table (worker/api/games.js) — never a reporter's say,
+ * never its latest match's. null: not a board (an unknown game, a one-phone
+ * game, a level SOLO does not have).
+ */
+export function boardKind(key) {
+	if (NO_BOARD.has(key.split("@")[0])) return null; // "leaderboard": false
+	const fixed = boardOf(key);
+	if (fixed) return fixed;
+	if (key.includes("@")) return null;
+	const kind = GAMES[key];
+	return RANKED.includes(kind) ? kind : null;
+}
 /** The solo levels (each its own board) of a game or of one of its boards, or null. */
 export const levelsOf = (key) => SOLO[key.split("@")[0]]?.levels ?? null;
 /** What a board's score is in (SOLO `unit`, on its solo boards only), or null. */
 export const unitOf = (key) => (key.includes("@") ? (SOLO[key.split("@")[0]]?.unit ?? null) : null);
-/** A leaderboard key: a game id, or `game@level` for a SOLO game's level. */
-export const isBoardKey = (key) =>
-	GAME_ID.test(key) || (key.includes("@") && GAME_ID.test(key.slice(0, key.indexOf("@"))) && boardOf(key) != null);
+/** A leaderboard key: a ranked game's id (the table), or `game@level` for a SOLO game's level. */
+export const isBoardKey = (key) => typeof key === "string" && boardKind(key) != null;
 
 /** A seed as the platform's own: a non-negative 31-bit integer. */
 const newSeed = () => crypto.getRandomValues(new Uint32Array(1))[0] >>> 1;
@@ -118,6 +135,7 @@ export async function startRun(env, me, request) {
 	const b = await body(request);
 	if (!GAME_ID.test(b.game ?? "")) throw new HttpError(400, "unknown game");
 	const vs = b.vs === "bots" ? "bots" : "solo";
+	if (NO_BOARD.has(b.game)) throw Object.assign(new HttpError(400, "this game has no leaderboard"), { code: "no-board" });
 	if (vs === "solo" && !SOLO[b.game]) throw new HttpError(400, "this game does not rank games played alone");
 	if (vs === "bots" && !BOTS[b.game]) throw new HttpError(400, "this game has no board for wins against bots");
 	const t = now();

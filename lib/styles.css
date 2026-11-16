@@ -702,6 +702,22 @@ canvas {
   letter-spacing: 0.06em;
   text-transform: uppercase;
 }
+/* The rating change under the ranking (lib/account.js endCard). */
+.managed-over p.managed-rating {
+  align-self: center;
+  font-family: var(--font-mono);
+  font-size: 0.86rem;
+  color: var(--ink);
+}
+.managed-over p.managed-rating[data-state="pending"] {
+  color: var(--ink-2);
+}
+.managed-over p.managed-rating[data-state="left"] {
+  color: var(--warn);
+}
+.managed-rating[hidden] {
+  display: none;
+}
 .managed-toggle {
   align-self: center;
   min-height: 32px;
