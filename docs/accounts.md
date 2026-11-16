@@ -173,7 +173,9 @@ such an account only if, when the match is settled:
    `POST /api/match/start { game, run, match }`, sent by the leaver's page as
    the match began (the host as it starts it, a guest at its first view),
    kept as a `reports` row (digest `start`, key
-   `sha256("start|game|run|match")`, 6 h) — before the match's first report;
+   `sha256("start|game|run|match")`; `payload` keeps when it was first said,
+   `at` its last beat; kept 1 h after that) — first said before the match's
+   first report;
    not used up by any report of its own of that match (sent first thing,
    even when that report is then refused, voided or too late); and not
    withdrawn: when a match ends **without a result** while the page is still
@@ -186,12 +188,17 @@ such an account only if, when the match is settled:
    the leaver's own start as the evidence);
 3. **the grace has passed** with no report of its own — a player still there
    who reports the real result voids the made-up one;
-4. **its live socket has not said, in the last 4.5 minutes, that it is in
-   this game** (`presence.game`, whatever "appear offline" says). A socket
-   that drops keeps the game it was in, with when (`worker/api/live.js`), so
-   a blip mid-match does not read as leaving; pages ping every 4 minutes; a
-   closed tab only becomes a departure after the 5-minute reconnect grace,
-   by when its presence is staler than that.
+4. **its seated page has stopped beating** — the page re-posts its start
+   every 2 minutes while the match runs (`lib/account.js` `HEARTBEAT_MS`,
+   one UPDATE of one row), and a departure needs the last beat older than
+   `MATCH_STALE_MS` (3 min), whatever the account's other pages say. (The
+   first version read `presence`, one row per account: a second page on the
+   home screen made a player still in the match look gone, and one liar
+   could book them a loss — a review, 2026-11-16.) The beat stops with the
+   match's result, a withdrawal, the next match, or leaving the party. A
+   report naming a leaver is re-sent for 191 s (not 71), past the 3 minutes;
+   a later report of the leaver's own is told the match counted **against**
+   them ("Counted as a loss: you left"), on the toast and the end card.
 
 So a colluder cannot name an account that never sat down with them in that
 very match (1) — not a match number they make up, not a match that was
@@ -199,12 +206,15 @@ ended without a result — nor one still playing it (3, 4). An adversarial
 review (2026-11-16) found the first version keyed starts by run only, so one
 player could END GAME on a real opponent and then file a made-up "match 7"
 won against them alone; and that a refused report left the start usable.
-Both are closed above. What it still does not stop: a victim whose page has
-no live socket (or whose other tab last said "lobby"), in a match a
-co-player falsely ends early more than 45 s before its real end; and a
-withdrawal lost to the network. A report of ours that never reached the
-server (offline to its last re-send) also withdraws our start, and reports
-are sent with `keepalive` so one sent as the page closes still goes. **It
+Both are closed above, as is the presence hole (rule 4). What it still does
+not stop: a victim whose seated page is frozen for 3 minutes (a phone that
+suspends the tab) while the match goes on; and a withdrawal lost to the
+network. A report of ours that does not count — offline to its last
+re-send, refused, or answered 429 or 5xx — withdraws our start, and reports
+and withdrawals are sent with `keepalive` so one sent as the page closes
+still goes; a withdrawal is exempt from the per-address write limit. A page
+restored from the back-forward cache keeps withdrawing (only a real unload
+latches).  **It
 binds unmodified pages only**: the start is the player's own word, so a
 modified page can withhold it, or withdraw it before leaving, and escape the
 loss — and a host losing a duel can still END GAME so nothing is recorded.
@@ -230,8 +240,10 @@ provisional early; the rating change on the end card).*
 a game, the one ahead winning (the same place: a draw); a player's change is
 the sum over opponents of K × (score − expected), divided by the number of
 opponents — so beating a stronger player counts more, and a duel is plain
-Elo. **Teams**: each place is a side rated at its members' mean; each member
-moves by the side's sum, with their own K. **K** is 48 for a player's first
+Elo. **Teams**: each place is a side rated at its members' mean; the side's
+change is shared by its members — each moves by it times the mean side size
+over their own side's size (with their own K), so uneven sides still sum to
+zero (3 against 1: +16 each against −48; a review, 2026-11-16). **K** is 48 for a player's first
 10 rated games of a game (`provisional`), then 32; everyone starts at 1200.
 Duels, free-for-all and teams share it; co-op has none.
 
@@ -263,7 +275,7 @@ pattern got a board, a snapshot file and a play count.*
 `worker/api/games.js` lists every game the site lists and its manifest kind,
 generated from `lib/catalog.js` and `community/catalog.js` by
 `scripts/build-games-table.mjs` (`just games-table`) and committed, like
-`lib/catalog.js`, so `wrangler deploy` bundles it. The Worker refuses any id
+`lib/catalog.js`, so the Worker bundles it. The Worker refuses any id
 not in it — a result, a play count, a board, a match start; the snapshot and
 the summary leave out boards of games no longer in it — and a result of
 another kind than its game's, except a scored free-for-all of a co-op game
@@ -433,7 +445,7 @@ CPU, and are not in these:
 |---|---|---|
 | Sudoku check, `solutionFor` | 2000 seeds per level: avg 0.08 ms, p95 0.10, p99.9 0.5, max 1.1 (warm); avg 3.0, max 4.9 (jitless); module load ~1.7 ms + first call ~2.5 ms on a fresh process | — |
 | Hourly snapshot | 12 boards × 100 rows + summary/index of 300 games, built, digested and all sent: median 2.0, max 5.5 ms; nothing changed: ~1.1; the App JWT on a cold isolate (RSA-2048 import + sign): 2–4 ms more | `BOARDS_PER_RUN` = 12, longest-unchecked first; only changed files are sent, over the last tree (`base_tree`); a board nobody is ranked on any more is deleted. Before: every board every run, ~4.8 ms at 30 boards and 17.5 at 120 |
-| A group's board (replays its matches, with the rating) | D1 faked as instant, 30 calls: 1000 duels median 1.8–3.2 ms warm, 5.7–9.2 jitless; ~670 four-player free-for-alls (the pair budget) 2.1 / 7.2; 50 of 16 players 0.7 / 3.4; a fresh process's first call 5–14 ms (module compile) | the newest `GROUP_REPLAY` = 1000 matches and at most `GROUP_PAIRS` = 8000 pairs of players, from the game's newest `GROUP_SCAN` = 3000 matches (worker/api/lb.js; was 2000 matches, all duels-only Elo) |
+| A group's board (replays its matches, with the rating) | D1 faked as instant, 30 calls: 500 duels median 0.7 ms warm, 2.3 jitless; ~330 four-player free-for-alls (the pair budget) 0.8 / 2.9; 16-player 0.3 / 0.9; a fresh process's first call 2–5 ms (module compile). The first budget (1000 / 8000) measured 9.2 ms jitless, at the limit | the newest `GROUP_REPLAY` = 500 matches and at most `GROUP_PAIRS` = 4000 pairs of players, from the game's newest `GROUP_SCAN` = 3000 matches (worker/api/lb.js; was 2000 matches, all duels-only Elo) |
 | A match report (16 players: canonical, three digests, settling 16 reports, the rating) | 2000 calls, D1 faked: avg 0.18 ms, p99 0.47 warm; avg 0.31, p99 0.79 jitless; first call ~8–14 ms (WebCrypto's first digest) | D1 per report: the sweep (1 select + a 3-statement batch), whether it counted (1), the void mark (1), the report and our start (1 batch), its reports (1); committing adds accounts (1), ratings (1), departures (1, only with `left`) and one batch of 3 + 2 × players statements |
 | Export | ~0.75 ms per 1000 matches | `EXPORT_PAGE` = 2000 matches a page, `?page=`, `matchesNext`; the profile's EXPORT gathers every page |
 | Room server relay (hub) | a 1 MiB message (the WebSocket limit) parsed and relayed to one member: ~3 ms; rooms hold ≤ 8 | — |
@@ -596,7 +608,7 @@ or loopback; public reads are open.
 | Sessions (id, expiry; 60 days, sliding) | D1 `sessions` | no |
 | Favourites, friends, groups, presence | D1 | no (friends see each other online unless "appear offline") |
 | Ranked matches and ratings | D1 | on boards and public profiles, unless hidden |
-| Reports not yet settled, "I am seated" starts, outcomes waiting to be read | D1 `reports` (15 min; starts 6 h) | no; in the export (`reports`); deleted with the account |
+| Reports not yet settled, "I am seated" starts, outcomes waiting to be read | D1 `reports` (15 min; starts 1 h after their last beat) | no; in the export (`reports`); deleted with the account |
 | Solo runs and runs against bots: id, game, seed, start, used, counted, daily, `vs` | D1 `runs`, kept 4 days | no; deleted with the account |
 | Wins against bots: game, count, first win, when the count was reached | D1 `bot_wins` | on the boards against bots, unless hidden; in the export (`winsAgainstBots`); deleted with the account |
 | Play counts per game | D1 `plays` | yes (summary, snapshot) |
@@ -651,10 +663,20 @@ the snapshot are skipped.
    `wrangler secret put GH_APP_KEY < key.pem` (PKCS#1 as GitHub gives it is
    fine). On the repository: enable Discussions and add a category named
    **Game feedback** (announcement-style, so only the App starts threads).
-6. **Deploy**: `wrangler deploy` (the `UserLive` class migration `v3` and the
+6. **Deploy**: `just deploy-worker` — never a bare `wrangler deploy`, which skips the games-table check (the `UserLive` class migration `v3` and the
    hourly cron come with it).
 7. Check: sign in on the site with each provider; play a ranked game with a
    second account; wait for :07 past the hour and look at the `stats` branch.
+
+## Deploying the Worker
+
+**Always `just deploy-worker`, never a bare `wrangler deploy`.** It fetches
+the registry's games (`just community`) and checks the Worker's table of
+games against them (`just check-games`) before deploying: a Worker whose
+table lacks a game refuses that game's play counts and results (a review,
+2026-11-16: Bubble Rush was missing from this branch's table). After a pin
+PR that adds a game or changes one, the submission check warns; regenerate
+with `just games-table` and commit before deploying.
 
 ## Deploying the ratings and integrity changes (branch `social-ratings`, 2026-11-16)
 
@@ -690,7 +712,7 @@ from `worker/`:
 
 1. `wrangler d1 migrations apply arcade --remote` (applies 0003 only; check
    with `wrangler d1 migrations list arcade --remote`).
-2. `wrangler deploy`.
+2. `just deploy-worker` (never a bare `wrangler deploy`).
 3. Check: signed in, play Neon Survival alone for a minute — "Counted on the
    leaderboard."; a Sudoku solved alone appears on its board as a time.
 
@@ -710,7 +732,7 @@ deployed before it — every run start and solo report would fail. So, from
 1. `wrangler d1 migrations list arcade --remote` — shows what is pending
    (0003 too, if it still is).
 2. `wrangler d1 migrations apply arcade --remote` — applies them in order.
-3. `wrangler deploy`.
+3. `just deploy-worker` (never a bare `wrangler deploy`).
 4. Check, signed in: win a Tic Tac Toe against the bot — "Counted: 1 win
    against bots."; the leaderboard's Tic Tac Toe → Against bots lists you;
    its Ranked board does not. Once the web-games pin moves past 4cc6e1a:
@@ -744,8 +766,8 @@ or 404), so the page sends no win; nothing breaks while it waits.
   winner's word, not without the leaver's start, not while they are online
   in the game, not when they report it, not with a start their own report
   used up, not for a made-up match number, not after a withdrawal, not
-  after a refused report of theirs, not while their socket says they are in
-  the game even appearing offline, an emptied side's empty slot, free-for-all
+  after a refused report of theirs, not while their seated page still beats
+  even with a second page on the home screen (the review's repro), an emptied side's empty slot, free-for-all
   confirmed by two, not by one; with no server: a 1v1 emptied side, 2v2 with
   one leaver ahead, drawn and behind); a missing account in
   the roster; two last reports at once; six commits for one player at once;

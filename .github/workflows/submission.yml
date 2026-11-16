@@ -63,6 +63,20 @@ jobs:
           CHROME: /usr/bin/google-chrome
           GITHUB_TOKEN: ${{ github.token }}
         run: node scripts/check-submission.mjs --base "origin/${{ github.base_ref }}" --out submission
+      # A new pin can add a game or change one's kind or boards: the room
+      # server's table of games (worker/api/games.js) then needs regenerating
+      # before the Worker is deployed. The contributor cannot change it (a
+      # submission edits registry/ only), so this only warns: after merging,
+      # `just games-table`, commit, and `just deploy-worker` (docs/accounts.md).
+      - name: The Worker's table of games (a warning, not a refusal)
+        if: always()
+        continue-on-error: true
+        run: |
+          if ! node scripts/build-games-table.mjs --check; then
+            echo "::warning::worker/api/games.js is stale for this pin: after merging, run just games-table, commit, then just deploy-worker"
+            echo "**worker/api/games.js is stale for this pin**: after merging, \`just games-table\`, commit, then \`just deploy-worker\`." >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
       - name: Keep the result for the report
         if: always()
         uses: actions/upload-artifact@v7
