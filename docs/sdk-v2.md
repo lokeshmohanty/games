@@ -455,6 +455,7 @@ These fields add to the base `game.json` (platform.md, "`game.json`"):
 | `"tick"`, `"viewRate"` | managed and real-time: steps and views per second |
 | `"wasm"` | with `runtime: "wasm"` only: the module's path inside the folder |
 | `"rules"` | a Markdown file in the folder (`"RULES.md"`): the rules, shown by the shell on a first open and behind "?" (below) |
+| `"leaderboard"` | `false`: no online boards for this game (a base field, platform.md "`game.json`"; default `true`) |
 
 **Rules** (Lokesh, 2026-11-15: "the first time the user opens it, a
 screen with the game rules (with examples) … and a '?' button so that the

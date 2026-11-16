@@ -43,8 +43,10 @@ connectivity detail moved to docs/index.md "The party API" / "Connectivity").
   for 10 games; the rating change on the end card; the Worker's generated
   table of games (worker/api/games.js); no migration. Deploy:
   `just deploy-worker` after the merge (docs/accounts.md "Deploying the
-  ratings and integrity changes"). Parallel: `social-friends` (friends,
-  groups, profile UI, migration 0005).
+  ratings and integrity changes"). Also optional boards: `"leaderboard":
+  false` for Tic Tac Toe, Connect 4, Undercover; Draw & Guess on web-games
+  branch `no-board-draw-guess` (../web-games-dg, 5521041), its pin to move.
+  Parallel: `social-friends` (friends, groups, profile UI, migration 0005).
 - **Real-device testing** on Lokesh's Android phone (scanning, installing,
   Neon Fission, web-app start-up time). iOS and Firefox's install hints remain
   unverified (docs/index.md "Honest gaps").

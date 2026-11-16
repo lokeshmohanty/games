@@ -214,8 +214,9 @@ departure that lands right at the end (one saw the grace run out, one not):
 that voids the match, as any disagreement does.
 
 **Managed games only.** Only a managed game (`lib/sdk-managed.js`) knows a
-match's number as it begins, so only managed games send starts: Connect 4,
-Tic Tac Toe, Neon Fission, Light Cycles, Sudoku, Draw & Guess. In a game
+match's number as it begins, so only managed games send starts: Neon
+Fission, Light Cycles, Sudoku (and Draw & Guess until its pin moves to a
+manifest without boards). In a game
 that runs its own matches (Neon Bid, Battleship, Liar's Dice) a departure is
 never recorded; the leaver gets nothing, and the others' match counts with
 them only.
@@ -271,6 +272,39 @@ table's; `@level` boards are SOLO's only. `just games-table --check` (in
 `just test`, the platform CI check, and `just deploy-worker`) fails when a
 catalog moved on — a registry pin that adds a game needs the table
 regenerated before the Worker is deployed, or that game simply does not rank.
+
+## Games without boards
+
+*Lokesh, 2026-11-16: "Leaderboard is optional, remove it for games which
+don't make sense (like tic-tac-toe since its a solved game)" — he chose Tic
+Tac Toe (all seven language versions), Connect 4, Undercover and Draw &
+Guess.*
+
+A manifest may say **`"leaderboard": false`** (default true; validated by
+`scripts/manifest.mjs`, carried into the catalog by `catalog-lib.mjs`, and
+into the Worker's table as `NO_BOARD`, `worker/api/games.js`). For such a
+game:
+
+- **The page** (`lib/account.js` `boardless`) sends no report, asks for no
+  run (alone or against bots) and posts no match start, silently — no
+  "Not ranked" toast; the end card has no rating line. The device's own
+  stats (`lib/stats.js`) still count it, wins and losses.
+- **The Worker** refuses a result (`{ counted: false, why: "this game has no
+  leaderboard", code: "no-board" }`), a run (400, `code: "no-board"`), a
+  match start, and a win against bots; its boards and levels answer **404**;
+  ratings and wins against bots of it are left out of profiles, `GET
+  /api/me/matches` and the snapshot. Tic Tac Toe and Connect 4 are out of
+  `BOTS`. Its **play count** still lands and is still in the summary: a
+  count is not a board.
+- **The leaderboard view** does not list it; an old `?game=connect4` link
+  shows the first game with a board.
+- **Existing rows** — the live D1 has `ratings` and `bot_wins` rows for
+  `connect4` and `tic-tac-toe-js` — are kept (no destructive migration) and
+  simply not served; the export still includes them, as the player's data.
+- **Draw & Guess** is in web-games: its manifest change is on web-games
+  branch `no-board-draw-guess` (commit 5521041); until the pin moves it is
+  still ranked, and after, it is not — the table follows the catalog (`just
+  games-table`).
 
 ## Solo runs (harder to fake)
 
@@ -431,8 +465,7 @@ ceiling — here a daily cap), within the free plan. Contract:
 `worker/api/bots.js`.*
 
 **Only the games in `BOTS` (worker/api/bots.js) have one** — every game
-with bots and a winner: Tic Tac Toe (`tic-tac-toe-js`, the listed one),
-Connect 4, Neon Fission, Neon Bid, Battleship, Liar's Dice, Light Cycles,
+with bots, a winner and boards: Neon Fission, Neon Bid, Battleship, Liar's Dice, Light Cycles,
 Sudoku. Neon Survival is co-op (nobody wins); Draw & Guess and Undercover
 have no bots. Adding a game is one entry (its `minMs`).
 
@@ -490,8 +523,8 @@ report's own trip adds back time, but nothing guarantees it.
 
 | Game | `minMs` | The fastest legal win, and how it was found |
 |---|---|---|
-| `tic-tac-toe-js` | 0.8 s (floor 1.8) | the bot (win, block, centre, first free) is deterministic: every human line searched, a win needs at least 3 bot moves × 600 ms (4 moving second); 15 of 505 lines win. Played in the browser: a 4-move fork took 3.8–4.3 s from the run |
-| `connect4` | 2.6 s (floor 3.6) | depth-5 minimax, deterministic: an exhaustive search proved no win within 6 human moves (first) or 5 (second), so at least 6 bot moves × 600 ms; a depth-8 human searcher's fastest of 8 wins in 20 games took 11 bot moves (6.6 s) |
+| ~~`tic-tac-toe-js`~~ (no boards since 2026-11-16) | 0.8 s (floor 1.8) | the bot (win, block, centre, first free) is deterministic: every human line searched, a win needs at least 3 bot moves × 600 ms (4 moving second); 15 of 505 lines win. Played in the browser: a 4-move fork took 3.8–4.3 s from the run |
+| ~~`connect4`~~ (no boards since 2026-11-16) | 2.6 s (floor 3.6) | depth-5 minimax, deterministic: an exhaustive search proved no win within 6 human moves (first) or 5 (second), so at least 6 bot moves × 600 ms; a depth-8 human searcher's fastest of 8 wins in 20 games took 11 bot moves (6.6 s) |
 | `neon-fission` | 1.2 s | the rules allow a win after one bot move (0.6 s: load a corner, burst it into the bot's cell); a search over the 54 cells found none within 3 human moves for 3 bot seeds (1.8 s, searched, not proven for every seed), so two bot moves, 1.2 s, refuses no real win; a greedy human's fastest of 153 wins in 300 games took 27 s |
 | `neon-bid` | 37 s (floor 38.4) | fixed: 12 lots, each ending with a 3.2 s show, and the result only after the last (lib/rounds.js onFinish) — 38.4 s whatever anyone bids |
 | `lokeshmohanty/battleship` | 8.5 s (floor 9.9) | 12 fleet cells, one shot a volley, 0.9 s resolve between volleys: 11 × 0.9 = 9.9 s; fastest of 9640 simulated wins: 14 volleys, 11.7 s |
@@ -512,7 +545,7 @@ saying when the count was reached, and a note that it is kept apart;
 signed out, the bar says to sign in and beat the bots alone. A `?vs=bots`
 link for a game without the board shows its Ranked board instead. The
 empty board's SINGLE PLAYER goes to `./?game=<id>&fresh=1&mode=bots`. The profile lists the wins under the ratings, not in
-them ("Wins against bots: Tic Tac Toe 1"); a counted win's toast says
+them ("Wins against bots: Neon Fission 1"); a counted win's toast says
 "Counted: 3 wins against bots." Not in the hourly snapshot, so no offline
 copy.
 
@@ -634,9 +667,10 @@ digest `start` / `counted`; a free-for-all or teams board's rated games in
    `just games-table` and commit it.
 2. `just deploy-worker` (runs both of the above, then `wrangler deploy` in
    `worker/`).
-3. Check: two signed-in players finish a Connect 4 — both end cards say
+3. Check: two signed-in players finish a Neon Fission — both end cards say
    "Rating +24 → 1224 · provisional"; the leaderboard's Neon Bid board shows
-   "Rating"; `GET /api/lb/nobody/x` answers 400.
+   "Rating"; `GET /api/lb/nobody/x` answers 400; `GET /api/lb/connect4`
+   answers 404 and a finished Connect 4 sends no report.
 
 Order with the site: the site and the Worker can go in either order. A page
 from before (cached by the service worker) sends no `seats`, so its solo
@@ -718,19 +752,26 @@ or 404), so the page sends no win; nothing breaks while it waits.
   boards of 120 friends and 121 members; the group board's query plan
   (`EXPLAIN QUERY PLAN` through `wrangler d1 execute`); a single id at the
   end with `seats` 2 is not solo; the export's runs, reports, feedback posts
-  and presence. `MATCH_GRACE_MS` is 3 s there.
+  and presence; games without boards (a Connect 4 result refused, its
+  boards 404, no run or match start, old rows not served, the play count
+  still lands). `MATCH_GRACE_MS` is 3 s there. `just test-submission`
+  checks the `leaderboard` field and that the catalog carries it.
 - `just test-social` — the whole flow in two browsers at 390×844, and a
   Neon Survival run played alone: issued, reported under its run, counted;
   a Light Cycles round alone (skipped while the served Light Cycles has no
-  score: build from the branch, below); a Tic Tac Toe won against the bot
-  (run asked for as the match begins, reported once, PLAY AGAIN asks for a
-  new one, counted on the board against bots and not the ranked one), and
-  the board in Paper light, Paper dark and Neon (`NEON_SHOTS=dir` saves
-  screenshots). Since 2026-11-16 also: the end card's "Rating +24 → 1224 ·
-  provisional", filled in place and inside the screen; PLAY AGAIN, the
-  guest's page saying it is seated, Bo leaving — Ana's report names him,
-  waits out the grace, counts, and Bo has a loss; and an abandoned solo
-  run never filing a later two-seat match as solo.
+  score: build from the branch, below); against bots (since 2026-11-16):
+  Tic Tac Toe asks for no run and sends nothing; Neon Fission asks for its
+  run as the match begins, a win handed over by removing the bot is not
+  reported, and a win through the account layer counts on the board
+  against bots and not the ranked one; the board in Paper light, Paper dark
+  and Neon (`NEON_SHOTS=dir` saves screenshots). Since 2026-11-16 also: a
+  Connect 4 between Ana and Bo is played but not reported (no end-card
+  line, the device's stats still count it); Neon Fission with Bo leaving —
+  his page said it was seated, Ana's report names him, waits out the grace
+  and counts, her end card says "Rating +24 → 1224 · provisional" in place
+  and inside the screen, and Bo has a loss; the leaderboard strip without
+  games that have no boards, an old `?game=connect4` falling back; and an
+  abandoned solo run never filing a later two-seat match as solo.
 - To play Light Cycles from the `light-cycles-solo` branch:
   `NEON_LOCAL_REPOS=lokeshmohanty/web-games=../web-games-lc
   NEON_PIN_OVERRIDE=lokeshmohanty/web-games=<sha> node

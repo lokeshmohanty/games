@@ -73,6 +73,7 @@ game's own scripts and stylesheets.
 | `seats` | `{ min, max }`, 1 ≤ min ≤ max ≤ 16 |
 | `players` | `{ min, max }`: the people at the table, for a `local` game |
 | `bots` | `true`/`false`: can the host fill seats with bots |
+| `leaderboard` | `true` (default) / `false`: online boards for it — ranked, alone, against bots. `false` for a game where a ranking means nothing (Lokesh, 2026-11-16: Tic Tac Toe, a solved game; Connect 4; the party games Undercover and Draw & Guess): no reports, runs or boards, no rating on the end card; the device's own stats still count (docs/accounts.md "Games without boards") |
 | `tags`, `categories`, `preview` | portal filters; sections (`arcade` · `party` · `strategy` · `puzzle` · `examples`); preview gif path |
 | `license` | an OSI licence that allows redistribution (the list is in `scripts/manifest.mjs`) |
 | `author`, `repo` | GitHub user, `https://github.com/…` |
