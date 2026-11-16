@@ -14,12 +14,10 @@
  */
 import { existsSync } from "node:fs";
 import { homedir } from "node:os";
-import { dirname, join, resolve as resolvePath } from "node:path";
-import { fileURLToPath } from "node:url";
+import { join } from "node:path";
 import { serve, gameFrame, readyToClick } from "./serve.mjs";
 import { loadPlaywright } from "./playwright.mjs";
 
-const ROOT = resolvePath(dirname(fileURLToPath(import.meta.url)), "..");
 const SITE = await serve(8733);
 const PARTY = SITE.url("?party");
 const TIMEOUT = 40_000;

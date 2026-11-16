@@ -20,12 +20,9 @@
  */
 import { existsSync, mkdtempSync, readdirSync, renameSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
-import { dirname, join, resolve as resolvePath } from "node:path";
-import { fileURLToPath } from "node:url";
+import { join, resolve as resolvePath } from "node:path";
 import { gameScope, readyToClick, serve } from "./serve.mjs";
 import { loadPlaywright } from "./playwright.mjs";
-
-const ROOT = resolvePath(dirname(fileURLToPath(import.meta.url)), "..");
 
 /** Where the browser lives. Bundled browsers do not run on NixOS. */
 function chromePath() {

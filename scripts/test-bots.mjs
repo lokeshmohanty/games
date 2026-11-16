@@ -22,12 +22,10 @@
  */
 import { existsSync } from "node:fs";
 import { homedir } from "node:os";
-import { dirname, join, resolve as resolvePath } from "node:path";
-import { fileURLToPath } from "node:url";
+import { join } from "node:path";
 import { serve, gameScope, readyToClick } from "./serve.mjs";
 import { loadPlaywright } from "./playwright.mjs";
 
-const ROOT = resolvePath(dirname(fileURLToPath(import.meta.url)), "..");
 const SITE = await serve(8734);
 const url = SITE.url;
 // The portal's address (LEAVE PARTY goes there): the shell with no query.
