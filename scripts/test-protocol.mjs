@@ -187,7 +187,18 @@ try {
 	check("…and no step the test does not know about", !extra.length, extra.join(", "));
 
 	// Back to the lobby: the host's `end`, then everyone's `unmount`.
-	await frames[0].evaluate(() => window.fixtureEnd());
+	// Seen once on a loaded GitHub runner (2026-11-16): the host's frame had
+	// been detached by here. party.js remounts a host's game as a guest's
+	// when the crown moved off it for longer than CROWN_SETTLE_MS (a link
+	// blip under load); this says what the host believed then, and takes
+	// the frame that is there now, so the run still checks its messages.
+	let endFrame = frames[0];
+	if (endFrame.isDetached()) {
+		const state = await host.evaluate(() => ({ self: window.__party.room.selfId, host: window.__party.room.hostId(), game: window.__party.game }));
+		console.log(`  info the host's game frame was remounted before the end: ${JSON.stringify(state)}`);
+		endFrame = await gameFrame(host, TIMEOUT);
+	}
+	await endFrame.evaluate(() => window.fixtureEnd());
 	await host.locator(".game-frame").waitFor({ state: "detached", timeout: TIMEOUT }).catch(() => {});
 
 	console.log("\nprotocol: every message against sdk/v2/protocol.json");
