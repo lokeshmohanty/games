@@ -31,7 +31,7 @@
 // impossible.
 
 import { BOTS } from "./bots.js";
-import { GAMES } from "./games.js";
+import { GAMES, NO_BOARD } from "./games.js";
 import { GAME_ID, HttpError, body, now, randomId } from "./http.js";
 import { LEVEL_IDS, verifySudoku } from "./sudoku.js";
 
@@ -112,6 +112,7 @@ export const RANKED = ["duel", "ffa", "teams", "coop"];
  * game, a level SOLO does not have).
  */
 export function boardKind(key) {
+	if (NO_BOARD.has(key.split("@")[0])) return null; // "leaderboard": false
 	const fixed = boardOf(key);
 	if (fixed) return fixed;
 	if (key.includes("@")) return null;
@@ -133,6 +134,7 @@ export async function startRun(env, me, request) {
 	const b = await body(request);
 	if (!GAME_ID.test(b.game ?? "")) throw new HttpError(400, "unknown game");
 	const vs = b.vs === "bots" ? "bots" : "solo";
+	if (NO_BOARD.has(b.game)) throw Object.assign(new HttpError(400, "this game has no leaderboard"), { code: "no-board" });
 	if (vs === "solo" && !SOLO[b.game]) throw new HttpError(400, "this game does not rank games played alone");
 	if (vs === "bots" && !BOTS[b.game]) throw new HttpError(400, "this game has no board for wins against bots");
 	const t = now();

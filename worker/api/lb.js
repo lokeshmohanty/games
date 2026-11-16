@@ -34,6 +34,7 @@ import { ELO_START, RATED, ratingDeltas, shownRating } from "./match.js";
 import { BOTS, BOTS_PER_DAY, botsBoard } from "./bots.js";
 import { boardKind, isBoardKey, levelsOf, unitOf } from "./runs.js";
 import { HttpError } from "./http.js";
+import { NO_BOARD } from "./games.js";
 import { friendIds } from "./social.js";
 
 export const MIN_GAMES = 5;
@@ -227,6 +228,8 @@ async function forGroup(env, game, kind, grp, members) {
  * is the same for everyone, so it is the one that is cached.
  */
 export async function leaderboard(env, me, game, scope = "global", vs = null) {
+	// "leaderboard": false (Lokesh, 2026-11-16): no board of any kind; its old rows stay, unserved.
+	if (NO_BOARD.has(game.split("@")[0])) throw new HttpError(404, "this game has no leaderboard");
 	if (vs === "bots") return againstBots(env, me, game, scope);
 	if (!isBoardKey(game)) throw new HttpError(400, "unknown game");
 	const kind = boardKind(game);

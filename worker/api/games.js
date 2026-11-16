@@ -25,3 +25,18 @@ export const GAMES = {
 	"tic-tac-toe-ts": "duel",
 	"undercover": "local",
 };
+
+// Games whose manifest says "leaderboard": false (Lokesh, 2026-11-16: a
+// ranking means nothing there): known, counted as played, never ranked —
+// no results, runs, wins against bots or boards.
+export const NO_BOARD = new Set([
+	"connect4",
+	"tic-tac-toe-c",
+	"tic-tac-toe-go",
+	"tic-tac-toe-html",
+	"tic-tac-toe-js",
+	"tic-tac-toe-python",
+	"tic-tac-toe-rust",
+	"tic-tac-toe-ts",
+	"undercover"
+]);

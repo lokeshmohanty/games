@@ -85,7 +85,7 @@
 // "+12 → 1534" (lib/account.js endCard); so does a repeat after it counted.
 
 import { botWinsOf, reportBotsWin } from "./bots.js";
-import { GAMES } from "./games.js";
+import { GAMES, NO_BOARD } from "./games.js";
 import { HttpError, body, now, randomId, sha256 } from "./http.js";
 import { SOLO_PER_DAY, boardKind, checkSoloRun, claimRun } from "./runs.js";
 
@@ -315,7 +315,7 @@ export async function summary(env) {
  */
 export async function startMatch(env, me, request) {
 	const b = await body(request);
-	if (typeof b.game !== "string" || !RATED.includes(GAMES[b.game])) throw new HttpError(400, "only a ranked game with a winner records who began it");
+	if (typeof b.game !== "string" || !RATED.includes(GAMES[b.game]) || NO_BOARD.has(b.game)) throw new HttpError(400, "only a ranked game with a winner records who began it");
 	if (typeof b.run !== "string" || !b.run || b.run.length > 40) throw new HttpError(400, "run is the party's run id");
 	if (!Number.isInteger(b.match) || b.match < 0) throw new HttpError(400, "match is the match's number in its run");
 	await env.DB.prepare("INSERT OR REPLACE INTO reports (match, account, digest, payload, at) VALUES (?, ?, 'start', '', ?)")
@@ -343,6 +343,8 @@ export async function withdrawStart(env, me, request) {
 export async function report(env, me, request) {
 	const b = await body(request);
 	if (typeof b.game !== "string" || !GAMES[b.game]) throw new HttpError(400, "unknown game");
+	// "leaderboard": false in its manifest: nothing of it is ranked (the page does not send this).
+	if (NO_BOARD.has(b.game)) return { counted: false, why: "this game has no leaderboard", code: "no-board" };
 	if (typeof b.run !== "string" || !b.run || b.run.length > 40) throw new HttpError(400, "run is the party's run id (played alone: the server's, POST /api/run/start)");
 	const match = Number.isInteger(b.match) ? b.match : 1;
 	if (b.kind === "local") return { counted: false, why: "one-phone games are not ranked" };
