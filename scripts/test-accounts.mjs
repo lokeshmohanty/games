@@ -62,9 +62,12 @@ console.log("\naccounts: the rating (worker/api/match.js ratingDeltas), no serve
 	const ahead = toAccounts({ kind: "teams", ranking: [["host", "a2"], ["b1"]], roster: ro, left: ["b2"], teams: tm });
 	const dA = sideDeltas(ahead.sides, ahead.forfeits, new Map());
 	check("2v2, one leaver, A ahead: [[A2, H], [B1, B2]] — no third side", JSON.stringify(ahead.places) === JSON.stringify([["A2", "H"], ["B1", "B2"]]), ahead.places);
-	check("…B1 loses to team A only — the sides' changes sum to zero — and B2 takes a loss too", Math.abs(dA.get("B1") + dA.get("H") + dA.get("A2")) < 1e-9 && dA.get("B1") < 0 && dA.get("B2") < 0 && dA.get("H") > 0, [...dA]);
+	check("…B1 loses to team A only, sized as the two it began with: −K/2, not the whole side's −1.5 × that", Math.abs(dA.get("B1") + ELO_K_PROVISIONAL / 2) < 1e-9 && dA.get("B2") < 0 && dA.get("H") > 0, [...dA]);
+	check("…and the four changes sum to zero", Math.abs(dA.get("B1") + dA.get("B2") + dA.get("H") + dA.get("A2")) < 1e-9, [...dA]);
 	const uneven = ratingDeltas("teams", [["a", "b", "c"], ["d"]], new Map(["a", "b", "c", "d"].map((x) => [x, est(1200)])));
 	check("teams of 3 against 1: zero-sum, each of the three a third of the one's loss", Math.abs([...uneven.values()].reduce((x, y) => x + y, 0)) < 1e-9 && Math.abs(uneven.get("a") * 3 + uneven.get("d")) < 1e-9 && uneven.get("d") < 0, [...uneven]);
+	const lone = ratingDeltas("teams", [["a"], ["b", "c", "d", "e", "f", "g", "h"]], new Map());
+	check("1 against 7: the one's swing is capped at 2 × their share (never past K)", Math.abs(lone.get("a")) <= ELO_K_PROVISIONAL + 1e-9 && lone.get("a") > 0, [...lone]);
 	// The same in a draw: the others' draw stays a draw; only the leaver loses.
 	const drawn = toAccounts({ kind: "teams", ranking: [["host", "a2", "b1", "b2"]], roster: ro, left: ["b2"], teams: tm });
 	const dT = sideDeltas(drawn.sides, drawn.forfeits, new Map());
@@ -515,6 +518,20 @@ try {
 		check("its play count still lands (counts are not a board)", (await call("POST", "/api/stats/played", { body: { game: "undercover" } })).body.counted === true);
 	}
 
+	console.log("\naccounts: a game with more than one kind of result (Bubble Rush)");
+	{
+		const ps = await Promise.all(["Bra", "Brb", "Brc", "Brd"].map(async (n) => { const t = await testLogin(n); return { t, id: await id(t) }; }));
+		const G = "lokeshmohanty/bubble-rush";
+		const teams = { game: G, run: "br1", match: 1, kind: "teams", ranking: [["pa", "pb"], ["pc", "pd"]], roster: { pa: ps[0].id, pb: ps[1].id, pc: ps[2].id, pd: ps[3].id }, seats: 4 };
+		let r;
+		for (const p of ps) r = await report(p.t, teams);
+		check("a Bubble Rush teams result counts (its manifest is ffa; the table lists teams too)", r.status === 200 && r.body.counted === true, r.body);
+		const lb = await call("GET", `/api/lb/${G}`);
+		check("…on its one board, of its manifest's kind, by rating", lb.body.kind === "ffa" && lb.body.rows.length === 4 && lb.body.rows[0].elo > 1200, lb.body);
+		r = await report(ps[0].t, { ...teams, run: "br2", kind: "duel", ranking: [["pa"], ["pb"]] });
+		check("…while a duel result for it is still refused", r.status === 400 && /ffa game/.test(r.body.error), r.body);
+	}
+
 	console.log("\naccounts: guests in a free-for-all");
 	{
 		const gus1 = await testLogin("Gia");
@@ -574,6 +591,15 @@ try {
 		check("not while their seated page still beats — even with a second page on the home screen", r.body.counted !== true && (await ratingIn(lou, "lokeshmohanty/battleship")).games === 1, r.body);
 		home.close();
 		await new Promise((res) => setTimeout(res, 400));
+		// Beats are free of the per-address write limit (120 per window); new
+		// starts are not.
+		const gateIp = "10.98.0.1";
+		const beats = [];
+		for (let i = 0; i < 130; i++) beats.push((await call("POST", "/api/match/start", { token: lou, ip: gateIp, body: { game: "lokeshmohanty/battleship", run: "lv3", match: 1 } })).status);
+		check("130 beats from one address in a window: none refused", beats.every((x) => x === 200), beats.filter((x) => x !== 200).length);
+		let fresh = 0;
+		for (let i = 0; i < 125; i++) fresh = (await call("POST", "/api/match/start", { token: lou, ip: gateIp, body: { game: "lokeshmohanty/battleship", run: `gate${i}`, match: 1 } })).status;
+		check("…while new starts are charged like any write (the 125th is told to wait)", fresh === 429, fresh);
 		// The beat stops (they really left): then it counts — and a late
 		// report of theirs is told it counted against them.
 		await new Promise((res) => setTimeout(res, 2200)); // MATCH_STALE_MS is 2000 here

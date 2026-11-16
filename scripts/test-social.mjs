@@ -722,6 +722,9 @@ try {
 	check("a group gets a join code", /^[A-Z2-9]{8}$/.test(gcode), gcode);
 	await bo.p.goto(page(`?page=profile&join=${gcode}`));
 	check("a join link joins it", await bo.p.locator(".neon-toast", { hasText: "Joined" }).waitFor({ timeout: TIMEOUT }).then(() => true, () => false));
+	// The profile's ratings: a free-for-all's rating too (Neon Fission), marked provisional.
+	const nfCell = await ana.p.locator('tr[data-board="neon-fission"] td.n').first().textContent({ timeout: TIMEOUT }).catch(() => null);
+	check("the profile shows a free-for-all's rating, with \"prov.\" (not \"–\")", /^\d{3,4} prov\.$/.test(nfCell ?? ""), nfCell);
 	const gid = await ana.p.locator("[data-group]").getAttribute("data-group");
 	await ana.p.goto(page("?page=leaderboard", `&game=neon-fission&scope=${encodeURIComponent(`group:${gid}`)}`));
 	check("the group has its own tab on the leaderboards", (await ana.p.locator('[data-scopes] .scope[aria-pressed="true"]').textContent({ timeout: TIMEOUT })) === "Lunch table");
