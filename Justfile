@@ -12,7 +12,9 @@
 
 port := "8000"
 # This justfile, run again from inside a recipe.
-just := quote(just_executable()) + " --justfile " + quote(justfile())
+# (Quoted by hand, not with quote(): no function or attribute newer than
+# just 1.0, so Ubuntu's packaged just still reads this file.)
+just := "'" + just_executable() + "' --justfile '" + justfile() + "'"
 # pnpm, from the system or through Nix (no global install needed on NixOS).
 pnpm := if `command -v pnpm || true` != "" { "pnpm" } else { "nix shell nixpkgs#pnpm nixpkgs#nodejs_24 -c pnpm" }
 
@@ -25,14 +27,16 @@ default:
 # `*lanes`), so the other suites never run and the exit is still 0 (it bit on
 # 2026-11-15). Every recipe with a `*` parameter therefore depends on this
 # first, before anything else runs, and fails on an argument that is a
-# recipe's name. Recipes whose values are a closed set also check the values
-# themselves (test-conformance's lanes, catalog's --check). One recipe per
-# `just` call; scripts/test-just.mjs (`just test-just`) holds every variadic
-# recipe to this.
-_not-recipes recipe args:
+# recipe's name; `paths` adds the way round it for a folder named like one.
+# The scripts whose values are a closed set also refuse anything else
+# (test-conformance's lanes, build-catalog's --check). propose's game
+# folders are exempt: a folder may be called anything. One recipe per `just`
+# call; scripts/test-just.mjs (`just test-just`) holds every variadic recipe
+# to this.
+_not-recipes recipe args paths="":
     @for a in {{args}}; do \
       case " $({{just}} --summary) " in *" $a "*) \
-        echo "error: '$a' is a recipe, not an argument to {{recipe}} — did you mean to run several recipes? Run them one per \`just\` call (a path of that name: ./$a)." >&2; exit 2;; \
+        echo "error: '$a' is a recipe, not an argument to {{recipe}} — did you mean to run several recipes? Run them one per \`just\` call.{{ if paths != "" { " (A folder of that name: write ./$a.)" } else { "" } }}" >&2; exit 2;; \
       esac; \
     done
 
@@ -67,8 +71,11 @@ serve-lan: install
       echo "arcade → http://$ip:{{port}}  (camera scanning will not work; use PASTE)"
     {{pnpm}} dev --host 0.0.0.0 --port {{port}}
 
+# Pyodide comes before the build: assemble copies sdk/ (with sdk/pyodide)
+# into the site, and test-webapp runs it from there.
+
 # Every suite, in the order they get slower.
-test: test-static community build test-room test-party test-scan test-pwa test-bots test-rules-screen test-devkit test-protocol test-managed test-conformance test-webapp test-theme test-portal
+test: test-static pyodide community build test-room test-party test-scan test-pwa test-bots test-rules-screen test-devkit test-protocol test-managed test-conformance test-webapp test-theme test-portal
 
 # The cheap checks: no build, no browser, seconds. CI's first job, which gates the shards.
 test-static: check-bindings check-colours (catalog "--check") test-stats test-submission test-codec test-just test-hub test-worker-do test-plumbing test-rules
@@ -76,8 +83,8 @@ test-static: check-bindings check-colours (catalog "--check") test-stats test-su
 # CI runs the slow suites in parallel shards (.github/workflows/test.yml),
 # grouped by time so they take about as long as each other: these are the
 # groups, so a shard runs the same here. The times, measured on 2026-11-15,
-# are in docs/development.md (Tests). `just test-shard <n>` fetches the
-# community games and builds first, unless NEON_BUILT=1 (CI builds once and
+# are in docs/development.md (Tests). `just test-shard <n>` vendors Pyodide,
+# fetches the community games and builds first, unless NEON_BUILT=1 (CI builds once and
 # downloads that build into every shard); beside another run, give it its own
 # NEON_DIST and NEON_PORT_OFFSET. A suite added to `test` must go in a shard
 # too: test-just fails until it is in exactly one.
@@ -85,7 +92,7 @@ test-static: check-bindings check-colours (catalog "--check") test-stats test-su
 # One of CI's parallel test shards (1-4): `just test-shard 2`.
 test-shard n:
     @{{just}} --show _shard-{{n}} >/dev/null 2>&1 || { echo "error: there is no shard '{{n}}' (the shards are the _shard-<n> recipes)" >&2; exit 2; }
-    @[ "${NEON_BUILT:-}" = 1 ] || {{just}} community build
+    @[ "${NEON_BUILT:-}" = 1 ] || {{just}} pyodide community build
     {{just}} _shard-{{n}}
 
 _shard-1: test-bots
@@ -95,7 +102,7 @@ _shard-4: test-wrangler
 
 # The Justfile itself: no variadic recipe swallows the next recipe's name, and the CI shards drop no suite.
 test-just:
-    JUST={{quote(just_executable())}} node scripts/test-just.mjs
+    JUST='{{just_executable()}}' node scripts/test-just.mjs
 
 # No browser needed — the signalling codec round-trip.
 test-codec:
@@ -230,7 +237,6 @@ check-bindings:
 
 # Gather every game.json into lib/catalog.js (generated; committed so the
 # site needs no build step). `just catalog --check` fails if it is stale.
-[arg("args", pattern="--check")]
 catalog *args: (_not-recipes "catalog" args)
     node scripts/build-catalog.mjs {{args}}
 
@@ -258,7 +264,7 @@ test-webapp: pyodide
 
 # Everything the platform checks before it lists a game (the registry PR
 # check runs this): `just validate-game path/to/game`, `--static` for no browser.
-validate-game *args: (_not-recipes "validate-game" args)
+validate-game *args: (_not-recipes "validate-game" args "paths")
     node scripts/validate-game.mjs {{args}}
 
 # lib/stats.js with no browser: outcomes per kind, counting once, rematches.
@@ -277,13 +283,14 @@ test-accounts:
 test-social:
     node scripts/test-social.mjs
 
-# The suites that need wrangler (test-worker, test-accounts, test-social): not
-# part of `test`, but CI runs them, in a shard of their own.
+# Not part of `test`, but CI runs them, in a shard of their own.
+
+# The suites that need wrangler: test-worker, test-accounts, test-social.
 test-wrangler: test-worker test-accounts test-social
 
 # No colour named outside lib/theme.css (pages, styles, SDK, games). Pass
 # other repos to check too: `just check-colours ../web-games`.
-check-colours *dirs: (_not-recipes "check-colours" dirs)
+check-colours *dirs: (_not-recipes "check-colours" dirs "paths")
     node scripts/check-colours.mjs {{dirs}}
 
 # Themes at 390x844: the default follows the system, the picker switches and
@@ -306,7 +313,7 @@ perf *args: (_not-recipes "perf" args)
 
 # GitHub's page for proposing a repo's games (new) or a newer commit (pinned
 # and moved), filled in as far as GitHub allows: `just propose owner/repo`.
-propose repo *games: (_not-recipes "propose" repo + " " + games)
+propose repo *games: (_not-recipes "propose" repo)
     node scripts/propose.mjs {{repo}} {{games}}
 
 # The rules a contributor's pull request is judged by (check-submission.mjs),

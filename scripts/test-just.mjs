@@ -38,26 +38,38 @@ const deps = (name) => (recipes[name]?.dependencies ?? []).map((d) => d.recipe);
 console.log("\njust: no variadic recipe swallows the next recipe's name");
 const variadic = Object.values(recipes).filter((r) => r.parameters.some((p) => p.kind === "star" || p.kind === "plus"));
 check(`the variadic recipes are found (${variadic.map((r) => r.name).join(", ")})`, variadic.length >= 8 && variadic.some((r) => r.name === "test-conformance"));
+// Whose variadic arguments may be anything, recipe names included.
+const EXEMPT = { propose: "its game folders may be called anything" };
+// The variables the guard is handed, from the dump's expression tree.
+const vars = (x) => (Array.isArray(x) ? (x[0] === "variable" ? [x[1]] : x.flatMap(vars)) : []);
+const guarded = (r) => vars(recipes[r.name].dependencies.find((d) => d.recipe === "_not-recipes")?.arguments ?? []);
 for (const r of variadic) {
 	const first = deps(r.name)[0];
 	check(`${r.name}: _not-recipes is its first dependency`, first === "_not-recipes", `first is ${first ?? "nothing"}`);
+	const star = r.parameters.find((p) => p.kind === "star" || p.kind === "plus").name;
+	if (EXEMPT[r.name]) check(`${r.name}: its ${star} are not checked (${EXEMPT[r.name]}), the rest are`, !guarded(r).includes(star) && guarded(r).length > 0, guarded(r).join(","));
+	else check(`${r.name}: the guard is handed its ${star}`, guarded(r).includes(star), guarded(r).join(","));
 }
 // Only now is it safe to call them for real: the guard fails before any
-// other dependency or the body runs (a `+` parameter is given one value).
+// other dependency or the body runs. The recipe's name goes where the trap
+// puts it, last; for an exempt recipe, into its first checked parameter.
 if (!failures) {
 	for (const r of variadic) {
-		const fill = r.parameters.filter((p) => p.kind === "singular" && p.default === null).map(() => "x");
-		const res = just(r.name, ...fill, "test-webapp");
+		const singles = r.parameters.filter((p) => p.kind === "singular" && p.default === null);
+		const args = EXEMPT[r.name] ? singles.map((p, i) => (i === 0 ? "test-webapp" : "x")) : [...singles.map(() => "x"), "test-webapp"];
+		const res = just(r.name, ...args);
 		const said = `${res.stdout}${res.stderr}`;
-		check(`just ${r.name} ${[...fill, "test-webapp"].join(" ")} fails, naming the recipe`, res.status !== 0 && /'test-webapp' is a recipe|does not match pattern/.test(said), `exit ${res.status}: ${said.trim().split("\n")[0]}`);
+		check(`just ${r.name} ${args.join(" ")} fails, naming the recipe`, res.status !== 0 && /'test-webapp' is a recipe/.test(said), `exit ${res.status}: ${said.trim().split("\n")[0]}`);
 	}
 }
+const typo = spawnSync(process.execPath, [join(ROOT, "scripts/build-catalog.mjs"), "--chek"], { cwd: ROOT, encoding: "utf8", timeout: 30_000 });
+check("build-catalog refuses an argument that is not --check (it used to rewrite the catalog)", typo.status === 2 && /unknown argument '--chek'/.test(typo.stderr), `exit ${typo.status}: ${typo.stderr.trim()}`);
 const lane = spawnSync(process.execPath, [join(ROOT, "scripts/test-conformance.mjs"), "rsut"], { cwd: ROOT, encoding: "utf8", timeout: 30_000 });
 check("test-conformance refuses a lane that does not exist", lane.status === 2 && /unknown lane 'rsut'/.test(lane.stderr), `exit ${lane.status}: ${lane.stderr.trim()}`);
 
 console.log("\njust: the CI shards hold every suite, once");
 // What `just test` does that is not a suite: fetch and build (the CI build job).
-const SETUP = new Set(["community", "build"]);
+const SETUP = new Set(["pyodide", "community", "build"]);
 // The groups a list may name instead of their suites.
 const GROUPS = new Set(["test-static", "test-wrangler"]);
 const expand = (name) => (GROUPS.has(name) ? deps(name).flatMap(expand) : [name]);
