@@ -47,3 +47,14 @@ CREATE TABLE mutes (
 	at INTEGER NOT NULL,
 	PRIMARY KEY (account, muted)
 );
+CREATE INDEX mutes_muted ON mutes (muted);
+
+-- When a friend request was last pushed to someone, per pair: at most once a
+-- day, however often it is withdrawn and asked again.
+CREATE TABLE request_pushes (
+	asker TEXT NOT NULL REFERENCES accounts (id) ON DELETE CASCADE,
+	target TEXT NOT NULL REFERENCES accounts (id) ON DELETE CASCADE,
+	at INTEGER NOT NULL,
+	PRIMARY KEY (asker, target)
+);
+CREATE INDEX request_pushes_target ON request_pushes (target);

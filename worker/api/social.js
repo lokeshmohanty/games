@@ -54,6 +54,7 @@ export const GROUPS_MAX = 20;
 export const GROUP_MEMBERS_MAX = 100;
 const ONLINE_MS = 10 * 60_000; // a live page heartbeats every 4 minutes
 export const DECLINE_COOLDOWN_MS = 7 * 86_400_000;
+const REQUEST_PUSH_MS = 86_400_000; // one pushed request per pair a day
 export const INVITE_TTL_MS = 10 * 60_000;
 const INVITE_AGAIN_MS = 20_000; // one invite per friend this often
 const INVITES_PER_SENDER = 20; // friends invited per INVITE_TTL_MS
@@ -135,9 +136,11 @@ export async function listFriends(env, me) {
 	const person = (r) => ({ id: r.id, name: r.name, avatar: r.avatar ?? null });
 	const t = now();
 	// One relation per person: a friendship outranks a request left from
-	// crossing asks, and a block on either side hides everything else.
+	// crossing asks, and our own block hides everything else of theirs. A
+	// block of theirs on us is invisible: our request to them stays in our
+	// outgoing list, as any other would.
 	const friendsWith = new Set(rows.filter((r) => r.state === "friends").map((r) => r.id));
-	const blockedBy = new Set(rows.filter((r) => r.state === "blocked").map((r) => r.id));
+	const blockedBy = new Set(rows.filter((r) => r.state === "blocked" && r.a === me.id).map((r) => r.id));
 	const seen = new Set();
 	return {
 		friends: rows
@@ -164,8 +167,9 @@ export async function addFriend(env, me, who, gate = null) {
 	const rows = await pairRows(env, me.id, other);
 	const mine = rows.find((r) => r.a === me.id);
 	const theirs = rows.find((r) => r.a === other);
-	// Blocked by them: nothing happens, and nothing says so.
-	if (theirs?.state === "blocked") return { state: "pending" };
+	// Blocked by them: everything goes as for anyone — the request is kept,
+	// in our outgoing list — but they never see it and nothing is pushed.
+	const silent = theirs?.state === "blocked";
 	if (mine?.state === "blocked") throw new HttpError(400, "you blocked them — unblock them first");
 	if (mine?.state === "friends" || theirs?.state === "friends") return { state: "friends" };
 	if (theirs?.state === "pending") return accept(env, me, them);
@@ -190,8 +194,25 @@ export async function addFriend(env, me, who, gate = null) {
 	// They asked at the same moment (crossing requests): that is a yes.
 	const crossed = await env.DB.prepare("SELECT 1 FROM friends WHERE a = ? AND b = ? AND state = 'pending'").bind(other, me.id).first();
 	if (crossed) return accept(env, me, them);
-	if (res.at(-1)?.meta?.changes) await push(env, other, { t: "friend", id: me.id, name: me.name, state: "asked" });
+	if (res.at(-1)?.meta?.changes && !silent && (await firstAskToday(env, me.id, other))) {
+		await push(env, other, { t: "friend", id: me.id, name: me.name, state: "asked" });
+	}
 	return { state: "pending" };
+}
+
+/**
+ * At most one pushed request per pair a day, however often it is withdrawn
+ * and asked again (D1 `request_pushes`). True when this one may be pushed.
+ */
+async function firstAskToday(env, asker, target) {
+	const t = now();
+	const res = await env.DB.prepare(
+		`INSERT INTO request_pushes (asker, target, at) VALUES (?, ?, ?)
+		 ON CONFLICT (asker, target) DO UPDATE SET at = excluded.at WHERE request_pushes.at <= ?`,
+	)
+		.bind(asker, target, t, t - REQUEST_PUSH_MS)
+		.run();
+	return !!res.meta?.changes;
 }
 
 /** `them` asked `me`: the friendship, within both friend caps. */
@@ -206,8 +227,15 @@ async function accept(env, me, them) {
 			"DELETE FROM friends WHERE a = ? AND b = ? AND state = 'pending' AND EXISTS (SELECT 1 FROM friends WHERE a = ? AND b = ? AND state = 'friends')",
 		).bind(me.id, them.id, them.id, me.id),
 	]);
-	if (made?.meta?.changes) await push(env, them.id, { t: "friend", id: me.id, name: me.name, state: "friends" });
-	return { state: "friends" };
+	if (made?.meta?.changes) {
+		await push(env, them.id, { t: "friend", id: me.id, name: me.name, state: "friends" });
+		return { state: "friends" };
+	}
+	// Nothing changed: they withdrew, or a crossing ask got there first. Say
+	// what is true now, so the page does not announce a friendship.
+	const now2 = await pairRows(env, me.id, them.id);
+	if (now2.some((r) => r.state === "friends")) return { state: "friends" };
+	return { state: now2.some((r) => r.a === me.id && r.state === "pending") ? "pending" : "none" };
 }
 
 /** Unfriend, withdraw — or decline, which is remembered. Never lifts a block. */
@@ -227,9 +255,11 @@ const forgetPair = (env, x, y) => [
 	env.DB.prepare("DELETE FROM mutes WHERE (account = ? AND muted = ?) OR (account = ? AND muted = ?)").bind(x, y, y, x),
 ];
 
-export async function block(env, me, other) {
+export async function block(env, me, who) {
+	const them = await findAccount(env, who, null, "id");
+	if (!them) throw new HttpError(404, "no such player");
+	const other = them.id;
 	if (other === me.id) throw new HttpError(400, "that is you");
-	if (!(await findAccount(env, other, null, "id"))) throw new HttpError(404, "no such player");
 	await env.DB.batch([
 		// Everything between us goes, except a block of theirs on us.
 		env.DB.prepare("DELETE FROM friends WHERE (a = ? AND b = ?) OR (a = ? AND b = ? AND state != 'blocked')").bind(me.id, other, other, me.id),
@@ -239,9 +269,14 @@ export async function block(env, me, other) {
 	return { state: "blocked" };
 }
 
-export async function unblock(env, me, other) {
-	await env.DB.prepare("DELETE FROM friends WHERE a = ? AND b = ? AND state = 'blocked'").bind(me.id, other).run();
-	return { state: "none" };
+/** Lift a block; a request they made while blocked goes with it. */
+export async function unblock(env, me, who) {
+	const other = (await findAccount(env, who, null, "id"))?.id ?? who;
+	const [lifted] = await env.DB.batch([
+		env.DB.prepare("DELETE FROM friends WHERE a = ? AND b = ? AND state = 'blocked'").bind(me.id, other),
+		env.DB.prepare("DELETE FROM friends WHERE a = ? AND b = ? AND state = 'pending'").bind(other, me.id),
+	]);
+	return { state: "none", lifted: !!lifted.meta?.changes };
 }
 
 export async function mute(env, me, other, on) {
@@ -269,10 +304,12 @@ export async function recentPlayers(env, me) {
 			 JOIN match_players q ON q.match = mine.match AND q.account != ?
 			 JOIN accounts a ON a.id = q.account
 			 WHERE a.hide_public = 0
-			   AND NOT EXISTS (SELECT 1 FROM friends f WHERE f.state IN ('friends', 'blocked')
+			   AND NOT EXISTS (SELECT 1 FROM friends f WHERE f.state = 'friends'
 			                   AND ((f.a = ? AND f.b = a.id) OR (f.a = a.id AND f.b = ?)))
+			   -- our blocks only: theirs on us must not show
+			   AND NOT EXISTS (SELECT 1 FROM friends f WHERE f.state = 'blocked' AND f.a = ? AND f.b = a.id)
 			 GROUP BY a.id ORDER BY at DESC LIMIT 12`,
-		).bind(me.id, me.id, me.id, me.id),
+		).bind(me.id, me.id, me.id, me.id, me.id),
 	);
 	return { players: players.map((p) => ({ id: p.id, name: p.name, avatar: p.avatar ?? null, game: p.game, at: p.at })) };
 }
@@ -456,10 +493,14 @@ export async function transferGroup(env, me, id, request) {
 	await owned(env, me, id);
 	const to = String((await body(request)).account ?? "");
 	if (to === me.id) return { id, owner: me.id };
-	if (!(await env.DB.prepare("SELECT 1 FROM group_members WHERE grp = ? AND account = ?").bind(id, to).first())) {
-		throw new HttpError(400, "the new owner must be a member");
-	}
-	await env.DB.prepare("UPDATE groups SET owner = ? WHERE id = ? AND owner = ?").bind(to, id, me.id).run();
+	// One statement: the new owner is a member at that instant (not one who
+	// left a moment ago), and we still own it.
+	const res = await env.DB.prepare(
+		"UPDATE groups SET owner = ? WHERE id = ? AND owner = ? AND EXISTS (SELECT 1 FROM group_members WHERE grp = ? AND account = ?)",
+	)
+		.bind(to, id, me.id, id, to)
+		.run();
+	if (!res.meta?.changes) throw new HttpError(400, "the new owner must be a member");
 	return { id, owner: to };
 }
 
@@ -485,6 +526,12 @@ export async function removeMember(env, me, id, account) {
 		return { removed: true };
 	}
 	if (g.owner !== me.id) throw new HttpError(403, "only its owner can remove someone");
+	// Only a member is removed (and banned); removing one again is a no-op.
+	// Nobody else can be banned ahead of time.
+	if (!(await env.DB.prepare("SELECT 1 FROM group_members WHERE grp = ? AND account = ?").bind(id, account).first())) {
+		if (await env.DB.prepare("SELECT 1 FROM group_bans WHERE grp = ? AND account = ?").bind(id, account).first()) return { removed: true };
+		throw new HttpError(404, "they are not in this group");
+	}
 	await env.DB.batch([
 		env.DB.prepare("DELETE FROM group_members WHERE grp = ? AND account = ?").bind(id, account),
 		env.DB.prepare("INSERT OR REPLACE INTO group_bans (grp, account, at) VALUES (?, ?, ?)").bind(id, account, now()),

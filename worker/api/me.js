@@ -109,6 +109,7 @@ export async function deleteMe(env, me) {
 		env.DB.prepare("DELETE FROM group_bans WHERE account = ?").bind(id),
 		env.DB.prepare("DELETE FROM invites WHERE recipient = ? OR sender = ?").bind(id, id),
 		env.DB.prepare("DELETE FROM mutes WHERE account = ? OR muted = ?").bind(id, id),
+		env.DB.prepare("DELETE FROM request_pushes WHERE asker = ? OR target = ?").bind(id, id),
 		env.DB.prepare("DELETE FROM feedback_log WHERE account = ?").bind(id),
 		env.DB.prepare("DELETE FROM accounts WHERE id = ?").bind(id),
 	]);
@@ -142,7 +143,10 @@ export async function exportMe(env, me, page = 0) {
 		matches: matches.slice(0, EXPORT_PAGE),
 		matchesPage: page,
 		matchesNext: matches.length > EXPORT_PAGE ? page + 1 : null,
-		friends: await q("SELECT a, b, state, at FROM friends WHERE a = ? OR b = ?", me.id, me.id),
+		// Not a block of theirs on us: a block is never told.
+		friends: await q("SELECT a, b, state, at FROM friends WHERE a = ? OR (b = ? AND state != 'blocked')", me.id, me.id),
+		// Groups we were removed from, and the removals we made in ours.
+		groupBans: await q("SELECT grp, account, at FROM group_bans WHERE account = ? OR grp IN (SELECT id FROM groups WHERE owner = ?)", me.id, me.id),
 		groups: await q(
 			"SELECT g.id, g.name, g.owner = ? AS owner, gm.joined FROM group_members gm JOIN groups g ON g.id = gm.grp WHERE gm.account = ?",
 			me.id,

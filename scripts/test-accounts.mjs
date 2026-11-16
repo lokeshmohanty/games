@@ -1075,6 +1075,53 @@ try {
 		check("a group says which games its members play, for its boards", Array.isArray(gv.games), gv);
 	}
 
+	console.log("\naccounts: a block stays silent; requests, groups and export edge cases");
+	{
+		const [v, wv, x] = [await person("Vee"), await person("Wes"), await person("Xia")];
+		// Vee and Wes played; then Vee blocks Wes.
+		const gm = { game: "tic-tac-toe-js", run: "block-1", match: 1, kind: "duel", ranking: [["pv"], ["pw"]], roster: { pv: v.id, pw: wv.id } };
+		await call("POST", "/api/match/report", { token: v.token, body: gm });
+		await call("POST", "/api/match/report", { token: wv.token, body: gm });
+		await call("POST", `/api/friends/${wv.id}/block`, { token: v.token });
+		const ex = (await call("GET", "/api/me/export", { token: wv.token })).body;
+		check("the blocked one's export does not show the block", !(ex.friends ?? []).some((r) => r.state === "blocked"), ex.friends);
+		check("…nor do their recent players drop the one who blocked them", (await call("GET", "/api/friends/recent", { token: wv.token })).body.players?.some((p) => p.id === v.id));
+		check("…while the blocker's leave them out", !(await call("GET", "/api/friends/recent", { token: v.token })).body.players?.some((p) => p.id === wv.id));
+		await call("POST", `/api/friends/${v.id}`, { token: wv.token });
+		await call("POST", `/api/friends/${x.id}`, { token: wv.token });
+		const out = (await call("GET", "/api/friends", { token: wv.token })).body.outgoing.map((p) => p.id);
+		check("asking someone who blocked you looks like asking anyone: it is in your outgoing list", out.includes(v.id) && out.includes(x.id), out);
+		check("…and not in theirs", !(await call("GET", "/api/friends", { token: v.token })).body.incoming.length);
+		await call("DELETE", `/api/friends/${wv.id}/block`, { token: v.token });
+		check("unblocking drops the request made while blocked", !(await call("GET", "/api/friends", { token: v.token })).body.incoming.length && !(await call("GET", "/api/friends", { token: wv.token })).body.outgoing.some((p) => p.id === v.id));
+
+		const ear = await listen(x.token);
+		for (let i = 0; i < 3; i++) {
+			await call("POST", `/api/friends/${x.id}`, { token: v.token });
+			await call("DELETE", `/api/friends/${x.id}`, { token: v.token });
+		}
+		await sleep(400);
+		check("asking, withdrawing and asking again pushes one request a day", ear.heard.filter((m) => m.t === "friend").length === 1, ear.heard);
+		ear.close();
+
+		const xc = (await call("GET", "/api/me", { token: x.token })).body.friendCode;
+		const byCode = await call("POST", `/api/friends/${xc}/block`, { token: wv.token });
+		check("blocking by friend code blocks that account", byCode.status === 200 && (await call("GET", "/api/friends", { token: wv.token })).body.blocked?.some((p) => p.id === x.id), byCode);
+		check("…and an unknown code is a 404", (await call("POST", "/api/friends/ZZZZ-ZZZZ/block", { token: wv.token })).status === 404);
+
+		const g = (await call("POST", "/api/groups", { token: v.token, body: { name: "Edge" } })).body;
+		check("removing an account that does not exist is a 404", (await call("DELETE", `/api/groups/${g.id}/members/nobody123456`, { token: v.token })).status === 404);
+		check("removing someone who is not in the group is a 404, not a ban", (await call("DELETE", `/api/groups/${g.id}/members/${x.id}`, { token: v.token })).status === 404);
+		check("…so they can still join", (await call("POST", "/api/groups/join", { token: x.token, body: { code: g.code } })).body.id === g.id);
+		const kicked = (await call("DELETE", `/api/groups/${g.id}/members/${x.id}`, { token: v.token })).body;
+		check("…and once a member, removing them works", kicked.removed === true);
+		check("transferring to someone who left is refused", (await call("POST", `/api/groups/${g.id}/owner`, { token: v.token, body: { account: x.id } })).status === 400);
+		const xe = (await call("GET", "/api/me/export", { token: x.token })).body;
+		check("export: the groups you were removed from", xe.groupBans?.some((b) => b.grp === g.id && b.account === x.id), xe.groupBans);
+		const ve = (await call("GET", "/api/me/export", { token: v.token })).body;
+		check("…and the removals you made", ve.groupBans?.some((b) => b.grp === g.id && b.account === x.id), ve.groupBans);
+	}
+
 	console.log("\naccounts: a profile's boards say their own kind and unit");
 	{
 		const prof = await call("GET", `/api/u/${A}`);
