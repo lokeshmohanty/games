@@ -50,7 +50,17 @@ const script = (src: string) =>
 // community catalog (and a lazy portal chunk) took cold FCP from 0.47 s to
 // 1.21 s (perf, 2026-11-15). The party waits for them (App: `catalogs`): it
 // needs every game registered. ?dev= (lib/bridge.js) registers its game first.
-export const catalogs: Promise<void> = script("community/catalog.js")
+// The first render paints before the catalogs count as in: index.html
+// preloads the community catalog, so it is often here at once, and the party
+// then mounted and built the game's frame in one run of already-settled
+// promises, holding the first paint back to ~1.1 s (perf, 2026-11-16). One
+// frame, or 100 ms at most (a hidden tab draws none).
+const painted = () =>
+	new Promise<void>((done) => {
+		requestAnimationFrame(() => setTimeout(done, 0));
+		setTimeout(done, 100);
+	});
+export const catalogs: Promise<void> = Promise.all([script("community/catalog.js"), painted()])
 	.then(() => NA.devGame)
 	.then(() => {
 		NA.portal?.draw?.(); // the community games' cards, on a portal already drawn

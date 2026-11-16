@@ -82,8 +82,18 @@ function throttledProxy(target, port) {
 				body = r.pipe(createGzip());
 			}
 			res.writeHead(r.statusCode, headers);
+			// A response nobody is reading any more (its page closed: a run
+			// ends while the service worker's install is still downloading)
+			// stops here. It used to go on booking the shared link for
+			// seconds, which slowed the next run's first requests (2026-11-16).
+			let gone = false;
+			res.on("close", () => {
+				gone = true;
+				r.destroy();
+			});
 			for await (const chunk of body) {
-				for (let i = 0; i < chunk.length; i += 16_384) {
+				if (gone) break;
+				for (let i = 0; i < chunk.length && !gone; i += 16_384) {
 					const part = chunk.subarray(i, i + 16_384);
 					const now = Date.now();
 					free = Math.max(free, now) + (part.length / NETWORK.downloadThroughput) * 1000;
@@ -91,7 +101,7 @@ function throttledProxy(target, port) {
 					res.write(part);
 				}
 			}
-			res.end();
+			if (!gone) res.end();
 		});
 		up.on("error", () => res.destroy());
 		req.pipe(up);
