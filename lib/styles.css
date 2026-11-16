@@ -399,6 +399,11 @@ canvas {
   color: var(--danger);
   border-color: var(--danger);
 }
+/* A person's other choices (lib/profile.js moreSheet), one per row. */
+.sheet-actions {
+  display: grid;
+  gap: 8px;
+}
 .party-game {
   display: block;
   width: 100%;
@@ -724,6 +729,30 @@ canvas {
   display: grid;
   gap: 10px;
 }
+/* "Players you just played", ADD FRIEND each (lib/account-ui.js justPlayed). */
+.just-played[hidden] {
+  display: none;
+}
+.just-played-label {
+  color: var(--ink-3);
+  font-size: 0.72rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  margin-bottom: 4px;
+}
+.just-played-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 44px;
+}
+.just-played-row span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .managed-details[hidden] {
   display: none;
 }
@@ -1034,6 +1063,28 @@ canvas {
   gap: 8px;
   padding: 6px 0;
 }
+.party-friend-who {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  min-width: 0;
+  text-align: left;
+}
+.party-friend-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.party-friend.is-away .party-friend-name {
+  color: var(--muted);
+}
+.party-friend .share-hint {
+  margin: 0;
+  font-size: 0.72rem;
+}
+.party-friends-more {
+  margin-top: 6px;
+}
 .neon-invite {
   position: fixed;
   left: 16px;
@@ -1052,6 +1103,41 @@ canvas {
 }
 .neon-invite p {
   margin: 0 0 10px;
+}
+/* Notices together (lib/account.js notices()): a party invite, friend
+   requests — stacked, each its own height, scrolling if they outgrow the
+   screen. */
+.neon-notices {
+  position: fixed;
+  left: 16px;
+  right: 16px;
+  bottom: max(16px, env(safe-area-inset-bottom));
+  z-index: 70;
+  max-width: 28rem;
+  max-height: calc(100dvh - 32px);
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  overflow-y: auto;
+}
+.neon-notices:empty {
+  display: none;
+}
+.neon-notices > .neon-invite {
+  position: static;
+  max-width: none;
+  margin: 0;
+}
+/* A long name is cut with an ellipsis, never broken mid-word. */
+.neon-invite-name {
+  display: inline-block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: bottom;
+  font-weight: 700;
 }
 .neon-invite-row {
   display: flex;
@@ -1195,6 +1281,7 @@ html[data-home="all"] .boot .site-subtab[data-tab="all"] {
   margin-bottom: 4px;
 }
 .site-menu-btn {
+  position: relative;
   display: grid;
   place-items: center;
   width: 44px;
@@ -1256,6 +1343,26 @@ html[data-home="all"] .boot .site-subtab[data-tab="all"] {
   width: 22px;
   height: 22px;
   border-radius: 50%;
+}
+/* Friend requests waiting (lib/nav.js): a count on ☰ and on your entry. */
+.site-badge {
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  box-sizing: border-box;
+  border-radius: 9px;
+  background: var(--accent);
+  color: var(--on-accent);
+  font: 700 0.7rem/18px var(--font-mono);
+  text-align: center;
+}
+.site-menu-btn > .site-badge {
+  position: absolute;
+  top: -6px;
+  right: -6px;
+}
+.site-menu-item > .site-badge {
+  margin-left: auto;
 }
 .site-menu-name {
   overflow: hidden;

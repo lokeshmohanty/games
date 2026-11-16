@@ -1,7 +1,8 @@
 // worker/api/me.js — the signed-in player's own account: profile, settings,
 // favourites, export, deletion.
 //
-//   GET    /api/me             { id, name, avatar, provider, hidePublic, appearOffline }
+//   GET    /api/me             { id, name, avatar, provider, hidePublic, appearOffline,
+//                              friendCode } — the code is given here the first time
 //   PATCH  /api/me             { name?, hidePublic?, appearOffline? }
 //   DELETE /api/me             every row of ours, at once; the session too
 //   GET    /api/me/export      all of it, as one JSON document
@@ -15,6 +16,7 @@
 
 import { linkUrl, signOut } from "./auth.js";
 import { GAME_ID, HttpError, body } from "./http.js";
+import { ensureFriendCode, handover } from "./social.js";
 
 export const profile = (a, identities = []) => ({
 	id: a.id,
@@ -25,6 +27,8 @@ export const profile = (a, identities = []) => ({
 	identities: identities.map((i) => ({ provider: i.provider, login: i.login ?? null, linked: i.linked })),
 	hidePublic: !!a.hide_public,
 	appearOffline: !!a.appear_offline,
+	// The short, rotatable code a friend link and QR carry (social.js).
+	friendCode: a.friend_code ?? null,
 });
 const identitiesOf = async (env, account) =>
 	(await env.DB.prepare("SELECT provider, login, linked FROM identities WHERE account = ? ORDER BY linked").bind(account).all()).results ?? [];
@@ -38,6 +42,7 @@ const FAV_ID = new RegExp(`^(?:contributor:${LOGIN}|collection:${LOGIN}/(?!\\.\\
 const favOk = (id) => typeof id === "string" && (GAME_ID.test(id) || FAV_ID.test(id));
 
 export async function getMe(env, me) {
+	await ensureFriendCode(env, me);
 	return profile(me, await identitiesOf(env, me.id));
 }
 
@@ -76,7 +81,9 @@ export async function patchMe(env, me, request) {
 		args.push(b[key] ? 1 : 0);
 	}
 	if (sets.length) await env.DB.prepare(`UPDATE accounts SET ${sets.join(", ")} WHERE id = ?`).bind(...args, me.id).run();
-	if (b.appearOffline === true) await env.DB.prepare("UPDATE presence SET online = 0 WHERE account = ?").bind(me.id).run();
+	// Appear offline is applied where presence is read (social.js listFriends),
+	// never written into `presence`: turning it off again then shows the
+	// player online, in their game, at once (audit D16).
 	return profile(await env.DB.prepare("SELECT * FROM accounts WHERE id = ?").bind(me.id).first(), await identitiesOf(env, me.id));
 }
 
@@ -97,9 +104,12 @@ export async function deleteMe(env, me) {
 		env.DB.prepare("DELETE FROM bot_wins WHERE account = ?").bind(id),
 		env.DB.prepare("DELETE FROM friends WHERE a = ? OR b = ?").bind(id, id),
 		env.DB.prepare("DELETE FROM presence WHERE account = ?").bind(id),
-		env.DB.prepare("DELETE FROM group_members WHERE account = ?").bind(id),
-		env.DB.prepare("DELETE FROM group_members WHERE grp IN (SELECT id FROM groups WHERE owner = ?)").bind(id),
-		env.DB.prepare("DELETE FROM groups WHERE owner = ?").bind(id),
+		// A group we own passes to its longest-standing member; ours alone goes.
+		...handover(env, id),
+		env.DB.prepare("DELETE FROM group_bans WHERE account = ?").bind(id),
+		env.DB.prepare("DELETE FROM invites WHERE recipient = ? OR sender = ?").bind(id, id),
+		env.DB.prepare("DELETE FROM mutes WHERE account = ? OR muted = ?").bind(id, id),
+		env.DB.prepare("DELETE FROM request_pushes WHERE asker = ? OR target = ?").bind(id, id),
 		env.DB.prepare("DELETE FROM feedback_log WHERE account = ?").bind(id),
 		env.DB.prepare("DELETE FROM accounts WHERE id = ?").bind(id),
 	]);
@@ -133,12 +143,19 @@ export async function exportMe(env, me, page = 0) {
 		matches: matches.slice(0, EXPORT_PAGE),
 		matchesPage: page,
 		matchesNext: matches.length > EXPORT_PAGE ? page + 1 : null,
-		friends: await q("SELECT a, b, state, at FROM friends WHERE a = ? OR b = ?", me.id, me.id),
+		// Not a block of theirs on us: a block is never told.
+		friends: await q("SELECT a, b, state, at FROM friends WHERE a = ? OR (b = ? AND state != 'blocked')", me.id, me.id),
+		// Groups we were removed from, and the removals we made in ours.
+		groupBans: await q("SELECT grp, account, at FROM group_bans WHERE account = ? OR grp IN (SELECT id FROM groups WHERE owner = ?)", me.id, me.id),
 		groups: await q(
 			"SELECT g.id, g.name, g.owner = ? AS owner, gm.joined FROM group_members gm JOIN groups g ON g.id = gm.grp WHERE gm.account = ?",
 			me.id,
 			me.id,
 		),
+		mutes: await q("SELECT muted, at FROM mutes WHERE account = ?", me.id),
+		// When a request of ours was last pushed (one a pair a day).
+		requestPushes: await q("SELECT target, at FROM request_pushes WHERE asker = ?", me.id),
+		invites: await q("SELECT sender, recipient, code, at FROM invites WHERE recipient = ? OR sender = ?", me.id, me.id),
 		sessions: await q("SELECT created, exp FROM sessions WHERE account = ?", me.id),
 	};
 }

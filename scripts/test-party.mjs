@@ -552,7 +552,8 @@ try {
 
 	console.log("\nparty: a link that cannot keep up is closed, not queued forever");
 	// A channel stuck full: everything after it waits in our own queue. Past
-	// 8 MB the link is dropped; the pair then go through the third member.
+	// 8 MB the link is dropped; the pair go through the third member until
+	// they have dialled each other again.
 	const p3Id = await p3.evaluate(() => window.__party.room.selfId);
 	const stuck = await p2.evaluate(async (peer) => {
 		const room = window.__party.room;
@@ -574,6 +575,15 @@ try {
 	await p2.evaluate((peer) => window.__party.room.makeAction("t$q").send({}, { target: peer }), p3Id);
 	const heard = await p3.waitForFunction(() => window.__heard > 0, null, { timeout: 8000 }).then(() => true, () => false);
 	check("…and messages still reach them, through the third member", heard);
+	// …but not for good: the pair dial each other again on their own, at
+	// once, not at the next roster change. Left relay-only, they split
+	// apart if their relay leaves — the host here: each guest crowned itself
+	// (2026-11-16, the losing-the-host section below, which closes the host
+	// a few seconds from now). Well inside the 15 s a relayed dial may take.
+	const relinked = await p2
+		.waitForFunction((peer) => window.__party.room.links.has(peer), p3Id, { timeout: 10_000, polling: 100 })
+		.then(() => true, () => false);
+	check("…and they link directly again on their own, with nobody joining or leaving", relinked);
 
 	console.log("\nparty: every way out asks, and everyone is told");
 	// A fourth player, so the three above stay for the succession below.
