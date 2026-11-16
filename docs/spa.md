@@ -143,9 +143,11 @@ stage.
    - It prebuilds every registered game's frame into `frames/<id>.html`
      (`scripts/prebuild-frames.mjs`: lib/bridge.js's own
      `buildFrameTemplate`, run in headless Chrome over dist/; docs/sdk-v2.md).
-     So the build needs Playwright and a Chrome (`CHROME=`, or a system
-     one); without them it warns and the shell builds frames at tap time, and
-     with `CI` set it fails instead. About 1.5 s for 17 games.
+     So the build needs Playwright (found by `scripts/playwright.mjs`, as
+     every browser script does) and a Chrome (`CHROME=`, a system one, or a
+     GitHub runner's `/usr/bin/google-chrome`); without them it warns and the
+     shell builds frames at tap time, and with `CI` set it fails instead.
+     About 1.5 s for 17 games.
    - It writes `dist/sw.js` from `sw.js`. The precache list is the
      template's own entries (icons, fonts) plus everything derived: every
      built chunk, page, lib/ script and stylesheet, frame runtime, prebuilt

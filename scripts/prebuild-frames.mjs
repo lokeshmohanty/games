@@ -19,16 +19,18 @@
 // The fonts are not in the templates (they would add ~200 KB to each), only
 // marks that the shell swaps for the fonts it already holds.
 //
-// Needs Playwright (a dev dependency) and a Chrome (CHROME=, or a system
-// one). Without a browser it skips, unless CI is set: a deploy must not
-// silently lose its prebuilt frames.
+// Needs Playwright (a dev dependency, found by scripts/playwright.mjs like
+// every other script) and a Chrome (CHROME=, a system one, or GitHub's
+// runner's /usr/bin/google-chrome). Without either it warns and skips, and
+// the shell builds every frame at tap time; with CI set it fails instead: a
+// deploy must not silently lose its prebuilt frames.
 
-import { existsSync, globSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { createServer } from "node:http";
-import { createRequire } from "node:module";
 import { homedir } from "node:os";
 import { dirname, extname, join, normalize, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
+import { loadPlaywright } from "./playwright.mjs";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 // lib/bridge.js NeonArcade.prebuiltFrame: the names it looks for.
@@ -48,10 +50,9 @@ function chromePath() {
 		.filter(Boolean)
 		.find((p) => existsSync(p));
 }
-function playwright() {
-	const found = [join(ROOT, "node_modules", "playwright"), join(homedir(), ".cache", "game-previews", "node_modules", "playwright"), ...globSync(join(homedir(), ".npm", "_npx", "*", "node_modules", "playwright"))].find(existsSync);
-	return found ? createRequire(import.meta.url)(found) : null;
-}
+// loadPlaywright exits when Playwright is not installed; a local build goes on
+// without prebuilt frames instead, so it is asked only when it is there.
+const playwright = () => (existsSync(join(ROOT, "node_modules", "playwright")) ? loadPlaywright() : null);
 
 /** `dir` over http on a free loopback port. */
 function serveDir(dir) {
