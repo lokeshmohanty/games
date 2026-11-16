@@ -9,6 +9,7 @@
 export const GAMES = {
 	"connect4": "duel",
 	"lokeshmohanty/battleship": "duel",
+	"lokeshmohanty/bubble-rush": "ffa",
 	"lokeshmohanty/draw-guess": "ffa",
 	"lokeshmohanty/liars-dice": "ffa",
 	"lokeshmohanty/light-cycles": "ffa",

@@ -14,11 +14,12 @@ groups with their own leaderboards, and feedback on games.
 | This device's results, favourites, recently played | localStorage | `lib/stats.js` |
 | Portal cards, stars, counts, account bar | the page | `lib/portal.js` |
 | Token, API calls, favourites sync, match reports, live socket | the page | `lib/account.js` |
-| Sign-in chooser, ADD FRIEND, INVITE, feedback sheet | the page | `lib/account-ui.js` |
+| Sign-in chooser, ADD FRIEND, INVITE, a pushed request's ACCEPT/DECLINE, "Players you just played", the shared friends list, feedback sheet | the page | `lib/account-ui.js` |
 | Profile, leaderboards views | the page | `./?page=profile` (`src/views/Profile.tsx` + `lib/profile.js`), `./?page=leaderboard` (`src/views/Leaderboard.tsx` + `lib/leaderboard.js`); docs/spa.md |
 | The API | the room server (Cloudflare Worker) | `worker/api/*.js` |
 | Accounts, matches, ratings, friends, groups | D1 database `arcade` | `worker/migrations/0001_accounts.sql` |
 | The games the server knows, and their kinds | generated from the catalogs, bundled with the Worker | `worker/api/games.js` (`scripts/build-games-table.mjs`) |
+| Friends, invites, groups (contract), public profiles | the room server + D1 (friend codes, bans, waiting invites, mutes) | `worker/api/social.js`, `worker/api/people.js`, `worker/migrations/0005_social.sql` |
 | Solo runs: issued runs and their seeds, the per-game limits, Sudoku's check | the room server + D1 `runs` | `worker/api/runs.js`, `worker/api/sudoku.js`, `worker/migrations/0003_runs.sql` |
 | Wins against bots: their runs, the per-game minimums, the boards | the room server + D1 `runs` (`vs` 'bots'), `bot_wins` | `worker/api/bots.js`, `worker/migrations/0004_bot_wins.sql` |
 | Presence and pushed invites | Durable Object `UserLive`, one per account | `worker/api/live.js` |
@@ -568,6 +569,105 @@ fast a board climbs; nothing proves a game was played. In a Sudoku race
 the host does not time the human's solve, so `minMs` is the only bound
 there. That is why these boards are apart from the ranked ones.
 
+## Friends, groups and invites
+
+*Branch `social-friends`, 2026-11-16: an audit's defects D5–D10 and D13–D17,
+and Lokesh's decisions 1–6. Contract: `worker/api/social.js`; public
+profiles: `worker/api/people.js`; migration 0005.*
+
+**Friend requests.** A request is pushed to the other's open pages once —
+asking again, or asking a friend, pushes nothing — and shows as a notice
+with ACCEPT and DECLINE (`lib/account-ui.js` `requestNotice`), as a count
+on the ☰ button and on your entry in it (`lib/nav.js`), and at the top of
+the profile, right under "You" (at 354×696 the request and its buttons are
+on the first screen). Two people asking each other at once end as one
+friendship. **Decline is remembered**: the row becomes `'declined'` and its
+asker cannot ask again for 7 days (`DECLINE_COOLDOWN_MS`; a 429 says how
+long); withdrawing does not reset that, and the one who declined may still
+ask. A request is pushed at most once a pair a day, however often it is
+withdrawn and asked again (D1 `request_pushes`). **Block**
+(`friends.state = 'blocked'`, a = who blocked) ends the friendship and
+anything pending and drops waiting invites. It is never told: a request
+from the blocked one is kept and sits in their outgoing list like any
+other, but the blocker never sees it and nothing is pushed; their export,
+friends list and recent players do not show the block (only the blocker's
+own blocks are applied there). A request they were waiting on when blocked,
+and a decline's cooldown, stay as they were, so a block looks like a request
+nobody answered. Only the blocker lifts it; a request that waited through
+the block then shows as incoming, to answer. **Mute** (D1 `mutes`) keeps a friend but drops their invites quietly —
+the sender is answered the same. The cap (200, `FRIENDS_MAX`) counts your
+friends plus your own outgoing requests, never incoming ones (a flood
+cannot fill it), and holds on accept for both people.
+
+**Friend codes** (decision 6). Each account gets a short code — eight
+letters and digits without look-alikes, shown `ABCD-EFGH` — the first time
+its own profile is read (`ensureFriendCode`; no backfill). The friend link
+and QR carry it (`./?page=profile&u=<code>`); NEW CODE on the profile
+rotates it, and the old one answers 404. Links by account id still work
+(the id is public on boards anyway; block is the answer to someone who uses
+it) — **until we decide otherwise; nothing removes them yet**. Every lookup
+by code, `GET /api/u/<code>` or `POST /api/friends/<code>`, is charged to
+the sender's address against the write budget (120 per 5 minutes), so codes
+cannot be walked (31⁸ ≈ 8.5 × 10¹¹ of them).
+
+**Public profiles and hidden players** (D5, D6). `GET /api/u/<who>` lives
+in `worker/api/people.js` now (match.js's `publicProfile` is unused). A
+player hidden from public boards is, to anyone but a friend, only
+`{ id, name, hidden: true }` (the people in groups they joined still see
+them on the group's member list and boards — joining a group is their
+choice, and the privacy text says so) — enough to add them from their friend link —
+and a signed-in friend sees the whole profile (so the profile page asks
+with the token). In anyone's recent matches a hidden player other than the
+profile's own and the one asking reads "(hidden)" with `id: null`, and
+their score is left out. Signed in or by code, the answer is personal
+(never cached publicly). Ratings carry their board's own `kind` and `unit`
+where the server pins them (`runs.js` SOLO), so the profile shows Sudoku's
+level boards as times and Light Cycles alone in seconds (D14).
+
+**Party invites.** The party screen lists every friend, online first, then
+those not on now ("not on now — they'll see it next time, for 10 min"), so
+a friend who appears offline looks exactly like one who is not on, and
+either can be invited. Notices — an invite, friend requests — go in one
+stack at the bottom of the screen (`NeonArcade.account.notices()`).
+**Any member can invite** (decision 1): whoever knows
+the six-digit code (the host, anyone in by code) publishes it in the party
+record as member meta `pcode`, and a member in by a classic invite reads it
+there, the host's first (`lib/party.js` `sharedCode`). The friend still
+taps JOIN. **Waiting invites** (decision 2): every invite is also kept in
+D1 `invites`, one per sender and recipient, for 10 minutes
+(`INVITE_TTL_MS`); a page shows the waiting ones as it loads ("Asha invited
+you to a party", JOIN / NOT NOW, one at a time), and JOIN or NOT NOW
+deletes it. Limits: one invite to the same friend per 20 s, 20 friends per
+sender per 10 minutes, 10 waiting per recipient. The answer is
+`{ invited: true }` whether or not a page got it — a count would show
+whether a friend who appears offline has pages open (D16) — and the party
+screen says "Invited" either way. **Appear offline** is applied where
+presence is read, never written into `presence`, so turning it off shows
+the player online at once; a heartbeat also says online.
+
+The party screen draws friends online from one shared list
+(`loadFriends`), fetched on sign-in, on a live push, or when a minute old
+while something shows it — no longer on every redraw (D15).
+
+**Players you just played** (decision 4): on the end card, the signed-in
+people of the match who are not friends, blocked or hiding (their `acct`
+meta's `hide`), each with ADD FRIEND (`lib/account-ui.js` `justPlayed`, one
+hook in `lib/sdk-managed.js`); and on the profile, from `match_players`:
+the last 50 matches, a dozen people, `GET /api/friends/recent`.
+
+**Groups** (D7, D8, D10, decision 3). Removing someone bans them
+(`group_bans`) and rotates the code; the owner can let them back. The owner
+can rotate the code, rename, and hand the group to a member; the owner may
+leave, and the group then passes to its longest-standing member — as it
+does when an owner deletes their account — and the last member out deletes
+it. The group cap (20) holds on join as on create. The group page,
+`./?page=profile&group=<id>`, lists members (longest-standing first: who
+owns it next), the games its members are ranked in with links to the
+group's boards, and the owner's controls.
+
+**Profile QR** (D17): SVG, one path of whole modules with
+`shape-rendering: crispEdges`, sharp at any pixel density.
+
 ## The API
 
 Everything under the room server, `https://neon-arcade-room.lokeshmohanty.workers.dev`
@@ -587,9 +687,11 @@ address per 5-minute window (IpGate `api`).
 | `POST /api/admin/age-run` | tests only (`AUTH_TEST=1`, loopback host) | `{ run, ms }`: move a run's start into the past |
 | `GET /api/lb/<game>?scope=global\|friends\|group:<id>` | global: anyone (`&me=1`: signed in) | signed in, also `me`: your row and rank even past the top 100, or `rank: null` with `need` (more games) or `hidden`; null with no ranked game. Global without `me=1` is the one cached publicly. Also `levels`, `unit` and `botsBoard` (the game has a board against bots) when they apply |
 | `GET /api/lb/<game>?vs=bots&scope=…` | as above | the board of wins against bots: `kind: "bots"`, rows `{ rank, id, name, avatar, wins, first, at }`, `perDay`; `me` as above. No offline copy (not in the snapshot) |
-| `GET /api/u/<id>` | anyone | public profile (404 when hidden) |
-| `GET /api/friends`, `POST/DELETE /api/friends/<id>`, `POST /api/friends/<id>/invite` | signed in | |
-| `GET/POST /api/groups`, `POST /api/groups/join`, `GET/DELETE /api/groups/<id>`, `DELETE /api/groups/<id>/members/<acct>` | signed in | |
+| `GET /api/u/<id or friend code>` | anyone | public profile; hidden: a name to befriend, or all of it for a signed-in friend; by code: charged against guessing |
+| `GET /api/friends`, `GET /api/friends/recent`, `POST/DELETE /api/friends/<id or code>`, `POST/DELETE /api/friends/<id>/block`, `…/mute`, `POST /api/friends/<id>/invite` | signed in | invite → `{ invited: true }` |
+| `GET /api/invites`, `DELETE /api/invites/<sender>` | signed in | invites waiting (10 minutes) |
+| `POST /api/me/friend-code` | signed in | a new friend code; the old one dies |
+| `GET/POST /api/groups`, `POST /api/groups/join`, `GET/PATCH/DELETE /api/groups/<id>`, `POST /api/groups/<id>/code`, `POST /api/groups/<id>/owner`, `DELETE /api/groups/<id>/members/<acct>`, `DELETE /api/groups/<id>/bans/<acct>` | signed in | |
 | `GET /api/feedback/<game>` / `POST` | read: anyone; post: GitHub connected, 5 a day | posted as the player |
 | `POST /api/me/link/<github\|google>`, `DELETE /api/me/identities/<provider>` | signed in | connect / disconnect a sign-in (never the last) |
 | `wss /live` (subprotocols `["neon", token]`) | signed in | presence, invites |
@@ -607,6 +709,8 @@ or loopback; public reads are open.
 | GitHub App user token + refresh token | D1 `identities`, AES-GCM encrypted | only to post your feedback as you; Discussions on this repo only; deleted on disconnect or delete |
 | Sessions (id, expiry; 60 days, sliding) | D1 `sessions` | no |
 | Favourites, friends, groups, presence | D1 | no (friends see each other online unless "appear offline") |
+| Friend code | D1 `accounts.friend_code` | to whoever you give it; rotatable |
+| Blocks, declines (7 days), mutes, group bans, waiting invites (10 minutes), when a request was last pushed | D1 `friends`, `mutes`, `group_bans`, `invites`, `request_pushes` | no; in the export (your own rows; never a block of someone else's on you; group bans of you and by you; when your requests were pushed); deleted with the account |
 | Ranked matches and ratings | D1 | on boards and public profiles, unless hidden |
 | Reports not yet settled, "I am seated" starts, outcomes waiting to be read | D1 `reports` (15 min; starts 1 h after their last beat) | no; in the export (`reports`); deleted with the account |
 | Solo runs and runs against bots: id, game, seed, start, used, counted, daily, `vs` | D1 `runs`, kept 4 days | no; deleted with the account |
@@ -618,7 +722,8 @@ or loopback; public reads are open.
 Never stored: email; Google's token (used once to read the profile). The
 GitHub App user token is the one provider token kept — encrypted, narrow,
 and only so your feedback is your own.
-**Delete** removes every row of the account at once; matches stay in the
+**Delete** removes every row of the account at once (a group it owns
+passes to its longest-standing member); matches stay in the
 other players' histories with the name shown as "(deleted)"; snapshots already
 committed keep the old name and rating until the next one. **Export** returns
 everything as JSON.
@@ -705,8 +810,8 @@ updates, and it never sends `left` or a start (no departures from it).
 account's first sign-in) and the token columns: `wrangler d1 migrations
 apply arcade --remote` before deploying a Worker that reads them.
 
-`worker/migrations/0003_runs.sql` adds `runs` (solo runs). **Not yet applied
-or deployed (2026-11-15).** Order matters — the new Worker reads and deletes
+`worker/migrations/0003_runs.sql` adds `runs` (solo runs). **Applied and
+deployed 2026-11-15.** Order matters — the new Worker reads and deletes
 from `runs` (a report, `POST /api/run/start`, and account deletion), so
 from `worker/`:
 
@@ -724,7 +829,7 @@ needs two signed-in players").
 `worker/migrations/0004_bot_wins.sql` (branch `solo-boards`, 2026-11-15)
 adds `runs.vs` ('solo' for every existing row, or 'bots'), `runs.claim`
 (the nonce of the report that used a run up), the index `runs_vs`, and
-`bot_wins`. **Not applied or deployed.** It needs 0003
+`bot_wins`. **Applied and deployed** after the `solo-boards` merge. It needs 0003
 first (it alters `runs`), and the Worker that reads `runs.vs` must not be
 deployed before it — every run start and solo report would fail. So, from
 `worker/`, once the branch is merged:
@@ -740,6 +845,23 @@ deployed before it — every run start and solo report would fail. So, from
 
 A Worker from before 0004 never issues a run against bots (it answers 400
 or 404), so the page sends no win; nothing breaks while it waits.
+
+`worker/migrations/0005_social.sql` (branch `social-friends`, 2026-11-16)
+adds `accounts.friend_code` (with a UNIQUE index; filled lazily, so no
+backfill), `group_bans`, `invites`, `mutes` (indexed both ways) and
+`request_pushes`. Additive: it touches no
+existing row, and the deployed Worker never reads the new columns or
+tables. The new Worker reads all of them (every `/api/me`, friends list,
+invite, group join and account deletion), so **migrate first, then
+deploy**, from `worker/`, once the branch is merged:
+
+1. `wrangler d1 migrations list arcade --remote` — 0005 pending (0003 and
+   0004 are applied).
+2. `wrangler d1 migrations apply arcade --remote`.
+3. `wrangler deploy`.
+4. Check, signed in: the profile shows a friend code `ABCD-EFGH`;
+   `/api/u/<that code>` answers; an invite to a friend with no page open
+   appears when they next open the arcade.
 
 ## Testing
 
@@ -778,6 +900,17 @@ or 404), so the page sends no win; nothing breaks while it waits.
   boards 404, no run or match start, old rows not served, the play count
   still lands). `MATCH_GRACE_MS` is 3 s there. `just test-submission`
   checks the `leaderboard` field and that the catalog carries it.
+- `just test-accounts` also covers friends, invites and groups (0005):
+  friend codes (by code, any case, rotated, the old one dead, id links
+  still working, guessing cut off), one push per request, crossing
+  requests, decline remembered, block and unblock, the cap on incoming and
+  on accept (`FRIENDS_MAX` 3 there), waiting invites (kept, cleared,
+  expired — `INVITE_TTL_MS` 4 s there — rate-limited, muted), no
+  `delivered` count, appear offline off at once, a hidden player
+  (befriended by code, seen by a friend, "(hidden)" elsewhere), recent
+  players, group bans and code rotation, rename, transfer, the owner
+  leaving or deleting the account, the group cap on join (`GROUPS_MAX` 2
+  there), and ratings' kind and unit.
 - `just test-social` — the whole flow in two browsers at 390×844, and a
   Neon Survival run played alone: issued, reported under its run, counted;
   a Light Cycles round alone (skipped while the served Light Cycles has no
@@ -794,6 +927,12 @@ or 404), so the page sends no win; nothing breaks while it waits.
   and inside the screen, and Bo has a loss; the leaderboard strip without
   games that have no boards, an old `?game=connect4` falling back; and an
   abandoned solo run never filing a later two-seat match as solo.
+  Friends: a pushed request accepted from its notice,
+  "Invited" either way, NOT NOW forgetting an invite on the server, a member
+  in by a classic invite inviting, no friends refetch on party redraws, the
+  end card's "Players you just played", the ☰ badge, the profile at
+  390×844 and 354×696 in all three themes, the SVG QR, an invite waiting
+  for the next visit, and the group page removing someone.
 - To play Light Cycles from the `light-cycles-solo` branch:
   `NEON_LOCAL_REPOS=lokeshmohanty/web-games=../web-games-lc
   NEON_PIN_OVERRIDE=lokeshmohanty/web-games=<sha> node

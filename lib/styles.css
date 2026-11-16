@@ -81,7 +81,7 @@ body {
   color: var(--ink-3);
   cursor: not-allowed;
 }
-/* The same pill used as a link (e.g. "ALL GAMES" on the disconnect screen). */
+/* The same pill used as a link (e.g. "GAMES" on the disconnect screen). */
 a.neon-btn {
   display: inline-flex;
   align-items: center;
@@ -398,6 +398,11 @@ canvas {
 .party-mini.is-danger {
   color: var(--danger);
   border-color: var(--danger);
+}
+/* A person's other choices (lib/profile.js moreSheet), one per row. */
+.sheet-actions {
+  display: grid;
+  gap: 8px;
 }
 .party-game {
   display: block;
@@ -740,6 +745,30 @@ canvas {
   display: grid;
   gap: 10px;
 }
+/* "Players you just played", ADD FRIEND each (lib/account-ui.js justPlayed). */
+.just-played[hidden] {
+  display: none;
+}
+.just-played-label {
+  color: var(--ink-3);
+  font-size: 0.72rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  margin-bottom: 4px;
+}
+.just-played-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 44px;
+}
+.just-played-row span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .managed-details[hidden] {
   display: none;
 }
@@ -843,7 +872,7 @@ canvas {
 .top-fav[aria-pressed="true"] {
   border-color: var(--warn);
 }
-/* A phone has room beside ALL GAMES and PARTY for the icons only; the
+/* A phone has room beside ← GAMES and PARTY for the icons only; the
    names stay as each button's label and tooltip. */
 @media (max-width: 559px) {
   .top-btn .label {
@@ -1050,6 +1079,28 @@ canvas {
   gap: 8px;
   padding: 6px 0;
 }
+.party-friend-who {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  min-width: 0;
+  text-align: left;
+}
+.party-friend-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.party-friend.is-away .party-friend-name {
+  color: var(--muted);
+}
+.party-friend .share-hint {
+  margin: 0;
+  font-size: 0.72rem;
+}
+.party-friends-more {
+  margin-top: 6px;
+}
 .neon-invite {
   position: fixed;
   left: 16px;
@@ -1068,6 +1119,41 @@ canvas {
 }
 .neon-invite p {
   margin: 0 0 10px;
+}
+/* Notices together (lib/account.js notices()): a party invite, friend
+   requests — stacked, each its own height, scrolling if they outgrow the
+   screen. */
+.neon-notices {
+  position: fixed;
+  left: 16px;
+  right: 16px;
+  bottom: max(16px, env(safe-area-inset-bottom));
+  z-index: 70;
+  max-width: 28rem;
+  max-height: calc(100dvh - 32px);
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  overflow-y: auto;
+}
+.neon-notices:empty {
+  display: none;
+}
+.neon-notices > .neon-invite {
+  position: static;
+  max-width: none;
+  margin: 0;
+}
+/* A long name is cut with an ellipsis, never broken mid-word. */
+.neon-invite-name {
+  display: inline-block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: bottom;
+  font-weight: 700;
 }
 .neon-invite-row {
   display: flex;
@@ -1132,9 +1218,10 @@ canvas {
 }
 
 /* lib/nav.js: one row, the tabs (Games · Leaderboards · Community) and the
-   ☰ menu (Add your game, Theme, account, GitHub); Community's own tabs
-   under it. The row's height is held so the static first frame
-   (index.html) does not jump when the nav is drawn. */
+   ☰ menu (Add your game, Theme, account, GitHub); the sub-tabs of Games
+   (My Games · All Games) or Community under it. The row's height is held
+   so the static first frame (index.html) does not jump when the nav is
+   drawn; on the portal that frame draws the same row itself. */
 .site-nav {
   width: 100%;
   max-width: 1200px;
@@ -1185,15 +1272,20 @@ canvas {
   gap: 6px;
   padding-top: 8px;
 }
+/* A tap target like every other (44px; Lokesh's phone, 2026-11-15). */
 .site-subtab {
-  min-height: 36px;
+  min-height: 44px;
   padding: 0 14px;
   border: 1px solid var(--rule);
   border-radius: 999px;
   margin: 0;
   font-size: 0.85rem;
 }
-.site-subtab.is-on {
+/* The static first frame (index.html) lights the sub-tab its head script
+   chose, before lib/nav.js has run. */
+.site-subtab.is-on,
+html[data-home="mine"] .boot .site-subtab[data-tab="mine"],
+html[data-home="all"] .boot .site-subtab[data-tab="all"] {
   color: var(--on-accent);
   background: var(--accent);
   border-color: var(--accent);
@@ -1205,6 +1297,7 @@ canvas {
   margin-bottom: 4px;
 }
 .site-menu-btn {
+  position: relative;
   display: grid;
   place-items: center;
   width: 44px;
@@ -1266,6 +1359,26 @@ canvas {
   width: 22px;
   height: 22px;
   border-radius: 50%;
+}
+/* Friend requests waiting (lib/nav.js): a count on ☰ and on your entry. */
+.site-badge {
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  box-sizing: border-box;
+  border-radius: 9px;
+  background: var(--accent);
+  color: var(--on-accent);
+  font: 700 0.7rem/18px var(--font-mono);
+  text-align: center;
+}
+.site-menu-btn > .site-badge {
+  position: absolute;
+  top: -6px;
+  right: -6px;
+}
+.site-menu-item > .site-badge {
+  margin-left: auto;
 }
 .site-menu-name {
   overflow: hidden;

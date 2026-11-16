@@ -28,6 +28,8 @@ profile_for() {
     # The current gem pulses for the whole clip, so the same story: 1.35MB at
     # the default profile.
     neon-bid) echo "480 12 low" ;;
+    # Bubbles rising and wobbling the whole clip, in an upright 420x760 frame.
+    bubble-rush) echo "300 10 low" ;;
     *) echo "600 12 medium" ;;
   esac
 }

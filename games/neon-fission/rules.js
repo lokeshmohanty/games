@@ -315,8 +315,30 @@
 		return best?.i ?? legalCells(g)[0];
 	}
 
+	// How a chain is replayed (neon-fission.js), pure so it can be tested.
+	// An ordinary move stays snappy: ~1.5 s at most, however long. The move
+	// that ends the game is the one the loser most needs to read (Lokesh,
+	// 2026-11-15: a winning chain flipped half the board and the end card came
+	// at once), so it runs wave by wave within a 4.3 s budget, then holds the
+	// final board with the cells it took marked. A wave is the budget shared
+	// out (at most `maxWave`), never a fixed minimum: the longest chains seen
+	// (85 waves with bots on 8 × 12, 104 random) must still end, settle
+	// included, well inside the platform's end-card hold (lib/sdk-managed.js
+	// HOLD_MS, 6 s). Then a wave is ~40 ms.
+	const PACE = {
+		move: { placeMs: 120, budget: 1400, maxWave: 170, settleMs: 0 },
+		final: { placeMs: 250, budget: 4300, maxWave: 300, settleMs: 700 },
+	};
+
+	/** The replay of a chain of `waves` waves: { placeMs, waveMs, settleMs, total }. */
+	function pace(waves, final = false) {
+		const p = final ? PACE.final : PACE.move;
+		const waveMs = waves > 0 ? Math.min(p.maxWave, p.budget / waves) : 0;
+		return { placeMs: p.placeMs, waveMs, settleMs: p.settleMs, total: p.placeMs + waves * waveMs + p.settleMs };
+	}
+
 	globalThis.neonFissionRules = {
 		dims, MAX_WAVES, shape, capacity, newGame, inGame, alive, legal, legalCells, holdings,
-		react, nextSeat, play, skip, leave, standings, botMove,
+		react, nextSeat, play, skip, leave, standings, botMove, PACE, pace,
 	};
 })();

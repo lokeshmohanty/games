@@ -88,7 +88,7 @@
 // (`rating`: { elo, delta, provisional, rated }), so the end card can say
 // "+12 → 1534" (lib/account.js endCard); so does a repeat after it counted.
 
-import { botWinsOf, reportBotsWin } from "./bots.js";
+import { reportBotsWin } from "./bots.js";
 import { GAMES, NO_BOARD } from "./games.js";
 import { HttpError, body, now, randomId, sha256 } from "./http.js";
 import { SOLO_PER_DAY, boardKind, checkSoloRun, claimRun } from "./runs.js";
@@ -644,21 +644,6 @@ export async function matchesOf(env, account, limit = 30) {
 export async function ratingsOf(env, account) {
 	const rows = await all(env.DB.prepare("SELECT game, elo, games, wins, best FROM ratings WHERE account = ? ORDER BY games DESC").bind(account));
 	return rows.filter((r) => boardKind(r.game)).map((r) => shownRating(r));
-}
-
-/** GET /api/u/:id — a public profile, unless its owner hid it. */
-export async function publicProfile(env, id) {
-	const a = await env.DB.prepare("SELECT id, name, avatar, created, hide_public FROM accounts WHERE id = ?").bind(id).first();
-	if (!a || a.hide_public) throw new HttpError(404, "no such player");
-	return {
-		id: a.id,
-		name: a.name,
-		avatar: a.avatar,
-		since: a.created,
-		ratings: await ratingsOf(env, a.id),
-		matches: await matchesOf(env, a.id, 20),
-		botWins: await botWinsOf(env, a.id),
-	};
 }
 
 export const newRun = () => randomId(8);

@@ -89,7 +89,7 @@ whitelist is exactly `offer`, `answer`, `full`.
 |---|---|
 | `{"t":"room","code":"123456","pass":"<mac>","exp":<ms>}` | reply to `host`: the code the server drew, and the host's member pass (`pass`/`exp` absent when the deployment has no `ROOM_PASS_KEY`) |
 | `{"t":"joined","pass":"<mac>","exp":<ms>}` | reply to a successful `join` (first or rejoin), with a fresh member pass — the code and claim were good; it does **not** mean anyone is there to answer |
-| `{"t":"released"}` / `{"t":"busy"}` | reply to `release`: the claim is gone / the seat is live on another socket (another tab), nothing changed |
+| `{"t":"released"}` / `{"t":"busy"}` | reply to `release`: the claim is gone / a socket is bound to the seat, nothing changed. Whether that socket is another tab is the client's call (its seat lock, below): a socket outlives its page |
 | `{"t":"peer","id":"...","connected":true\|false,"offering":"<memberId>"[,"released":true]}` | a member arrived, came back, dropped their socket, or released their seat (`connected:false`, with `released:true` — 2026-11-13) |
 | `{"t":"offer","from":"...","sdp":"..."}` | a relayed offer |
 | `{"t":"answer","from":"...","sdp":"..."}` | a relayed answer |
@@ -243,7 +243,7 @@ Two deliberate shapes:
   displaced tab stands down — `room.detach()` closes its links with no
   `__gone` (the member id lives on in the other tab), the claim and token
   are left alone — and the party screen says "This party is open in another
-  tab" with USE THIS TAB INSTEAD (a reload, which displaces the other one).
+  tab" with USE IT HERE (a reload, which displaces the other one).
   Before 2026-11-11 the two tabs traded the seat every second, forever.
 - **One ask per socket** (2026-11-12): a socket gets one `host`, `join` or
   `release`; any later one — pipelined behind the first, or after its
@@ -441,7 +441,13 @@ a seat for a browser that moved on. **So does every other way of moving on**
 portal's START A PARTY (`?fresh=1`) or a code link (`#c=`) — `busy` shows
 "open in another tab" instead, as below — and a classic invite (`#i=`)
 releases it once the invite has linked (so a failed invite costs nothing). A
-code link to the token's own party reconnects that seat instead.
+code link to the token's own party reconnects that seat instead. A card's
+SINGLE PLAYER (`?game=…&fresh=1&mode=bots`, or a one-device game) waits for
+none of this (2026-11-15): it needs no room server, so it starts at once and
+releases the old seat in the background (a seat a live page holds is left
+alone, token and all). LEAVE PARTY with no live room in the page
+(reconnecting, RETRY, "open in another tab") gives the saved seat back the
+same way before it goes.
 
 **The network coming back redials at once** (2026-11-13). A redial backs off
 to one try per 30 s; the browser's `online` event cuts a pending backoff
@@ -458,9 +464,49 @@ party. A `release` is checked without binding; a live seat answers `busy`.
 On `busy` the token is kept and **no party is started** — a new party's token
 would replace the shared one, and the other tab's next reload would walk into
 this tab's party. The screen shows "This party is open in another tab." with
-USE THIS TAB INSTEAD (which takes the seat over by the usual 4409, and the
-other tab stands down). To host a separate party, leave the old one in the
+USE IT HERE (which takes the seat over by the usual 4409, and the other tab
+stands down; it drops `fresh` from the address first, or its reload came
+back to the same screen). To host a separate party, leave the old one in the
 tab that holds it first.
+
+**"Another tab" is a live page, not a socket** (2026-11-15, found on a
+phone). `busy` only says a socket is bound to the seat, and a socket outlives
+its page: Chrome keeps a page it navigates away from in its back/forward
+cache for up to 10 minutes *with its WebSockets open* (Chrome 156, measured:
+the server saw the close only on restore or eviction); a frozen or killed tab
+can hold one until the server notices. Trusted as "another tab", that
+stranded a phone: a reload's reconnecting page, left by a plain navigation,
+sat in the cache holding its seat, and every SINGLE PLAYER, START A PARTY and
+LEAVE PARTY said "open in another tab" until the cache let it go, ten minutes
+later. Now:
+
+- the page whose room has a seat holds a **Web Lock** `neon.seat.<id>`, from
+  the server's bind until it leaves, stands down or is cached — every tab
+  and the installed app share it, and a page that dies lets go by itself.
+  Taken with `steal` once bound, since the server gives the seat to its
+  latest claimant — never on the dial, which may still fail (review,
+  2026-11-16: a failed reconnect in a second tab stole the live tab's lock
+  and never gave it back, so the live seat read as a ghost). A page whose
+  lock is stolen while it is still live queues for it again;
+- `releaseRejoin` asks the lock on `busy`: held means a live page here (still
+  `busy`); free means a ghost, so it takes the seat (`join`, which hangs the
+  ghost up with 4409) and hands it straight back. Without Web Locks `busy`
+  stands as before;
+- a page going into the cache (`pagehide`, `persisted`) closes every room
+  socket it has, without a word (the seat is held as for a reload), and lets
+  go of the lock. Restored (`pageshow`), a room whose seat a live page took
+  stands down as for a 4409; otherwise the party reloads and its boot decides
+  by the token (reconnect, or start over if the seat was given back).
+- a party that skipped the server (a bots start) asks for no code
+  (`ensureCode`) while the token names a seat a live page holds: hosting
+  would write its token over that page's, and that page's next reload would
+  walk into this party. The classic invite stays; the next ask looks again.
+
+**After deploying this, once:** a tab still running the old script holds no
+seat lock, so the first release from a new-code page reads that tab's live
+seat as a ghost and takes it over (the old tab gets 4409 and says "open in
+another tab"; USE IT HERE gets it back). Gone once every open tab has
+reloaded onto the new build.
 
 An offerer that cannot seat a newcomer (the party is full) says so (see the
 `"sdp":"full"` relay above) and the join rejects `full` at once instead of
@@ -472,7 +518,7 @@ a reconnect uses this before navigating away.
 **A leave lands before the page goes.** Every `leave` is acknowledged by the
 server closing the socket; `NeonArcade.roomSettled()` resolves once every
 leave this page sent has been acknowledged, or after 1.5 s
-(`LEAVE_ACK_MS`). NEW PARTY, ALL GAMES, START A NEW PARTY, and accepting a
+(`LEAVE_ACK_MS`). NEW PARTY, GAMES, START A NEW PARTY, and accepting a
 `#c=`/`#i=` link into a live party all await it before navigating, and
 `releaseRejoin()` awaits its own. Without it an unload could take the frame
 down with it, and the old party would keep a seat for a browser that is
@@ -610,9 +656,11 @@ from the worker; it was removed before the first deploy.)
   above).
 - `NeonArcade.releaseRejoin()` — give back the seat the rejoin token claims
   (a `release`, never `join`+`leave`) and drop the token; resolves
-  `"released"`, `"busy"` (another tab holds the seat live: token kept,
-  nothing started — see above) or `"none"` (nothing to give back, or no
-  server: the claim lapses). Bounded by 4 s (probe timeout + leave ack).
+  `"released"`, `"busy"` (a live page of this browser holds the seat, by its
+  Web Lock: token kept, nothing started — see above; a ghost socket is taken
+  and given back instead) or `"none"` (nothing to give back, or no server:
+  the claim lapses). The token is dropped only while it still names that
+  seat. Bounded by 4 s (probe timeout + leave ack), 8 s when it takes a ghost.
 - The lobby and party screens gain **JOIN WITH CODE** (a 6-digit input) and
   the host panel gains the code, big, plus a QR of
   `<site>/?party#c=123456` (`party.html#c=` until 2026-11-15) — tiny compared with today's 70-90 module
@@ -673,12 +721,12 @@ from the worker; it was removed before the first deploy.)
 - `scripts/test-worker.mjs` (`just test-worker`, not in `just test`: it needs
   wrangler) — starts `wrangler dev` itself and drives it with node sockets
   and real browser contexts: the cross-room guess limit (a second IP
-  unaffected), NEW PARTY / ALL GAMES releasing the seat before navigating,
+  unaffected), NEW PARTY / GAMES releasing the seat before navigating,
   the reconnect screen's RETRY and START A NEW PARTY after a no-answer, a
   `#c=` link into a live party asking first, a classic invite dropping an old
   token, a reconnect with the server unreachable keeping the token and
   offering RETRY, and two tabs of one browser context sharing a token (the
-  displaced one stands down, says so, never re-dials; USE THIS TAB INSTEAD
+  displaced one stands down, says so, never re-dials; USE IT HERE
   swaps them), and a leave owed mid-redial while a second tab holds the seat
   (`release` ×4, `busy` each time, never a `join`, the live tab undisturbed).
   And (section 9) a party behind one shared address whose 10 dials went on
@@ -689,8 +737,17 @@ from the worker; it was removed before the first deploy.)
   hosts — a browser and twelve more parties; a second address opens 30 and
   is refused the 31st. Runs with a fresh random `--var ROOM_PASS_KEY` per
   run. Each browser context sends its own `CF-Connecting-IP` except
-  section 9's. Skips with a message if wrangler cannot start.
-- `scripts/test-room.mjs` — the *client* over the in-page mock: code join,
+  section 9's. Section 15 runs a browser with the back/forward cache on (as
+  a phone has it): a reconnecting page left by a plain navigation does not
+  strand its seat — the SINGLE PLAYER after it starts, the seat is given
+  back, and Back into the cached page starts over. Skips with a message if
+  wrangler cannot start.
+- `scripts/test-room.mjs` — the *client* over the in-page mock (7b: a mock
+  seeded with a ghost seat — bound to a socket no page owns — never sticks:
+  SINGLE PLAYER starts at once, START A PARTY hangs the ghost up and hosts,
+  LEAVE PARTY while reconnecting drops the token; with a second page holding
+  the seat lock, START A PARTY says "open in another tab" and USE IT HERE
+  takes the seat over): code join,
   guest reloads (three times), host reload, grace expiry, `no-answer` on a
   code nobody answers, a rejoin nobody answers keeping its claim, two
   hostless members never resolving, a full party (member reconnects, newcomer
@@ -864,7 +921,7 @@ from the worker; it was removed before the first deploy.)
   6e2b, test-worker section 8. **Residual:** a redial already *on the wire*
   when the leave comes binds as any redial does — if a second tab held the
   seat, that redial displaces it (the ordinary two-tab rule), and the leave
-  then gives back the seat that tab's USE THIS TAB INSTEAD would reclaim
+  then gives back the seat that tab's USE IT HERE would reclaim
   (its re-join then goes through as a newcomer's would — not tested). And a seat still `busy`
   after the last try because the server has not noticed our own half-open
   socket is not released; its claim lapses with the 5-minute seat grace.

@@ -112,6 +112,7 @@ arcade.managed({
 });
 arcade.on("view", ({ state }) => draw(state));  // every phone, on change only
 button.onclick = () => arcade.act({ i: 4 });    // your move; a refusal comes back as "rejected"
+arcade.idle?.();                                // optional: this view is shown (its animation is over)
 ```
 
 How it runs:
@@ -130,6 +131,27 @@ How it runs:
 - **Results.** `result()` is checked after every change. It is reported once
   on every phone (with `match`), and the shell draws the end card. PLAY
   AGAIN calls `init` again with `match + 1`.
+- **The end card waits for the last move's animation** (2026-11-15: a
+  winning chain in Neon Fission was covered by the card before the loser
+  saw a cell flip). A game that animates its moves calls `arcade.idle()`
+  whenever it has finished showing the latest view: at once when there is
+  nothing to animate, at the end of an animation, and when a tap skips one.
+  - Each `view` carries `seq`, rising by one per view on that frame, and
+    `idle {seq}` echoes the newest one shown (the runtime fills it in).
+  - Once a frame has sent `idle`, the shell holds the end card after the
+    final move until the frame is idle on the newest view it was sent, or
+    for at most 6 s (`HOLD_MS` in lib/sdk-managed.js). Every phone waits
+    for its own frame, at its own pace. A frame that goes quiet (crashed,
+    a bug) still gets its card after 6 s.
+  - Only the card waits: the result is reported, counted and sent to the
+    heir at once, as before.
+  - A game that never calls `idle` gets its card at once, as before.
+  - Call it as `arcade.idle?.()`. A phone may still run a cached shell from
+    before 2026-11-15, whose runtime has no `idle`, and a community game
+    must not throw there.
+  - A takeover keeps the hold: the heir's card waits for its own frame.
+  - Under `prefers-reduced-motion` a game should not animate, so it says
+    `idle` at once and the card is not held.
 - **Played alone, ranked.** When a signed-in player starts a game alone
   (one seat, no bots), the shell asks the arcade's server for a run before
   `init`, and `seed` is the server's: deal anything random from it and the
@@ -254,7 +276,7 @@ The schema is the authority; this table is the map.
 | Clock | `timer.open {name, rounds, phases, bots}` · `timer.do {name, op, …}` | `timer {name, ev, info, entries?, bot?}` |
 | Waiting | `wait.turn {who}` · `wait.pause {on}` | `wait {ev: "skip", who}` · `paused {on}` |
 | Secrets | `seal.listen {ch}` · `seal.send {ch, to, d}` → ok · `commit {value}` → `{digest, nonce}` · `verify {…}` → `{valid}` | `sealed {ch, d, from, to?}` |
-| Managed (Layer 2) | `act {a}` · `input {i}` | `rules {calls}` (request) → `{out}` · `view {state}` · `rejected {a, reason}` |
+| Managed (Layer 2) | `act {a}` · `input {i}` · `idle {seq}` | `rules {calls}` (request) → `{out}` · `view {state, seq}` · `rejected {a, reason}` |
 | Runtimes | `runtime.file {path}` → `{bytes, type}` (Pyodide, for `runtime: "python"`) | |
 
 What the services do, briefly. The long explanations are in the files they
