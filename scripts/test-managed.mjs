@@ -31,13 +31,12 @@
 // Every message across a frame is checked against sdk/v2/protocol.json, and
 // every Layer 2 message type must have been seen.
 
-import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { catalogue, checkTrace } from "./protocol-check.mjs";
-import { PORT_OFFSET, gameFrame, readyToClick, serve } from "./serve.mjs";
+import { PORT_OFFSET, gameFrame, readyToClick, serve, spawnServer } from "./serve.mjs";
 import { loadPlaywright } from "./playwright.mjs";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
@@ -64,10 +63,9 @@ const site = await serve(8741);
 /** The dev kit's server for a folder of games; its base URL for `game`. */
 async function devServer(folder, port, game) {
 	port += PORT_OFFSET;
-	const dev = spawn("node", [join(ROOT, "sdk/dev-server.mjs"), join(ROOT, folder), String(port)], { env: { ...process.env, NEON_PLATFORM: site.base }, stdio: "ignore" });
-	process.on("exit", () => dev.kill());
+	// Its own bind, seen: section 4 reuses section 3's port right after it.
+	const dev = await spawnServer("node", [join(ROOT, "sdk/dev-server.mjs"), join(ROOT, folder), String(port)], { env: { ...process.env, NEON_PLATFORM: site.base } }, /^serving /m);
 	const base = `http://127.0.0.1:${port}/${game}/`;
-	for (let i = 0; i < 50 && !(await fetch(base + "game.json").then((r) => r.ok, () => false)); i++) await new Promise((r) => setTimeout(r, 100));
 	return { base, stop: () => dev.kill() };
 }
 

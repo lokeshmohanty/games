@@ -10,13 +10,12 @@
 // It also checks that the catalogue was covered: a message type the shell
 // never sent or answered is listed.
 
-import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { SCHEMA, deref, validate } from "./protocol-check.mjs";
-import { PORT_OFFSET, gameFrame, serve } from "./serve.mjs";
+import { PORT_OFFSET, gameFrame, serve, spawnServer } from "./serve.mjs";
 import { loadPlaywright } from "./playwright.mjs";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
@@ -60,16 +59,8 @@ function chromePath() {
 }
 
 const site = await serve(8737);
-const dev = spawn("node", [join(ROOT, "sdk/dev-server.mjs"), join(ROOT, "scripts/fixtures"), String(DEV_PORT)], {
-	env: { ...process.env, NEON_PLATFORM: site.base },
-	stdio: "ignore",
-});
-process.on("exit", () => dev.kill());
+const dev = await spawnServer("node", [join(ROOT, "sdk/dev-server.mjs"), join(ROOT, "scripts/fixtures"), String(DEV_PORT)], { env: { ...process.env, NEON_PLATFORM: site.base } }, /^serving /m);
 const devBase = `http://127.0.0.1:${DEV_PORT}/protocol-game/`;
-for (let i = 0; i < 50; i++) {
-	if (await fetch(devBase + "game.json").then((r) => r.ok, () => false)) break;
-	await new Promise((r) => setTimeout(r, 100));
-}
 
 const { chromium } = loadPlaywright();
 const browser = await chromium.launch({ executablePath: chromePath(), args: ["--no-sandbox"] });
@@ -198,8 +189,12 @@ try {
 		console.log(`  info the host's game frame was remounted before the end: ${JSON.stringify(state)}`);
 		endFrame = await gameFrame(host, TIMEOUT);
 	}
-	await endFrame.evaluate(() => window.fixtureEnd());
-	await host.locator(".game-frame").waitFor({ state: "detached", timeout: TIMEOUT }).catch(() => {});
+	// Sent after this call has returned: `end` unmounts the very frame the
+	// call runs in, and on a slow runner the unmount beat the call's own
+	// answer ("Frame was detached", CI run 44143511384).
+	await endFrame.evaluate(() => void setTimeout(() => window.fixtureEnd(), 0));
+	const ended = await host.locator(".game-frame").waitFor({ state: "detached", timeout: TIMEOUT }).then(() => true, () => false);
+	check("the host's end takes the game down", ended);
 
 	console.log("\nprotocol: every message against sdk/v2/protocol.json");
 	const traced = (await Promise.all(pages.map((p) => p.evaluate(() => window.__sdk)))).flat();

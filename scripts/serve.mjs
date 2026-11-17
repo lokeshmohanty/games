@@ -30,24 +30,58 @@ export const PORT_OFFSET = Number(process.env.NEON_PORT_OFFSET ?? 0) || 0;
  */
 export async function serve(port, dir = SITE_DIR) {
 	port += PORT_OFFSET;
-	const server = spawn("python3", ["-m", "http.server", String(port), "--bind", "127.0.0.1"], {
-		cwd: dir,
-		stdio: "ignore",
-	});
-	const stop = () => {
-		try {
-			server.kill();
-		} catch {}
-	};
-	process.on("exit", stop);
+	const server = await spawnServer("python3", ["-u", "-m", "http.server", String(port), "--bind", "127.0.0.1"], { cwd: dir }, /Serving HTTP on/);
 	const base = `http://127.0.0.1:${port}`;
-	for (let i = 0; i < 50; i++) {
-		try {
-			if ((await fetch(base + "/index.html")).ok) break;
-		} catch {}
-		await new Promise((r) => setTimeout(r, 100));
+	return { base, url: (p) => `${base}/${p}`, stop: () => server.kill() };
+}
+
+/**
+ * Spawn a server and resolve once it says it is listening (`ready`, matched
+ * on its stdout): proof that *this* process holds the port. Answering on the
+ * port proves nothing: a suite run just before on the same port can still be
+ * shutting down, answer the check, then go, while this one failed to bind
+ * and exited unseen (suites in a CI shard run back to back, and share ports).
+ * A server that exits first (the port still taken) is started again until
+ * `ms` pass, then this throws with its last words. Killed when we exit.
+ */
+export async function spawnServer(cmd, args, opts, ready, ms = 20_000) {
+	const end = Date.now() + ms;
+	for (;;) {
+		const child = spawn(cmd, args, { ...opts, stdio: ["ignore", "pipe", "pipe"] });
+		const kill = () => {
+			try {
+				child.kill();
+			} catch {}
+		};
+		process.on("exit", kill);
+		let said = "";
+		const up = await new Promise((done) => {
+			const timer = setTimeout(() => done(false), Math.max(0, end - Date.now()));
+			const hear = (d) => {
+				said = (said + d).slice(-2000);
+				if (ready.test(said)) {
+					clearTimeout(timer);
+					done(true);
+				}
+			};
+			child.stdout.on("data", hear);
+			child.stderr.on("data", (d) => (said = (said + d).slice(-2000)));
+			child.on("exit", () => {
+				clearTimeout(timer);
+				done(false);
+			});
+		});
+		if (up) {
+			// Drained from here on, so a chatty server never blocks on a full pipe.
+			child.stdout.resume();
+			child.stderr.resume();
+			return child;
+		}
+		kill();
+		process.off("exit", kill);
+		if (Date.now() >= end) throw new Error(`${cmd} ${args.join(" ")} did not come up in ${ms / 1000} s: ${said.trim().split("\n").slice(-2).join(" / ")}`);
+		await new Promise((r) => setTimeout(r, 250));
 	}
-	return { base, url: (p) => `${base}/${p}`, stop };
 }
 
 /**
