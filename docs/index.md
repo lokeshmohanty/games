@@ -453,9 +453,16 @@ instead. A member that reached both sides before a split was counted twice,
 and a review got two crowns that way, three once. Any presence count fails
 like that.
 
-Members vote only on an equal key: who left, the record's term, the first
-heir and the record's humans. Two records of one term can differ, and
-different fractions could both be met.
+Members vote only on an equal key: who left, the record's term, the
+tie-break heir and the record's humans. Two records of one term can differ,
+and different fractions could both be met.
+
+The tie-break heir is the oldest of those humans by `joined`, whatever their
+`away` or held seat. Those marks change within a term, and a review got two
+crowns from a record marking the first heir away that reached only one side
+of a split: the two keys differed in the tie-break alone, and each side won
+its exact half. `away` and held seats still steer who is *named*, never who
+wins a tie.
 
 A page with no record heard from a crown holder (a fresh reload, a newcomer)
 has no vote. That is also what stops a page reloaded mid-vote from granting
@@ -463,6 +470,29 @@ a second candidate: its grant died with the old page, and so did its record.
 It waits for the crown's record, and is lost after the heir's wait. A member
 still linked to the host that left grants nobody, because the host is not
 gone for it.
+
+**Grants lapse.** A voter frees its grant twice the heir's wait after it was
+asked, on its own clock. A candidate counts a grant only inside the heir's
+wait from when it stood, by both its monotonic and its wall clock. The
+request reaches a voter after the candidate stood, so a grant the candidate
+still counts has not lapsed, and stays exclusive.
+
+- **Background clocks.** Timers can only fire late, which frees a grant
+  later. That is safe.
+- **Relayed delivery.** A relay only delays the request, so it is also safe.
+- **A device asleep.** A sleeping device stops the monotonic clock but not
+  the wall clock, so the candidate checks both.
+- **Residual.** A backward jump of the wall clock during a candidate's sleep
+  could defeat both checks.
+
+Lapsing is what stops one candidate whose tab dies after asking, which never
+releases, from leaving everyone bound to it for good. Members that granted a
+named heir wait for their grant to lapse before naming the next.
+
+**A refused request is kept.** It is refused while the voter still holds the
+link of the member that left, or while the voter's grant is given. It is
+granted when that changes (the link drops, the grant lapses or is released),
+if it is still young enough to count.
 
 **Waiting, standing aside, and being lost:**
 
@@ -513,12 +543,34 @@ still learns it. The receiver does not take it on trust: it probes the host
 itself and concludes in its turn, so one member's false alarm (a host
 reloading) cannot move the crown for everyone.
 
-**Known gaps.** A partition between a *live* host and the rest is not a
-departure: both sides keep a crown, and term ordering heals it on
-reconnection. If the host and every candidate on the majority side fail
-together, nobody carries on. Tested in test-plumbing ("a split party",
-"…reviewed", "…re-reviewed", "…by election") and test-party (the lost
-screen).
+**Known gaps:**
+
+- **A live host's partition.** A partition between a *live* host and the
+  rest is not a departure: both sides keep a crown, and term ordering heals
+  it on reconnection.
+- **Host and majority fail together.** If the host and every candidate on
+  the majority side fail together, nobody carries on.
+- **Two humans, one reloading.** If one of the two humans is fresh from a
+  reload when the host dies, that one has no vote. The other has only half,
+  and wins only if it is the tie-break heir. If the reloaded one is the
+  oldest, nobody crowns. The same holds whenever the tie-break heir's vote
+  died in a reload and the rest split evenly.
+- **A missed record that changes the humans.** A record that adds or drops a
+  member reaches one side of a split only: the two sides' keys then count
+  different rosters, and each could win its own election.
+
+**Threat model.** The election is safe against faults, not against a
+malicious member. The sender field `f` is unsigned, so `__c`, `__gr` and
+`__r` can be forged, as the party record (`__p`) and every other control
+message can. Signing control messages with members' keys is the planned
+follow-up.
+
+As a cheap narrowing, an election message is taken only over its sender's
+own link, or relayed only when we hold no link to that sender (the rule `__i`
+introductions follow). A copy that claims a neighbour but arrives through
+somebody else is dropped unseen. Tested in test-plumbing ("a split party",
+"…reviewed", "…re-reviewed", "…by election", "…election re-reviewed") and
+test-party (the lost screen).
 
 A link reported `disconnected` gets 3 s to recover before it counts as dropped,
 because a phone on a briefly lost signal often recovers the same connection.

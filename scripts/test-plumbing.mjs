@@ -580,6 +580,11 @@ const vanish = (host, others) => {
 	}
 };
 const hosts = (rooms) => rooms.filter((r) => r.isHost()).map((r) => r.self().name).join(",");
+const fullMesh = (n) => {
+	const t = [];
+	for (let i = 0; i < n; i++) for (let j = i + 1; j < n; j++) t.push([i, j]);
+	return t;
+};
 const DEPARTURE = 2800; // past net.js DEPARTURE_GRACE_MS
 
 {
@@ -665,16 +670,23 @@ for (const first of ["the pair", "the host"]) {
 // ---------------------------------------------------------------------------
 console.log("\na split party, reviewed: hidden heirs, a quorum, reloads, the old host");
 
-{
+for (const withBo of [true, false]) {
 	// The heir reloaded (its seat held by the room server) and is back,
 	// linked to Cy before the host's record about it went out — then the host
 	// dies. On its fresh page it has heard nobody, which used to read as
 	// "the crown is an heir we only computed": it went lost, and so did Cy.
-	const [h, a, c] = await party(["Host", "Ana", "Cy"], [[0, 1], [0, 2], [1, 2]], { heirWaitMs: 300 });
+	// With Bo there too, Bo is named (Ana's seat is held on the record) and
+	// wins with Cy. With Ana and Cy alone it is the documented total loss:
+	// half the humans, the tie-break heir (Ana, the oldest) without a vote.
+	const names = withBo ? ["Host", "Ana", "Bo", "Cy"] : ["Host", "Ana", "Cy"];
+	const rooms = await party(names, fullMesh(names.length), { heirWaitMs: 300 });
+	const [h, a] = rooms;
+	const rest = rooms.slice(2);
+	const c = rooms.at(-1);
 	const a2 = bare({ name: "Ana", selfId: a.selfId, heirWaitMs: 300 }, false);
 	a.detach();
-	for (const r of [h, c]) r.party.members.find((m) => m.id === a.selfId).rs = true;
-	for (const r of [h, c]) {
+	for (const r of [h, ...rest]) r.party.members.find((m) => m.id === a.selfId).rs = true;
+	for (const r of [h, ...rest]) {
 		const l = r.links.get(a.selfId);
 		if (l) r._linkClosed(l);
 	}
@@ -686,13 +698,18 @@ console.log("\na split party, reviewed: hidden heirs, a quorum, reloads, the old
 	h.detach();
 	c._linkOpened(toA);
 	a2._linkOpened(toC);
-	const l = c.links.get(h.selfId);
-	if (l) c._linkClosed(l);
-	await sleep(DEPARTURE + 1200);
-	// The record seats Ana's held seat: Cy is named, and holds a quorum
-	// with Ana; Ana's fresh page has no record to crown by, and takes Cy's.
-	check("a reloaded heir's party heals: one host, nobody lost", hosts([a2, c]) === "Cy" && a2.hostId() === c.selfId && !a2.lost && !c.lost, `${hosts([a2, c])} lost=${a2.lost},${c.lost}`);
-	for (const r of [a2, c]) r.leave();
+	for (const r of rest) {
+		const l = r.links.get(h.selfId);
+		if (l) r._linkClosed(l);
+	}
+	await sleep(DEPARTURE + 1500);
+	if (withBo) {
+		const bo = rooms[2];
+		check("a reloaded heir's party heals: one host, nobody lost", hosts([a2, ...rest]) === "Bo" && a2.hostId() === bo.selfId && !a2.lost && !c.lost, `${hosts([a2, ...rest])} lost=${a2.lost},${c.lost}`);
+	} else {
+		check("two humans, one fresh from a reload: no crown (the documented total loss), never two", hosts([a2, c]) === "", hosts([a2, c]));
+	}
+	for (const r of [a2, ...rest]) r.leave();
 }
 
 {
@@ -877,7 +894,9 @@ console.log("\na split party, re-reviewed: one record, and who said here");
 		if (l) r._linkClosed(l);
 	}
 	await sleep(DEPARTURE + 2500);
-	check("a reload, then a 2–2 split: one crown, not two", hosts([a2, b, c, d]) === "Bo", hosts([a2, b, c, d]));
+	// The tie-break heir is Ana (the oldest): with her vote gone in the
+	// reload, neither half wins — no crown, rather than two.
+	check("a reload, then a 2–2 split: one crown, not two", hosts([a2, b, c, d]).split(",").filter(Boolean).length <= 1, hosts([a2, b, c, d]));
 	check("…a page with no record of its own never crowns by a count", !a2.isHost());
 	check("…and the side without the crown is lost", c.lost === true && !c.isHost(), `cy lost=${c.lost}`);
 	for (const r of [a2, b, c, d]) r.leave();
@@ -900,11 +919,6 @@ console.log("\na split party, re-reviewed: one record, and who said here");
 // ---------------------------------------------------------------------------
 console.log("\na split party, by election: one grant per member per vacancy");
 
-const fullMesh = (n) => {
-	const t = [];
-	for (let i = 0; i < n; i++) for (let j = i + 1; j < n; j++) t.push([i, j]);
-	return t;
-};
 const crowns = (rooms) => rooms.filter((r) => r.isHost()).map((r) => r.self().name).join(",");
 const E = { heirWaitMs: 300, lostRetryMs: [] };
 
@@ -1000,6 +1014,111 @@ const E = { heirWaitMs: 300, lostRetryMs: [] };
 	h.leave();
 	await sleep(100);
 	check("a healthy party elects its heir at once", crowns([a, b, c]) === "Ana" && [b, c].every((r) => r.hostId() === a.selfId), crowns([a, b, c]));
+	for (const r of [a, b, c]) r.leave();
+}
+
+// ---------------------------------------------------------------------------
+console.log("\na split party, election re-reviewed: keys, lapsing grants, retries, relays");
+
+{
+	// The host's last record (Ana now away) reaches Bo and Dee but not Ana
+	// and Cy; then the host is gone and the guests split {Ana, Cy} | {Bo,
+	// Dee}. The two keys differed only in the tie-break heir, and each half
+	// won with exactly half plus its own. The tie-break is the oldest human
+	// now, whatever `away` says: one key, one winner.
+	const [h, a, b, c, d] = await party(["Host", "Ana", "Bo", "Cy", "Dee"], fullMesh(5), E);
+	h.links.get(a.selfId).closed = true;
+	h.links.get(c.selfId).closed = true;
+	h.party.members.find((m) => m.id === a.selfId).away = true;
+	h._commitParty();
+	await sleep(30);
+	for (const [x, y] of [[a, b], [a, d], [c, b], [c, d]]) cut(x, y);
+	h.__frozen = true;
+	h.detach();
+	for (const r of [a, b, c, d]) {
+		const l = r.links.get(h.selfId);
+		if (l) r._linkClosed(l);
+	}
+	await sleep(DEPARTURE + 2500);
+	const w = crowns([a, b, c, d]);
+	check("a record seen by one side only (away): never two crowns", w.split(",").filter(Boolean).length <= 1, w);
+	for (const r of [a, b, c, d]) r.leave();
+}
+
+{
+	// Ana, the first heir, asks for grants, then her tab dies before any
+	// reaches her: no release ever comes. Every grant bound to her used to
+	// mean total loss; grants lapse now, and the next in line is elected.
+	const [h, a, b, c, d] = await party(["Host", "Ana", "Bo", "Cy", "Dee"], fullMesh(5), E);
+	const send = a._send.bind(a);
+	a._send = (env, from) => {
+		send(env, from);
+		if (env.__c) a.__frozen = true;
+	};
+	h.leave();
+	await sleep(3000);
+	check("a candidate that dies mid-vote: its grants lapse, the next in line is elected", crowns([b, c, d]) === "Bo" && [c, d].every((r) => r.hostId() === b.selfId && !r.lost), crowns([b, c, d]) || "none");
+	for (const r of [a, b, c, d]) r.leave();
+}
+
+{
+	// Cy still held the host's link when Ana asked, so it refused — and never
+	// granted. Kept now, and granted the moment that link drops. Bo is frozen,
+	// so Ana needs Cy's grant: she is elected well inside her wait.
+	const [h, a, b, c] = await party(["Host", "Ana", "Bo", "Cy"], fullMesh(4), { heirWaitMs: 1000, lostRetryMs: [] });
+	b.__frozen = true;
+	h.__frozen = true;
+	h.detach();
+	// Ana concludes the host gone (as if her probe heard nobody); Cy's link
+	// to it lingers a moment longer.
+	const la = a.links.get(h.selfId);
+	if (la) a._linkClosed(la);
+	a._applyGone(h.selfId);
+	await sleep(300);
+	const lc = c.links.get(h.selfId);
+	if (lc) c._linkClosed(lc);
+	await sleep(250);
+	check("a request refused while the host's link lingered is granted when it drops", crowns([a, c]) === "Ana", crowns([a, c]) || "none");
+	for (const r of [a, b, c]) r.leave();
+}
+
+{
+	// A grant that arrives after the candidate's window — by either clock —
+	// is not counted: the voter may already have given it to someone else.
+	const [h, a, b, c, d] = await party(["Host", "Ana", "Bo", "Cy", "Dee"], fullMesh(5), { heirWaitMs: 5000, lostRetryMs: [] });
+	for (const r of [b, c, d]) r._asked = () => {}; // nobody answers by itself
+	h.leave();
+	await sleep(60);
+	const cand = a.candidacy;
+	const key = cand?.key;
+	cand.wall -= 6000; // the wall clock says the window is over (a device asleep)
+	a._granted(key, cand.round, b.selfId);
+	a._granted(key, cand.round, c.selfId);
+	check("a grant outside the candidate's window is not counted (wall clock)", !a.isHost() && cand.grants.size === 1, `${cand.grants.size}`);
+	cand.wall += 6000;
+	cand.at -= 6000; // and by the monotonic one
+	a._granted(key, cand.round, b.selfId);
+	a._granted(key, cand.round, d.selfId);
+	check("…nor by the monotonic clock", !a.isHost() && cand.grants.size === 1, `${cand.grants.size}`);
+	for (const r of [a, b, c, d]) r.leave();
+}
+
+{
+	// An election message that claims a neighbour as its sender but arrives
+	// through somebody else is dropped (the neighbour's own copy comes over
+	// its own link). Only a narrowing: `f` is unsigned.
+	const [h, a, b, c] = await party(["Host", "Ana", "Bo", "Cy"], fullMesh(4), E);
+	h.__frozen = true;
+	h.detach();
+	for (const r of [a, b, c]) {
+		const l = r.links.get(h.selfId);
+		if (l) r._linkClosed(l);
+	}
+	const key = b._voteKey(h.selfId);
+	const fromCy = b.links.get(c.selfId);
+	b._inbound(fromCy, { __c: key, r: 7, f: a.selfId, t: null, id: "forged-1", h: 2 });
+	await sleep(20);
+	check("a request relayed in a neighbour's name is not granted", !(b.granted.get(key)?.round === 7), JSON.stringify(b.granted.get(key) ?? null));
 	for (const r of [a, b, c]) r.leave();
 }
 

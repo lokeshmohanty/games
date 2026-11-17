@@ -25,8 +25,22 @@ How net.js does it (docs/index.md "A split party"):
   - The candidate crowns on more than half of the record's humans, or
     exactly half including `firstHeir`. Grant sets are disjoint, so there is
     never a second crown.
-  - The key is: vacated, the record's term, the first heir and the human
-    ids. Members vote only on an equal key.
+  - The key is: vacated, the record's term, the **tie-break heir** and the
+    human ids. Members vote only on an equal key.
+  - The tie-break heir is the oldest human by `joined`, never by
+    `away`/`reconnecting`. Those change within a term, and a record marking
+    the heir away that reached one side only made two keys, then two crowns.
+  - **Grants lapse.** The voter frees a grant `2 × HEIR_WAIT_MS` after being
+    asked. The candidate counts only within `HEIR_WAIT_MS` of standing, by
+    both the monotonic and the wall clock. A dead candidate no longer binds
+    everyone. Members that granted the named heir wait for the lapse before
+    naming the next.
+  - **Refused requests are kept** (`asks`): one refused because the host's
+    link lingered, or because our grant was given, is granted when that
+    changes.
+  - **Narrowing, not defence:** election messages are accepted only over the
+    sender's own link, or relayed when we have none to it. `f` is unsigned;
+    signing is the planned follow-up.
   - No quorum in `HEIR_WAIT_MS`: release (`__r`), never count them again,
     step aside. A voter is freed only by hearing that release; a release
     that overtook its request is remembered (`releases`).
@@ -60,6 +74,10 @@ How net.js does it (docs/index.md "A split party"):
   re-crowned a reloading host's heir (test-room 6e22).
 - **Not covered:** a partition between a *live* host and the rest. Both sides
   keep a crown, and term ordering heals it.
+- **Accepted residuals:**
+  - With 2 humans and one fresh from a reload, nobody crowns if the reloaded
+    one is the oldest.
+  - A missed record that changes the humans set can still fork.
 
 The re-dial (fix-host-loss, then this):
 - A dropped direct link is re-dialled on the **second** vouch (2.5 s), not the
