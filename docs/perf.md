@@ -213,3 +213,163 @@ The ≤ 300 KB target from Phase 1 is met.
    HTML, which paints as the page arrives and is replaced when the app
    renders. A tiny inline script drops it when the address names another
    view.
+
+### Frame prebuild and preview media (branch improve-perf, 2026-11-16)
+
+**Prebuilt frames** (docs/sdk-v2.md): the deploy writes every game's frame
+template to `frames/<id>.html`; a `?game=` address starts the template, the
+runtime's files and the fonts as lib/bridge.js is evaluated; index.html
+preloads `community/catalog.js` beside the bundle.
+
+Full `just perf` runs, base (230d1f8) and this branch alternately, with
+other agents' test runs sharing the machine (load 3–18):
+
+| Scenario | base, run 1 / run 2 | branch, run 1 / run 2 |
+|---|---|---|
+| bots cold, to frame | 1961 / 1922 ms | 1842 / 1886 ms |
+| bots warm, to frame | 377 / 380 ms | 621 / 909 ms |
+| bots cold FCP | 828 / 808 ms | 804 / 896 ms |
+| portal cold FCP / load | 460 / 496 ms, 2.9 s | 584 / 460 ms, 2.5–2.9 s |
+| leaderboard cold FCP | 1224 / 1180 ms | 528 / 564 ms |
+
+The warm bots numbers did not reproduce: in 15 interleaved warm runs each
+the medians were 464 ms (base) and 418 ms (branch), with the same spread
+(339–1590 against 360–949). In 10 interleaved cold runs each: 1899 ms
+(base) and 1932 ms (branch). **Prebuilding did not lower cold
+bots-to-frame.**
+
+**Where the cold time goes** (resource timeline of a cold bots run, branch):
+the bundle (62 KB) arrives at ~760 ms. The template (5 KB) is in by ~980 ms
+and the party mounts at ~860 ms, ~600 ms earlier than before thanks to the
+catalog preload. But the frame cannot be finished until its fonts are
+inlined, and all four (Space Grotesk 22 KB, Nunito 39 KB, Nunito italic
+41 KB, Cascadia Code 48 KB: 150 KB, 60% of the cold bytes) share the link
+from ~800 ms until ~1750 ms. The page itself needs only the first two; the
+frame needs all four. On base the same fonts finished at ~1780 ms, which is
+why both land at ~1.9 s: the request chain the prebuild removes was hidden
+behind the fonts. Starting the fonts from index.html instead (tried) only
+reorders the link: the frame did not come up clearly sooner, and bots FCP went
+to ~1.3 s, so it was dropped.
+
+**What the prebuild is worth once fonts are not the limit:** the same cold
+bots run with the four font files answered instantly (route-fulfilled, both
+builds alike): base 1377–1530 ms, branch 1156–1244 ms (6 runs each), about
+300 ms (20%) lower. Tapping a game on an already-loaded portal took ~400 ms
+on both (the service worker had precached everything by then).
+
+**The next lever is the frame's fonts**, and each way to change them needs a
+decision by Lokesh:
+- hand the frame the fonts after it mounts (a FontFace from bytes in
+  sdk/v2/runtime.js, which the frame's CSP does not block): the frame comes up
+  at template time, ~1.1–1.2 s cold, with a font swap on the first cold
+  visit only;
+- inline only the faces a game uses (a manifest field, or a measured list);
+  static detection is not safe, since canvas games pick fonts from the
+  theme values at run time;
+- subset the fonts to the glyphs the arcade uses (VERIFY the files'
+  current coverage first).
+
+**Precache** (every file `dist/sw.js` installs, with the community games):
+
+| | files | raw | on the wire (text gzipped) |
+|---|---|---|---|
+| base | 170 | 1792 KB | 952 KB |
+| branch | 187 | 2220 KB | 1104 KB (+16%) |
+
+The 17 templates are 417 KB raw. They carry no fonts (marks, swapped for the
+page's copies: inlined, they would add ~200 KB each, ~3.4 MB) and no runtime
+files (slots filled from the page's copies of runtime.js, theme.css and
+styles.css: inlined, they made the precache 1311 KB on the wire). The rest
+repeats each game's own code, which stays precached for the tap-time fallback
+and the protocol's `asset`.
+
+**Preview clips** (lib/portal.js, test-portal): a cold portal at 390x844,
+then every card scrolled into view, headless:
+
+| | video requests (clips) | video bytes | all requests |
+|---|---|---|---|
+| base, HTTP cache on | 19 (10) | 317 KB | 42 |
+| base, HTTP cache off | 35 (10) | 1260 KB | 63 |
+| branch, cache on or off | 10 (10) | 381 KB | 33 |
+
+Each card's `<source>` fetched its clip again, cache or no cache (neon-bid,
+neon-fission and undercover three times each). Now the first card near the
+screen fetches the clip and every card plays the same `blob:` URL. The first
+screen alone: 13 (cache on) / 24 (cache off) requests on base, 6 on the
+branch. The committed first-party gifs (5 files, ~3.5 MB, never shown) are
+gone; the recorder keeps no gif.
+
+### Fonts after mount (branch improve-perf, 2026-11-16)
+
+Lokesh chose to let a first cold visit open the frame before its fonts
+(docs/sdk-v2.md "Fonts after mount"): a face not yet on the phone is left
+out of the frame, which opens in the fallback fonts and gets the face as
+data once it has downloaded (`neon:fonts`); a canvas game repaints on the
+`theme.set` the runtime then repeats. A face already in the page or in the
+worker's cache is inlined as before, so a warm visit has no swap
+(test-theme checks both, and that nothing breaks the CSP).
+
+Same harness, base (230d1f8) and this build alternately, bots scenario, 5
+rounds of 2 runs (load 2–7):
+
+| | base | fonts after mount |
+|---|---|---|
+| bots cold, to frame: median (range) | 1897 ms (1834–2001) | **1415 ms** (1093–1962) |
+| bots cold, runs whose navigation started on time | ~1.85–1.95 s | **1.09–1.20 s** |
+| bots warm, to frame: median (range), 9 more runs | 484 ms (403–753) | 517 ms (366–613) |
+| bots cold FCP, median | 792 ms | 890 ms |
+| bots cold, bytes before the frame | 240 KB | 95–117 KB |
+
+The cold spread comes from the runs, not from the fonts: in the slow ones
+the first request after navigation started at 500–590 ms instead of
+~190 ms (the machine was shared with other agents' tests). In every cold run
+the frame was up 330–630 ms after the bundle arrived; the fonts no longer
+gate it. Warm is unchanged within the noise. A full `just perf` run of each:
+bots cold 2000 → 1334 ms, warm 484 → 505 ms.
+
+Checked by eye at 390x844, the first cold visit with the fonts held back
+2.5 s, in paper light, paper dark and neon: Neon Bid and Undercover (DOM)
+open in the system sans and swap to Nunito, Space Grotesk and Cascadia Code
+with the layout essentially still; Neon Fission (canvas board, DOM header)
+the same. After the swap and on a warm visit the text is in the intended
+faces.
+
+Not done: metric overrides (`size-adjust`, `ascent-override`) on a fallback
+face to make the swap still gentler; they need the fonts' metrics, and
+fontTools could not read the woff2 files here (no brotli module).
+
+### Review fixes: first paint, and a harness fault (2026-11-16)
+
+The review measured bots cold first paint 788–812 ms on base against
+460–1220 ms on this branch. Two causes, found with marks in the page:
+
+- **The party mounted before the first render painted.** With the
+  community catalog preloaded, `catalogs` often settled at once, and the
+  party mounted and built the frame in one run of settled promises before
+  the browser could paint. `catalogs` now also waits for one frame
+  (src/main.tsx). The evaluation-time warm-up (the template, the runtime's
+  files and the fonts asked for as lib/bridge.js is evaluated) cost ~30 ms of
+  first paint in the bundle's first task and, with the mount right after the
+  first paint, saved nothing measurable (deferred: 804 ms FCP, 1.26 s to
+  frame; removed: 802 ms, 1.24 s), so it is gone.
+- **The harness itself.** The throttling proxy kept sending, and booking the
+  shared link, after a run's page had closed (the service worker's install
+  still downloading). The next run's first requests waited behind it, which
+  made the second run of every pair look ~300 ms worse, more so for a build
+  whose runs end sooner. The proxy now stops when its response closes.
+- An FCP of ~450–520 ms in either build is the static portal heading in
+  index.html painting before its inline script removes it on a `?game=`
+  address (parser timing); those runs are outliers on both sides.
+
+Main (bf2a4ac) and this branch alternately, fixed harness, 4 rounds of 2:
+
+| | main | this branch |
+|---|---|---|
+| bots cold, to frame: median (range) | 1891 ms (1849–2024) | **1276 ms** (1224–1444) |
+| bots cold FCP, median | 820 ms | **820 ms** |
+| bots warm, to frame: median (range) | 418 ms (355–670) | **328 ms** (308–511) |
+| bots warm FCP, median | 144 ms | 102 ms |
+
+A full `just perf` run of each: bots cold to frame 1993 → 1221 ms, FCP 820 →
+800 ms; portal cold FCP 456 → 452 ms; leaderboard cold FCP 1192 → 1028 ms.
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   

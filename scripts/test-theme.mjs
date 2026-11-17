@@ -5,6 +5,7 @@
 // (attributes, fonts, its canvas colours); and nothing scrolls sideways.
 
 import { existsSync, globSync } from "node:fs";
+import { createServer } from "node:http";
 import { createRequire } from "node:module";
 import { homedir } from "node:os";
 import { join } from "node:path";
@@ -96,6 +97,112 @@ try {
 	});
 	check("the frame has the fonts too (inlined: it may load nothing)", ff.some((x) => /Space Grotesk|Nunito|Cascadia/.test(x)), ff);
 	await ctx.close();
+
+	console.log("\ntheme: a first cold visit does not wait for the frame's fonts");
+	// The fonts not yet on the phone (no worker cache, still downloading)
+	// follow the frame (lib/bridge.js finishParts, `neon:fonts` in
+	// sdk/v2/runtime.js); a later visit has them in the document, no swap.
+	const faces = (fr) =>
+		fr.evaluate(() => ({
+			rules: [...document.styleSheets].flatMap((s) => [...s.cssRules]).filter((r) => r instanceof CSSFontFaceRule).length,
+			loaded: [...document.fonts].filter((x) => x.status === "loaded").map((x) => x.family),
+			late: [...document.querySelectorAll("style")].some((s) => /^\s*@font-face/.test(s.textContent)),
+		}));
+	const cold = await browser.newContext({ viewport: { width: 390, height: 844 }, serviceWorkers: "block" });
+	await cold.addInitScript(() => {
+		try {
+			localStorage.setItem("neon.rs", "http://127.0.0.1:9");
+		} catch {}
+	});
+	const slowFonts = (route) => setTimeout(() => route.continue().catch(() => {}), 2500);
+	await cold.route("**/assets/fonts/*.woff2", slowFonts);
+	const cp = await cold.newPage();
+	const refused = [];
+	cp.on("console", (m) => /Content Security Policy|Refused to/.test(m.text()) && refused.push(m.text()));
+	const t0 = Date.now();
+	await cp.goto(site.url("?game=neon-fission&fresh=1&mode=bots"), { waitUntil: "commit" });
+	const cf = await gameFrame(cp, TIMEOUT);
+	const mounted = Date.now() - t0;
+	const early = await faces(cf);
+	check("the frame comes up before the fonts have downloaded, without their faces", mounted < 2500 && early.rules === 0, { mounted, ...early });
+	await cf.evaluate(() => {
+		window.__themeSets = 0;
+		window.arcade.on("theme.set", () => window.__themeSets++);
+	});
+	await cf.waitForFunction(() => [...document.fonts].filter((x) => x.status === "loaded").length >= 4, null, { timeout: 15_000 }).catch(() => {});
+	const lateFaces = await faces(cf);
+	check("…then all four faces arrive as data and load", lateFaces.rules === 4 && lateFaces.late && ["Space Grotesk Variable", "Nunito Variable", "Cascadia Code Variable"].every((x) => lateFaces.loaded.includes(x)), lateFaces);
+	check("…and the theme is announced again, so a canvas redraws in them", (await cf.evaluate(() => window.__themeSets)) >= 1);
+	check("…with nothing the frame's CSP refuses", !refused.length, refused.slice(0, 2).join(" | "));
+	// A game that measured its layout in the fallback font measures again
+	// (the runtime dispatches `resize` once the fonts are in): Light Cycles
+	// sizes its board from the heights of its text.
+	const lp = await cold.newPage();
+	await lp.goto(site.url("?game=lokeshmohanty/light-cycles&fresh=1&mode=bots"), { waitUntil: "commit" });
+	const lf = await gameFrame(lp, TIMEOUT);
+	const board = () => lf.evaluate(() => arena.style.height);
+	const atMount = await board();
+	await lf.evaluate(() => {
+		window.__seen = [];
+		addEventListener("resize", () => window.__seen.push(["resize", performance.now()]));
+		document.fonts.addEventListener("loadingdone", () => window.__seen.push(["fonts", performance.now()]));
+	});
+	await lf.waitForFunction(() => [...document.fonts].filter((x) => x.status === "loaded").length >= 4, null, { timeout: 15_000 }).catch(() => {});
+	await lp.waitForTimeout(300);
+	const afterFonts = await board();
+	const fresh = await lf.evaluate(() => {
+		dispatchEvent(new Event("resize"));
+		return arena.style.height;
+	});
+	// The runtime's own resize, apart from the ones the shell's layout causes
+	// as its fonts arrive too: fonts posted again, nothing else changing.
+	await lf.evaluate(() => (window.__seen = []));
+	await lp.evaluate(() => document.querySelector(".game-frame").contentWindow.postMessage({ t: "neon:fonts", css: "" }, "*"));
+	await lp.waitForTimeout(300);
+	const resized = await lf.evaluate(() => window.__seen.filter(([e]) => e === "resize").length);
+	check("Light Cycles' board is laid out again once the fonts arrive (a resize), in the real fonts", resized >= 1 && afterFonts === fresh, { atMount, afterFonts, fresh, resized });
+	await cold.close();
+	const warmCtx = await browser.newContext({ viewport: { width: 390, height: 844 } });
+	await warmCtx.addInitScript(() => {
+		try {
+			localStorage.setItem("neon.rs", "http://127.0.0.1:9");
+			localStorage.setItem("neon.sw", "snapshot");
+		} catch {}
+	});
+	const wp = await warmCtx.newPage();
+	await wp.goto(site.url("?game=neon-fission&fresh=1&mode=bots"));
+	await gameFrame(wp, TIMEOUT);
+	await wp.evaluate(() => navigator.serviceWorker?.ready);
+	await wp.waitForFunction(() => !!navigator.serviceWorker?.controller, null, { timeout: 15_000 }).catch(() => {});
+	await wp.goto(site.url("?game=neon-fission&fresh=1&mode=bots"));
+	const warmFaces = await faces(await gameFrame(wp, TIMEOUT));
+	check("a later visit has every face in the document: no swap", warmFaces.rules === 4 && !warmFaces.late, warmFaces);
+
+	console.log("\ntheme: a game cannot make the shell fetch a font of its choosing");
+	// The shell inlines fonts only in the runtime's own stylesheet, and only
+	// from assets/fonts/ on this origin. A mark written in a game's own code
+	// (another origin, or a same-origin path outside assets/fonts/) is
+	// neither fetched nor replaced (review, 2026-11-16).
+	const asked = [];
+	const elsewhere = createServer((req, res) => {
+		asked.push(req.url);
+		res.writeHead(200, { "access-control-allow-origin": "*" }).end("REMOTE");
+	});
+	await new Promise((ok) => elsewhere.listen(0, "127.0.0.1", ok));
+	const away = `http://127.0.0.1:${elsewhere.address().port}/beacon.woff2`;
+	const sp = await warmCtx.newPage();
+	const sameOrigin = [];
+	sp.on("request", (r) => /beacon|not-a-font/.test(r.url()) && sameOrigin.push(r.url()));
+	await sp.goto(site.url("index.html"));
+	await sp.waitForFunction(() => window.NeonArcade?.finishFrameDoc);
+	const marks = [`url("neon-font:${away}")`, 'url("neon-font:games/connect4/not-a-font.woff2")', 'url("neon-font:assets/fonts/nunito.woff2?x=1")'];
+	const tpl = `<!doctype html><!--neon-frame x--><html><head><style>.a{background:${marks[1]}}</style></head><body><script>const s = '${marks[0]}', t = '${marks[2]}';</script></body></html>`;
+	const doc = await sp.evaluate((t) => NeonArcade.finishFrameDoc(t, {}), tpl);
+	await sp.waitForTimeout(500);
+	check("…no request for a mark in the game's own code", !asked.length && !sameOrigin.length, { asked, sameOrigin });
+	check("…and every such mark is left as written", marks.every((m) => doc.includes(m)), doc.slice(0, 300));
+	elsewhere.close();
+	await warmCtx.close();
 } catch (err) {
 	check(`unexpected: ${err.message.split("\n")[0]}`, false);
 } finally {

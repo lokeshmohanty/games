@@ -28,7 +28,7 @@
 // whole; a page already open stays on the snapshot it was loaded from until it
 // closes ("a page keeps its deploy", below).
 //
-// Assets (icons, fonts, posters, gifs) are cache-first, and are not
+// Assets (icons, fonts, posters, a community game's gif) are cache-first, and are not
 // re-downloaded behind each hit: they change with a deploy, so with VERSION.
 //
 // On a loopback address (`just run`) code stays network-first, so an edited
@@ -46,9 +46,9 @@ const RUNTIME = "arcade-pyodide-dev"; // dist/sw.js: scripts/assemble.mjs
 const DEV = ["localhost", "127.0.0.1", "[::1]"].includes(self.location.hostname) && !new URL(self.location.href).searchParams.has("snapshot");
 
 // The shell: everything needed to open any page and start a game with no
-// network at all. The preview gifs are deliberately absent — they are ~2 MB
-// together, which is not a reasonable thing to pull down on mobile data before
-// anybody has asked for them, and they are cached on first sight anyway.
+// network at all. Preview videos and an outside repo's preview gif are
+// deliberately absent: not a thing to pull down on mobile data before anybody
+// has asked for them. The ~5 KB posters are in (scripts/assemble.mjs).
 const SHELL = [
 	// What scripts/assemble.mjs cannot derive. It adds, at build time, every
 	// built chunk (app/), page, lib/ script and stylesheet, game file and frame
@@ -63,8 +63,7 @@ const SHELL = [
 	"./assets/fonts/nunito.woff2",
 	"./assets/fonts/nunito-italic.woff2",
 	"./assets/fonts/cascadia-code.woff2",
-	// Stands in for a preview gif that will not load — which, offline, is all of
-	// them, since the gifs are not precached.
+	// Stands in for a preview that will not load (a card with no poster).
 	"./assets/placeholder.svg",
 	"./assets/icon-192.png",
 	"./assets/icon-512.png",
