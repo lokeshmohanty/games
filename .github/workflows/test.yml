@@ -95,10 +95,26 @@ jobs:
         env:
           NEON_APP_CACHE: ${{ runner.temp }}/app-cache
         run: node scripts/fetch-community.mjs
-      - name: Build the site (type check, vite build, assemble + sw.js)
+      # The room server's table of games (worker/api/games.js) against the
+      # catalogs just fetched: `just check-games`, part of `just test`. Here a
+      # warning, as in submission.yml: a merged pin makes it stale until
+      # `just games-table` is committed and `just deploy-worker` run
+      # (docs/accounts.md), and that must not hold up the site's deploy.
+      - name: The Worker's table of games (a warning, not a refusal)
+        continue-on-error: true
+        run: |
+          if ! node scripts/build-games-table.mjs --check; then
+            echo "::warning::worker/api/games.js is stale: run just games-table, commit, then just deploy-worker"
+            exit 1
+          fi
+      # assemble.mjs prebuilds every game's frame (scripts/prebuild-frames.mjs)
+      # in a headless Chrome, and fails without one under CI.
+      - name: Build the site (type check, vite build, assemble + frames/ + sw.js)
+        env:
+          CHROME: /usr/bin/google-chrome
         run: pnpm build
-      # What the shards test and deploy.yml deploys, so all of dist/,
-      # dotfiles too.
+      # What the shards test and deploy.yml deploys, so all of dist/ —
+      # frames/ included — dotfiles too.
       - uses: actions/upload-artifact@v7
         with:
           name: site

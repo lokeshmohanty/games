@@ -138,6 +138,8 @@ jobs:
         run: pnpm install --frozen-lockfile
       - name: Build the site
         if: ${{ inputs.skip_tests }}
+        env:
+          CHROME: /usr/bin/google-chrome # prebuild-frames.mjs
         run: pnpm build
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v5

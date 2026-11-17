@@ -148,6 +148,12 @@ function checkStatic(dir) {
 	}
 	const remote = [...html.matchAll(/\b(?:src|href)\s*=\s*["'](https?:)?\/\//gi)];
 	check("the entry page names no remote URL", !remote.length);
+	// `neon-font:` is the shell's own mark for the arcade's fonts in a frame
+	// (lib/bridge.js); a game has no use for it. The shell no longer acts on
+	// one outside its own stylesheet (it once fetched whatever a game's mark
+	// named: review, 2026-11-16), and this keeps it out of pinned code.
+	const marked = walk(dir).filter((f) => /\.(html?|m?js|css)$/i.test(f) && readFileSync(f, "utf8").includes("neon-font:"));
+	check("no file uses the shell's font mark (neon-font:)", !marked.length, marked.map(at).join(", "));
 
 	const wheelDir = join(dir, "server", "wheels") + sep;
 	const all = walk(dir);

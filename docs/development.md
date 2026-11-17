@@ -41,7 +41,7 @@ community/              (generated, git-ignored) the pinned games, fetched at de
 worker/                 the Cloudflare Worker: room server, accounts, leaderboards
                         (docs/room-server.md, docs/accounts.md)
 scripts/                build, tests, preview recorder, icon generator, PR checks
-assets/                 app icons, previews (gif, webm, mp4, webp posters)
+assets/                 app icons, previews (webp posters, webm, mp4; no gifs since 2026-11-15)
 sw.js                   the service worker template; scripts/assemble.mjs writes dist/sw.js
 ```
 
@@ -98,7 +98,7 @@ job's `site` artifact, not a second build.
 | Job | Runs | Locally | Local, 2026-11-15 | Runner (run 43774429667) |
 |---|---|---|---|---|
 | static | bindings, colours, `catalog --check`, stats, submission rules, codec, the Justfile, hub, Durable Object, plumbing, rules | `just test-static` | 17 s | 17 s |
-| build | Pyodide, the community games, `pnpm build`, uploaded once as the `site` artifact | `just pyodide community build` | 14 s | 54 s |
+| build | Pyodide, the community games, the Worker's table of games (`check-games`, a warning here), `pnpm build` with the prebuilt frames, uploaded once as the `site` artifact | `just pyodide community check-games build` | 14 s | 54 s |
 | shard 1 | test-bots | `just test-shard 1` | 264 s | 377 s |
 | shard 2 | test-room, test-party, test-scan, test-theme | `just test-shard 2` | 218 s | 317 s |
 | shard 3 | test-pwa, test-devkit, test-managed, test-portal, test-protocol, test-webapp, test-rules-screen, test-conformance | `just test-shard 3` | 191 s | 257 s |
@@ -110,6 +110,10 @@ about 11 minutes locally. CI's longest path is build, then the slowest shard:
 about 7 minutes.
 
 The shards wait for both static and build, and each one downloads that build.
+`check-games` fails `just test` locally, but in CI it only warns. A merged
+pin leaves `worker/api/games.js` stale until `just games-table` is committed
+and `just deploy-worker` run (docs/accounts.md), and that must not hold up
+the site's deploy.
 The groups are the `_shard-<n>` recipes in the Justfile, so a shard runs the
 same way locally. Locally, `just test-shard <n>` vendors Pyodide, fetches the
 community games and builds first; `NEON_BUILT=1` skips that. A suite added to

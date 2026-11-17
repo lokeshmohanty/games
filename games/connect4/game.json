@@ -15,6 +15,7 @@
   },
   "bots": true,
   "kind": "duel",
+  "leaderboard": false,
   "tags": [
     "alone",
     "duel",
@@ -23,7 +24,7 @@
   "categories": [
     "strategy"
   ],
-  "preview": "../../assets/connect4.gif",
+  "preview": "../../assets/connect4.webp",
   "license": "MIT",
   "author": "lokeshmohanty",
   "repo": "https://github.com/lokeshmohanty/games"

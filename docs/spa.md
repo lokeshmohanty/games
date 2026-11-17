@@ -140,10 +140,18 @@ stage.
      community/, the manifest, and CONTRIBUTING.md. It also publishes the
      dev kit's transition copy at `sdk/v1/dev-server.mjs` (until 2027-02-15,
      docs/platform.md).
+   - It prebuilds every registered game's frame into `frames/<id>.html`
+     (`scripts/prebuild-frames.mjs`: lib/bridge.js's own
+     `buildFrameTemplate`, run in headless Chrome over dist/; docs/sdk-v2.md).
+     So the build needs Playwright (found by `scripts/playwright.mjs`, as
+     every browser script does) and a Chrome (`CHROME=`, a system one, or a
+     GitHub runner's `/usr/bin/google-chrome`); without them it warns and the
+     shell builds frames at tap time, and with `CI` set it fails instead.
+     About 1.5 s for 17 games.
    - It writes `dist/sw.js` from `sw.js`. The precache list is the
      template's own entries (icons, fonts) plus everything derived: every
-     built chunk, page, lib/ script and stylesheet, frame runtime, preview
-     poster (`assets/*.webp`), and every file a game folder ships (RULES.md,
+     built chunk, page, lib/ script and stylesheet, frame runtime, prebuilt
+     frame, preview poster (`assets/*.webp`), and every file a game folder ships (RULES.md,
      a wasm module, images; not preview gifs or videos). So every game in
      the catalog plays offline in single player after one online visit, and
      `scripts/test-pwa.mjs` opens each from the portal with the network cut

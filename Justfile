@@ -17,6 +17,8 @@ port := "8000"
 just := "'" + just_executable() + "' --justfile '" + justfile() + "'"
 # pnpm, from the system or through Nix (no global install needed on NixOS).
 pnpm := if `command -v pnpm || true` != "" { "pnpm" } else { "nix shell nixpkgs#pnpm nixpkgs#nodejs_24 -c pnpm" }
+# wrangler likewise (scripts/wrangler.mjs makes the same choice for the tests).
+wrangler := if `command -v wrangler || true` != "" { "wrangler" } else { "nix shell nixpkgs#wrangler -c wrangler" }
 
 # List the recipes.
 default:
@@ -72,10 +74,11 @@ serve-lan: install
     {{pnpm}} dev --host 0.0.0.0 --port {{port}}
 
 # Pyodide comes before the build: assemble copies sdk/ (with sdk/pyodide)
-# into the site, and test-webapp runs it from there.
+# into the site, and test-webapp runs it from there. check-games needs the
+# community games, so it runs after them, not in test-static.
 
 # Every suite, in the order they get slower.
-test: test-static pyodide community build test-room test-party test-scan test-pwa test-bots test-rules-screen test-devkit test-protocol test-managed test-conformance test-webapp test-theme test-portal
+test: test-static pyodide community check-games build test-room test-party test-scan test-pwa test-bots test-rules-screen test-devkit test-protocol test-managed test-conformance test-webapp test-theme test-portal
 
 # The cheap checks: no build, no browser, seconds. CI's first job, which gates the shards.
 test-static: check-bindings check-colours (catalog "--check") test-stats test-submission test-codec test-just test-hub test-worker-do test-plumbing test-rules
@@ -84,7 +87,8 @@ test-static: check-bindings check-colours (catalog "--check") test-stats test-su
 # grouped by time so they take about as long as each other: these are the
 # groups, so a shard runs the same here. The times, measured on 2026-11-15,
 # are in docs/development.md (Tests). `just test-shard <n>` vendors Pyodide,
-# fetches the community games and builds first, unless NEON_BUILT=1 (CI builds once and
+# fetches the community games, checks the Worker's table of games against
+# them (check-games) and builds first, unless NEON_BUILT=1 (CI builds once and
 # downloads that build into every shard); beside another run, give it its own
 # NEON_DIST and NEON_PORT_OFFSET. A suite added to `test` must go in a shard
 # too: test-just fails until it is in exactly one.
@@ -92,7 +96,7 @@ test-static: check-bindings check-colours (catalog "--check") test-stats test-su
 # One of CI's parallel test shards (1-4): `just test-shard 2`.
 test-shard n:
     @{{just}} --show _shard-{{n}} >/dev/null 2>&1 || { echo "error: there is no shard '{{n}}' (the shards are the _shard-<n> recipes)" >&2; exit 2; }
-    @[ "${NEON_BUILT:-}" = 1 ] || {{just}} pyodide community build
+    @[ "${NEON_BUILT:-}" = 1 ] || {{just}} pyodide community check-games build
     {{just}} _shard-{{n}}
 
 _shard-1: test-bots
@@ -216,7 +220,7 @@ test-bots:
 test-rules-screen:
     node scripts/test-rules-screen.mjs
 
-# Record a portal preview gif: `just preview connect4`, or `just preview all`.
+# Record a portal preview (poster, webm, mp4): `just preview connect4`, or `just preview all`.
 preview game:
     scripts/make-preview.sh {{game}}
 
@@ -239,6 +243,27 @@ check-bindings:
 # site needs no build step). `just catalog --check` fails if it is stale.
 catalog *args: (_not-recipes "catalog" args)
     node scripts/build-catalog.mjs {{args}}
+
+# The room server's table of games and their kinds (worker/api/games.js,
+# generated from lib/catalog.js + community/catalog.js; committed so the
+# Worker bundles it). `just games-table --check` fails if it is stale.
+
+# Write the Worker's table of games (worker/api/games.js) from the catalogs.
+games-table *args: (_not-recipes "games-table" args)
+    node scripts/build-games-table.mjs {{args}}
+
+# Fail if worker/api/games.js does not match the catalogs (needs community/).
+check-games:
+    node scripts/build-games-table.mjs --check
+
+# Not part of `test`: deploys the room server for real. Its table of games
+# must match what the site lists, so the registry's games are fetched and the
+# table checked first (docs/accounts.md "Deploying"). D1 migrations are
+# separate: `wrangler d1 migrations apply arcade --remote` (worker/).
+
+# Deploy the room server (worker/) after checking its table of games.
+deploy-worker: community check-games
+    cd worker && {{wrangler}} deploy
 
 # Fetch every registered outside repo at its pinned commit into community/
 # (git-ignored) and write community/catalog.js + precache.js. A clone at

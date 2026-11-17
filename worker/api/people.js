@@ -12,15 +12,14 @@
 //     { id: null, name: "(hidden)" } — unless it is the profile's own player
 //     or the one asking (audit D5).
 //
-// Replaces match.js's publicProfile (left there, unused, for the branch that
-// owns that file to delete). The index routes /api/u/ here; it answers a
+// The index routes /api/u/ here (match.js's old publicProfile is gone); it answers a
 // personal copy (never cached publicly) when the request is signed in or
 // names a friend code, which can be rotated.
 
 import { botWinsOf } from "./bots.js";
 import { HttpError } from "./http.js";
 import { ratingsOf } from "./match.js";
-import { boardOf, unitOf } from "./runs.js";
+import { boardKind, unitOf } from "./runs.js";
 import { areFriends, findAccount } from "./social.js";
 
 const all = async (stmt) => (await stmt.all()).results ?? [];
@@ -28,12 +27,12 @@ const all = async (stmt) => (await stmt.all()).results ?? [];
 /**
  * Each rating with its board's own kind and unit, where the server pins them
  * (worker/api/runs.js SOLO: Sudoku's level boards are times, Light Cycles
- * alone is a best score in seconds). Any other board follows its latest
- * match, which the page reads from the catalog.
+ * alone is a best score in seconds); any other board's kind is its game's
+ * manifest kind, from the Worker's table (runs.js boardKind).
  */
 export const withBoards = (ratings) =>
 	ratings.map((r) => {
-		const kind = boardOf(r.game);
+		const kind = boardKind(r.game);
 		const unit = unitOf(r.game);
 		return { ...r, ...(kind ? { kind } : {}), ...(unit ? { unit } : {}) };
 	});

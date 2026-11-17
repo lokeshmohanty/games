@@ -62,14 +62,17 @@ if (!failures) {
 		check(`just ${r.name} ${args.join(" ")} fails, naming the recipe`, res.status !== 0 && /'test-webapp' is a recipe/.test(said), `exit ${res.status}: ${said.trim().split("\n")[0]}`);
 	}
 }
-const typo = spawnSync(process.execPath, [join(ROOT, "scripts/build-catalog.mjs"), "--chek"], { cwd: ROOT, encoding: "utf8", timeout: 30_000 });
-check("build-catalog refuses an argument that is not --check (it used to rewrite the catalog)", typo.status === 2 && /unknown argument '--chek'/.test(typo.stderr), `exit ${typo.status}: ${typo.stderr.trim()}`);
+for (const script of ["build-catalog", "build-games-table"]) {
+	const typo = spawnSync(process.execPath, [join(ROOT, `scripts/${script}.mjs`), "--chek"], { cwd: ROOT, encoding: "utf8", timeout: 30_000 });
+	check(`${script} refuses an argument that is not --check (it would rewrite what it checks)`, typo.status === 2 && /unknown argument '--chek'/.test(typo.stderr), `exit ${typo.status}: ${typo.stderr.trim()}`);
+}
 const lane = spawnSync(process.execPath, [join(ROOT, "scripts/test-conformance.mjs"), "rsut"], { cwd: ROOT, encoding: "utf8", timeout: 30_000 });
 check("test-conformance refuses a lane that does not exist", lane.status === 2 && /unknown lane 'rsut'/.test(lane.stderr), `exit ${lane.status}: ${lane.stderr.trim()}`);
 
 console.log("\njust: the CI shards hold every suite, once");
-// What `just test` does that is not a suite: fetch and build (the CI build job).
-const SETUP = new Set(["pyodide", "community", "build"]);
+// What `just test` does that is not a suite: fetch, check what the fetch
+// feeds (check-games), and build. CI's build job runs these (checked below).
+const SETUP = new Set(["pyodide", "community", "check-games", "build"]);
 // The groups a list may name instead of their suites.
 const GROUPS = new Set(["test-static", "test-wrangler"]);
 const expand = (name) => (GROUPS.has(name) ? deps(name).flatMap(expand) : [name]);
@@ -92,6 +95,7 @@ const workflow = readFileSync(join(ROOT, ".github/workflows/test.yml"), "utf8");
 const matrix = /^\s*shard:\s*\[([^\]]*)\]/m.exec(workflow)?.[1].split(",").map((s) => Number(s.trim()));
 check("the CI matrix runs exactly these shards", matrix?.join() === shards.join(), `matrix: ${matrix?.join() ?? "none"}`);
 check("CI's first job is `just test-static`", /run:\s*just test-static\b/.test(workflow));
+check("…and its build job checks the Worker's table of games (check-games)", /build-games-table\.mjs --check/.test(workflow));
 
 console.log(failures ? `\n${failures} justfile check(s) failed` : "\nall justfile checks passed");
 process.exit(failures ? 1 : 0);

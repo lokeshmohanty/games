@@ -33,7 +33,7 @@
 import { existsSync, writeFileSync } from "node:fs";
 import { createServer, request } from "node:http";
 import { createGzip } from "node:zlib";
-import { gameFrame, serve } from "./serve.mjs";
+import { PORT_OFFSET, gameFrame, serve } from "./serve.mjs";
 import { loadPlaywright } from "./playwright.mjs";
 
 const arg = (name, dflt) => {
@@ -77,16 +77,30 @@ function throttledProxy(target, port) {
 				body = r.pipe(createGzip());
 			}
 			res.writeHead(r.statusCode, headers);
-			for await (const chunk of body) {
-				for (let i = 0; i < chunk.length; i += 16_384) {
-					const part = chunk.subarray(i, i + 16_384);
-					const now = Date.now();
-					free = Math.max(free, now) + (part.length / NETWORK.downloadThroughput) * 1000;
-					await sleep(free - now);
-					res.write(part);
+			// A response nobody is reading any more (its page closed: a run
+			// ends while the service worker's install is still downloading)
+			// stops here. It used to go on booking the shared link for
+			// seconds, which slowed the next run's first requests (2026-11-16).
+			let gone = false;
+			res.on("close", () => {
+				gone = true;
+				r.destroy();
+			});
+			try {
+				for await (const chunk of body) {
+					if (gone) break;
+					for (let i = 0; i < chunk.length && !gone; i += 16_384) {
+						const part = chunk.subarray(i, i + 16_384);
+						const now = Date.now();
+						free = Math.max(free, now) + (part.length / NETWORK.downloadThroughput) * 1000;
+						await sleep(free - now);
+						res.write(part);
+					}
 				}
+			} catch (err) {
+				if (!gone) throw err; // the upstream destroyed above ends the loop with an error
 			}
-			res.end();
+			if (!gone) res.end();
 		});
 		up.on("error", () => res.destroy());
 		req.pipe(up);
@@ -219,7 +233,7 @@ const median = (xs) => {
 };
 
 const origin = await serve(8790);
-const site = await throttledProxy(origin.base, 8791);
+const site = await throttledProxy(origin.base, 8791 + PORT_OFFSET);
 const browser = await pw.chromium.launch({ executablePath: chrome, args: ["--no-sandbox"] });
 const results = { label: LABEL, date: new Date().toISOString(), runs: RUNS, network: NETWORK, cpu: 4, scenarios: {} };
 
