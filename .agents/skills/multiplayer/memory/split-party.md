@@ -13,13 +13,22 @@ LEAVE PARTY. One party, never two.
 
 How net.js does it (docs/index.md "A split party"):
 - **Who is named:** `_successor(gone)` ranks `lastRecord`, the roster the
-  crown holder last published. It skips own-goodbye departures (`departed`),
-  passed-over heirs (`skipped`), held seats, and, while anyone else could
-  take it, `away` members. Everyone reads the same record.
+  crown holder last published. It skips passed-over heirs (`skipped`), held
+  seats and, while anyone else could take it, `away` members.
+- **One record, nothing local.** All of those marks come from the record
+  itself. Our copy is never read: a relink clears `reconnecting` locally, and
+  a review found two sides naming different heirs, both crowning.
 - **Who may crown:** whoever is named crowns only with a quorum (`_quorum`):
   more than half of the record's humans, or exactly half including
-  `firstHeir`. Own-goodbye departures and the old holder (`vacated`) are left
-  out of both sides of the fraction. A side is self plus direct links only.
+  `firstHeir`. The old holder (`vacated`) is left out of both sides of the
+  fraction. Our side is self plus everyone whose "here" (`__h`, relayed) for
+  this vacancy reached us. Two sides that cannot reach each other can never
+  both hold a quorum.
+- **No `lastRecord` (a reload, a newcomer): never crown by a count.** Wait
+  for the crown's record, or be lost.
+- **Waiting for a quorum:** a member named itself without a quorum yet waits
+  the heir's wait (`pendingCrown`), crowning as soon as enough "here"s
+  arrive, and is lost if they don't.
 - **An heir alone against a majority is lost; it does not crown.** I read
   that as what Lokesh's quorum decision implies: the majority would pass over
   a cut-off heir, so if the heir crowned too, the party would fork. Confirm
@@ -33,8 +42,10 @@ How net.js does it (docs/index.md "A split party"):
   - `_lose` re-announces now and after `LOST_RETRY_MS`.
   - `_outranks` while lost takes only a newer term than `lostTerm`, the heir
     itself, or the old host at the old term **if it still seats the heir**.
-  - Lost phones that relink retry the quorum after the heir's wait
-    (`_retakeWithQuorum`).
+  - Lost phones that relink say "here" again and retry the quorum after the
+    heir's wait (`_retakeWithQuorum`).
+  - The shell withdraws a ranked start at the loss (`account.partyGone`).
+  - The kept frame comes back only on the same run (`mounted.run`).
 - **A held host's seat:** a host the room server holds a seat for sends no
   `__gone`. The member that concludes it gone broadcasts `__v` (crown
   vacant). A receiver with no link to the host runs its own `_suspect` and

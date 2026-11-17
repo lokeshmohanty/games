@@ -765,6 +765,12 @@ try {
 	// through the room's own _lose and the heir's record ending it.
 	await p3.evaluate(() => {
 		window.__lostFrame = document.querySelector(".game-frame");
+		// A ranked start without a result is withdrawn the moment we are lost
+		// (the frame is kept, so the game's own matchEnd would not).
+		window.__partyGone = 0;
+		const account = (NeonArcade.account ??= {});
+		const was = account.partyGone;
+		account.partyGone = () => (window.__partyGone++, was?.());
 		window.__party.room._lose();
 	});
 	const lostSaid = await p3.locator(".lobby-sub", { hasText: "Lost connection to the party" }).waitFor({ timeout: 5000 }).then(() => true, () => false);
@@ -778,6 +784,7 @@ try {
 	}));
 	check("a phone cut off from the heir's side says so, and its game stops", lostSaid && lostState.lost && lostState.party && !lostState.shown, JSON.stringify(lostState));
 	check("…its game hidden, not torn down, for a quick return", lostState.kept, JSON.stringify(lostState));
+	check("…and its ranked start withdrawn at once", (await p3.evaluate(() => window.__partyGone)) === 1, String(await p3.evaluate(() => window.__partyGone)));
 	check("…and without a room server, no TRY AGAIN: LEAVE PARTY is the way out", !lostState.canRejoin && !lostState.again && (await p3.locator("a[data-leaves]", { hasText: "LEAVE PARTY" }).count()) > 0, JSON.stringify(lostState));
 	await p3.evaluate(() => window.__party.room.rejoin()); // no room server: a no-op, never a throw
 	// At phone sizes, in every theme: nothing sideways, the why readable.
@@ -800,6 +807,17 @@ try {
 	const lostBack = await p3.waitForFunction(() => !window.__party.room.lost && !!window.__lostFrame?.checkVisibility?.(), null, { timeout: TIMEOUT }).then(() => true, () => false);
 	const sameFrame = await p3.evaluate(() => document.querySelector(".game-frame") === window.__lostFrame);
 	check("…and back in touch, the same game is shown again", lostBack && sameFrame, `back=${lostBack} same=${sameFrame}`);
+	// Lost again, and meanwhile the heir starts the same game afresh (a new
+	// run): found, the phone mounts the new run, not the frame it kept.
+	await p3.evaluate(() => {
+		window.__lostFrame = document.querySelector(".game-frame");
+		window.__party.room._lose();
+	});
+	await p2.evaluate(() => window.__party.room.setGame("connect4"));
+	const freshRun = await p3
+		.waitForFunction(() => !window.__party.room.lost && !!document.querySelector(".game-frame") && document.querySelector(".game-frame") !== window.__lostFrame, null, { timeout: TIMEOUT })
+		.then(() => true, () => false);
+	check("…but found on a new run of that game, it mounts the new run, not the kept frame", freshRun, await p3.evaluate(() => JSON.stringify({ lost: window.__party.room.lost, same: document.querySelector(".game-frame") === window.__lostFrame })));
 	await p2.evaluate((id) => {
 		window.__party.room.setGame(null);
 		window.__party.room.removeMember(id);

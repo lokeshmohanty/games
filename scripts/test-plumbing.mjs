@@ -689,7 +689,9 @@ console.log("\na split party, reviewed: hidden heirs, a quorum, reloads, the old
 	const l = c.links.get(h.selfId);
 	if (l) c._linkClosed(l);
 	await sleep(DEPARTURE + 1200);
-	check("a reloaded heir takes the crown, not a loss", hosts([a2, c]) === "Ana" && !a2.lost && !c.lost, `${hosts([a2, c])} lost=${a2.lost},${c.lost}`);
+	// The record seats Ana's held seat: Cy is named, and holds a quorum
+	// with Ana; Ana's fresh page has no record to crown by, and takes Cy's.
+	check("a reloaded heir's party heals: one host, nobody lost", hosts([a2, c]) === "Cy" && a2.hostId() === c.selfId && !a2.lost && !c.lost, `${hosts([a2, c])} lost=${a2.lost},${c.lost}`);
 	for (const r of [a2, c]) r.leave();
 }
 
@@ -835,6 +837,64 @@ console.log("\na split party, reviewed: hidden heirs, a quorum, reloads, the old
 	check("…while the answer to the new one does", link?.pc.remote === "answer-to-the-second", link?.pc.remote);
 	room.leave();
 	globalThis.RTCPeerConnection = real;
+}
+
+// ---------------------------------------------------------------------------
+console.log("\na split party, re-reviewed: one record, and who said here");
+
+{
+	// Ana reloads (her seat held on the host's record) and is back, linked to
+	// Cy only, when the host dies and the guests split {Ana, Cy} | {Bo, Dee}.
+	// Cy's relink had cleared Ana's held mark on Cy's own copy, so Cy named
+	// Ana heir while Bo and Dee named Bo — and each half passed the tie. And
+	// Ana's fresh page, with no record of its own, counted a false majority.
+	// Every input now comes from the record, and a page without one never
+	// crowns by a quorum: one crown, Bo's.
+	const o = { heirWaitMs: 300, lostRetryMs: [] };
+	const [h, a, b, c, d] = await party(["Host", "Ana", "Bo", "Cy", "Dee"], [[0, 1], [0, 2], [0, 3], [0, 4], [1, 2], [1, 3], [1, 4], [2, 3], [2, 4], [3, 4]], o);
+	h.party.members.find((m) => m.id === a.selfId).rs = true;
+	h._commitParty();
+	await sleep(20);
+	a.detach();
+	for (const r of [h, b, c, d]) {
+		const l = r.links.get(a.selfId);
+		if (l) r._linkClosed(l);
+	}
+	await sleep(DEPARTURE + 200);
+	const a2 = bare({ ...o, name: "Ana", selfId: a.selfId }, false);
+	h.__frozen = true;
+	h.detach();
+	const [toA, toC] = linkPair(c, a2);
+	toA.introducedName = "Ana";
+	toC.introducedName = "Cy";
+	c._linkOpened(toA);
+	a2._linkOpened(toC);
+	await sleep(20);
+	cut(c, b);
+	cut(c, d);
+	for (const r of [b, c, d]) {
+		const l = r.links.get(h.selfId);
+		if (l) r._linkClosed(l);
+	}
+	await sleep(DEPARTURE + 2500);
+	check("a reload, then a 2–2 split: one crown, not two", hosts([a2, b, c, d]) === "Bo", hosts([a2, b, c, d]));
+	check("…a page with no record of its own never crowns by a count", !a2.isHost());
+	check("…and the side without the crown is lost", c.lost === true && !c.isHost(), `cy lost=${c.lost}`);
+	for (const r of [a2, b, c, d]) r.leave();
+}
+
+{
+	// A healthy party, the host leaves; the heir links directly to Bo only,
+	// everyone else through Bo. Counting direct links, the heir had no
+	// quorum and went lost until Bo took the crown 10 s later. Counting who
+	// said "here" through the mesh, the heir crowns at once.
+	const [h, a, b, c, d, e] = await party(["Host", "Ana", "Bo", "Cy", "Dee", "Eve"], [[0, 1], [0, 2], [0, 3], [0, 4], [0, 5], [1, 2], [2, 3], [2, 4], [2, 5], [3, 4], [3, 5], [4, 5]], { heirWaitMs: 1000, lostRetryMs: [] });
+	const lostA = [];
+	a.onLost = (x) => lostA.push(x);
+	h.leave();
+	await sleep(300);
+	check("an heir reached through a relay crowns at once, never lost", hosts([a, b, c, d, e]) === "Ana" && !lostA.length, `${hosts([a, b, c, d, e])} lost events ${lostA.join()}`);
+	for (const r of [a, b, c, d, e]) r.leave();
 }
 
 console.log(failures ? `\n${failures} failing\n` : "\nall passing\n");

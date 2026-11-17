@@ -424,23 +424,37 @@ reconciles two hosts:
 "heir side only", and 2026-11-17 "skip hidden + quorum"). The host's departure
 can leave the rest in pieces that cannot reach each other: two guests that
 talked only through the host (no TURN, by design), or a re-dial that had not
-landed yet. The heir is named by `_successor` over the roster the host last
-published, not over what this browser's own probes have left of it, so every
-piece names the same member. It skips:
+landed yet. The heir is named by `_successor` from the roster the host last
+published (`lastRecord`). Every input comes from that record and none from
+this browser's own copy, which a probe, a relink or a goodbye may have
+changed since, so every piece names the same member. A review found two
+pieces naming different heirs, and both crowning, because one read a held
+seat that its relink had cleared. `_successor` skips:
 
-- members gone by their own goodbye;
-- held seats;
+- held seats (`reconnecting` on the record);
 - heirs already passed over;
 - while anyone else could take it, members whose phone is in the background
   (`away` on the record, from `visibilitychange`).
 
+A member gone by its own goodbye since the record is not on the record
+either: if it was the heir, it is passed over after the wait.
+
 **A quorum decides who may crown.** Whoever is named crowns only if its piece
-holds a quorum (`_quorum`): more than half of that roster's humans, or exactly
-half with the first heir among them. Two pieces can never both hold one.
-Counted on both sides of the fraction: members gone by their own goodbye are
-left out, and so is the old crown holder (it is no longer a candidate). A
-piece is the member itself and whoever it holds a direct link to; relayed
-members are left out, which can only make a quorum harder to reach.
+holds a quorum (`_quorum`): more than half of that record's humans, or
+exactly half with the first heir among them. The old crown holder is left out
+of both sides of the fraction, because it is no longer a candidate.
+
+A piece is the member itself plus everyone who said "here" for this vacancy
+(`__h`) and reached it, through the mesh, relays included. Each member says
+it once as it handles the vacancy, and answers the first one it hears. A
+piece we cannot reach cannot deliver to us, so two pieces can never both
+hold a quorum. Relays are counted, so a healthy party whose heir links
+directly to only one member still crowns at once. Counting direct links
+only, that heir went lost for 10 s.
+
+A page with no record heard from a crown holder, such as a fresh reload or a
+newcomer, has nothing to count by and never crowns through a quorum. It
+waits for the crown's record, and is lost after the heir's wait.
 
 Every member that only computed the heir (`computed`, which is not the same
 as never having heard anyone: a page fresh from a reload has done neither)
@@ -454,11 +468,13 @@ A lost member:
 
 - **Stops its game and says so.** The screen reads "Lost connection to the
   party", with TRY AGAIN where a room server may still reach the others, and
-  LEAVE PARTY.
+  LEAVE PARTY. A ranked start without a result is withdrawn at once, so
+  leaving while lost is never booked as a departure.
   - TRY AGAIN calls `room.rejoin()`, the re-announce an isolated member
     makes. It is also made at once, and again after 5, 15 and 30 s.
   - The game frame is hidden, not torn down, for 60 s. A phone back in touch
-    within that time resumes it, its own hidden state included.
+    within that time resumes it, its own hidden state included, but only if
+    it is the same run of the same game. A new run mounts fresh.
 - **Rejoins rather than forks when a path comes back.** Its loss ends in any
   of these cases (`onLost(false)`):
   - a record at a newer term than it lost at;
@@ -467,12 +483,13 @@ A lost member:
     heir (otherwise it would put us in a second party beside the heir's).
 
   A member the heir dropped meanwhile carries its own seat back in.
-- **Can still crown with a quorum.** Lost phones that link up again check
-  for a quorum, after the heir's wait. Without a room server, that, or LEAVE
-  PARTY, is the way forward.
+- **Can still crown with a quorum.** Lost phones that link up again say
+  "here" again, and check for a quorum after the heir's wait. Without a room
+  server, that, or LEAVE PARTY, is the way forward.
 
 **Cases that are not splits.** An heir that left by its own goodbye is not a
-split: the next in line takes the crown. A host whose seat the room server
+split: it is passed over after the wait, and the next in line takes the
+crown. A host whose seat the room server
 holds sends no `__gone`. Whoever concludes it gone broadcasts that the crown
 is vacant (`__v`), so an heir that reached the host only through a relay
 still learns it. The receiver does not take it on trust: it probes the host
@@ -483,7 +500,7 @@ reloading) cannot move the crown for everyone.
 departure: both sides keep a crown, and term ordering heals it on
 reconnection. If the host and every candidate on the majority side fail
 together, nobody carries on. Tested in test-plumbing ("a split party",
-"…reviewed").
+"…reviewed", "…re-reviewed") and test-party (the lost screen).
 
 A link reported `disconnected` gets 3 s to recover before it counts as dropped,
 because a phone on a briefly lost signal often recovers the same connection.
