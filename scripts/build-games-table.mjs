@@ -27,6 +27,14 @@ import { runInNewContext } from "node:vm";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
+// Anything but --check is refused, as in build-catalog.mjs: a mistyped
+// `--chek` would rewrite the table instead of checking it.
+const unknown = process.argv.slice(2).filter((a) => a !== "--check");
+if (unknown.length) {
+	console.error(`build-games-table: unknown argument ${unknown.map((a) => `'${a}'`).join(", ")} — the only one is --check. To run several recipes, run them one per \`just\` call.`);
+	process.exit(2);
+}
+
 /**
  * Games whose results come in more kinds than their manifest's one: the
  * results a game sends of each are accepted, on its one board (of the

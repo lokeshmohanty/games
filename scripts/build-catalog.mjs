@@ -18,6 +18,14 @@ import { catalogEntries, catalogScript, contributorEntry } from "./catalog-lib.m
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const OUT = join(ROOT, "lib", "catalog.js");
 
+// Anything but --check is refused: a mistyped `--chek` used to rewrite the
+// catalog silently, and `just catalog test-webapp` to swallow a recipe.
+const unknown = process.argv.slice(2).filter((a) => a !== "--check");
+if (unknown.length) {
+	console.error(`build-catalog: unknown argument ${unknown.map((a) => `'${a}'`).join(", ")} — the only one is --check. To run several recipes, run them one per \`just\` call.`);
+	process.exit(2);
+}
+
 // The arcade's games, then the SDK's managed Tic Tac Toe in every language
 // (sdk/v2/examples/tic-tac-toe-<lane>), copied into the site by assemble.mjs.
 // Only the JavaScript one is listed, as Tic Tac Toe under Strategy; the

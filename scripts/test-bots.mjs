@@ -20,17 +20,12 @@
  * NixOS note: as in test-party.mjs, Playwright's bundled chromium cannot run
  * here, so the nix-provided Chrome is driven through executablePath.
  */
-import { createRequire } from "node:module";
-import { execFileSync } from "node:child_process";
-import { existsSync, globSync } from "node:fs";
+import { existsSync } from "node:fs";
 import { homedir } from "node:os";
-import { dirname, join, resolve as resolvePath } from "node:path";
-import { fileURLToPath } from "node:url";
+import { join } from "node:path";
 import { serve, gameScope, readyToClick } from "./serve.mjs";
+import { loadPlaywright } from "./playwright.mjs";
 
-const require = createRequire(import.meta.url);
-const ROOT = resolvePath(dirname(fileURLToPath(import.meta.url)), "..");
-const PW_CACHE = join(homedir(), ".cache", "game-previews");
 const SITE = await serve(8734);
 const url = SITE.url;
 // The portal's address (LEAVE PARTY goes there): the shell with no query.
@@ -52,23 +47,6 @@ function chromePath() {
 		process.exit(1);
 	}
 	return found;
-}
-
-function loadPlaywright() {
-	const found = [
-		join(ROOT, "node_modules", "playwright"),
-		join(PW_CACHE, "node_modules", "playwright"),
-		...globSync(join(homedir(), ".npm", "_npx", "*", "node_modules", "playwright")),
-	].find((p) => existsSync(p));
-	if (!found) {
-		execFileSync(
-			"npm",
-			["install", "--prefix", PW_CACHE, "--no-save", "--no-audit", "playwright"],
-			{ stdio: "inherit" },
-		);
-		return require(join(PW_CACHE, "node_modules", "playwright"));
-	}
-	return require(found);
 }
 
 let failures = 0;
@@ -171,7 +149,6 @@ try {
 	//
 	// The bot with something to prove: it is the only one here that has to be
 	// *right* rather than merely busy.
-
 
 	// ------------------------------------------------------------- undercover
 	//

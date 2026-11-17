@@ -46,22 +46,17 @@
  * `/room/new` (never a dial or a guess), and re-dials ride member passes;
  * only claim probes (claimOf) and the gate section make failing guesses.
  */
-import { createRequire } from "node:module";
-import { execFileSync } from "node:child_process";
-import { existsSync, globSync } from "node:fs";
+import { existsSync } from "node:fs";
 import { request as httpsRequest } from "node:https";
 import { request as httpRequest } from "node:http";
 import { randomBytes } from "node:crypto";
 import dns from "node:dns";
 import { homedir } from "node:os";
-import { dirname, join, resolve as resolvePath } from "node:path";
-import { fileURLToPath } from "node:url";
+import { join } from "node:path";
 import { DIAL_FAILS } from "../worker/hub.js";
 import { serve } from "./serve.mjs";
+import { loadPlaywright } from "./playwright.mjs";
 
-const require = createRequire(import.meta.url);
-const ROOT = resolvePath(dirname(fileURLToPath(import.meta.url)), "..");
-const PW_CACHE = join(homedir(), ".cache", "game-previews");
 // The built site, served (the one-page shell does not run from file://).
 const SITE = await serve(8747);
 const PARTY = SITE.url("?party");
@@ -293,18 +288,6 @@ function chromePath() {
 		process.exit(1);
 	}
 	return found;
-}
-function loadPlaywright() {
-	const found = [
-		join(ROOT, "node_modules", "playwright"),
-		join(PW_CACHE, "node_modules", "playwright"),
-		...globSync(join(homedir(), ".npm", "_npx", "*", "node_modules", "playwright")),
-	].find((p) => existsSync(p));
-	if (!found) {
-		execFileSync("npm", ["install", "--prefix", PW_CACHE, "--no-save", "--no-audit", "playwright"], { stdio: "inherit" });
-		return require(join(PW_CACHE, "node_modules", "playwright"));
-	}
-	return require(found);
 }
 
 let browser = null;
