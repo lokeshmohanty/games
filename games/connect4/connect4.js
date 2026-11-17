@@ -208,11 +208,15 @@ style.textContent = `
 	#hud .you-red { color: var(--p1); text-shadow: 0 0 8px var(--glow); }
 	#hud .you-yellow { color: var(--p2); text-shadow: 0 0 8px var(--glow); }
 	#hud .you-spec { color: var(--muted); }
+	#moved { font-size: clamp(0.8rem, 2.6vw, 1rem); color: var(--muted); min-height: 1.4em; text-align: center; }
 	#board { border: 3px solid var(--rule); border-radius: 12px;
 		box-shadow: 0 0 30px var(--glow); max-width: 95vw; max-height: 70vh; }
 `;
 document.head.append(style);
 const hudEl = document.getElementById("hud");
+// The last move in words, for anyone who cannot see the ring: "Yellow dropped
+// in column 6". Said for a move this phone sees made; a first view says nothing.
+const movedEl = document.getElementById("moved");
 const canvas = document.getElementById("board");
 const c2d = canvas.getContext("2d");
 let view = null;
@@ -235,7 +239,7 @@ const alpha = (rgba, a) => rgba.replace(/,\s*[\d.]+\)$/, `, ${a})`);
 
 function resize() {
 	const maxW = Math.min(window.innerWidth - 24, 560);
-	const maxH = window.innerHeight - 140;
+	const maxH = window.innerHeight - 176; // the HUD, the move line under the board, the gaps
 	const cell = Math.max(20, Math.floor(Math.min(maxW / COLS, maxH / ROWS)));
 	canvas.width = cell * COLS;
 	canvas.height = cell * ROWS;
@@ -371,6 +375,10 @@ arcade.on("view", ({ state }) => {
 	// One more disc in the same match, seen arrive: it falls. Anything else
 	// (the same move again, a first view, a rematch) stops a fall in flight.
 	const fresh = before && state.last && before.match === state.match && state.moves === (before.moves ?? 0) + 1;
+	if (fresh) {
+		const [row, col] = state.last;
+		movedEl.textContent = `${state.board[row][col] === RED ? "Red" : "Yellow"} dropped in column ${col + 1}`;
+	} else if (!before || before.match !== state.match || state.moves !== before.moves) movedEl.textContent = "";
 	if (fresh && !reduced.matches) {
 		drop = { row: state.last[0], col: state.last[1], t0: performance.now(), fall: FALL_MS * Math.sqrt((state.last[0] + 1) / ROWS) };
 		drops++;

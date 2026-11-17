@@ -965,6 +965,13 @@ try {
 	check("a bot took the second seat", state.red !== null && state.yellow !== null);
 	check("the bot is the one that is not us", state.yellow?.startsWith("bot_"), state.yellow);
 	check("the board starts empty", state.board.every((r) => r.every((v) => v === 0)));
+	/** The move line under the board, and whether it is a polite live region. */
+	const movedLine = () => c4.evaluate(() => {
+		const e = document.getElementById("moved");
+		return { text: e.textContent, live: e.getAttribute("role") === "status" && e.getAttribute("aria-live") === "polite" };
+	});
+	let moved = await movedLine();
+	check("the move line is a polite live region, silent on the first view", moved.live && moved.text === "", JSON.stringify(moved));
 
 	/** Drop a disc in `col` by clicking the board where a player would. */
 	async function drop(col) {
@@ -1024,6 +1031,8 @@ try {
 	await c4.waitForFunction((at) => JSON.stringify(window.__game.handle.debug().marked) === JSON.stringify(at), botDisc[0] ?? null, { timeout: 3000 }).catch(() => {});
 	state = await debug(page);
 	check("the bot's disc is ringed as the last move, after it falls into place", botDisc.length === 1 && same(state.last, botDisc[0]) && same(state.marked, botDisc[0]) && state.drops >= 1, JSON.stringify({ botDisc, last: state.last, marked: state.marked, drops: state.drops }));
+	moved = await movedLine();
+	check("…and said in words: Yellow dropped in its column", moved.text === `Yellow dropped in column ${(botDisc[0]?.[1] ?? -2) + 1}`, JSON.stringify(moved));
 
 	// Build a threat and see whether it is honoured. The bot is not told what we
 	// are doing; it has to find the block itself.
@@ -1104,6 +1113,8 @@ try {
 	}, null, { timeout: TIMEOUT }).catch(() => {});
 	state = await debug(page);
 	check("PLAY AGAIN: an empty board with no last move ringed", state.match === 2 && state.last === null && state.marked === null, JSON.stringify({ match: state.match, last: state.last, marked: state.marked }));
+	moved = await movedLine();
+	check("…and no move said", moved.text === "", JSON.stringify(moved));
 	// Reduced motion: no fall, and the ring is on our disc in the same paint.
 	await page.emulateMedia({ reducedMotion: "reduce" });
 	const dropsBefore = state.drops;
@@ -1114,6 +1125,8 @@ try {
 		return d.board[5][3] !== 0 && d;
 	}, null, { timeout: TIMEOUT }).then((h) => h.jsonValue(), () => debug(page));
 	check("…our disc is ringed at once under reduced motion, with no fall", same(state.marked, [5, 3]) && same(state.last, [5, 3]) && state.drops === dropsBefore, JSON.stringify({ marked: state.marked, last: state.last, drops: [dropsBefore, state.drops] }));
+	moved = await movedLine();
+	check("…and said: Red dropped in column 4", moved.text === "Red dropped in column 4", JSON.stringify(moved));
 	await page.emulateMedia({ reducedMotion: null });
 	// A game played: ./ opens on My Games now, with Recently played; the
 	// cards with your record are All Games' (lib/portal.js).

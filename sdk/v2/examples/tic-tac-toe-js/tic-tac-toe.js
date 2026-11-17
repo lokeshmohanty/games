@@ -76,23 +76,20 @@ const nameOf = (id) => arcade.party.members.find((m) => m.id === id)?.name ?? "P
 // so it is found here: the square that filled since the board drawn before.
 let drawn = null; // the board drawn last
 let last = -1; // the square holding the last mark, or -1 for none
-function lastMark(v) {
+/** The last mark's square in `board`, given the board drawn `before` and the square ringed then (`kept`). */
+function lastMark(before, kept, board) {
 	// A board that lost a mark is a new match: compare it with an empty one.
-	const before = drawn && drawn.every((m, i) => !m || m === v.board[i]) ? drawn : null;
-	const added = v.board.flatMap((m, i) => (m && !before?.[i] ? [i] : []));
+	const base = before && before.every((m, i) => !m || m === board[i]) ? before : null;
+	const added = board.flatMap((m, i) => (m && !base?.[i] ? [i] : []));
 	if (added.length === 1) return added[0];
-	// A first sight of a game under way (a phone that joined late) has no
-	// before to compare with: no ring rather than a guess.
-	if (!before) return -1;
-	if (!added.length) return last; // the same board again (a new host's first view)
-	// Views missed: the mover's own new mark, if only one. The turn has passed
-	// after every move, a winning one too.
-	const mine = added.filter((i) => v.board[i] === 3 - v.turn);
-	return mine.length === 1 ? mine[0] : -1;
+	if (base && !added.length) return kept; // the same board again (a new host's first view)
+	// Several new marks (views missed, a phone that joined a game under way):
+	// which came last cannot be told, so no ring rather than a guess.
+	return -1;
 }
 
 arcade.on("view", ({ state: v }) => {
-	last = lastMark(v);
+	last = lastMark(drawn, last, v.board);
 	drawn = [...v.board];
 	v.board.forEach((m, i) => {
 		cells[i].textContent = m === 1 ? "X" : m === 2 ? "O" : "";

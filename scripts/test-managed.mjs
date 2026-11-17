@@ -230,6 +230,21 @@ try {
 	const last = await play(host, fh, 2, 5);
 	rings = await ringsOn([fh, f2, f3], [2]);
 	check("…and the winning mark is the one ringed at the end", ringsAre(rings, [2]), rings);
+	// The page's own rule (tic-tac-toe.js lastMark), for what a live game
+	// rarely shows: views missed. Two new marks, even after a skip, ring
+	// neither; one new mark is the last; the same board keeps its ring; a
+	// board that lost marks is a new match.
+	const rule = await f3.evaluate(() => ({
+		missedAfterSkip: lastMark([1, 0, 0, 0, 2, 0, 0, 0, 0], 4, [1, 0, 2, 0, 2, 0, 0, 0, 1]),
+		missedTwo: lastMark([1, 0, 0, 0, 0, 0, 0, 0, 0], 0, [1, 2, 1, 0, 0, 0, 0, 0, 0]),
+		one: lastMark([1, 0, 0, 0, 0, 0, 0, 0, 0], 0, [1, 0, 0, 0, 2, 0, 0, 0, 0]),
+		same: lastMark([1, 0, 0, 0, 2, 0, 0, 0, 0], 4, [1, 0, 0, 0, 2, 0, 0, 0, 0]),
+		firstSight: lastMark(null, -1, [1, 0, 0, 0, 2, 0, 0, 0, 0]),
+		rematch: lastMark([1, 1, 1, 2, 2, 0, 0, 0, 0], 2, [0, 0, 0, 0, 0, 0, 0, 0, 0]),
+		rematchOne: lastMark([1, 1, 1, 2, 2, 0, 0, 0, 0], 2, [0, 0, 0, 0, 0, 0, 0, 0, 1]),
+	}));
+	check("the ring rule: several new marks (views missed, a skip among them) ring none; one new mark is the last; the same board keeps it; a new match starts clear",
+		rule.missedAfterSkip === -1 && rule.missedTwo === -1 && rule.one === 4 && rule.same === 4 && rule.firstSight === -1 && rule.rematch === -1 && rule.rematchOne === 8, rule);
 	// Tic Tac Toe never says `idle`: nothing holds its card back.
 	const tttCard = await host.locator(".managed-over").waitFor({ timeout: 1000 }).then(() => true, () => false);
 	check("a game that never says idle gets its end card at once", tttCard);
