@@ -189,12 +189,16 @@ try {
 		console.log(`  info the host's game frame was remounted before the end: ${JSON.stringify(state)}`);
 		endFrame = await gameFrame(host, TIMEOUT);
 	}
-	// Sent after this call has returned: `end` unmounts the very frame the
-	// call runs in, and on a slow runner the unmount beat the call's own
-	// answer ("Frame was detached", CI run 44143511384).
-	await endFrame.evaluate(() => void setTimeout(() => window.fixtureEnd(), 0));
+	// `end` unmounts the very frame this call runs in, and on a loaded
+	// machine the unmount beats the call's own answer back to Playwright
+	// ("Frame was detached", CI run 44143511384; locally under CPU load every
+	// time, the crown never having moved). That error is the end working:
+	// what it did is checked on the page, and `end` itself in the trace below.
+	await endFrame.evaluate(() => window.fixtureEnd()).catch((err) => {
+		if (!/detached/i.test(err.message)) throw err;
+	});
 	const ended = await host.locator(".game-frame").waitFor({ state: "detached", timeout: TIMEOUT }).then(() => true, () => false);
-	check("the host's end takes the game down", ended);
+	check("the host's end takes the game down", ended && (await host.evaluate(() => window.__party.game)) === null);
 
 	console.log("\nprotocol: every message against sdk/v2/protocol.json");
 	const traced = (await Promise.all(pages.map((p) => p.evaluate(() => window.__sdk)))).flat();
