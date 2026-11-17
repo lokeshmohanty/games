@@ -95,3 +95,20 @@ export async function readyToClick(page) {
 	await Promise.all(frames.map((f) => Promise.race([f.evaluate(twice).catch(() => {}), new Promise((r) => setTimeout(r, 2000))])));
 	await page.evaluate(twice);
 }
+
+/**
+ * Read `read()` until `ok(value)`, or `ms` pass: the last value either way, so
+ * the check still makes its own verdict and shows what it saw. For state that
+ * follows an action a beat later on a slow runner, where a single read (or a
+ * fixed sleep, then a read) races it. Never for a negative check: "nothing
+ * happens within N ms" is a wait of its own.
+ */
+export async function settled(read, ok = Boolean, ms = 10_000, every = 100) {
+	const end = Date.now() + ms;
+	let value = await read();
+	while (!ok(value) && Date.now() < end) {
+		await new Promise((r) => setTimeout(r, every));
+		value = await read();
+	}
+	return value;
+}
