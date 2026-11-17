@@ -778,12 +778,14 @@ console.log("\na split party, reviewed: hidden heirs, a quorum, reloads, the old
 	// `__gone`. Ana reaches it only through Bo; Bo concludes it gone and says
 	// the crown is vacant, so Ana — the heir — takes it, rather than Bo going
 	// lost while Ana waits out a five-minute grace.
-	const [h, a, b] = await party(["Host", "Ana", "Bo"], [[0, 2], [1, 2]], { heirWaitMs: 300 });
+	// Ana asks for herself before concluding (a probe of her own), so the
+	// heir's wait here is longer than that, as the real 10 s is.
+	const [h, a, b] = await party(["Host", "Ana", "Bo"], [[0, 2], [1, 2]], { heirWaitMs: 4000 });
 	for (const r of [h, a, b]) r.party.members.find((m) => m.id === h.selfId).rs = true;
 	h.detach();
 	const l = b.links.get(h.selfId);
 	if (l) b._linkClosed(l);
-	await sleep(DEPARTURE + 800);
+	await sleep(2 * DEPARTURE + 800);
 	check("a held host's seat: the crown's vacancy reaches an heir behind a relay", hosts([a, b]) === "Ana" && !b.lost, `${hosts([a, b])} lost=${b.lost}`);
 	for (const r of [a, b]) r.leave();
 }
