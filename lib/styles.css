@@ -395,6 +395,15 @@ canvas {
   cursor: default;
   opacity: 0.7;
 }
+/* BOT / PERSON on a bot's row (party.js): a toggle, 44px for a thumb. */
+.party-mini.party-person {
+  min-height: 44px;
+}
+.party-mini.party-person[aria-pressed="true"] {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--on-accent);
+}
 .party-mini.is-danger {
   color: var(--danger);
   border-color: var(--danger);

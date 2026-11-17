@@ -453,6 +453,32 @@ try {
 		solo.stop();
 	}
 
+	// ---------------------------------------------------------------- 4b
+	console.log("\nmanaged: a PERSON seat is told only to a game that takes it");
+	// The roster's PERSON (lib/party.js, for "sameDevice" games) marks a bot
+	// `local`; lib/sdk-managed.js passes that on only to a game whose
+	// manifest says "sameDevice". The fixture does not.
+	{
+		const fx4 = await devServer("scripts/fixtures", 5199, "tick-game");
+		const P = await party(fx4.base, 1);
+		const [pp] = P.pages;
+		await pp.locator("button", { hasText: "ADD BOT" }).first().click({ timeout: TIMEOUT });
+		await pp.locator(".party-member").nth(1).waitFor({ timeout: TIMEOUT });
+		await pp.locator(".party-member").nth(1).locator(".party-person").click({ timeout: TIMEOUT });
+		await pp.waitForFunction(() => window.__party.room.getMembers()[1].local === true, null, { timeout: TIMEOUT });
+		await pp.evaluate(() => {
+			const r = window.__party.room;
+			for (const m of r.getMembers()) r.setTeam(m.id, "A");
+		});
+		await pp.locator(".party-game", { hasText: "TICK CHECK" }).first().click({ timeout: TIMEOUT });
+		const pf = await gameFrame(pp, TIMEOUT);
+		const v = await viewUntil(pf, (v) => v.ticks >= 1);
+		check("the bot is marked local in the party, but the game without sameDevice is not told", Array.isArray(v?.local) && v.local.length === 0 && Object.keys(v.score).length === 2, v && { local: v.local, seats: Object.keys(v.score) });
+		await P.collect();
+		await P.context.close();
+		fx4.stop();
+	}
+
 	// ---------------------------------------------------------------- 5
 	console.log("\nmanaged: the end card waits for the last move's replay (Neon Fission)");
 	// Lokesh, 2026-11-15: a winning chain flipped half his cells in one turn,

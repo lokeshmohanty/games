@@ -97,5 +97,20 @@ check("…anything else is refused", validateManifest({ ...good, leaderboard: "n
 	check("…and every other game leaves it out (default: boards)", all.filter((g) => g.leaderboard !== false).every((g) => !("leaderboard" in g)));
 }
 
+console.log("\nmanifest: \"sameDevice\" (PERSON seats at the quick table, 2026-11-17)");
+{
+	const managed = { ...good, app: undefined, kind: "ffa", state: "managed", seats: { min: 2, max: 8 }, bots: true };
+	check('"sameDevice": true on a managed game with bots is accepted', validateManifest({ ...managed, sameDevice: true }).length === 0, validateManifest({ ...managed, sameDevice: true }));
+	for (const [what, m] of [
+		["a Layer 1 game (no managed state: nothing passes `local` or keeps it off the vs-bots board)", { ...managed, state: undefined, sameDevice: true }],
+		['a "local" game', { ...managed, kind: "local", sameDevice: true }],
+		['a "shared" web app', { ...good, sameDevice: true }],
+		["a game without bots", { ...managed, bots: false, sameDevice: true }],
+	]) check(`…refused for ${what}`, validateManifest(m).some((p) => p.includes('"sameDevice" needs')), validateManifest(m));
+	check("…and it must be a boolean", validateManifest({ ...managed, sameDevice: "yes" }).some((p) => p.includes('"sameDevice" must be true or false')));
+	const fission = (NeonArcade.CATALOG ?? []).find((g) => g.id === "neon-fission");
+	check("the catalog carries it for Neon Fission, and for no other game", fission?.sameDevice === true && (NeonArcade.CATALOG ?? []).filter((g) => g.sameDevice).length === 1);
+}
+
 console.log(failures ? `\n${failures} submission check(s) failed` : "\nall submission checks passed");
 process.exit(failures ? 1 : 0);

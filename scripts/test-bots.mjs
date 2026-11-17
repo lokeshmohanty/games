@@ -1171,7 +1171,7 @@ try {
 			failures++;
 		});
 		const { F, table } = await openFission(hot, 3, [1]);
-		check("the table names seat 2 PLAYER 2 once it is a PERSON; seat 3 keeps its bot's name", table[1] === "PLAYER 2" && table[2] !== "PLAYER 3", JSON.stringify(table));
+		check("the table names seat 2 Player 2 once it is a PERSON, as the game does; seat 3 keeps its bot's name", table[1] === "Player 2" && table[2] !== "Player 3", JSON.stringify(table));
 		const marked = await hot.evaluate(() => window.__party.room.getMembers().map((m) => [m.id.startsWith("bot_"), m.local === true]));
 		check("…a person here is a bot seat to the party, marked local", JSON.stringify(marked) === JSON.stringify([[false, false], [true, true], [true, false]]), JSON.stringify(marked));
 		let v = await fission(F);
@@ -1340,6 +1340,109 @@ try {
 		})()));
 		await q.close();
 		await qctx.close();
+	}
+
+	console.log("\nquick table: a PERSON seat never counts as a bot");
+	{
+		const rctx = await newContext();
+		const r = await rctx.newPage();
+		r.on("pageerror", (err) => {
+			console.log(`  FAIL page error: ${err.message}`);
+			failures++;
+		});
+		/** Fission's table at 3, seat 2 a PERSON or a BOT; record the runs asked for (lib/account.js startRun); START. */
+		const startWithPerson = async (personHere) => {
+			await r.goto(url("?game=neon-fission&fresh=1&mode=bots"));
+			await setPlayers(r, 3);
+			const want = `[data-qt="seat1-${personHere ? "person" : "bot"}"]`;
+			const seg = r.locator(`.quick-table ${want}`);
+			if ((await seg.getAttribute("aria-pressed")) !== "true") await seg.click();
+			await r.waitForFunction((q) => document.querySelector(q)?.getAttribute("aria-pressed") === "true", want, { timeout: TIMEOUT });
+			await r.evaluate(() => {
+				window.__runs = [];
+				const A = NeonArcade.account;
+				if (A) A.startRun = (game, o) => (window.__runs.push({ game, vs: o?.vs ?? "solo" }), Promise.resolve(null));
+			});
+			await r.locator(".quick-table button", { hasText: "START GAME" }).click();
+			const F = await gameScope(r, TIMEOUT);
+			await F.waitForFunction(() => window.__game.handle.debug().match != null, null, { timeout: TIMEOUT });
+			await sleep(300);
+			return { kinds: (await fission(F)).players.map((p) => p.kind).join(), runs: await r.evaluate(() => window.__runs), local: await r.evaluate(() => window.__party.room.getMembers()[1].local === true) };
+		};
+		let got = await startWithPerson(true);
+		check("with a PERSON at the table, the game seats them (local) and no run against bots is asked for", got.kinds === "human,local,bot" && !got.runs.some((x) => x.vs === "bots"), JSON.stringify(got));
+		got = await startWithPerson(false);
+		check("…the same table with that seat a BOT: the run against bots is asked for", !got.local && got.kinds === "human,bot,bot" && got.runs.some((x) => x.vs === "bots" && x.game === "neon-fission"), JSON.stringify(got));
+		// PLAY SOMETHING (start=1): the remembered table's count, but bots only — its PERSON seats need the table on screen.
+		await r.goto(url("?game=neon-fission&fresh=1&mode=bots&start=1"));
+		await r.waitForFunction(() => window.__party?.game === "neon-fission", null, { timeout: TIMEOUT });
+		const ps = await r.evaluate(() => window.__party.room.getMembers().map((m) => m.local === true));
+		check("PLAY SOMETHING restores the remembered count but no PERSON seat", ps.length === 3 && !ps.some(Boolean), JSON.stringify(ps));
+		await rctx.close();
+	}
+
+	console.log("\nquick table: PERSON seats after the table — on the roster, and gone when someone joins");
+	{
+		const sctx = await newContext();
+		const h = await sctx.newPage();
+		const g = await sctx.newPage();
+		for (const p of [h, g]) {
+			p.on("pageerror", (err) => {
+				console.log(`  FAIL page error: ${err.message}`);
+				failures++;
+			});
+		}
+		await openFission(h, 3, [1]);
+		// END GAME, back to the party screen.
+		await h.locator(".party-pill").click();
+		await h.locator("button", { hasText: "END GAME" }).first().click();
+		await h.locator('dialog.neon-ask[open] [data-ask="yes"]').click();
+		await h.waitForFunction(() => !window.__party.game, null, { timeout: TIMEOUT });
+		await h.locator(".party-member").nth(2).waitFor({ timeout: TIMEOUT });
+		const roster = () =>
+			h.evaluate(() =>
+				[...document.querySelectorAll(".party-member")].map((row) => ({
+					tag: row.querySelector(".party-tag.is-bot")?.textContent ?? null,
+					person: row.querySelector(".party-person")?.getAttribute("aria-pressed") ?? null,
+					h: row.querySelector(".party-person")?.getBoundingClientRect().height ?? null,
+				})),
+			);
+		let ro = await roster();
+		const hint = await h.locator(".party-person-hint").textContent().catch(() => "");
+		check("back on the party screen the seat says PERSON, not BOT, with its toggle on", ro[1].tag === "PERSON" && ro[1].person === "true" && ro[2].tag === "BOT" && ro[2].person === "false" && ro[0].person === null, JSON.stringify(ro));
+		check("…a 44px toggle, and a line saying where a PERSON plays (Neon Fission)", ro[1].h >= 44 && /Neon Fission/.test(hint), JSON.stringify({ h: ro[1].h, hint }));
+		await h.locator(".party-member").nth(1).locator(".party-person").click();
+		await h.waitForFunction(() => window.__party.room.getMembers()[1].local !== true, null, { timeout: TIMEOUT });
+		ro = await roster();
+		check("the roster's toggle turns it back into a BOT", ro[1].tag === "BOT" && ro[1].person === "false", JSON.stringify(ro));
+		await h.locator(".party-member").nth(2).locator(".party-person").click();
+		await h.waitForFunction(() => window.__party.room.getMembers()[2].local === true, null, { timeout: TIMEOUT });
+		// Neon Fission from the party screen: the roster's PERSON plays.
+		await h.locator(".party-game", { hasText: "NEON FISSION" }).click();
+		const F = await gameScope(h, TIMEOUT);
+		await F.waitForFunction(() => window.__game.handle.debug().match != null, null, { timeout: TIMEOUT });
+		check("…and the roster's PERSON plays in the game started from the party screen", (await fission(F)).players.map((p) => p.kind).join() === "human,bot,local");
+		await h.locator(".party-pill").click();
+		await h.locator("button", { hasText: "END GAME" }).first().click();
+		await h.locator('dialog.neon-ask[open] [data-ask="yes"]').click();
+		await h.waitForFunction(() => !window.__party.game, null, { timeout: TIMEOUT });
+
+		// A friend joins: nobody is passing this phone round any more.
+		await h.locator("button", { hasText: "ADD PLAYER" }).first().click();
+		const box = h.locator("textarea.share-code").first();
+		await box.waitFor({ timeout: TIMEOUT });
+		await g.goto(await box.inputValue());
+		const reply = g.locator("textarea.share-code").first();
+		await reply.waitFor({ timeout: TIMEOUT });
+		await h.locator("textarea.share-code").last().fill(await reply.inputValue());
+		await h.locator("button.neon-btn", { hasText: /^CONNECT$/ }).first().click();
+		await g.locator(".party-member").nth(3).waitFor({ timeout: TIMEOUT });
+		await h.waitForFunction(() => !window.__party.room.getMembers().some((m) => m.local === true), null, { timeout: TIMEOUT }).catch(() => {});
+		const after = await h.evaluate(() => ({ local: window.__party.room.getMembers().filter((m) => m.local === true).length, toggles: document.querySelectorAll(".party-person").length, tags: [...document.querySelectorAll(".party-tag.is-bot")].map((t) => t.textContent) }));
+		const onGuest = await g.evaluate(() => window.__party.room.getMembers().filter((m) => m.local === true).length);
+		check("a second person in the party turns every PERSON seat back into a bot, on every phone", after.local === 0 && onGuest === 0 && after.tags.every((t) => t === "BOT"), JSON.stringify({ after, onGuest }));
+		check("…and the roster offers no PERSON toggle while they are here", after.toggles === 0, JSON.stringify(after));
+		await sctx.close();
 	}
 
 	console.log("\nquick table: fits 390x844 and 354x696, in every theme");

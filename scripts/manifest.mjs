@@ -122,6 +122,12 @@ export function validateManifest(m) {
 	// A bot seat can be a person on the host's phone (the quick table's
 	// PERSON; seat `local` in init): only for a game that plays such seats.
 	if (m.sameDevice != null && typeof m.sameDevice !== "boolean") p.push('"sameDevice" must be true or false');
+	// Only managed state carries `local` to the game and keeps such a table
+	// off the board of wins against bots (lib/sdk-managed.js); a one-device
+	// or shared game has no bot seats to hand over.
+	if (m.sameDevice === true && (m.state !== "managed" || m.kind === "local" || m.kind === "shared" || m.bots === false)) {
+		p.push('"sameDevice" needs "state": "managed" and bots, and is not for a "local" or "shared" game');
+	}
 	if (m.app != null) p.push(...validateApp(m.app));
 	if ((m.kind === "shared") !== (m.app != null)) p.push('"kind": "shared" goes with "app", and only with it');
 	return p;
