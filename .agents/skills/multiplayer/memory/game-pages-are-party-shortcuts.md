@@ -23,6 +23,14 @@ go straight into the game. Chosen over teaching the old two-player lobby
   (a friend by code) sets the table — START shows without PLAY A BOT. A local
   game shows START only. `askAlone` is off for these parties (one person vs
   bots is never asked before leaving).
+- **The quick table** (Lokesh, 2026-11-17, "Quick table before start"):
+  SINGLE PLAYER of a game with `seats.max > seats.min` shows Players − n +
+  and the seats before START GAME, remembered per game (`neon.table`);
+  fixed seats and PLAY SOMETHING (`start=1`) start at once. People on the
+  host's phone are bots marked `local` (`room.setBotMeta`), passed to a
+  `"sameDevice"` game in `init` — Fission's own setup screen went. A test
+  that taps SINGLE PLAYER on such a game must tap START GAME (serve.mjs
+  `passTable`); docs/index.md "The party API".
 - **Tests must keep off production.** Without a room-server override a party
   probes the deployed room server; test-bots and the preview recorder set
   `localStorage["neon.rs"]` to an unreachable loopback in every context, or
