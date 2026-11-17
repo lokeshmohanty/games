@@ -527,6 +527,145 @@ canvas {
   min-height: 44px;
 }
 
+/* SINGLE PLAYER's table (party.js tableBlock): Players − n +, START GAME at
+   the same place whatever the count, then the seats in their colours. Sized
+   for a 354px-wide phone: every control 44px, names ellipsised. */
+.quick-table {
+  width: min(100%, 24rem);
+  margin: 0 auto;
+}
+.quick-stepper {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+}
+.quick-label {
+  font-family: var(--font-display);
+  font-size: 0.95rem;
+  letter-spacing: 1px;
+  color: var(--ink-2);
+  margin-right: 4px;
+}
+.quick-step {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  border: 1px solid var(--accent);
+  background: var(--surface);
+  color: var(--accent);
+  font: 600 1.4rem/1 var(--font-display);
+  cursor: pointer;
+}
+.quick-step:disabled {
+  border-color: var(--rule);
+  color: var(--ink-3);
+  cursor: default;
+}
+.quick-step:focus-visible,
+.quick-seg-btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.quick-n {
+  min-width: 2ch;
+  text-align: center;
+  font: 700 1.6rem/1 var(--font-display);
+  color: var(--ink);
+}
+.quick-table .party-bots-count {
+  text-align: center;
+  margin: 6px 0 2px;
+}
+.quick-go {
+  justify-content: center;
+}
+.quick-go .neon-btn {
+  min-width: 12rem;
+  min-height: 48px;
+}
+.quick-seats {
+  align-self: stretch;
+  width: 100%;
+  box-sizing: border-box;
+  list-style: none;
+  margin: 10px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.quick-seat {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 44px;
+  padding: 0 4px 0 12px;
+  border: 1px solid var(--rule);
+  border-radius: 10px;
+  background: var(--surface);
+  color: var(--ink);
+}
+.quick-dot {
+  flex: none;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--seat);
+  box-shadow: 0 0 8px var(--glow);
+}
+.quick-who {
+  flex: 1;
+  min-width: 0;
+  text-align: left;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.quick-seat .party-tag {
+  margin-right: 8px;
+}
+.quick-seg {
+  flex: none;
+  display: inline-flex;
+  border: 1px solid var(--rule);
+  border-radius: 999px;
+  overflow: hidden;
+}
+.quick-seg-btn {
+  min-height: 44px;
+  min-width: 70px;
+  padding: 0 10px;
+  border: 0;
+  background: transparent;
+  color: var(--ink-2);
+  font: 600 0.78rem var(--font-display);
+  letter-spacing: 0.04em;
+  cursor: pointer;
+}
+/* BOT, the default, quietly; a PERSON seat stands out. */
+.quick-seg-btn[aria-pressed="true"] {
+  background: var(--surface-2);
+  color: var(--ink);
+}
+.quick-seg-btn[data-qt$="-person"][aria-pressed="true"] {
+  background: var(--accent);
+  color: var(--on-accent);
+}
+
+/* Read by a screen reader, not shown (the table's live region). */
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
 /* No network (lobby.js): a strip under the top band, above the game. */
 .neon-offline {
   position: fixed;

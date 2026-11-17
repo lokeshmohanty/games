@@ -119,6 +119,9 @@ export function validateManifest(m) {
 	// Online boards are optional (Lokesh, 2026-11-16): false for a game where
 	// a ranking means nothing (a solved game, a party game). Local stats stay.
 	if (m.leaderboard != null && typeof m.leaderboard !== "boolean") p.push('"leaderboard" must be true or false');
+	// A bot seat can be a person on the host's phone (the quick table's
+	// PERSON; seat `local` in init): only for a game that plays such seats.
+	if (m.sameDevice != null && typeof m.sameDevice !== "boolean") p.push('"sameDevice" must be true or false');
 	if (m.app != null) p.push(...validateApp(m.app));
 	if ((m.kind === "shared") !== (m.app != null)) p.push('"kind": "shared" goes with "app", and only with it');
 	return p;

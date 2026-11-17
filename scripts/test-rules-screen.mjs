@@ -15,7 +15,7 @@ import { createRequire } from "node:module";
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { gameScope, serve } from "./serve.mjs";
+import { gameScope, passTable, serve } from "./serve.mjs";
 
 const require = createRequire(import.meta.url);
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
@@ -49,9 +49,10 @@ async function phone({ theme = null, scheme = "light", init = null } = {}) {
 	return { ctx, page };
 }
 
-/** A game with bots, straight from a card's SINGLE PLAYER (?mode=bots). */
+/** A game with bots, straight from a card's SINGLE PLAYER (?mode=bots), past its quick table (START GAME). */
 async function play(page, id) {
 	await page.goto(site.url(`index.html?game=${id}&mode=bots`));
+	await passTable(page, TIMEOUT);
 	await page.waitForFunction((id) => window.__game?.id === id || window.__party?.room?.getGame?.() === id, id, { timeout: TIMEOUT });
 	await gameScope(page, TIMEOUT);
 }

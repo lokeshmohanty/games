@@ -20,7 +20,7 @@
  * The server-side rules (claims, rate limits, TTLs) are not tested here;
  * scripts/test-hub.mjs covers them against the real hub logic.
  */
-import { serve } from "./serve.mjs";
+import { passTable, serve } from "./serve.mjs";
 import { createRequire } from "node:module";
 import { execFileSync } from "node:child_process";
 import { existsSync, globSync } from "node:fs";
@@ -2059,6 +2059,8 @@ try {
 		await seed();
 		const t0 = Date.now();
 		await a.goto(SERVED("?game=neon-survival-mp&fresh=1&mode=bots", "&mockroom=1"));
+		// Its quick table first (seats 1–8): START GAME, one tap.
+		await passTable(a, TIMEOUT);
 		const started = await until(a, () => window.__party?.game === "neon-survival-mp", undefined, "bots game mounted");
 		check("SINGLE PLAYER over a ghost seat starts the bots game", started && !/another tab/i.test(await said(a)), await said(a));
 		check("…at once (not after the room server)", Date.now() - t0 < 10_000, `${Date.now() - t0} ms`);
@@ -2095,6 +2097,7 @@ try {
 		check("…the token is kept for that tab", (await a.evaluate(() => NeonArcade.rejoinToken()?.id)) === GHOST.id);
 		await seed();
 		await a.goto(SERVED("?game=neon-survival-mp&fresh=1&mode=bots", "&mockroom=1"));
+		await passTable(a, TIMEOUT);
 		check("SINGLE PLAYER still starts the bots game beside it", await until(a, () => window.__party?.game === "neon-survival-mp", undefined, "bots beside live tab"));
 		check("…leaving that tab's token alone", (await a.evaluate(() => NeonArcade.rejoinToken()?.id)) === GHOST.id);
 		// The game ends: back on the party screen, which asks for a code

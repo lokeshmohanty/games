@@ -477,14 +477,13 @@ try {
 		const F = await gameFrame(nf, TIMEOUT);
 		const dbg = () => F.evaluate(() => window.__game.handle.debug());
 		/**
-		 * Match `m`: set the table, play the game up to its last move on the
+		 * Match `m`: play the game up to its last move on the
 		 * host's rules, then make the last move. Its board is set as Connect
 		 * 4's is above (the frame's own state).
 		 */
 		const lastMove = async (m) => {
-			await F.waitForFunction((m) => window.arcade.view?.match === m && window.arcade.view.phase === "setup", m, { timeout: TIMEOUT });
-			await F.evaluate(() => window.arcade.act({ start: true }));
-			await F.waitForFunction(() => window.arcade.view?.phase === "play" && window.arcade.view.turn === window.arcade.view.you, null, { timeout: TIMEOUT });
+			// No table to set first (the platform's quick table sets it, 2026-11-17): match m opens on our move.
+			await F.waitForFunction((m) => window.arcade.view?.match === m && window.arcade.view.turn === window.arcade.view.you, m, { timeout: TIMEOUT });
 			await F.evaluate((game) => {
 				for (const c of game.slice(0, -1)) R.play(s.g, c);
 				window.arcade.act({ cell: game.at(-1), n: s.g.moves });

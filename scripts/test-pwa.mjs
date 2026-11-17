@@ -302,7 +302,7 @@ const catalog = await (async () => {
 	// The listed games, then the unlisted ones (the SDK's other examples):
 	// playable by their address, on no list.
 	const games = await probe.evaluate(() =>
-		[...window.NeonArcade.listGames(), ...(window.NeonArcade.UNLISTED ?? []).map((u) => window.NeonArcade.getGame(u.id))].map((g) => ({ id: g.id, name: g.name, bots: !!g.bots, local: !!g.local, runtime: g.runtime ?? null, listed: g.listed !== false })),
+		[...window.NeonArcade.listGames(), ...(window.NeonArcade.UNLISTED ?? []).map((u) => window.NeonArcade.getGame(u.id))].map((g) => ({ id: g.id, name: g.name, bots: !!g.bots, local: !!g.local, runtime: g.runtime ?? null, listed: g.listed !== false, seats: g.seats })),
 	);
 	await probe.close();
 	return games;
@@ -583,12 +583,8 @@ console.log("\npwa: every game offline in single player");
 			return until(G, (d) => d.results.length > 0); // and the lot was opened
 		},
 		"neon-fission": async (G) => {
-			// START at the table (no seat handed to a person), then a move and the bot's answer.
-			const started = await until(G, async (d) => {
-				if (d.phase === "setup") await press(G, /^START$/);
-				return d.phase === "play";
-			});
-			if (!started) return null;
+			// The table was set before START (the shell's quick table): a move and the bot's answer.
+			if (!(await until(G, (d) => d.match != null))) return null;
 			let acted = -1;
 			return until(G, async (v) => {
 				if (v.moves >= 2 && v.last && v.last.seat !== v.you) return true; // the bot answered
@@ -672,12 +668,32 @@ console.log("\npwa: every game offline in single player");
 	let errors = [];
 	page.on("pageerror", (err) => errors.push(err.message));
 
+	/**
+	 * A game whose seats leave a choice opens on the quick table (lib/party.js
+	 * tableBlock): offline too, with its stepper, bots only (no friends link
+	 * without a network). Checked, then START GAME, one tap.
+	 */
+	const tables = [];
+	const passTableOffline = async (id) => {
+		await page.waitForSelector(".game-frame:not([hidden]), .quick-table", { timeout: 15_000 });
+		if (!(await page.locator(".quick-table").count())) return;
+		const t = await page.evaluate(() => ({
+			n: Number(document.querySelector(".quick-n")?.textContent),
+			steps: [...document.querySelectorAll(".quick-step")].length,
+			friends: !!document.querySelector(".quick-table .party-switch"),
+			members: window.__party.room.getMembers().length,
+		}));
+		tables.push(id);
+		check(`${id}: offline, its quick table shows (Players ${t.n}, − and +), bots only — no friends link`, t.steps === 2 && t.n === t.members && !t.friends, JSON.stringify(t));
+		await page.locator(".quick-table .quick-go button").click({ timeout: 8000 });
+	};
 	/** From the portal, offline: the card's SINGLE PLAYER. Null when the card has none. */
 	const openSolo = async (id) => {
 		// An unlisted game has no card: its SINGLE PLAYER address, as the
 		// "Add your game" guide links it.
 		if (catalog.find((g) => g.id === id)?.listed === false) {
 			await page.goto(`${BASE}/?game=${id}&fresh=1&mode=bots`, { waitUntil: "domcontentloaded" });
+			await passTableOffline(id);
 			await page.waitForSelector(".game-frame", { timeout: 15_000 });
 			return gameFrame(page, 20_000);
 		}
@@ -689,6 +705,7 @@ console.log("\npwa: every game offline in single player");
 		if (!(await solo.count())) return null;
 		await card.hover();
 		await solo.click();
+		await passTableOffline(id);
 		await page.waitForSelector(".game-frame", { timeout: 15_000 });
 		return gameFrame(page, 20_000);
 	};
@@ -745,6 +762,12 @@ console.log("\npwa: every game offline in single player");
 		if (errors.length) check(`${g.name}: …with no page errors`, false, errors.join(" | ").slice(0, 200));
 	}
 
+	// The table is for the games whose seats leave a choice, and only those.
+	{
+		const want = catalog.filter((g) => !g.local && g.bots && g.runtime !== "python" && g.seats.max > g.seats.min).map((g) => g.id).sort();
+		check(`offline, the quick table showed for exactly the games whose seats leave a choice (${want.length})`, JSON.stringify([...tables].sort()) === JSON.stringify(want), `shown: ${tables.join(", ")}; want: ${want.join(", ")}`);
+	}
+
 	// PLAY SOMETHING (lib/portal.js quickPick), offline: the SINGLE PLAYER of
 	// the popular game it picks, so it plays with the network cut like the card.
 	{
@@ -768,10 +791,10 @@ console.log("\npwa: every game offline in single player");
 		const how = await page
 			.evaluate(() => {
 				const room = window.__party?.room;
-				return { game: window.__party?.game, alone: !!room && room.getMembers().every((m) => m.id === room.selfId || m.id.startsWith("bot_")) };
+				return { game: window.__party?.game, alone: !!room && room.getMembers().every((m) => m.id === room.selfId || m.id.startsWith("bot_")), table: !!document.querySelector(".quick-table") };
 			})
 			.catch(() => ({}));
-		check(`PLAY SOMETHING offline: ${g?.name ?? id} in single player (you and its bots only), and it plays`, !!g && g.runtime !== "python" && (g.bots || g.local) && how.game === id && how.alone && !!played, detail || JSON.stringify(how));
+		check(`PLAY SOMETHING offline: ${g?.name ?? id} in single player (you and its bots only), and it plays — no quick table on the way`, !!g && g.runtime !== "python" && (g.bots || g.local) && how.game === id && how.alone && !how.table && !!played, detail || JSON.stringify(how));
 		check("…with every file it asked for on the device, and no room server", missed.length === 0 && refused.filter((u) => /\/ping(?:$|\?)/.test(u)).length === roomBefore, [...new Set(missed)].join(", "));
 		if (errors.length) check("…with no page errors", false, errors.join(" | ").slice(0, 200));
 	}

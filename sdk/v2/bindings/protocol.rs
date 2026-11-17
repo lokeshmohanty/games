@@ -702,6 +702,10 @@ pub struct RulesCallSeatsItem {
     #[serde(skip_serializing_if = "Option::is_none", default)]
     pub team: Option<String>,
     pub bot: bool,
+    /// A bot seat a person on the host's phone plays (the quick table's PERSON); only for a game
+    /// with manifest `sameDevice`.
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub local: Option<bool>,
 }
 
 /// One call into a managed game's rules. `fn` names the rule; the other fields are its arguments.

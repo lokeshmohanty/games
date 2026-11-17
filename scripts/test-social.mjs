@@ -13,7 +13,7 @@ import { createRequire } from "node:module";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { BOTS } from "../worker/api/bots.js";
-import { gameFrame, readyToClick, serve } from "./serve.mjs";
+import { gameFrame, passTable, readyToClick, serve } from "./serve.mjs";
 import { startWrangler } from "./wrangler.mjs";
 
 const require = createRequire(import.meta.url);
@@ -475,6 +475,7 @@ try {
 			if (r.url().includes("/api/match/report")) reports.push({ sent: JSON.parse(r.request().postData() ?? "{}"), got: await r.json().catch(() => null), at: Date.now() });
 		});
 		await cy.p.goto(page("?party", "&game=neon-survival-mp&fresh=1&mode=bots"));
+		await passTable(cy.p, TIMEOUT); // its quick table, at Players 1: START GAME
 		await gameFrame(cy.p, TIMEOUT);
 		const until = async (fn, ms) => {
 			for (const end = Date.now() + ms; Date.now() < end && !fn(); ) await cy.p.waitForTimeout(200);
@@ -572,6 +573,7 @@ try {
 			const warned = [];
 			ivy.p.on("console", (m) => /no score to rank alone/.test(m.text()) && warned.push(m.text()));
 			await ivy.p.goto(page("?party", `&game=${encodeURIComponent("lokeshmohanty/light-cycles")}&fresh=1&mode=bots`));
+			await passTable(ivy.p, TIMEOUT);
 			await gameFrame(ivy.p, TIMEOUT);
 			const card = ivy.p.locator(".managed-actions");
 			await card.waitFor({ timeout: 60_000 }); // nobody steers: into the far wall
@@ -590,6 +592,7 @@ try {
 			const eli = await device("Eli");
 			const seen = watchRuns(eli.p);
 			await eli.p.goto(page("?party", `&game=${encodeURIComponent("lokeshmohanty/light-cycles")}&fresh=1&mode=bots`));
+			await passTable(eli.p, TIMEOUT);
 			await gameFrame(eli.p, TIMEOUT);
 			const until = async (fn, ms) => {
 				for (const end = Date.now() + ms; Date.now() < end && !fn(); ) await eli.p.waitForTimeout(200);
@@ -631,11 +634,12 @@ try {
 		// Neon Fission against a bot: the run is asked for as the match begins;
 		// removing the bot hands Dee the match, which is not reported.
 		await dee.p.goto(page("?party", "&game=neon-fission&fresh=1&mode=bots"));
+		await passTable(dee.p, TIMEOUT); // its quick table, at Players 2: START GAME
 		const nfb = await gameFrame(dee.p, TIMEOUT);
 		await until(() => seen.starts.some((x) => x.sent.game === "neon-fission" && x.sent.vs === "bots"), TIMEOUT);
 		const start = seen.starts.find((x) => x.sent.vs === "bots");
 		check("one person and a bot: a run against bots is asked for as the match begins", start?.sent.game === "neon-fission" && typeof start.got?.run === "string", seen.starts);
-		await nfb.waitForFunction(() => window.__game?.handle?.debug?.()?.phase, null, { timeout: TIMEOUT }).catch(() => {});
+		await nfb.waitForFunction(() => window.__game?.handle?.debug?.()?.match, null, { timeout: TIMEOUT }).catch(() => {});
 		await dee.p.waitForTimeout(BOTS["neon-fission"].minMs + 500);
 		await dee.p.evaluate(() => {
 			const r = window.__party.room;

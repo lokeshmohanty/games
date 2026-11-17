@@ -629,6 +629,9 @@ class RulesCallSeatsItem(TypedDict):
     name: str
     team: NotRequired[str | None]
     bot: bool
+    # A bot seat a person on the host's phone plays (the quick table's PERSON);
+    # only for a game with manifest `sameDevice`.
+    local: NotRequired[bool]
 
 class RulesCall(TypedDict):
     """

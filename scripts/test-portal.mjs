@@ -448,7 +448,7 @@ console.log("\nportal: My Games · All Games");
 			search: document.querySelector(".search").hidden,
 		}));
 		check("My Games is ./?page=games&tab=mine, and with nothing of yours it says how to star (★, from inside a game)", tabOf(pg) === "mine" && (await subOn(pg)) === "My Games" && /★/.test(empty.text) && /inside/.test(empty.text) && !/card/.test(empty.text) && !empty.sections && empty.search, { url: pg.url(), empty });
-		check("…with PLAY SOMETHING (a game's single player) and ALL GAMES", /^\.\/\?game=[^&]+&fresh=1/.test(empty.quick ?? "") && (await pg.locator("[data-my-empty] .my-empty-all").textContent()) === "ALL GAMES", empty.quick);
+		check("…with PLAY SOMETHING (a game's single player, starting at once: start=1) and ALL GAMES", /^\.\/\?game=[^&]+&fresh=1.*&start=1$/.test(empty.quick ?? "") && (await pg.locator("[data-my-empty] .my-empty-all").textContent()) === "ALL GAMES", empty.quick);
 		await pg.goBack();
 		await pg.locator('[data-section="popular"]:not([hidden]) .game-card').first().waitFor({ timeout: TIMEOUT });
 		check("Back: All Games again (its address, search and sections)", tabOf(pg) === "all" && (await subOn(pg)) === "All Games" && (await pg.locator(".search").isVisible()) && (await pg.locator("[data-my-empty]").isHidden()), pg.url());
@@ -521,9 +521,9 @@ console.log("\nportal: My Games · All Games");
 		// person can play, Neon Survival, may seat no bot at all).
 		const game = await pg.evaluate(() => {
 			const room = window.__party.room;
-			return { game: window.__party?.game, alone: room.getMembers().every((m) => m.id === room.selfId || m.id.startsWith("bot_")), lobby: !!document.querySelector(".party-choice") };
+			return { game: window.__party?.game, alone: room.getMembers().every((m) => m.id === room.selfId || m.id.startsWith("bot_")), lobby: !!document.querySelector(".party-choice"), table: !!document.querySelector(".quick-table") };
 		});
-		check("…one tap starts it in single player: that game, you and its bots only, no lobby", game.game === picked && game.alone && !game.lobby && box.height >= 44, { game, picked, h: box.height });
+		check("…one tap starts it in single player: that game, you and its bots only, no lobby, no quick table", game.game === picked && game.alone && !game.lobby && !game.table && box.height >= 44, { game, picked, h: box.height });
 		await c.close();
 	}
 	// Never the last visit's pick again: Math.random() always 0 would offer
