@@ -610,7 +610,24 @@ console.log("\nbot seats and a member's own record");
 	// Ana claiming to be Bo, whom the host hears only through Ana: the gap no unsigned id closes.
 	forge({ id: bo.selfId, name: "Bob?" }, bo.selfId);
 	await sleep(40);
-	check("(known gap) a relay can still rename a member the host has no direct link to — name and meta only", rec(host, bo.selfId).name === "Bob?" && rec(host, bo.selfId).team === "A");
+	check("(known gap) a relay can rename a member the host has no direct link to, for a moment — name and meta only", rec(host, bo.selfId).name === "Bob?" && rec(host, bo.selfId).team === "A");
+	// …a moment: Bo sees the host's record disagree with what Bo said, and says it again (Room._reassert).
+	await sleep(1300);
+	check("…Bo re-asserts its own name, and the host's record is right again", rec(host, bo.selfId).name === "Boz" && rec(ana, bo.selfId).name === "Boz", rec(host, bo.selfId).name);
+	bo.setMeta({ pk: "bo-key" });
+	await sleep(60);
+	forge({ id: bo.selfId, pk: "ana-key" }, bo.selfId);
+	await sleep(60);
+	const forged = rec(host, bo.selfId).pk;
+	await sleep(1300);
+	check("a forged pk on a relay-only member is corrected by that member's re-assert", forged === "ana-key" && rec(host, bo.selfId).pk === "bo-key" && rec(cy, bo.selfId).pk === "bo-key", JSON.stringify({ forged, now: rec(host, bo.selfId).pk }));
+
+	// A vouch about the host still lands (test-worker's handover): its link to
+	// a member opened again, so the host's held seat is cleared.
+	host.party.members.find((m) => m.id === host.selfId).reconnecting = Date.now();
+	ana._send({ __i: { id: host.selfId, back: true, name: "Not me", team: "spectator" }, f: ana.selfId, t: host.selfId }, null);
+	await sleep(40);
+	check("a back vouch about the host still clears its held seat, and carries no edit", rec(host, host.selfId).reconnecting === undefined && rec(host, host.selfId).name === "Host" && rec(host, host.selfId).team === "A", JSON.stringify(rec(host, host.selfId)));
 	for (const r of [host, ana, bo, cy]) r.leave();
 }
 
