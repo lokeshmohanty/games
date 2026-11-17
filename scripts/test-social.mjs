@@ -8,15 +8,13 @@
 //
 // Needs wrangler (scripts/wrangler.mjs); skips with a message without it.
 
-import { existsSync, globSync, mkdirSync } from "node:fs";
-import { createRequire } from "node:module";
-import { homedir } from "node:os";
+import { existsSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { BOTS } from "../worker/api/bots.js";
 import { gameFrame, readyToClick, serve } from "./serve.mjs";
 import { startWrangler } from "./wrangler.mjs";
+import { loadPlaywright } from "./playwright.mjs";
 
-const require = createRequire(import.meta.url);
 const TIMEOUT = 30_000;
 let failures = 0;
 const check = (label, ok, detail = "") => {
@@ -35,9 +33,7 @@ const page = (p, extra = "") => `${site.base}/${p}${p.includes("?") ? "&" : "?"}
 function chrome() {
 	return [process.env.CHROME, "/run/current-system/sw/bin/google-chrome-stable", "/run/current-system/sw/bin/chromium", "/usr/bin/google-chrome"].filter(Boolean).find(existsSync);
 }
-const pw = require(
-	[join(homedir(), ".cache", "game-previews", "node_modules", "playwright"), ...globSync(join(homedir(), ".npm", "_npx", "*", "node_modules", "playwright"))].find(existsSync),
-);
+const pw = loadPlaywright();
 const browser = await pw.chromium.launch({ executablePath: chrome(), args: ["--no-sandbox"] });
 const phone = { viewport: { width: 390, height: 844 } };
 
