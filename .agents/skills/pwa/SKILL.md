@@ -34,7 +34,8 @@ refused by Chrome, and nothing visible said so.
 
 Nothing to list, since 2026-11-15: `just build` (scripts/assemble.mjs) derives
 the precache list from what it built and copied — pages, `lib/`, every file in
-`games/`, frame runtimes, posters, the app's chunks — and writes `dist/sw.js` with
+`games/`, frame runtimes, each game's prebuilt frame (`frames/<id>.html`,
+scripts/prebuild-frames.mjs), posters, the app's chunks — and writes `dist/sw.js` with
 a `VERSION` hashed over exactly those bytes. Every game must play offline in
 single player; `test-pwa` plays each one from the portal with the network cut
 (a new game needs a `PLAY` driver there). Pyodide is the one exception: cached

@@ -75,7 +75,7 @@ game's own scripts and stylesheets.
 | `bots` | `true`/`false`: can the host fill seats with bots |
 | `kind` (results) | a game reports results of its manifest `kind`; the room server's table (`scripts/build-games-table.mjs` `EXTRA_KINDS`) lists the few that report more — Bubble Rush (`ffa`) also reports `teams` from its teams mode — all on the game's one board. A later manifest field, `"kinds"`, would replace that table |
 | `leaderboard` | `true` (default) / `false`: online boards for it — ranked, alone, against bots. `false` for a game where a ranking means nothing (Lokesh, 2026-11-16: Tic Tac Toe, a solved game; Connect 4; the party games Undercover and Draw & Guess): no reports, runs or boards, no rating on the end card; the device's own stats still count (docs/accounts.md "Games without boards") |
-| `tags`, `categories`, `preview` | portal filters; sections (`arcade` · `party` · `strategy` · `puzzle` · `examples`); preview gif path |
+| `tags`, `categories`, `preview` | portal filters; sections (`arcade` · `party` · `strategy` · `puzzle` · `examples`); the preview: a gif, or a `.webp` poster; a `.webm`/`.mp4`/`.webp` of the same name beside it is played/shown instead (scripts/catalog-lib.mjs) |
 | `license` | an OSI licence that allows redistribution (the list is in `scripts/manifest.mjs`) |
 | `author`, `repo` | GitHub user, `https://github.com/…` |
 

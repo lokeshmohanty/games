@@ -19,6 +19,10 @@
     <link rel="stylesheet" href="lib/theme.css" vite-ignore />
     <script src="lib/theme.js" vite-ignore></script>
     <link rel="stylesheet" href="lib/styles.css" vite-ignore />
+    <!-- The community catalog (src/main.tsx loads it once the bundle has run;
+         the party mounts only after it): asked for now, beside the bundle,
+         not after it. 404 in a checkout without `just community`, harmlessly. -->
+    <link rel="preload" href="community/catalog.js" as="script" vite-ignore />
     <script>
       // The Games tab's two sub-tabs, My Games and All Games (docs/spa.md
       // "The portal's sub-tabs"). The home screen opens on My Games once this

@@ -4,11 +4,18 @@
 // ~15 KB, as H.264 MP4 ~30 KB, and its first frame as WebP ~5 KB (measured
 // 2026-11-14, docs/perf.md). Beside each `<name>.gif` this writes
 // `<name>.webp` (poster), `<name>.webm` and `<name>.mp4`; the catalog
-// (catalog-lib.mjs) lists whichever exist, and the portal plays the video
-// with the gif as the fallback when no video plays (offline, or neither format).
+// (catalog-lib.mjs) lists whichever exist, and the portal plays the video,
+// with the poster, still, when no video plays (offline, or neither format).
+//
+// The arcade's own games keep no gif (2026-11-15): scripts/make-preview.sh
+// records one into a temporary folder, writes its twins into assets/ with
+// --out, and deletes it; their game.json `preview` names the poster. An
+// outside repo's preview.gif is its own, and gets twins beside it at deploy
+// (scripts/fetch-community.mjs).
 //
 //   node scripts/preview-media.mjs [file.gif ...]   (default: every preview
 //                                                    gif a game.json names)
+//   --out <path/name>  one gif: write <name>.webp/.webm/.mp4 there instead
 //   --force    rebuild even when the twins are newer than the gif
 //   --strict   fail when ffmpeg is missing (default: say so, change nothing)
 //
@@ -17,7 +24,7 @@
 
 import { spawnSync } from "node:child_process";
 import { existsSync, globSync, readFileSync, statSync } from "node:fs";
-import { dirname, join, resolve } from "node:path";
+import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
@@ -29,15 +36,12 @@ const ffmpeg = (args) => {
 	if (r.status !== 0) throw new Error(r.stderr.trim() || `ffmpeg exited ${r.status}`);
 };
 
-/** The twins' paths for a gif: { poster, webm, mp4 }. */
-export const twinsOf = (gif) => {
-	const base = gif.replace(/\.gif$/i, "");
-	return { poster: base + ".webp", webm: base + ".webm", mp4: base + ".mp4" };
-};
+/** The twins' paths for a gif: { poster, webm, mp4 }, beside it or at `out`. */
+export const twinsOf = (gif, out = gif.replace(/\.gif$/i, "")) => ({ poster: out + ".webp", webm: out + ".webm", mp4: out + ".mp4" });
 
 /** Write whichever twins are missing or older than the gif. Returns what it wrote. */
-export function makeTwins(gif, { force = false } = {}) {
-	const t = twinsOf(gif);
+export function makeTwins(gif, { force = false, out } = {}) {
+	const t = twinsOf(gif, out);
 	const stale = (f) => force || !existsSync(f) || statSync(f).mtimeMs < statSync(gif).mtimeMs;
 	const even = "scale=trunc(iw/2)*2:trunc(ih/2)*2"; // H.264 and yuv420p want even sides
 	const wrote = [];
@@ -79,7 +83,13 @@ function main() {
 	const args = process.argv.slice(2);
 	const force = args.includes("--force");
 	const strict = args.includes("--strict");
-	const named = args.filter((a) => !a.startsWith("--"));
+	const outAt = args.indexOf("--out");
+	const out = outAt >= 0 ? resolve(args[outAt + 1]) : undefined;
+	const named = args.filter((a, i) => !a.startsWith("--") && !(outAt >= 0 && i === outAt + 1));
+	if (out && named.length !== 1) {
+		console.error("preview-media: --out takes exactly one gif");
+		process.exit(2);
+	}
 	if (!hasFfmpeg()) {
 		console.error("preview-media: ffmpeg not found — previews stay gif-only (nix shell nixpkgs#ffmpeg)");
 		process.exit(strict ? 1 : 0);
@@ -87,9 +97,9 @@ function main() {
 	const gifs = named.length ? named.map((g) => resolve(g)) : previewGifs([join(ROOT, "games"), join(ROOT, "community")].filter(existsSync));
 	let n = 0;
 	for (const gif of gifs) {
-		const wrote = makeTwins(gif, { force });
+		const wrote = makeTwins(gif, { force, out });
 		n += wrote.length;
-		for (const f of wrote) console.log(`  ${f.slice(ROOT.length + 1)} (${(statSync(f).size / 1024).toFixed(0)} KB)`);
+		for (const f of wrote) console.log(`  ${relative(ROOT, f)} (${(statSync(f).size / 1024).toFixed(0)} KB)`);
 	}
 	console.log(`preview-media: ${gifs.length} gif(s), ${n} file(s) written`);
 }

@@ -91,7 +91,8 @@ my-games/
     index.html       your page: only your own <script> and <link> tags
     laser-chess.js   your rules and drawing: arcade.managed({ init, apply, view, … })
     RULES.md         how to play: shown on a first open and behind "?"
-    preview.gif      shown on the portal (optional)
+    preview.gif      shown on the portal (optional; the arcade adds a poster and
+                     a short video from it, or ship preview.webp/.webm/.mp4)
 ```
 
 The contract (the messages, managed state, the manifest) is
