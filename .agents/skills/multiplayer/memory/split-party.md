@@ -37,7 +37,9 @@ How net.js does it (docs/index.md "A split party"):
     (`_retakeWithQuorum`).
 - **A held host's seat:** a host the room server holds a seat for sends no
   `__gone`. The member that concludes it gone broadcasts `__v` (crown
-  vacant).
+  vacant). A receiver with no link to the host runs its own `_suspect` and
+  does not vacate on trust: taken on trust, one member's early give-up
+  re-crowned a reloading host's heir (test-room 6e22).
 - **Not covered:** a partition between a *live* host and the rest. Both sides
   keep a crown, and term ordering heals it.
 

@@ -475,7 +475,9 @@ A lost member:
 split: the next in line takes the crown. A host whose seat the room server
 holds sends no `__gone`. Whoever concludes it gone broadcasts that the crown
 is vacant (`__v`), so an heir that reached the host only through a relay
-still learns it.
+still learns it. The receiver does not take it on trust: it probes the host
+itself and concludes in its turn, so one member's false alarm (a host
+reloading) cannot move the crown for everyone.
 
 **Known gaps.** A partition between a *live* host and the rest is not a
 departure: both sides keep a crown, and term ordering heals it on
