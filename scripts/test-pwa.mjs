@@ -897,10 +897,9 @@ console.log("\npwa: Chrome's own verdict");
 	});
 	const p2 = ctx2.pages()[0] ?? (await ctx2.newPage());
 	await p2.goto(`${BASE}/index.html`);
-	await p2
+	const controlled = await p2
 		.waitForFunction(() => navigator.serviceWorker.controller !== null, null, { timeout: 20_000 })
-		.catch(() => {});
-	await p2.waitForTimeout(2500);
+		.then(() => true, () => false);
 	const cdp = await ctx2.newCDPSession(p2);
 
 	const manifestVerdict = await cdp.send("Page.getAppManifest");
@@ -910,7 +909,15 @@ console.log("\npwa: Chrome's own verdict");
 		JSON.stringify(manifestVerdict.errors),
 	);
 
-	const { installabilityErrors } = await cdp.send("Page.getInstallabilityErrors");
+	// Chrome's verdict follows its own fetches (the manifest, its icons, the
+	// worker's fetch handler): asked until it has nothing against, for 20 s,
+	// instead of once after a fixed 2.5 s. An error that stays is reported.
+	let { installabilityErrors } = await cdp.send("Page.getInstallabilityErrors");
+	for (const end = Date.now() + 20_000; installabilityErrors.length && Date.now() < end; ) {
+		await p2.waitForTimeout(250);
+		({ installabilityErrors } = await cdp.send("Page.getInstallabilityErrors"));
+	}
+	if (!controlled) console.log("  note: the page was not controlled by the service worker within 20 s");
 	check(
 		"Chrome finds nothing standing in the way of installing",
 		installabilityErrors.length === 0,

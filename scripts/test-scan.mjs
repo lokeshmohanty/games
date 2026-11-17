@@ -27,10 +27,10 @@ import { homedir, tmpdir } from "node:os";
 import { dirname, join, resolve as resolvePath } from "node:path";
 import { fileURLToPath } from "node:url";
 import { loadPlaywright } from "./playwright.mjs";
-import { spawnServer } from "./serve.mjs";
+import { PORT_OFFSET, spawnServer } from "./serve.mjs";
 
 const ROOT = resolvePath(dirname(fileURLToPath(import.meta.url)), "..");
-const PORT = 8731;
+const PORT = 8731 + PORT_OFFSET; // NEON_PORT_OFFSET, as every other suite
 
 function chromePath() {
 	const found = [
