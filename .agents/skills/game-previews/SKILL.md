@@ -1,16 +1,21 @@
 ---
 name: game-previews
-description: Use when a game's portal preview gif in assets/ needs to be created, refreshed, or is missing/broken on index.html — including after changing a game's visuals, adding a new game, or when someone asks to "record" or "make a gif of" a game. Covers the automated browser-driven recorder, not hand-recording.
+description: Use when a game's portal preview (assets/<game>.webp poster, .webm and .mp4) needs to be created, refreshed, or is missing/broken on the portal — including after changing a game's visuals, adding a new game, or when someone asks to "record" a game or "make a gif/preview" of it. Covers the automated browser-driven recorder, not hand-recording.
 ---
 
-# Game preview gifs
+# Game previews
 
-The portal (`index.html`) shows one looping gif per game, from `assets/<game>.gif`.
-Regenerate them with the recorder in `scripts/` — **do not ask the user to play the
-game while you screen-record.** The recorder drives the game in a headless browser,
-so it needs no human and does not take over the screen.
+The portal shows one looping clip per game: `assets/<game>.webm` (or `.mp4`)
+over the poster `assets/<game>.webp`, which is also what the game's `game.json`
+`"preview"` names. **No gif is committed for the arcade's own games** (since
+2026-11-15, ~3.5 MB): the recorder makes one in a temporary folder, derives the
+three files from it, and deletes it. An outside repo's `preview.gif` is its own;
+`scripts/fetch-community.mjs` makes the same three beside it at deploy.
+Regenerate them with the recorder in `scripts/` — **do not ask the user to play
+the game while you screen-record.** The recorder drives the game in a headless
+browser, so it needs no human and does not take over the screen.
 
-## Make a gif
+## Make a preview
 
 ```sh
 scripts/make-preview.sh connect4          # one game
@@ -19,13 +24,19 @@ scripts/make-preview.sh draw-guess --seconds 20 --width 700
 scripts/make-preview.sh neon-survival --trim-end 3   # drop an unwanted tail
 ```
 
-That is the whole job: it plays the game, records it, converts it, and writes
-`assets/<game>.gif` in place. `index.html` already points at that path, so a
-successful run needs **no HTML edit**.
+That is the whole job: it plays the game, records it, converts it to a gif in
+a temp folder, writes `assets/<game>.webp`, `.webm` and `.mp4` from it
+(`scripts/preview-media.mjs --out`), and deletes the gif. The game's
+`game.json` already names the poster, so a successful run needs **no edit**.
+A new game: set `"preview": "../../assets/<game>.webp"` and run `just catalog`.
 
-Games: `scripts/preview.mjs --list` is the authority (2026-11-14: undercover,
+Games: `scripts/preview.mjs --list` is the authority (2026-11-16: undercover,
 liars-dice, neon-bid, battleship, light-cycles, connect4, draw-guess,
-neon-survival-mp).
+neon-fission, neon-survival-mp). Only five are this repo's (games/); battleship,
+liars-dice, light-cycles and draw-guess live in web-games now, whose own
+preview.gif is what the portal shows, so a run for them writes files here that
+nothing names. Whether their scenarios still run against the community ids is
+unverified (VERIFY).
 
 ## What it does
 
@@ -36,10 +47,13 @@ neon-survival-mp).
    between them (`connectPeers`), so the gif shows real multiplayer.
 2. It prints `video=`, `start=`, `duration=`; `start` is how much lobby/connection
    time to trim so the gif opens on gameplay.
-3. `make-preview.sh` converts with the `screen-rec` CLI (plain ffmpeg if absent) using
-   a per-game profile — 600px/12fps for the board games, 480px/10fps/low colour for the
-   Neon Survival games, whose constant motion over a dark field defeats gif compression
-   (2.7MB → 290KB when that profile was applied).
+3. `make-preview.sh` converts to a gif with the `screen-rec` CLI (plain ffmpeg if absent)
+   using a per-game profile — 600px/12fps for the board games, 480px/10fps/low colour for
+   the Neon Survival games, whose constant motion over a dark field defeats gif compression
+   (2.7MB → 290KB when that profile was applied). The profile still shapes the clip: the
+   WebM/MP4 are made from that gif.
+4. `preview-media.mjs` writes the poster (first frame, WebP), VP9 WebM and H.264 MP4
+   (needs ffmpeg with libwebp, libvpx-vp9, libx264: `nix shell nixpkgs#ffmpeg`).
 
 ## Adding a game
 
@@ -98,15 +112,12 @@ if it is motion-heavy.
 
 ## Checking the result
 
-`identify assets/<game>.gif` for size/frames. To eyeball a frame, coalesce first —
-GIF frames are deltas and a bare `magick 'x.gif[40]'` gives a tiny sub-rectangle:
-
-```sh
-magick assets/connect4.gif -coalesce /tmp/f-%03d.png
-```
-
-Keep each gif under ~1MB. `assets/neon-survival.gif` predates this tooling and is
-1.1MB; regenerating it with `scripts/make-preview.sh neon-survival` shrinks it.
+`ffprobe assets/<game>.webm` for size and duration; open the poster to eyeball it,
+and the portal at 390x844 to see it play (`test-portal` checks that the first screen
+plays its clips over their posters, and that each clip is fetched once however many
+sections show the game). To inspect the intermediate gif, keep it: run
+`scripts/preview.mjs <game>` yourself and convert its `video=` output by hand.
+A clip is ~15–60 KB; much more means the profile needs lowering.
 
 ## Memory
 

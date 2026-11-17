@@ -48,9 +48,34 @@ game folder/
 1. The shell builds the frame (lib/bridge.js `buildFrameDoc`). It inlines
    `sdk/v2/runtime.js`, the arcade's `lib/theme.css` and `lib/styles.css`,
    then the game's page with its scripts and stylesheets. `<html>` carries
-   `data-theme`, `data-mode` and `data-runtime`.
+   `data-theme`, `data-mode` and `data-runtime`. This is two steps
+   (2026-11-15): `buildFrameTemplate` does everything that is the same for
+   every player (the game's page, scripts and stylesheets inlined, the CSP,
+   slots for the runtime's files, the fonts as `neon-font:` marks), and
+   `finishFrameDoc` adds the session's part with string work only: the
+   runtime's files and the fonts from the copies the page holds, the theme on
+   `<html>`, a web app's address. The deploy runs the first step for every
+   game the catalogs register (`scripts/prebuild-frames.mjs`, from
+   `scripts/assemble.mjs`, in headless Chrome) into `frames/<id>.html`,
+   precached; the shell fetches that one file and finishes it. A dev-kit game
+   (`?dev=`), or a site served from source, has none and is built at tap
+   time, by the same function: test-bots checks that every prebuilt frame
+   equals the one the shell would build.
+
+   **Fonts after mount** (2026-11-16, Lokesh's choice). A face already on
+   the phone (in this page, or in the service worker's cache: every visit
+   after the first) is inlined as before, so a warm frame opens in its own
+   fonts with no swap. On a first cold visit the faces still downloading are
+   left out (a 150 KB wait on a slow link, docs/perf.md), the frame opens in
+   the fallback fonts, and once they arrive the shell posts
+   `{ t: "neon:fonts", css }` to the frame's window: their @font-face rules
+   with data: URLs. sdk/v2/runtime.js appends them, loads every face, then
+   emits `theme.set` again with the same values, so a game that paints text
+   on a canvas on `theme.set` repaints in the real fonts (DOM text swaps by
+   itself, `font-display: swap`). The frame still fetches nothing.
 2. The shell posts `{ t: "neon:port" }` to the frame's window, with a
-   `MessagePort` attached. This is the only message that is not on the port.
+   `MessagePort` attached. This and `neon:fonts` (below) are the only
+   messages not on the port; both are the runtime's business, not a game's.
 3. The frame says `hello`. The shell answers with `init`: the party, the
    seats, the theme as values, the game's saved storage, the services it
    offers (`features`) and, for a WASM game, the module's bytes.

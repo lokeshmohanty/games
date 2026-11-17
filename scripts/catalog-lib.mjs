@@ -11,12 +11,17 @@ import { categoriesOf, validateContributor, validateManifest } from "./manifest.
  * (<owner>/<id>); `root` is the site root paths are made relative to.
  * Throws with every problem listed when any manifest is invalid.
  */
-/** `{ poster, webm, mp4 }` beside a preview gif, for those that exist on disk. */
+/**
+ * `{ poster, webm, mp4 }` beside a preview, for those that exist on disk. The
+ * preview is a gif (an outside repo's preview.gif, with twins made at deploy
+ * by preview-media.mjs) or the poster itself (`<name>.webp`: the arcade's
+ * own games, which keep no gif since 2026-11-15).
+ */
 function previewTwins(file, dir, preview) {
-	if (typeof preview !== "string" || !/\.gif$/i.test(preview)) return {};
+	if (typeof preview !== "string" || !/\.(gif|webp)$/i.test(preview)) return {};
 	const out = {};
 	for (const [key, ext] of [["poster", ".webp"], ["webm", ".webm"], ["mp4", ".mp4"]]) {
-		const rel = preview.replace(/\.gif$/i, ext);
+		const rel = preview.replace(/\.(gif|webp)$/i, ext);
 		if (existsSync(join(dirname(file), rel))) out[key] = dir + rel;
 	}
 	return out;

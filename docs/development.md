@@ -41,7 +41,7 @@ community/              (generated, git-ignored) the pinned games, fetched at de
 worker/                 the Cloudflare Worker: room server, accounts, leaderboards
                         (docs/room-server.md, docs/accounts.md)
 scripts/                build, tests, preview recorder, icon generator, PR checks
-assets/                 app icons, previews (gif, webm, mp4, webp posters)
+assets/                 app icons, previews (webp posters, webm, mp4; no gifs since 2026-11-15)
 sw.js                   the service worker template; scripts/assemble.mjs writes dist/sw.js
 ```
 

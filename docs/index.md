@@ -38,7 +38,7 @@ questions about this project from this folder alone.
 | Test the room hub (codes, claims, TTLs) | `node scripts/test-hub.mjs` — pure hub logic against the real rules, no browser, no Cloudflare account needed |
 | Test the join-by-code path | `node scripts/test-room.mjs` — the real client (lib/room-join.js, net.js, the party and lobby screens) against the in-page mock room server; WebRTC handshake itself is real |
 | Test across real (simulated) networks | `just test-nat` — NAT routers built from network namespaces (cone, full cone, symmetric), netem loss/latency, a network switch mid-party, a blocked room server; real Chrome per device and the real worker under `wrangler dev`. Needs `nix shell`, so not in `just test`. See [network-testing.md](network-testing.md) |
-| Regenerate a portal preview gif | `scripts/make-preview.sh <game>` (or `all`) — plays the game headless and writes `assets/<game>.gif` |
+| Regenerate a portal preview | `scripts/make-preview.sh <game>` (or `all`) — plays the game headless and writes `assets/<game>.webp` (poster), `.webm` and `.mp4`; no gif is kept |
 | Serve it locally | `just run` — http://127.0.0.1:8000. `just serve-lan` binds every interface for phone testing, but a plain LAN http:// address is not a secure context, so SCAN REPLY will not work there (use PASTE) |
 | Run everything | `just test`, or `just --list` for the rest |
 | Check the offline precache | `just build` — `scripts/assemble.mjs` derives the precache list from what it built and copied, and fails if a listed file is missing; `just test-pwa` then plays every game offline |
@@ -973,18 +973,20 @@ round trip per file and a 3 s wait for any file on a bad link (docs/perf.md).
 On a loopback address (`just run`) it still is, so an edited file shows on
 reload; tests opt into the real strategy with localStorage `neon.sw=snapshot`.
 
-Icons, fonts, posters and gifs are **cache-first**, with no download behind a
-hit (every portal visit used to refetch every preview). Preview videos are left
-to the browser: Safari refuses a whole cached file as the answer to a media
-request. The previews are not precached, which is why `assets/placeholder.svg`
-exists.
+Icons, fonts, posters and an outside repo's preview gif are **cache-first**,
+with no download behind a hit (every portal visit used to refetch every
+preview). Preview videos are left to the network: the portal fetches each clip
+once with `fetch()` and every card showing that game plays the same `blob:`
+URL (lib/portal.js; a card per section had fetched it again, 2026-11-15).
+Offline a card shows its precached ~5 KB poster; `assets/placeholder.svg` is
+for a card with none.
 
 **A page offline is matched without its query** when the exact URL was never
 cached: `./?game=connect4&fresh=1` gets the precached shell, whose script
 reads the query. Before 2026-11-13 it fell straight to the portal, so a game
 link opened offline depended on having visited that exact URL online. A
-framed game's files (`games/<id>/`) are precached like the rest; the shell
-inlines them from the cache (docs/platform.md). The Python runtime
+framed game's files (`games/<id>/`) are precached like the rest, and so is
+its frame, prebuilt at deploy (`frames/<id>.html`, docs/sdk-v2.md). The Python runtime
 (`sdk/pyodide/`) is the exception: cached on first use, in its own cache.
 
 **Do not put an SVG in the manifest's `icons`.** Listed with `sizes: "any"`,
