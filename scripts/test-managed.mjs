@@ -191,10 +191,49 @@ try {
 	check("each phone gets its own view: X, O and a spectator", vh?.you === 1 && v2?.you === 2 && v3?.you === 0, { host: vh?.you, p2: v2?.you, p3: v3?.you });
 	check("…of the same board, seated by team", vh?.x === hostId && vh?.o === p2Id && JSON.stringify(v2?.board) === JSON.stringify(vh?.board));
 
-	// Out of turn: the host's rules refuse, and the guest is told why.
-	await readyToClick(p2);
-	await f2.locator("#ttt button").nth(4).click();
-	check("a move out of turn is refused on the host, and the guest is told", await p2.locator(".neon-toast", { hasText: "not your turn" }).first().waitFor({ timeout: TIMEOUT }).then(() => true, () => false));
+	// Out of turn: the host's rules refuse, and the guest is told why. A toast
+	// lives 4.5 s and a newer one can push it out, so the guest's phone records
+	// every toast from before the move; the refusal itself is read from the
+	// shell's own record of what it sent the frame (the trace), not the DOM.
+	const traceFrom = await p2.evaluate(() => {
+		window.__toasts = [];
+		new MutationObserver((ms) => {
+			for (const m of ms) for (const n of m.addedNodes) if (n.classList?.contains("neon-toast")) window.__toasts.push(n.textContent);
+		}).observe(document.body, { childList: true, subtree: true });
+		return window.__sdk.length;
+	});
+	const refusal = () =>
+		p2.evaluate((from) => {
+			const msgs = window.__sdk.slice(from);
+			return {
+				acted: msgs.some(([dir, m]) => dir === "toShell" && m.t === "act"),
+				rejected: msgs.filter(([dir, m]) => dir === "toFrame" && m.t === "rejected").map(([, m]) => m.reason),
+				toasts: window.__toasts.slice(),
+			};
+		}, traceFrom);
+	const told = (r) => r.rejected.includes("not your turn") && r.toasts.some((t) => t.includes("not your turn"));
+	// The click must reach the game: the frame's `act` in the trace. On CI run
+	// 44134264485 no `rejected` reached any frame in 40 s, so the move was
+	// never refused at all, likely because this, the guest's first click into
+	// its frame, went to the <iframe> element (serve.mjs readyToClick). A click
+	// the frame did not hear is clicked again: the refusal is what is checked,
+	// not the tap.
+	const deadline = Date.now() + TIMEOUT;
+	let clicks = 0;
+	let clickedAt = 0;
+	let refused = null;
+	do {
+		if (!refused?.acted && Date.now() - clickedAt > 5000) {
+			await readyToClick(p2);
+			await f2.locator("#ttt button").nth(4).click();
+			clicks++;
+			clickedAt = Date.now();
+		}
+		await new Promise((r) => setTimeout(r, 150));
+		refused = await refusal();
+	} while (!told(refused) && Date.now() < deadline);
+	check("a move out of turn is refused on the host, and the guest is told", told(refused), { ...refused, clicks, view: await view(f2).catch(() => null) });
+	if (clicks > 1) console.log(`  note: the out-of-turn click was clicked ${clicks} times before the frame heard it`);
 
 	const play = async (page, frame, i, after) => {
 		await readyToClick(page);
@@ -243,10 +282,18 @@ try {
 	check("PLAY AGAIN: a fresh board on every phone, and the card goes", !!fresh && (await p2.locator(".managed-over").count()) === 0 && (await host.locator(".managed-over").count()) === 0);
 
 	// Mid-match the host's tab closes: p2 (the longest-present) is the heir.
+	// The heir's copy follows each move, a rules call after the views, so p2
+	// notes each copy it is sent (lib/sdk-managed.js snapCh, on "v:m$snap").
+	await p2.evaluate(() => {
+		const snap = window.__party.room.makeAction("v:m$snap");
+		const on = snap.onMessage;
+		snap.onMessage = (d, meta) => ((window.__heirCopy = d), on?.(d, meta));
+	});
 	await play(host, fh, 0, 1);
 	await play(p2, f2, 4, 2);
 	await viewUntil(f2, (v) => v.board[4] === 2);
-	await new Promise((r) => setTimeout(r, 500)); // the heir's copy follows each move
+	const copied = await p2.waitForFunction(() => window.__heirCopy?.s?.board?.[4] === 2, null, { timeout: TIMEOUT }).then(() => true, () => false);
+	check("mid-match, the heir holds a copy of the board with the last move", copied, await p2.evaluate(() => window.__heirCopy ?? null));
 	const kept = p2.locator(".neon-toast", { hasText: "You are the host now" }).first().waitFor({ timeout: TIMEOUT }).then(() => true, () => false);
 	await A.collect();
 	await host.close();

@@ -83,8 +83,15 @@ export async function gameScope(page, timeout = 30_000) {
  * draw twice. A sandboxed frame is its own process, and Chromium routes a click
  * into it from the page's last drawn frame — a background page that has not
  * drawn since the game mounted sends the click to the <iframe> element instead.
+ * The frame draws in its own process, so it is waited for too, then the page
+ * once more, so that the page's next drawn frame holds the game frame's.
  */
 export async function readyToClick(page) {
+	const twice = () => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
 	await page.bringToFront();
-	await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
+	await page.evaluate(twice);
+	const frames = page.frames().filter((f) => f !== page.mainFrame() && !f.isDetached());
+	// A frame on its way out may never answer: two seconds, then go on.
+	await Promise.all(frames.map((f) => Promise.race([f.evaluate(twice).catch(() => {}), new Promise((r) => setTimeout(r, 2000))])));
+	await page.evaluate(twice);
 }
