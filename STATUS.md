@@ -58,9 +58,9 @@ connectivity detail moved to docs/index.md "The party API" / "Connectivity").
 - **Then, approved by Lokesh:** frame prebuild at deploy; edge caching of
   leaderboard GETs; preview GIFs out of the repo; the rating change on the end
   card; quick play; sound/vibration settings and an accessibility pass;
-  free-plan usage limits; join-failure measurement; parallel CI; fix the
-  `just` variadic-recipe gotcha; worker deploy from CI with approval (Lokesh
-  will add a `CLOUDFLARE_API_TOKEN` secret) plus D1 backups.
+  free-plan usage limits; join-failure measurement; worker deploy from CI
+  with approval (Lokesh will add a `CLOUDFLARE_API_TOKEN` secret) plus D1
+  backups.
 
 **Waiting on others:** Locale (rajarshi99/locale-chess) PR #1 is still open
 (checked 2026-11-15); after he merges, he proposes his own registry pin, and

@@ -9,14 +9,13 @@
 // until 2027-02-15) must serve the same file.
 
 import { spawn } from "node:child_process";
-import { existsSync, globSync, readFileSync } from "node:fs";
-import { createRequire } from "node:module";
+import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { PORT_OFFSET, gameFrame, readyToClick, serve } from "./serve.mjs";
+import { loadPlaywright } from "./playwright.mjs";
 
-const require = createRequire(import.meta.url);
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const TIMEOUT = 30_000;
 const DEV_PORT = 5175 + PORT_OFFSET;
@@ -38,15 +37,6 @@ function chromePath() {
 		.find((p) => existsSync(p));
 	if (!found) throw new Error("no system Chrome found; set CHROME=/path/to/chrome");
 	return found;
-}
-function loadPlaywright() {
-	const found = [
-		join(ROOT, "node_modules", "playwright"),
-		join(homedir(), ".cache", "game-previews", "node_modules", "playwright"),
-		...globSync(join(homedir(), ".npm", "_npx", "*", "node_modules", "playwright")),
-	].find((p) => existsSync(p));
-	if (!found) throw new Error("playwright not found (run `just test-bots` once to fetch it)");
-	return require(found);
 }
 
 const site = await serve(8735);

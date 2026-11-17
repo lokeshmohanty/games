@@ -11,6 +11,10 @@
 #   just test       every suite
 
 port := "8000"
+# This justfile, run again from inside a recipe.
+# (Quoted by hand, not with quote(): no function or attribute newer than
+# just 1.0, so Ubuntu's packaged just still reads this file.)
+just := "'" + just_executable() + "' --justfile '" + justfile() + "'"
 # pnpm, from the system or through Nix (no global install needed on NixOS).
 pnpm := if `command -v pnpm || true` != "" { "pnpm" } else { "nix shell nixpkgs#pnpm nixpkgs#nodejs_24 -c pnpm" }
 # wrangler likewise (scripts/wrangler.mjs makes the same choice for the tests).
@@ -18,7 +22,25 @@ wrangler := if `command -v wrangler || true` != "" { "wrangler" } else { "nix sh
 
 # List the recipes.
 default:
-    @just --list --unsorted
+    @{{just}} --list --unsorted
+
+# The variadic-recipe trap: `just test-conformance test-webapp test-theme`
+# hands every name after the first to test-conformance as an argument (its
+# `*lanes`), so the other suites never run and the exit is still 0 (it bit on
+# 2026-11-15). Every recipe with a `*` parameter therefore depends on this
+# first, before anything else runs, and fails on an argument that is a
+# recipe's name; `paths` adds the way round it for a folder named like one.
+# The scripts whose values are a closed set also refuse anything else
+# (test-conformance's lanes, build-catalog's --check). propose's game
+# folders are exempt: a folder may be called anything. One recipe per `just`
+# call; scripts/test-just.mjs (`just test-just`) holds every variadic recipe
+# to this.
+_not-recipes recipe args paths="":
+    @for a in {{args}}; do \
+      case " $({{just}} --summary) " in *" $a "*) \
+        echo "error: '$a' is a recipe, not an argument to {{recipe}} — did you mean to run several recipes? Run them one per \`just\` call.{{ if paths != "" { " (A folder of that name: write ./$a.)" } else { "" } }}" >&2; exit 2;; \
+      esac; \
+    done
 
 # Why a server: the shell is built by Vite (docs/spa.md), and the camera
 # scanner and the service worker both need a *secure context*. `127.0.0.1`
@@ -51,8 +73,40 @@ serve-lan: install
       echo "arcade → http://$ip:{{port}}  (camera scanning will not work; use PASTE)"
     {{pnpm}} dev --host 0.0.0.0 --port {{port}}
 
+# Pyodide comes before the build: assemble copies sdk/ (with sdk/pyodide)
+# into the site, and test-webapp runs it from there. check-games needs the
+# community games, so it runs after them, not in test-static.
+
 # Every suite, in the order they get slower.
-test: check-bindings check-colours community check-games build test-stats test-submission test-codec test-hub test-worker-do test-plumbing test-rules test-room test-party test-scan test-pwa test-bots test-rules-screen test-devkit test-protocol test-managed test-conformance test-webapp test-theme test-portal
+test: test-static pyodide community check-games build test-room test-party test-scan test-pwa test-bots test-rules-screen test-devkit test-protocol test-managed test-conformance test-webapp test-theme test-portal
+
+# The cheap checks: no build, no browser, seconds. CI's first job, which gates the shards.
+test-static: check-bindings check-colours (catalog "--check") test-stats test-submission test-codec test-just test-hub test-worker-do test-plumbing test-rules
+
+# CI runs the slow suites in parallel shards (.github/workflows/test.yml),
+# grouped by time so they take about as long as each other: these are the
+# groups, so a shard runs the same here. The times, measured on 2026-11-15,
+# are in docs/development.md (Tests). `just test-shard <n>` vendors Pyodide,
+# fetches the community games, checks the Worker's table of games against
+# them (check-games) and builds first, unless NEON_BUILT=1 (CI builds once and
+# downloads that build into every shard); beside another run, give it its own
+# NEON_DIST and NEON_PORT_OFFSET. A suite added to `test` must go in a shard
+# too: test-just fails until it is in exactly one.
+
+# One of CI's parallel test shards (1-4): `just test-shard 2`.
+test-shard n:
+    @{{just}} --show _shard-{{n}} >/dev/null 2>&1 || { echo "error: there is no shard '{{n}}' (the shards are the _shard-<n> recipes)" >&2; exit 2; }
+    @[ "${NEON_BUILT:-}" = 1 ] || {{just}} pyodide community check-games build
+    {{just}} _shard-{{n}}
+
+_shard-1: test-bots
+_shard-2: test-room test-party test-scan test-theme
+_shard-3: test-pwa test-devkit test-managed test-portal test-protocol test-webapp test-rules-screen test-conformance
+_shard-4: test-wrangler
+
+# The Justfile itself: no variadic recipe swallows the next recipe's name, and the CI shards drop no suite.
+test-just:
+    JUST='{{just_executable()}}' node scripts/test-just.mjs
 
 # No browser needed — the signalling codec round-trip.
 test-codec:
@@ -82,7 +136,7 @@ test-worker:
 # failures and blackouts. See docs/network-testing.md.
 
 # Symmetric NAT, network switches, lossy links, a blocked room server.
-test-nat *args:
+test-nat *args: (_not-recipes "test-nat" args)
     scripts/test-nat.sh {{args}}
 
 # Not part of `test`: it needs a *deployed* room server (wrangler deploy, or
@@ -94,11 +148,11 @@ test-nat *args:
 # docs/network-testing.md.
 
 # The deployed room server on real Cloudflare: `just test-live https://….workers.dev`.
-test-live url *args:
+test-live url *args: (_not-recipes "test-live" url + " " + args)
     RS_URL={{url}} node scripts/test-live.mjs {{args}}
 
 # The NAT lab in front of the real internet (slirp4netns), against a deployment.
-test-nat-live url *args:
+test-nat-live url *args: (_not-recipes "test-nat-live" url + " " + args)
     RS_URL={{url}} scripts/test-nat.sh {{args}}
 
 # Not part of `test`: needs ssh access (keys, BatchMode) to a second machine on
@@ -116,7 +170,7 @@ test-nat-live url *args:
 # See docs/network-testing.md.
 
 # Two real machines, two real networks: join, traffic, reloads, leave; NAT classification.
-test-pair *args:
+test-pair *args: (_not-recipes "test-pair" args)
     node scripts/test-pair.mjs {{args}}
 
 # Sealed channels, commit-reveal and the round clock, over real routing.
@@ -154,7 +208,7 @@ test-managed:
     node scripts/test-managed.mjs
 
 # SDK v2 adapters: Tic Tac Toe in every language gives the reference's answers, call for call.
-test-conformance *lanes: pyodide
+test-conformance *lanes: (_not-recipes "test-conformance" lanes) pyodide
     node scripts/test-conformance.mjs {{lanes}}
     cd sdk/v2/adapters/go && go test ./...
 
@@ -187,7 +241,7 @@ check-bindings:
 
 # Gather every game.json into lib/catalog.js (generated; committed so the
 # site needs no build step). `just catalog --check` fails if it is stale.
-catalog *args:
+catalog *args: (_not-recipes "catalog" args)
     node scripts/build-catalog.mjs {{args}}
 
 # The room server's table of games and their kinds (worker/api/games.js,
@@ -195,7 +249,7 @@ catalog *args:
 # Worker bundles it). `just games-table --check` fails if it is stale.
 
 # Write the Worker's table of games (worker/api/games.js) from the catalogs.
-games-table *args:
+games-table *args: (_not-recipes "games-table" args)
     node scripts/build-games-table.mjs {{args}}
 
 # Fail if worker/api/games.js does not match the catalogs (needs community/).
@@ -235,7 +289,7 @@ test-webapp: pyodide
 
 # Everything the platform checks before it lists a game (the registry PR
 # check runs this): `just validate-game path/to/game`, `--static` for no browser.
-validate-game *args:
+validate-game *args: (_not-recipes "validate-game" args "paths")
     node scripts/validate-game.mjs {{args}}
 
 # lib/stats.js with no browser: outcomes per kind, counting once, rematches.
@@ -254,9 +308,14 @@ test-accounts:
 test-social:
     node scripts/test-social.mjs
 
+# Not part of `test`, but CI runs them, in a shard of their own.
+
+# The suites that need wrangler: test-worker, test-accounts, test-social.
+test-wrangler: test-worker test-accounts test-social
+
 # No colour named outside lib/theme.css (pages, styles, SDK, games). Pass
 # other repos to check too: `just check-colours ../web-games`.
-check-colours *dirs:
+check-colours *dirs: (_not-recipes "check-colours" dirs "paths")
     node scripts/check-colours.mjs {{dirs}}
 
 # Themes at 390x844: the default follows the system, the picker switches and
@@ -274,12 +333,12 @@ test-portal:
 # warm. Takes a few minutes; `--runs 1` for a quick look.
 
 # Phone-speed baseline: FCP, LCP, time to a bots game's frame (docs/perf.md).
-perf *args:
+perf *args: (_not-recipes "perf" args)
     node scripts/perf.mjs {{args}}
 
 # GitHub's page for proposing a repo's games (new) or a newer commit (pinned
 # and moved), filled in as far as GitHub allows: `just propose owner/repo`.
-propose repo *games:
+propose repo *games: (_not-recipes "propose" repo)
     node scripts/propose.mjs {{repo}} {{games}}
 
 # The rules a contributor's pull request is judged by (check-submission.mjs),

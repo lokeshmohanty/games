@@ -6,8 +6,15 @@ on:
   push:
     branches: ["main"]
 
-  # Allows you to run this workflow manually from the Actions tab
+  # Allows you to run this workflow manually from the Actions tab. skip_tests
+  # is for emergencies only (docs/development.md): it deploys without the
+  # suites, building the site here as before the gate existed.
   workflow_dispatch:
+    inputs:
+      skip_tests:
+        description: "Emergency only: deploy without running the test suites"
+        type: boolean
+        default: false
 
 # Sets permissions of the GITHUB_TOKEN to allow deployment to GitHub Pages
 permissions:
@@ -22,12 +29,25 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  # Every suite (test.yml, the same workflow branches and pull requests run):
+  # nothing deploys unless all of them pass, and what deploys is the very
+  # site they passed against (its build job's `site` artifact). Read-only:
+  # the test jobs never hold the Pages token.
+  tests:
+    if: ${{ !inputs.skip_tests }}
+    permissions:
+      contents: read
+    uses: ./.github/workflows/test.yml
+
   # Outside repos' games (registry/), at their pinned commits, into
   # community/ with community/catalog.js and precache.js. Fails the deploy on
   # a bad pin rather than publishing a site without those games. A web app
   # (game.json "app") is built here, in a throwaway container — so this job
   # holds no token that can deploy: author code never runs beside one.
+  # Only on the emergency path (skip_tests): otherwise test.yml's build job
+  # has fetched them, under the same rules, into the site it tested.
   build-community:
+    if: ${{ inputs.skip_tests }}
     runs-on: ubuntu-24.04
     permissions:
       contents: read
@@ -70,17 +90,31 @@ jobs:
           retention-days: 1
 
   deploy:
-    needs: build-community
+    needs: [tests, build-community]
+    # The tests passed; or, on the emergency path, they were skipped and the
+    # community games were fetched here instead.
+    if: ${{ !cancelled() && (needs.tests.result == 'success' || (inputs.skip_tests && needs.tests.result == 'skipped' && needs.build-community.result == 'success')) }}
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     runs-on: ubuntu-24.04
     steps:
-      - name: Checkout
-        uses: actions/checkout@v7
       - name: Setup Pages
         uses: actions/configure-pages@v6
+      # The site every suite just passed against, as test.yml built it
+      # (Pyodide, the community games, pnpm build): deployed as it is.
+      - name: The tested site
+        if: ${{ !inputs.skip_tests }}
+        uses: actions/download-artifact@v8
+        with:
+          name: site
+          path: dist
+      # The emergency path builds the site here, as before the gate.
+      - name: Checkout
+        if: ${{ inputs.skip_tests }}
+        uses: actions/checkout@v7
       - name: Generated files
+        if: ${{ inputs.skip_tests }}
         uses: actions/download-artifact@v8
         with:
           name: generated
@@ -92,14 +126,20 @@ jobs:
       # served as-is (games, sdk, lib, assets, the community games fetched
       # above) beside it and writes sw.js with a VERSION over exactly that.
       - name: Setup Node
+        if: ${{ inputs.skip_tests }}
         uses: actions/setup-node@v7
         with:
           node-version: 24
       - name: Install pnpm
+        if: ${{ inputs.skip_tests }}
         run: npm install -g pnpm@12.9.0
       - name: Install the shell's dependencies
+        if: ${{ inputs.skip_tests }}
         run: pnpm install --frozen-lockfile
       - name: Build the site
+        if: ${{ inputs.skip_tests }}
+        env:
+          CHROME: /usr/bin/google-chrome # prebuild-frames.mjs
         run: pnpm build
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v5
