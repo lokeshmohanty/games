@@ -550,6 +550,9 @@ try {
 	await startSolo(page, "?game=lokeshmohanty%2Fbattleship&fresh=1", "SINGLE PLAYER");
 	G = await gameScope(page, TIMEOUT);
 	await readyToClick(page);
+	// The game says ready before its first round is dealt: wait for the round,
+	// not one look (a loaded runner caught it still "waiting").
+	await G.waitForFunction(() => window.__game?.handle?.debug?.()?.phase !== "waiting", null, { timeout: 10_000 }).catch(() => {});
 
 	let bs = await debug(page);
 	check("it opens on placement", bs.phase === "place", bs.phase);
