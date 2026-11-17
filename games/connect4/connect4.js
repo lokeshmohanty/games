@@ -142,14 +142,14 @@ function chooseColumn(board0, me) {
 	return bestCol;
 }
 
-let s = null; // { match, board, turn, winner, started, red, yellow, moves, line }
+let s = null; // { match, board, turn, winner, started, red, yellow, moves, line, last }
 const colourOf = (id) => (id === s.red ? RED : id === s.yellow ? YELLOW : 0);
 const idOf = (colour) => (colour === RED ? s.red : s.yellow);
 
 arcade.managed({
 	init({ seats, match }) {
 		const team = (t, i) => (seats.find((p) => p.team === t) ?? seats[i])?.id ?? null;
-		s = { match: match + 1, board: emptyBoard(), turn: RED, winner: null, started: true, red: team("A", 0), yellow: team("B", 1), moves: 0, line: null };
+		s = { match: match + 1, board: emptyBoard(), turn: RED, winner: null, started: true, red: team("A", 0), yellow: team("B", 1), moves: 0, line: null, last: null };
 	},
 	apply({ action, by }) {
 		const col = action?.col;
@@ -160,6 +160,7 @@ arcade.managed({
 		if (row < 0) return "that column is full";
 		s.board[row][col] = s.turn;
 		s.moves = (s.moves ?? 0) + 1;
+		s.last = [row, col]; // the disc dropped last, ringed on every phone
 		if (checkWin(s.board, row, col, s.turn)) {
 			s.winner = s.turn;
 			s.line = winLine(s.board, row, col, s.turn);
@@ -216,6 +217,18 @@ const canvas = document.getElementById("board");
 const c2d = canvas.getContext("2d");
 let view = null;
 let hoverCol = -1;
+// The last move: the disc in view.last is ringed in the accent with a dot at
+// its heart — a shape as well as a colour, so it reads in every theme and
+// without colour. A move this phone sees made falls into place first (`drop`);
+// a first view (a joiner, a new host's frame), a rematch, a jump of several
+// moves, or reduced motion draws the ring at once.
+const reduced = matchMedia("(prefers-reduced-motion: reduce)");
+const FALL_MS = 260; // the longest fall, top row to bottom
+const SETTLE_MS = 220; // the ring's pulse as it lands
+let drop = null; // { row, col, t0, fall } while a disc falls and settles
+let drops = 0; // falls started, for the tests
+let marked = null; // [row, col] the ring was last painted on, for the tests
+let raf = 0;
 
 /** "rgba(r, g, b, a)" with its alpha replaced. */
 const alpha = (rgba, a) => rgba.replace(/,\s*[\d.]+\)$/, `, ${a})`);
@@ -237,6 +250,10 @@ function draw() {
 	const { tokens, players } = t;
 	const glows = !/,\s*0\)$/.test(tokens.glow ?? ", 0)");
 	const cell = canvas.width / COLS;
+	// Where the falling disc is: p (0..1) of its fall, then q (0..1) of the settle.
+	const at = drop ? performance.now() - drop.t0 : 0;
+	if (drop && at >= drop.fall + SETTLE_MS) drop = null;
+	const falling = drop && at < drop.fall;
 	c2d.fillStyle = tokens.surface2;
 	c2d.fillRect(0, 0, canvas.width, canvas.height);
 	if (hoverCol >= 0 && hoverCol < COLS && myTurn()) {
@@ -245,7 +262,7 @@ function draw() {
 	}
 	for (let r = 0; r < ROWS; r++) {
 		for (let c = 0; c < COLS; c++) {
-			const v = view.board[r][c];
+			const v = falling && r === drop.row && c === drop.col ? 0 : view.board[r][c];
 			c2d.beginPath();
 			c2d.arc(c * cell + cell / 2, r * cell + cell / 2, cell * 0.4, 0, Math.PI * 2);
 			if (v === 0) {
@@ -261,6 +278,52 @@ function draw() {
 			}
 		}
 	}
+	const last = view.last;
+	marked = null;
+	if (!last || view.board[last[0]]?.[last[1]] == null) return;
+	const [row, col] = last;
+	const cx = col * cell + cell / 2;
+	const cy = row * cell + cell / 2;
+	if (falling) {
+		// Gravity: from above the board to its row, quickening.
+		const p = at / drop.fall;
+		const y = -cell / 2 + (cy + cell / 2) * p * p;
+		c2d.beginPath();
+		c2d.arc(cx, y, cell * 0.4, 0, Math.PI * 2);
+		c2d.fillStyle = players[view.board[row][col] === RED ? 0 : 1];
+		c2d.fill();
+		return again();
+	}
+	marked = [row, col];
+	c2d.shadowBlur = glows ? 8 : 0;
+	c2d.shadowColor = tokens.accent;
+	c2d.lineWidth = Math.max(2, cell * 0.06);
+	c2d.strokeStyle = tokens.accent;
+	c2d.beginPath();
+	c2d.arc(cx, cy, cell * 0.455, 0, Math.PI * 2);
+	c2d.stroke();
+	c2d.shadowBlur = 0;
+	c2d.beginPath();
+	c2d.arc(cx, cy, Math.max(2.5, cell * 0.08), 0, Math.PI * 2);
+	c2d.fillStyle = tokens.accent;
+	c2d.fill();
+	c2d.lineWidth = Math.max(1.5, cell * 0.03);
+	c2d.strokeStyle = tokens.bg;
+	c2d.stroke();
+	if (drop) {
+		// The landing: a second ring spreads out from the first and fades.
+		const q = (at - drop.fall) / SETTLE_MS;
+		c2d.lineWidth = Math.max(1.5, cell * 0.04);
+		c2d.strokeStyle = alpha(tokens.accent, 0.8 * (1 - q));
+		c2d.beginPath();
+		c2d.arc(cx, cy, cell * (0.455 + 0.12 * q), 0, Math.PI * 2);
+		c2d.stroke();
+		again();
+	}
+}
+/** One frame loop at most, while a disc falls or settles. */
+function again() {
+	if (!raf) raf = requestAnimationFrame(() => ((raf = 0), draw()));
 }
 
 function updateHud() {
@@ -303,12 +366,24 @@ canvas.addEventListener("mouseleave", () => {
 addEventListener("resize", resize);
 arcade.on("theme.set", draw);
 arcade.on("view", ({ state }) => {
+	const before = view;
 	view = state;
+	// One more disc in the same match, seen arrive: it falls. Anything else
+	// (the same move again, a first view, a rematch) stops a fall in flight.
+	const fresh = before && state.last && before.match === state.match && state.moves === (before.moves ?? 0) + 1;
+	if (fresh && !reduced.matches) {
+		drop = { row: state.last[0], col: state.last[1], t0: performance.now(), fall: FALL_MS * Math.sqrt((state.last[0] + 1) / ROWS) };
+		drops++;
+	} else if (!before || before.match !== state.match || state.moves !== before.moves) drop = null;
 	draw();
 	updateHud();
 });
 arcade.on("rejected", (m) => arcade.toast(m.reason, "warn"));
 arcade.init.then(resize);
 
-/** The board as every phone sees it, for the tests: { board, turn, winner, started, red, yellow, match, you }. */
-arcade.debug = () => view ?? { started: false, board: [] };
+/**
+ * The board as every phone sees it, for the tests: { board, turn, winner,
+ * started, red, yellow, match, moves, last, you }, with `marked` (the cell
+ * ringed as the last move, [row, col] or null) and `drops` (falls shown).
+ */
+arcade.debug = () => ({ ...(view ?? { started: false, board: [] }), marked, drops });
