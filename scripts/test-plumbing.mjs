@@ -897,5 +897,111 @@ console.log("\na split party, re-reviewed: one record, and who said here");
 	for (const r of [a, b, c, d, e]) r.leave();
 }
 
+// ---------------------------------------------------------------------------
+console.log("\na split party, by election: one grant per member per vacancy");
+
+const fullMesh = (n) => {
+	const t = [];
+	for (let i = 0; i < n; i++) for (let j = i + 1; j < n; j++) t.push([i, j]);
+	return t;
+};
+const crowns = (rooms) => rooms.filter((r) => r.isHost()).map((r) => r.self().name).join(",");
+const E = { heirWaitMs: 300, lostRetryMs: [] };
+
+{
+	// The host leaves; the first heir is frozen. Everyone else reached
+	// everyone (and said "here") — then the guests split {Bo, Cy} | {Dee, Eve}
+	// during the heir's wait. Counting "here", each half counted the other
+	// and both crowned. With grants, each member backs one candidate.
+	const [h, a, b, c, d, e] = await party(["Host", "Ana", "Bo", "Cy", "Dee", "Eve"], fullMesh(6), E);
+	a.__frozen = true;
+	h.leave();
+	await sleep(60);
+	for (const [x, y] of [[b, d], [b, e], [c, d], [c, e]]) cut(x, y);
+	await sleep(DEPARTURE + 4000);
+	const w = crowns([b, c, d, e]);
+	check("a frozen heir, then a 2–2 split: never two crowns", w.split(",").filter(Boolean).length <= 1, w);
+	for (const r of [a, b, c, d, e]) r.leave();
+}
+
+{
+	// The host holds a room-server seat; Ana reaches it only through Xan.
+	// Bo, Cy and Xan conclude it gone, then the guests split {Ana, Xan} |
+	// {Bo, Cy} before Ana's own probe ends.
+	const top = fullMesh(5).filter(([i, j]) => !(i === 0 && j === 1));
+	const [h, a, b, c, x] = await party(["Host", "Ana", "Bo", "Cy", "Xan"], top, E);
+	h.party.members[0].rs = true;
+	h._commitParty();
+	await sleep(30);
+	h.__frozen = true;
+	h.detach();
+	for (const r of [b, c, x]) {
+		const l = r.links.get(h.selfId);
+		if (l) r._linkClosed(l);
+	}
+	await sleep(2650);
+	for (const [p, q] of [[a, b], [a, c], [x, b], [x, c]]) cut(p, q);
+	await sleep(6000);
+	const w = crowns([a, x, b, c]);
+	check("a held host behind a relay, then a 2–2 split: never two crowns", w.split(",").filter(Boolean).length <= 1, w);
+	for (const r of [a, b, c, x]) r.leave();
+}
+
+{
+	// Everyone lost (the heir frozen, the rest apart); then Bo and Cy relink.
+	// Stale "here"s made three crowns once. Two of four is no majority, and
+	// the first heir is not among them: nobody crowns.
+	const [h, a, b, c, d] = await party(["Host", "Ana", "Bo", "Cy", "Dee"], fullMesh(5), E);
+	a.__frozen = true;
+	h.leave();
+	await sleep(60);
+	for (const [x, y] of [[b, c], [b, d], [c, d]]) cut(x, y);
+	await sleep(4000);
+	const before = crowns([b, c, d]);
+	connect(b, c);
+	b._linkOpened(b.links.get(c.selfId));
+	c._linkOpened(c.links.get(b.selfId));
+	await sleep(1500);
+	const after = crowns([b, c, d]);
+	check("lost phones apart, then two relink: no crown without a majority", !before && !after, `before=${before} after=${after}`);
+	for (const r of [a, b, c, d]) r.leave();
+}
+
+{
+	// Reload mid-vote: Vic grants Bo, then reloads; its fresh page has no
+	// record, so no vote — it cannot grant Cy as well.
+	const [h, a, b, c, v] = await party(["Host", "Ana", "Bo", "Cy", "Vic"], fullMesh(5), { heirWaitMs: 2000, lostRetryMs: [] });
+	a.__frozen = true;
+	cut(b, c); // Bo and Cy cannot reach each other
+	cut(c, v);
+	h.leave();
+	await sleep(2300); // Ana's wait: Bo stands, Vic grants him
+	const grantedBo = [...(v.granted?.values() ?? [])].some((g) => g.n === b.selfId);
+	const v2 = bare({ name: "Vic", selfId: v.selfId, heirWaitMs: 2000, lostRetryMs: [] }, false);
+	v.detach();
+	const [toV, toC] = linkPair(c, v2);
+	toV.introducedName = "Vic";
+	toC.introducedName = "Cy";
+	c._linkOpened(toV);
+	v2._linkOpened(toC);
+	await sleep(2500); // Cy stands in its turn, on its own side
+	check("a member that granted, then reloaded, has no second vote", grantedBo && v2.granted?.size === 0 && !(c.candidacy?.grants.has(v.selfId)), `grantedBo=${grantedBo} v2=${v2.granted?.size}`);
+	check("…and never two crowns", crowns([b, c, v2]).split(",").filter(Boolean).length <= 1, crowns([b, c, v2]));
+	for (const r of [a, b, c, v2]) r.leave();
+}
+
+{
+	// Still healing: the frozen heir passed over by a majority (above:
+	// "a silent heir…"), the reloaded heir's party (above), and an heir
+	// reached only through a relay crowning at once (above). Here, the
+	// plain case: the host leaves a healthy party, and the heir is elected
+	// at once by everyone.
+	const [h, a, b, c] = await party(["Host", "Ana", "Bo", "Cy"], fullMesh(4), E);
+	h.leave();
+	await sleep(100);
+	check("a healthy party elects its heir at once", crowns([a, b, c]) === "Ana" && [b, c].every((r) => r.hostId() === a.selfId), crowns([a, b, c]));
+	for (const r of [a, b, c]) r.leave();
+}
+
 console.log(failures ? `\n${failures} failing\n` : "\nall passing\n");
 process.exit(failures ? 1 : 0);

@@ -18,17 +18,24 @@ How net.js does it (docs/index.md "A split party"):
 - **One record, nothing local.** All of those marks come from the record
   itself. Our copy is never read: a relink clears `reconnecting` locally, and
   a review found two sides naming different heirs, both crowning.
-- **Who may crown:** whoever is named crowns only with a quorum (`_quorum`):
-  more than half of the record's humans, or exactly half including
-  `firstHeir`. The old holder (`vacated`) is left out of both sides of the
-  fraction. Our side is self plus everyone whose "here" (`__h`, relayed) for
-  this vacancy reached us. Two sides that cannot reach each other can never
-  both hold a quorum.
-- **No `lastRecord` (a reload, a newcomer): never crown by a count.** Wait
-  for the crown's record, or be lost.
-- **Waiting for a quorum:** a member named itself without a quorum yet waits
-  the heir's wait (`pendingCrown`), crowning as soon as enough "here"s
-  arrive, and is lost if they don't.
+- **Who may crown: an election.** This replaced counting "here" messages,
+  which double-counted members across a split: two crowns, three once.
+  - A named candidate grants itself and asks (`__c`). Each member grants
+    **one** candidate per vacancy key (`granted`) and replies (`__gr`).
+  - The candidate crowns on more than half of the record's humans, or
+    exactly half including `firstHeir`. Grant sets are disjoint, so there is
+    never a second crown.
+  - The key is: vacated, the record's term, the first heir and the human
+    ids. Members vote only on an equal key.
+  - No quorum in `HEIR_WAIT_MS`: release (`__r`), never count them again,
+    step aside. A voter is freed only by hearing that release; a release
+    that overtook its request is remembered (`releases`).
+- **No `lastRecord` means no vote** (a reload, a newcomer). That is also why
+  a page reloaded mid-vote can't grant twice: its record and its grant died
+  together. I chose this over persisting `granted` in sessionStorage, which
+  would keep the vote but also the stale key.
+- **Lost phones that relink** stand again in a new round (`_standAgain`, the
+  first-ranked among self and direct links). Same key, same bindings.
 - **An heir alone against a majority is lost; it does not crown.** I read
   that as what Lokesh's quorum decision implies: the majority would pass over
   a cut-off heir, so if the heir crowned too, the party would fork. Confirm
@@ -42,8 +49,8 @@ How net.js does it (docs/index.md "A split party"):
   - `_lose` re-announces now and after `LOST_RETRY_MS`.
   - `_outranks` while lost takes only a newer term than `lostTerm`, the heir
     itself, or the old host at the old term **if it still seats the heir**.
-  - Lost phones that relink say "here" again and retry the quorum after the
-    heir's wait (`_retakeWithQuorum`).
+  - Lost phones that relink stand again in a new round of the same election
+    (`_standAgain`).
   - The shell withdraws a ranked start at the loss (`account.partyGone`).
   - The kept frame comes back only on the same run (`mounted.run`).
 - **A held host's seat:** a host the room server holds a seat for sends no

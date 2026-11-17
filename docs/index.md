@@ -439,30 +439,44 @@ seat that its relink had cleared. `_successor` skips:
 A member gone by its own goodbye since the record is not on the record
 either: if it was the heir, it is passed over after the wait.
 
-**A quorum decides who may crown.** Whoever is named crowns only if its piece
-holds a quorum (`_quorum`): more than half of that record's humans, or
-exactly half with the first heir among them. The old crown holder is left out
-of both sides of the fraction, because it is no longer a candidate.
+**An election decides who may crown** (2026-11-17; Raft's vote, without
+terms). The member named stands for the crown: it grants itself and asks
+everyone (`__c`). Every member grants **one** candidate per vacancy and
+replies (`__gr`, relayed). A candidate crowns when its grants are more than
+half of the record's humans, or exactly half with the first heir among them.
+The old crown holder is left out of both sides of the fraction.
 
-A piece is the member itself plus everyone who said "here" for this vacancy
-(`__h`) and reached it, through the mesh, relays included. Each member says
-it once as it handles the vacancy, and answers the first one it hears. A
-piece we cannot reach cannot deliver to us, so two pieces can never both
-hold a quorum. Relays are counted, so a healthy party whose heir links
-directly to only one member still crowns at once. Counting direct links
-only, that heir went lost for 10 s.
+Grant sets are disjoint, so at most one candidate ever crowns: at most one
+can hold more than half, and two exact halves cannot both hold the first
+heir. An earlier version counted who had said "here" through the mesh
+instead. A member that reached both sides before a split was counted twice,
+and a review got two crowns that way, three once. Any presence count fails
+like that.
 
-A page with no record heard from a crown holder, such as a fresh reload or a
-newcomer, has nothing to count by and never crowns through a quorum. It
-waits for the crown's record, and is lost after the heir's wait.
+Members vote only on an equal key: who left, the record's term, the first
+heir and the record's humans. Two records of one term can differ, and
+different fractions could both be met.
 
-Every member that only computed the heir (`computed`, which is not the same
-as never having heard anyone: a page fresh from a reload has done neither)
-waits up to 10 s for its record (net.js `HEIR_WAIT_MS`). After that, or once
-its own piece concludes the heir gone (anything but the heir's own goodbye),
-the heir is passed over and the next in line is named, again under the
-quorum rule. A member named without a quorum is **lost** (`room.lost`,
-`onLost(true)`). So is everyone waiting in a piece where nobody can crown.
+A page with no record heard from a crown holder (a fresh reload, a newcomer)
+has no vote. That is also what stops a page reloaded mid-vote from granting
+a second candidate: its grant died with the old page, and so did its record.
+It waits for the crown's record, and is lost after the heir's wait. A member
+still linked to the host that left grants nobody, because the host is not
+gone for it.
+
+**Waiting, standing aside, and being lost:**
+
+- Every member that only computed the heir (`computed`, which is not the
+  same as never having heard anyone: a fresh page has done neither) waits up
+  to 10 s for its record (net.js `HEIR_WAIT_MS`).
+- A silent or frozen heir never asks, so nobody is bound to it. When its
+  wait runs out, or the member's own piece concludes it gone (anything but
+  the heir's own goodbye), the next in line is named.
+- A candidate without a quorum within the heir's wait releases its grants
+  (`__r`) and never counts them again. It steps aside for the next in line.
+  A voter is free again only when it hears that release.
+- A member named with nobody left, or bound to a candidate it cannot reach,
+  is **lost** (`room.lost`, `onLost(true)`).
 
 A lost member:
 
@@ -483,9 +497,12 @@ A lost member:
     heir (otherwise it would put us in a second party beside the heir's).
 
   A member the heir dropped meanwhile carries its own seat back in.
-- **Can still crown with a quorum.** Lost phones that link up again say
-  "here" again, and check for a quorum after the heir's wait. Without a room
-  server, that, or LEAVE PARTY, is the way forward.
+- **Can still win an election.** After the heir's wait, lost phones that
+  link up again stand again in a new round of the same election: the member
+  that ranks first among them and the members it now links to directly. The
+  key is the same, so the same grants bind, and a member still bound to a
+  candidate that never released it does not grant. Without a room server,
+  that, or LEAVE PARTY, is the way forward.
 
 **Cases that are not splits.** An heir that left by its own goodbye is not a
 split: it is passed over after the wait, and the next in line takes the
@@ -500,7 +517,8 @@ reloading) cannot move the crown for everyone.
 departure: both sides keep a crown, and term ordering heals it on
 reconnection. If the host and every candidate on the majority side fail
 together, nobody carries on. Tested in test-plumbing ("a split party",
-"…reviewed", "…re-reviewed") and test-party (the lost screen).
+"…reviewed", "…re-reviewed", "…by election") and test-party (the lost
+screen).
 
 A link reported `disconnected` gets 3 s to recover before it counts as dropped,
 because a phone on a briefly lost signal often recovers the same connection.
