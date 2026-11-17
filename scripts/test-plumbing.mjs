@@ -560,5 +560,59 @@ const bare = (opts, host = true) => {
 	delete globalThis.RTCPeerConnection;
 }
 
+// ---------------------------------------------------------------------------
+console.log("\nbot seats and a member's own record");
+
+{
+	// Host, Ana, Bo, Cy: Ana is linked to everyone; Bo reaches the host only
+	// through Ana; Cy has a direct link to the host. The host seats a bot.
+	const [host, ana, bo, cy] = await party(["Host", "Ana", "Bo", "Cy"], [
+		[0, 1],
+		[1, 2],
+		[0, 3],
+		[1, 3],
+	]);
+	const bot = host.addBot("B");
+	await sleep(30);
+	const rec = (r, id) => r.getMember(id) ?? {};
+
+	// setBotMeta (the quick table's PERSON seat): host only, bots only, never a field the record owns.
+	host.setBotMeta(bot, { local: true, team: "spectator", bot: false, name: "X", host: "zz" });
+	await sleep(30);
+	check("setBotMeta: the host marks its bot local, and the mark replicates", rec(host, bot).local === true && rec(ana, bot).local === true);
+	check("…never the fields the record owns (team, bot, name, host)", rec(host, bot).team === "B" && rec(host, bot).bot === true && rec(host, bot).name !== "X" && host.party.host === host.selfId, JSON.stringify(rec(host, bot)));
+	host.setBotMeta(ana.selfId, { local: true });
+	ana.setBotMeta(bot, { local: false });
+	await sleep(30);
+	check("…not on a person's record, and not from a guest", rec(host, ana.selfId).local === undefined && rec(host, bot).local === true);
+
+	// A guest's own edits: its name and meta, nothing the record owns.
+	ana.setName("Anaïs");
+	ana.setMeta({ key: "k1" });
+	await sleep(30);
+	check("a member still edits its own name and meta", rec(host, ana.selfId).name === "Anaïs" && rec(host, ana.selfId).key === "k1");
+	check("…and one heard only through a relay still does (Bo, via Ana)", (bo.setName("Boz"), await sleep(40), rec(host, bo.selfId).name === "Boz"));
+
+	// A modified guest writing its own __i by hand: self, another member, a bot.
+	const forge = (patch, f = ana.selfId) => ana._send({ __i: patch, f, t: host.selfId }, null);
+	forge({ id: ana.selfId, team: "spectator", bot: true, host: ana.selfId, joined: 0, local: true });
+	forge({ id: bot, local: false, team: "A" }, bot);
+	forge({ id: host.selfId, name: "Pwned", team: "spectator" }, host.selfId);
+	await sleep(40);
+	check("__i: a member cannot write the fields its record owns (team, bot, host, joined) or local", rec(host, ana.selfId).team === "B" && !rec(host, ana.selfId).bot && rec(host, ana.selfId).joined > 0 && rec(host, ana.selfId).local === undefined && host.party.host === host.selfId, JSON.stringify(rec(host, ana.selfId)));
+	check("__i: nobody edits a bot by message, whatever the sender claims", rec(host, bot).local === true && rec(host, bot).team === "B", JSON.stringify(rec(host, bot)));
+	forge({ id: cy.selfId, name: "Cyborg", key: "fake" }, cy.selfId);
+	await sleep(40);
+	check("__i: a member cannot pose as the host, or as one the host hears directly", rec(host, host.selfId).name === "Host" && rec(host, host.selfId).team === "A" && rec(host, cy.selfId).name === "Cy" && rec(host, cy.selfId).key === undefined, JSON.stringify([rec(host, host.selfId), rec(host, cy.selfId)]));
+	cy.setName("Cyd");
+	await sleep(40);
+	check("…while that member's own edit, over its link, still lands", rec(host, cy.selfId).name === "Cyd");
+	// Ana claiming to be Bo, whom the host hears only through Ana: the gap no unsigned id closes.
+	forge({ id: bo.selfId, name: "Bob?" }, bo.selfId);
+	await sleep(40);
+	check("(known gap) a relay can still rename a member the host has no direct link to — name and meta only", rec(host, bo.selfId).name === "Bob?" && rec(host, bo.selfId).team === "A");
+	for (const r of [host, ana, bo, cy]) r.leave();
+}
+
 console.log(failures ? `\n${failures} failing\n` : "\nall passing\n");
 process.exit(failures ? 1 : 0);
