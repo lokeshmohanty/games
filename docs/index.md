@@ -1025,13 +1025,19 @@ the icon for exactly this reason. `test-pwa` now parses the file.
 - **A member's own record is only as honest as `f`** (review, 2026-11-17).
   The host takes an `__i` self-edit (name, `setMeta` fields) from whoever
   the envelope's unsigned `f` names. Since 2026-11-17 it refuses a bot's id
-  and its own, drops every field the record owns (team, bot, host, joined,
-  rs, reconnecting) and `local`, and refuses a relayed copy while it holds a
-  direct link to that member (the real one comes over that link). What
-  stays open: a member the host hears **only through a relay** can be
-  renamed, or its meta (a `secrets.js` public key among them) rewritten, by
-  that relay. Closing it needs signed self-edits (test-plumbing "bot seats
-  and a member's own record" asserts both the fix and the gap).
+  and edits of its own record (a `back`/`rs` vouch about the host still
+  lands: it clears a reloaded host's held seat), drops every field the
+  record owns (team, bot, host, joined, rs, reconnecting) and `local`, and
+  refuses a relayed copy while it holds a direct link to that member (the
+  real one comes over that link). Every member also **re-asserts** its own
+  fields (name and `setMeta`: pk, acct, pcode, away) when the host's record
+  has disagreed for a second (net.js `_reassert`), and `secrets.js` checks
+  the pk on its own record before deriving a key. What stays open: a member
+  the host hears **only through a relay** can be renamed, or its meta
+  rewritten, by that relay — for about a second, until the member's
+  re-assert, unless that relay also drops the re-assert. Closing it needs
+  signed self-edits, planned as a separate branch (test-plumbing "bot seats
+  and a member's own record" asserts the fixes, the gap and the re-assert).
 - Scanning is verified at realistic code density — a reply code occupying part
   of a full-resolution frame, preceded by seconds of empty aiming frames, on a
   CPU throttled to phone speed — but via a fake capture device, **not** a real

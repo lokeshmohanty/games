@@ -35,8 +35,10 @@ go straight into the game. Chosen over teaching the old two-player lobby
   joins or the crown moves, and the roster tags/toggles them — a stale
   `local` once hid a pass-the-phone seat behind a BOT tag.
 - **`__i` trusts an unsigned `f`.** The host now refuses bot ids, its own
-  id, reserved fields and `local`, and relayed self-edits for members it
-  links directly; relayed-only members can still be renamed by their relay.
+  id (but a `back`/`rs` vouch about the host must still land — dropping it
+  broke test-worker's handover), reserved fields and `local`, and relayed
+  self-edits for members it links directly; relayed-only members can still
+  be renamed by their relay until their `_reassert` (1 s) puts it back.
 - **Tests must keep off production.** Without a room-server override a party
   probes the deployed room server; test-bots and the preview recorder set
   `localStorage["neon.rs"]` to an unreachable loopback in every context, or
