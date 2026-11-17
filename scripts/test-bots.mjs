@@ -619,9 +619,23 @@ try {
 	check("both boards fit the phone", battle.bottom <= 844 && battle.docWidth <= battle.winWidth, JSON.stringify(battle));
 
 	// Play it out, using the game's own targeting so a game actually ends.
-	for (let i = 0; i < 300; i++) {
+	//
+	// Bounded by progress, not by a count of polls. A volley takes the game's
+	// 900ms resolve phase however fast we click, and a game runs from ~15
+	// volleys to all 64 squares: 33 typically, 43 or more about one game in
+	// eighty. A budget of 300 polls was ~44 volleys, so that tail failed with
+	// both fleets one square from sunk (CI run 43898412610: 43 volleys, 11/11).
+	// The real fault would be a volley that never comes, and that is what the
+	// stall bounds: the bot answers at once, and we click on every poll.
+	const STALL = 20_000;
+	const fireStart = Date.now();
+	let last = { volleys: -1, at: Date.now() };
+	for (;;) {
 		const d = await debug(page);
 		if (d.over) break;
+		const volleys = Math.max(d.shotsAtMe, d.shotsAtThem);
+		if (volleys !== last.volleys) last = { volleys, at: Date.now() };
+		else if (Date.now() - last.at > STALL) break;
 		if (d.phase === "fire") {
 			await G.evaluate(() => {
 				const d = window.__game.handle.debug();
@@ -634,14 +648,26 @@ try {
 		}
 		await sleep(130);
 	}
-	await sleep(1500);
+	// Then both fleets are opened and each digest verified (a round trip to
+	// the shell), so wait for the audits rather than for a fixed time.
+	await G.waitForFunction(() => {
+		const d = window.__game.handle.debug();
+		return d.over && d.fleetsRevealed === 2 && Object.keys(d.audits).length === 2;
+	}, null, { timeout: 10_000 }).catch(() => {});
 	bs = await debug(page);
-	check("the game reaches a result", !!bs.over, JSON.stringify({ phase: bs.phase, shots: bs.shotsAtThem }));
-	check("both sides fired the same number of volleys", bs.shotsAtMe === bs.shotsAtThem, `${bs.shotsAtMe} vs ${bs.shotsAtThem}`);
-	check("the loser's fleet is fully sunk", bs.hitsOnThem === 12 || bs.hitsOnMe === 12, `${bs.hitsOnThem}/${bs.hitsOnMe}`);
-	check("both fleets were revealed", bs.fleetsRevealed === 2, `${bs.fleetsRevealed}`);
-	check("and both audited clean", Object.values(bs.audits).every((a) => a === null), JSON.stringify(bs.audits));
-	check("the phase leaves the firing state", bs.phase === "over", bs.phase);
+	// Everything a failure here needs to tell a slow game from a stuck one.
+	const fought = JSON.stringify({
+		phase: bs.phase, over: bs.over, volleys: `${bs.shotsAtThem} by us, ${bs.shotsAtMe} at us`,
+		hits: `${bs.hitsOnThem} on them, ${bs.hitsOnMe} on us (of 12)`,
+		seconds: Math.round((Date.now() - fireStart) / 1000), sinceLastVolley: Math.round((Date.now() - last.at) / 1000),
+		revealed: bs.fleetsRevealed, audits: bs.audits,
+	});
+	check("the game reaches a result", !!bs.over, fought);
+	check("both sides fired the same number of volleys", bs.shotsAtMe === bs.shotsAtThem, fought);
+	check("the loser's fleet is fully sunk", bs.hitsOnThem === 12 || bs.hitsOnMe === 12, fought);
+	check("both fleets were revealed", bs.fleetsRevealed === 2, fought);
+	check("and both audited clean", Object.keys(bs.audits).length === 2 && Object.values(bs.audits).every((a) => a === null), fought);
+	check("the phase leaves the firing state", bs.phase === "over", fought);
 	if (bs.over?.winner !== undefined) await resultReached(page, "lokeshmohanty/battleship", bs.over.winner === (await selfOf(page)));
 
 	// The claim, tested by breaking it: a fleet that does not match the answers
