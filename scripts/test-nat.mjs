@@ -54,7 +54,6 @@
  * STUN here is a 40-line responder, not a TURN server, and never becomes
  * one: the project has no TURN by choice (see lib/net.js's DEFAULT_ICE).
  */
-import { createRequire } from "node:module";
 import { execFileSync, spawn } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import { createSocket } from "node:dgram";
@@ -64,7 +63,6 @@ import { connect, createServer as createTcpServer } from "node:net";
 import {
 	chmodSync,
 	existsSync,
-	globSync,
 	mkdtempSync,
 	readFileSync,
 	readlinkSync,
@@ -76,8 +74,8 @@ import { homedir, tmpdir } from "node:os";
 import { dirname, extname, join, normalize, resolve as resolvePath } from "node:path";
 import { fileURLToPath } from "node:url";
 import { SITE_DIR } from "./serve.mjs";
+import { loadPlaywright } from "./playwright.mjs";
 
-const require = createRequire(import.meta.url);
 const ROOT = resolvePath(dirname(fileURLToPath(import.meta.url)), "..");
 const PUBLIC = "198.51.100.1"; // TEST-NET-2: never a real address
 const HTTP_PORT = 8000;
@@ -412,18 +410,6 @@ function chromePath() {
 		.find((p) => existsSync(p));
 	if (!found) throw new Error("no system Chrome found; set CHROME=/path/to/chrome");
 	return found;
-}
-
-function loadPlaywright() {
-	const found = [
-		join(ROOT, "node_modules", "playwright"),
-		join(homedir(), ".cache", "game-previews", "node_modules", "playwright"),
-		...globSync(join(homedir(), ".npm", "_npx", "*", "node_modules", "playwright")),
-	].find((p) => existsSync(p));
-	// No network in here to install it from: test-room.mjs installs it on
-	// first run, and this suite reuses that copy.
-	if (!found) throw new Error("playwright not found — run `just test-room` once first");
-	return require(found);
 }
 
 const { chromium } = loadPlaywright();

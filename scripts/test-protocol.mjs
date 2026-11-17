@@ -11,15 +11,14 @@
 // never sent or answered is listed.
 
 import { spawn } from "node:child_process";
-import { existsSync, globSync } from "node:fs";
-import { createRequire } from "node:module";
+import { existsSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { SCHEMA, deref, validate } from "./protocol-check.mjs";
 import { PORT_OFFSET, gameFrame, serve } from "./serve.mjs";
+import { loadPlaywright } from "./playwright.mjs";
 
-const require = createRequire(import.meta.url);
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const TIMEOUT = 40_000;
 const DEV_PORT = 5190 + PORT_OFFSET;
@@ -58,15 +57,6 @@ function chromePath() {
 		.find((p) => existsSync(p));
 	if (!found) throw new Error("no system Chrome found; set CHROME=/path/to/chrome");
 	return found;
-}
-function loadPlaywright() {
-	const found = [
-		join(ROOT, "node_modules", "playwright"),
-		join(homedir(), ".cache", "game-previews", "node_modules", "playwright"),
-		...globSync(join(homedir(), ".npm", "_npx", "*", "node_modules", "playwright")),
-	].find((p) => existsSync(p));
-	if (!found) throw new Error("playwright not found (run `just test-bots` once to fetch it)");
-	return require(found);
 }
 
 const site = await serve(8737);
@@ -197,7 +187,18 @@ try {
 	check("…and no step the test does not know about", !extra.length, extra.join(", "));
 
 	// Back to the lobby: the host's `end`, then everyone's `unmount`.
-	await frames[0].evaluate(() => window.fixtureEnd());
+	// Seen once on a loaded GitHub runner (2026-11-16): the host's frame had
+	// been detached by here. party.js remounts a host's game as a guest's
+	// when the crown moved off it for longer than CROWN_SETTLE_MS (a link
+	// blip under load); this says what the host believed then, and takes
+	// the frame that is there now, so the run still checks its messages.
+	let endFrame = frames[0];
+	if (endFrame.isDetached()) {
+		const state = await host.evaluate(() => ({ self: window.__party.room.selfId, host: window.__party.room.hostId(), game: window.__party.game }));
+		console.log(`  info the host's game frame was remounted before the end: ${JSON.stringify(state)}`);
+		endFrame = await gameFrame(host, TIMEOUT);
+	}
+	await endFrame.evaluate(() => window.fixtureEnd());
 	await host.locator(".game-frame").waitFor({ state: "detached", timeout: TIMEOUT }).catch(() => {});
 
 	console.log("\nprotocol: every message against sdk/v2/protocol.json");

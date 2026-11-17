@@ -57,19 +57,17 @@
  * the member-pass key is a fresh random `--var ROOM_PASS_KEY` per run (a
  * worker/.dev.vars, if there is one, is overridden by it).
  */
-import { createRequire } from "node:module";
-import { execFileSync, spawn } from "node:child_process";
+import { spawn } from "node:child_process";
 import { randomBytes } from "node:crypto";
-import { existsSync, globSync, mkdtempSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, rmSync } from "node:fs";
 import { createServer } from "node:net";
 import { homedir, tmpdir } from "node:os";
 import { dirname, join, resolve as resolvePath } from "node:path";
 import { fileURLToPath } from "node:url";
 import { gameFrame, passTable, readyToClick, serve } from "./serve.mjs";
+import { loadPlaywright } from "./playwright.mjs";
 
-const require = createRequire(import.meta.url);
 const ROOT = resolvePath(dirname(fileURLToPath(import.meta.url)), "..");
-const PW_CACHE = join(homedir(), ".cache", "game-previews");
 // Served, not file://: framed games are fetched and inlined by the shell.
 const SITE = await serve(8738);
 const PARTY = SITE.url("?party");
@@ -124,21 +122,6 @@ function chromePath() {
 		process.exit(1);
 	}
 	return found;
-}
-
-function loadPlaywright() {
-	const found = [
-		join(ROOT, "node_modules", "playwright"),
-		join(PW_CACHE, "node_modules", "playwright"),
-		...globSync(join(homedir(), ".npm", "_npx", "*", "node_modules", "playwright")),
-	].find((p) => existsSync(p));
-	if (!found) {
-		execFileSync("npm", ["install", "--prefix", PW_CACHE, "--no-save", "--no-audit", "playwright"], {
-			stdio: "inherit",
-		});
-		return require(join(PW_CACHE, "node_modules", "playwright"));
-	}
-	return require(found);
 }
 
 let failures = 0;
@@ -1285,14 +1268,33 @@ try {
 		check("neon survival: (three in, the game up)", t.up);
 		await goes(t, "neon-survival-mp", "neon survival");
 		// After the heir's 3-2-1 (the old host was out of the app, as a closed
-		// tab is), the swarm spawns and moves again for everyone.
+		// tab is), the swarm spawns and moves again for everyone. The swarm
+		// is held still while the shell pauses for the handover, and the
+		// toasts above can come before that pause ends — on a slower runner a
+		// fixed one-second sample fell inside it (2026-11-15) — so this waits
+		// for the swarm to change, up to 20 s. One change could be a frozen
+		// swarm replaced once (a respawn, a restore); moving means it changes
+		// again, within about a second, from where it was after the first.
 		const nsFrame = await inGame(t.b);
 		const swarm = () => nsFrame.evaluate(() => JSON.stringify(window.enemies?.map((e) => [Math.round(e.x), Math.round(e.y)]) ?? []));
+		const changesFrom = (was, timeout) =>
+			nsFrame
+				.waitForFunction(
+					(was) => {
+						const now = JSON.stringify(window.enemies?.map((e) => [Math.round(e.x), Math.round(e.y)]) ?? []);
+						return now !== "[]" && now !== was;
+					},
+					was,
+					{ timeout, polling: 50 },
+				)
+				.then(() => true, () => false);
 		await nsFrame.waitForFunction(() => (window.enemies?.length ?? 0) > 0, null, { timeout: 15_000 }).catch(() => {});
 		const e0 = await swarm();
-		await t.b.waitForTimeout(1000);
+		const resumed = e0 !== "[]" && (await changesFrom(e0, 20_000));
 		const e1 = await swarm();
-		check("neon survival: the swarm still comes, and moves, for the others", e0 !== "[]" && e0 !== e1, `${e0.slice(0, 60)} / ${e1.slice(0, 60)}`);
+		const moving = resumed && (await changesFrom(e1, 1_500));
+		const e2 = await swarm();
+		check("neon survival: the swarm still comes, and moves, for the others", moving, `${e0.slice(0, 40)} / ${e1.slice(0, 40)} / ${e2.slice(0, 40)}`);
 		await done(t);
 
 		// Draw & guess: the clock goes on under the heir.

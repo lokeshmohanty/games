@@ -12,17 +12,12 @@
  * NixOS note: as in preview.mjs, Playwright's bundled chromium cannot run
  * here, so the nix-provided Chrome is driven through executablePath.
  */
-import { createRequire } from "node:module";
-import { execFileSync } from "node:child_process";
-import { existsSync, globSync } from "node:fs";
+import { existsSync } from "node:fs";
 import { homedir } from "node:os";
-import { dirname, join, resolve as resolvePath } from "node:path";
-import { fileURLToPath } from "node:url";
+import { join } from "node:path";
 import { serve, gameFrame, readyToClick } from "./serve.mjs";
+import { loadPlaywright } from "./playwright.mjs";
 
-const require = createRequire(import.meta.url);
-const ROOT = resolvePath(dirname(fileURLToPath(import.meta.url)), "..");
-const PW_CACHE = join(homedir(), ".cache", "game-previews");
 const SITE = await serve(8733);
 const PARTY = SITE.url("?party");
 const TIMEOUT = 40_000;
@@ -44,23 +39,6 @@ function chromePath() {
 		process.exit(1);
 	}
 	return found;
-}
-
-function loadPlaywright() {
-	const found = [
-		join(ROOT, "node_modules", "playwright"),
-		join(PW_CACHE, "node_modules", "playwright"),
-		...globSync(join(homedir(), ".npm", "_npx", "*", "node_modules", "playwright")),
-	].find((p) => existsSync(p));
-	if (!found) {
-		execFileSync(
-			"npm",
-			["install", "--prefix", PW_CACHE, "--no-save", "--no-audit", "playwright"],
-			{ stdio: "inherit" },
-		);
-		return require(join(PW_CACHE, "node_modules", "playwright"));
-	}
-	return require(found);
 }
 
 let failures = 0;
@@ -119,6 +97,15 @@ const toastOn = (page, text) =>
 		.waitFor({ timeout: TIMEOUT })
 		.then(() => true)
 		.catch(() => false);
+
+/** Who a peer thinks holds the crown, and what it knows of everyone: for failure details. */
+const crownState = (page) =>
+	page
+		.evaluate(() => {
+			const r = window.__party?.room;
+			return r && { self: r.selfId, host: r.hostId(), game: window.__party.game, members: r.getMembers().map((m) => [m.id, m.joined ?? null, m.away ? "away" : "", m.reconnecting ? "reconnecting" : ""].filter((x) => x !== "").join(" ")) };
+		})
+		.catch((err) => String(err).split("\n")[0]);
 
 const names = async (page) =>
 	await page.locator(".party-member .party-name").allTextContents();
@@ -692,6 +679,16 @@ try {
 	for (const page of [host, p2, p3]) await (await gameFrame(page, TIMEOUT)).locator("#gameCanvas").waitFor({ timeout: TIMEOUT });
 	const hostName = await host.evaluate(() => window.__party.room.self().name);
 	const p2Name = await p2.evaluate(() => window.__party.room.self().name);
+	// The overflow check above dropped p2–p3's direct link, so the two talked
+	// through the host; the mesh links them again on its own, but on a loaded
+	// runner not always by now (2026-11-16). Closing the host while it is
+	// still their only route splits the party in two — each guest crowns
+	// itself — which is not the succession this section tests. So wait for
+	// the direct link first.
+	const linkedAgain = await p2
+		.waitForFunction((peer) => window.__party.room.links.has(peer), p3Id, { timeout: TIMEOUT, polling: 100 })
+		.then(() => true, () => false);
+	check("(the guests are linked directly again, as before the overflow)", linkedAgain);
 	const told = Promise.all([
 		toastOn(p2, "You are the host now."),
 		toastOn(p3, `${p2Name} is the host now.`),
@@ -708,12 +705,26 @@ try {
 	// The heir now runs the swarm: it moves on the heir's own simulation
 	// (in front, so its animation frames run).
 	await p2.bringToFront();
+	// It is held still while the shell pauses for the handover, so this waits
+	// (up to 20 s) for it to change, then for a second change within 1.5 s —
+	// one change could be a frozen swarm replaced once — as test-worker does.
 	const swarmNow = () => p2H.evaluate(() => JSON.stringify((window.enemies ?? []).map((e) => [Math.round(e.x), Math.round(e.y)])));
+	const changesFrom = (was, timeout) =>
+		p2H
+			.waitForFunction((was) => {
+				const now = JSON.stringify((window.enemies ?? []).map((e) => [Math.round(e.x), Math.round(e.y)]));
+				return now !== "[]" && now !== was;
+			}, was, { timeout, polling: 50 })
+			.then(() => true, () => false);
 	const s0 = await swarmNow();
-	const ran = await p2H
-		.waitForFunction((was) => JSON.stringify((window.enemies ?? []).map((e) => [Math.round(e.x), Math.round(e.y)])) !== was, s0, { timeout: 8000 })
-		.then(() => true, () => false);
-	check("…and the new host runs it: the swarm moves on", ran && (await p3.evaluate(() => window.__party.game)) === "neon-survival-mp");
+	const ran = (await changesFrom(s0, 20_000)) && (await changesFrom(await swarmNow(), 1_500));
+	const p3Game = await p3.evaluate(() => window.__party.game);
+	check("…and the new host runs it: the swarm moves on", ran, `${s0.slice(0, 40)} / ${(await swarmNow()).slice(0, 40)}`);
+	check("…while everyone else still has it", p3Game === "neon-survival-mp", `p3's game: ${p3Game}`);
+	// Seen on a loaded GitHub runner (2026-11-16), not yet locally: the guest
+	// missed the hand-over and left the game. What each peer believes, to
+	// tell a missed message from a split crown next time it happens.
+	if (!restKept || p3Game !== "neon-survival-mp") console.log(`    state: ${JSON.stringify(await Promise.all([p2, p3].map(crownState)))}`);
 	await p2.evaluate(() => window.__party.room.setGame(null));
 	await p3.waitForFunction(() => window.__party.game === null && !document.getElementById("party").hidden, null, { timeout: TIMEOUT });
 	check("the heir is told the crown is theirs", heirTold);

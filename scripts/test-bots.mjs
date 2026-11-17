@@ -20,17 +20,12 @@
  * NixOS note: as in test-party.mjs, Playwright's bundled chromium cannot run
  * here, so the nix-provided Chrome is driven through executablePath.
  */
-import { createRequire } from "node:module";
-import { execFileSync } from "node:child_process";
-import { existsSync, globSync } from "node:fs";
+import { existsSync } from "node:fs";
 import { homedir } from "node:os";
-import { dirname, join, resolve as resolvePath } from "node:path";
-import { fileURLToPath } from "node:url";
+import { join } from "node:path";
 import { serve, gameScope, readyToClick } from "./serve.mjs";
+import { loadPlaywright } from "./playwright.mjs";
 
-const require = createRequire(import.meta.url);
-const ROOT = resolvePath(dirname(fileURLToPath(import.meta.url)), "..");
-const PW_CACHE = join(homedir(), ".cache", "game-previews");
 const SITE = await serve(8734);
 const url = SITE.url;
 // The portal's address (LEAVE PARTY goes there): the shell with no query.
@@ -52,23 +47,6 @@ function chromePath() {
 		process.exit(1);
 	}
 	return found;
-}
-
-function loadPlaywright() {
-	const found = [
-		join(ROOT, "node_modules", "playwright"),
-		join(PW_CACHE, "node_modules", "playwright"),
-		...globSync(join(homedir(), ".npm", "_npx", "*", "node_modules", "playwright")),
-	].find((p) => existsSync(p));
-	if (!found) {
-		execFileSync(
-			"npm",
-			["install", "--prefix", PW_CACHE, "--no-save", "--no-audit", "playwright"],
-			{ stdio: "inherit" },
-		);
-		return require(join(PW_CACHE, "node_modules", "playwright"));
-	}
-	return require(found);
 }
 
 let failures = 0;
@@ -185,7 +163,6 @@ try {
 	//
 	// The bot with something to prove: it is the only one here that has to be
 	// *right* rather than merely busy.
-
 
 	// ------------------------------------------------------------- undercover
 	//
@@ -587,6 +564,9 @@ try {
 	await startSolo(page, "?game=lokeshmohanty%2Fbattleship&fresh=1", "SINGLE PLAYER");
 	G = await gameScope(page, TIMEOUT);
 	await readyToClick(page);
+	// The game says ready before its first round is dealt: wait for the round,
+	// not one look (a loaded runner caught it still "waiting").
+	await G.waitForFunction(() => window.__game?.handle?.debug?.()?.phase !== "waiting", null, { timeout: 10_000 }).catch(() => {});
 
 	let bs = await debug(page);
 	check("it opens on placement", bs.phase === "place", bs.phase);
@@ -916,6 +896,168 @@ try {
 	const brMe = br.scores[br.you] ?? 0;
 	const brLevel = Object.values(br.scores).length === 4 && Object.values(br.scores).every((v) => v === brMe);
 	await resultReached(page, "lokeshmohanty/bubble-rush", brLevel ? "drawn" : brMe === Math.max(...Object.values(br.scores)));
+
+	// ------------------------------------------------- bubble rush: honest taps
+	//
+	// Lokesh, 2026-11-17, on his phone: "most of my taps were missing even
+	// though I tapped on the bubble, to get the bubble, I had to tap where it
+	// would be in the future". A tap claimed the round time as its handler ran,
+	// not the frame on the screen when the finger landed; on a busy phone that
+	// is 100-300 ms later and the bubble has risen past the finger. So: a
+	// 390x844 touch phone at 4x CPU, the frame on screen held 100-300 ms (a
+	// slow frame plus the touch's trip through the browser), and a touch
+	// exactly where that frame drew a bubble must pop it — for the host and for
+	// a guest. The frame and what it drew come from the page's own draw()
+	// (top-level bindings of a classic script, as the game-previews recorder
+	// reads Neon Survival's). Before the fix (web-games 3b08824) these were 16
+	// of 30 (host) and 20 of 30 (guest); after it, 30 of 30 each.
+
+	/** A 390x844 touch phone, its page and (later) its game frame throttled to `rate` x CPU. */
+	async function phone() {
+		const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true, deviceScaleFactor: 2 });
+		await ctx.addInitScript(() => {
+			try {
+				localStorage.setItem("neon.rs", "http://127.0.0.1:9");
+			} catch {}
+		});
+		const p = await ctx.newPage();
+		p.on("pageerror", (err) => {
+			console.log(`  FAIL page error: ${err.message}`);
+			failures++;
+		});
+		return { ctx, p };
+	}
+	/** Slow the page and the game's frame (its own process, when it is one) to `rate` x CPU. */
+	async function throttle(ctx, p, F, rate) {
+		for (const target of [p, F]) {
+			try {
+				await (await ctx.newCDPSession(target)).send("Emulation.setCPUThrottlingRate", { rate });
+			} catch {} // the frame shares the page's process: the page's throttle covers it
+		}
+	}
+	/**
+	 * `n` honest taps on phone `p` (game frame `F`): hold the frame on screen,
+	 * wait `holdMs` [min, max], touch the centre of a bubble as that frame drew
+	 * it. What the host said, from this phone's own counts: { pops, misses, first }.
+	 */
+	async function honestTaps(p, F, { n, holdMs }) {
+		await F.evaluate(() => {
+			const orig = draw;
+			window.__shown = null;
+			draw = function () {
+				orig();
+				window.__shown = clockT; // the round time this frame drew
+			};
+			window.__hold = () => {
+				const real = window.requestAnimationFrame;
+				const queued = [];
+				window.requestAnimationFrame = (cb) => (queued.push(cb), 0);
+				return () => {
+					window.requestAnimationFrame = real;
+					for (const cb of queued.splice(0)) real(cb);
+					real(() => {});
+				};
+			};
+		});
+		const box = await F.locator(".br-field canvas").boundingBox();
+		const inset = await F.evaluate(() => document.querySelector(".br-field canvas").clientLeft);
+		const out = { pops: 0, misses: 0, first: 0 };
+		const counts = () => F.evaluate(() => ({ popped: view.mine?.popped ?? 0, misses: view.mine?.misses ?? 0 }));
+		for (let i = 0, tries = 0; out.pops + out.misses < n && tries < n * 3; tries++) {
+			await F.evaluate(() => (window.__release = window.__hold()));
+			await sleep(30); // a frame already on its way finishes
+			const b = await F.evaluate(() => {
+				const t = window.__shown;
+				if (t === null || view?.phase !== "play") return null;
+				const R = bubbleRushRules;
+				const w = canvas.clientWidth;
+				const h = canvas.clientHeight;
+				const drawn = bubbles
+					.filter((b) => !isHidden(b.id) && b.k !== "x" && R.alive(b, t) && R.surfaced(b, t))
+					.map((b) => ({ ...R.position(b, t), r: b.r }))
+					.map((q) => ({ px: q.x * w, py: q.y * h, pr: q.r * w }))
+					.filter((q) => q.py > q.pr && q.py < h - q.pr);
+				return drawn[Math.floor(Math.random() * drawn.length)] ?? null;
+			});
+			if (!b) {
+				await F.evaluate(() => window.__release());
+				await sleep(150);
+				continue;
+			}
+			const before = await counts();
+			await sleep(holdMs[0] + Math.random() * (holdMs[1] - holdMs[0]));
+			await p.touchscreen.tap(box.x + inset + b.px, box.y + inset + b.py);
+			await F.evaluate(() => window.__release());
+			let after = before;
+			for (let k = 0; k < 25 && after.popped === before.popped && after.misses === before.misses; k++) {
+				await sleep(60);
+				after = await counts();
+			}
+			if (after.popped > before.popped) out.pops++;
+			else if (after.misses > before.misses) out.misses++;
+			else out.first++; // someone popped it first: neither
+			await sleep(120);
+		}
+		return out;
+	}
+
+	console.log("\nbots: bubble rush, an honest tap lands on a busy phone (host)");
+	{
+		const { ctx, p } = await phone();
+		await p.goto(url("?game=lokeshmohanty%2Fbubble-rush&fresh=1"));
+		await p.locator("button", { hasText: "SINGLE PLAYER" }).first().click();
+		await setPlayers(p, 4); // the quick table: you and three bots
+		await p.locator("button", { hasText: "START GAME" }).first().click();
+		await p.waitForFunction(() => window.__game?.handle, null, { timeout: TIMEOUT });
+		const F = await gameScope(p, TIMEOUT);
+		await F.waitForFunction(() => window.__game.handle.debug().phase === "setup", null, { timeout: TIMEOUT });
+		await readyToClick(p);
+		// Alone with bots, the sides are dealt and the round opens on TEAMS: this measures free-for-all.
+		await F.locator('.br-setup button[data-mode="ffa"]').tap();
+		await F.waitForFunction(() => window.__game.handle.debug().mode === "ffa", null, { timeout: TIMEOUT });
+		await throttle(ctx, p, F, 4);
+		await F.locator(".br-setup button", { hasText: "START" }).tap();
+		await F.waitForFunction(() => window.__game.handle.debug().phase === "play", null, { timeout: TIMEOUT });
+		const r = await honestTaps(p, F, { n: 30, holdMs: [100, 300] });
+		const rate = r.pops / Math.max(1, r.pops + r.misses);
+		check(`touching a bubble where the screen shows it pops it, the frame 100-300 ms old (${r.pops} of ${r.pops + r.misses})`, r.pops + r.misses >= 20 && rate >= 0.95, JSON.stringify(r));
+		await ctx.close();
+	}
+
+	console.log("\nbots: bubble rush, an honest tap lands on a busy phone (guest)");
+	{
+		// A host (4x CPU, so its ticks may fall behind real time) and a guest
+		// phone (4x), joined by invite; the guest taps.
+		const host = await phone();
+		const guest = await phone();
+		await host.p.goto(url("?game=lokeshmohanty%2Fbubble-rush&fresh=1"));
+		await host.p.locator("button", { hasText: "MULTI-PLAYER" }).first().click();
+		await host.p.locator("button", { hasText: "INVITE A FRIEND" }).first().click();
+		const invite = host.p.locator("textarea.share-code").first();
+		await invite.waitFor({ timeout: TIMEOUT });
+		await guest.p.goto(await invite.inputValue());
+		const reply = guest.p.locator("textarea.share-code").first();
+		await reply.waitFor({ timeout: TIMEOUT });
+		await host.p.locator("textarea.share-code").last().fill(await reply.inputValue());
+		await host.p.locator("button", { hasText: "CONNECT" }).first().click();
+		await host.p.locator(".party-member").nth(1).waitFor({ timeout: TIMEOUT });
+		for (let i = 0; i < 2; i++) await host.p.locator("button", { hasText: "ADD BOT" }).first().click();
+		await host.p.locator("button", { hasText: "START GAME" }).first().click();
+		const HF = await gameScope(host.p, TIMEOUT);
+		const GF = await gameScope(guest.p, TIMEOUT);
+		await HF.waitForFunction(() => window.__game?.handle?.debug().phase === "setup", null, { timeout: TIMEOUT });
+		await GF.waitForFunction(() => window.__game?.handle?.debug().phase === "setup", null, { timeout: TIMEOUT });
+		await throttle(host.ctx, host.p, HF, 4);
+		await throttle(guest.ctx, guest.p, GF, 4);
+		await readyToClick(host.p);
+		await HF.locator(".br-setup button", { hasText: "START" }).tap();
+		await GF.waitForFunction(() => window.__game.handle.debug().phase === "play", null, { timeout: TIMEOUT });
+		const r = await honestTaps(guest.p, GF, { n: 30, holdMs: [100, 300] });
+		const rate = r.pops / Math.max(1, r.pops + r.misses);
+		check(`a guest's touch where its screen shows a bubble pops it on the host, the frame 100-300 ms old (${r.pops} of ${r.pops + r.misses})`, r.pops + r.misses >= 20 && rate >= 0.95, JSON.stringify(r));
+		await host.ctx.close();
+		await guest.ctx.close();
+	}
 
 	console.log("\nbots: connect 4 plays a real opponent");
 	// The game page is a party shortcut; its quick start must suit a phone.

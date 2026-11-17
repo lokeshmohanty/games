@@ -69,9 +69,11 @@ if it is motion-heavy.
 - **Playwright's bundled chromium cannot run on NixOS** — it exits 127 (unpatched
   dynamic linker). The scripts always launch the nix-provided Chrome by
   `executablePath`. Never "fix" this by installing playwright browsers.
-- **Playwright itself is not vendored** — this repo has no build step and no
-  `node_modules`. `preview.mjs` finds an existing copy (npx cache) and only installs
-  into `~/.cache/game-previews` as a fallback. Keep it out of the repo.
+- **Playwright is a pinned dev dependency** (package.json, `just install`).
+  `preview.mjs`, like every browser script, loads it through
+  `scripts/playwright.mjs`, which looks only in the repo's `node_modules` and says
+  to run `just install` when it is missing (changed 2026-11-16; the old npx-cache
+  and `~/.cache/game-previews` lookups found nothing on a CI runner).
 - **Draw & Guess roles**: the drawer's `#chat-input` is *disabled*. Detect the guesser
   by `isEnabled()`, not by reading `#word-display` — both peers see text there.
   Strokes drawn during the round-start reveal are cleared, hence the settle delay.

@@ -15,14 +15,12 @@
  * when the host leaves, the game ends rather than half-running.
  */
 import { spawn } from "node:child_process";
-import { createRequire } from "node:module";
-import { existsSync, globSync } from "node:fs";
-import { homedir } from "node:os";
+import { existsSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { PORT_OFFSET, serve } from "./serve.mjs";
+import { loadPlaywright } from "./playwright.mjs";
 
-const require = createRequire(import.meta.url);
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const TIMEOUT = 40_000;
 const DEV_PORT = 5191 + PORT_OFFSET;
@@ -41,14 +39,11 @@ if (!existsSync(join(ROOT, "sdk/pyodide/VERSION"))) {
 const chrome = [process.env.CHROME, "/run/current-system/sw/bin/google-chrome-stable", "/run/current-system/sw/bin/chromium", "/usr/bin/google-chrome"]
 	.filter(Boolean)
 	.find((p) => existsSync(p));
-const pw = [join(ROOT, "node_modules", "playwright"), join(homedir(), ".cache", "game-previews", "node_modules", "playwright"), ...globSync(join(homedir(), ".npm", "_npx", "*", "node_modules", "playwright"))].find(
-	(p) => existsSync(p),
-);
-if (!chrome || !pw) {
-	console.error("needs Chrome (CHROME=) and playwright (run `just test-bots` once)");
+if (!chrome) {
+	console.error("needs Chrome (CHROME=)");
 	process.exit(1);
 }
-const { chromium } = require(pw);
+const { chromium } = loadPlaywright();
 
 const site = await serve(8737);
 const dev = spawn("node", [join(ROOT, "sdk/dev-server.mjs"), join(ROOT, "scripts/fixtures"), String(DEV_PORT)], { stdio: "ignore" });

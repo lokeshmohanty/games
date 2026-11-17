@@ -21,16 +21,14 @@
  * Camera access needs a secure context, so the repo is served over
  * http://localhost rather than opened from file://.
  */
-import { createRequire } from "node:module";
 import { execFileSync, spawn } from "node:child_process";
-import { existsSync, globSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { dirname, join, resolve as resolvePath } from "node:path";
 import { fileURLToPath } from "node:url";
+import { loadPlaywright } from "./playwright.mjs";
 
-const require = createRequire(import.meta.url);
 const ROOT = resolvePath(dirname(fileURLToPath(import.meta.url)), "..");
-const PW_CACHE = join(homedir(), ".cache", "game-previews");
 const PORT = 8731;
 
 function chromePath() {
@@ -47,23 +45,6 @@ function chromePath() {
 		process.exit(1);
 	}
 	return found;
-}
-
-function loadPlaywright() {
-	const found = [
-		join(ROOT, "node_modules", "playwright"),
-		join(PW_CACHE, "node_modules", "playwright"),
-		...globSync(join(homedir(), ".npm", "_npx", "*", "node_modules", "playwright")),
-	].find((p) => existsSync(p));
-	if (!found) {
-		execFileSync(
-			"npm",
-			["install", "--prefix", PW_CACHE, "--no-save", "--no-audit", "playwright"],
-			{ stdio: "inherit" },
-		);
-		return require(join(PW_CACHE, "node_modules", "playwright"));
-	}
-	return require(found);
 }
 
 let failures = 0;

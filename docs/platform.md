@@ -208,7 +208,11 @@ which also checks that a manifest saying `"sdk": 1` is refused.
 `platform-check.yml` checks changes to the platform itself: on every pull
 request touching `games/`, `sdk/`, `lib/` or the checking scripts it
 re-validates every game — no secrets, read-only, safe for forks.
-`deploy.yml` runs `fetch-community.mjs` before uploading the Pages artifact.
+`deploy.yml` runs every suite first (`test.yml`, docs/development.md "CI runs
+the suites in parallel"), whose build job runs `fetch-community.mjs` and
+builds the site; that tested build is what is deployed. `test.yml` also runs
+on game submissions from forks, so a new pin's result in the suites shows
+before the merge.
 
 ## The dev kit
 
@@ -266,10 +270,11 @@ licence (CONTRIBUTING.md, "Already have a web app?").
 **Build** (`scripts/app-build.mjs`, called by `fetch-community.mjs`).
 `app.build.run` runs in `app.build.dir` inside a throwaway
 `node:22-bookworm-slim` container: no env, no tokens, caps dropped, only the
-tarball checkout mounted (`--userns=keep-id` under rootless Podman). In
-`deploy.yml` that happens in a `build-community` job with `contents: read`
-only; the Pages job downloads its output, so author code never runs beside a
-deploy token.
+tarball checkout mounted (`--userns=keep-id` under rootless Podman). For a
+deploy that happens in `test.yml`'s build job, which has `contents: read`
+only (or, on the emergency path that skips the tests, `deploy.yml`'s
+`build-community` job, likewise). The Pages job downloads the result, so
+author code never runs beside a deploy token.
 
 A pinned commit always builds the same, so each build is kept
 (`NEON_APP_CACHE=dir`, set in all three workflows and restored with
