@@ -467,16 +467,26 @@ compact table instead of starting at once (party.js `tableBlock`):
 - **PERSON seats**, for a game with `"sameDevice": true` (Neon Fission): each
   bot seat toggles BOT / PERSON — someone beside you, passed the phone on
   their turn. A PERSON seat is a bot to the party, marked `local: true` on
-  its record (`room.setBotMeta`), shown as PLAYER n; lib/sdk-managed.js
-  passes `local` on that seat to the game's `init` (only for a game that
-  declares `sameDevice`), and never asks for a solo run against bots with
-  one at the table (that person is no bot). The game plays such a seat for
-  the one person; with two or more people there is no one phone, so it is a
-  bot. "Play with friends instead" turns them back into bots.
-- **START GAME is one tap**, right under the stepper whatever the count.
-  The table is remembered per game (localStorage `neon.table`,
+  its record (`room.setBotMeta`), shown as "Player n" (as the game names
+  it); lib/sdk-managed.js passes `local` on that seat to the game's `init`
+  (only for a game that declares `sameDevice`), and never asks for a solo
+  run against bots with one at the table (that person is no bot). The game
+  plays such a seat for the one person; with two or more people there is no
+  one phone, so it is a bot.
+- **PERSON seats never hide** (review, 2026-11-17). After the table the
+  party screen's roster tags such a seat PERSON, not BOT, and gives every
+  bot row a 44 px PERSON toggle while the host is the only person here and
+  no game runs (with a line naming the games that take it); a game started
+  from the party screen plays them too. They are this page's own choice and
+  are cleared (party.js `tidyPeople`, on every party change) when a second
+  person joins, when the crown moves to another phone, when "Play with
+  friends instead" is chosen, and when a quick start other than the table
+  starts the game; PLAY SOMETHING (`start=1`) seats the remembered count as
+  bots only, never its PERSON seats.
+- **START GAME** sits right under the stepper whatever the count. The table
+  is remembered per game (localStorage `neon.table`,
   `{ [id]: { n, people: [seat…] } }`, written at START), so a repeat play is
-  SINGLE PLAYER, START GAME.
+  two taps: SINGLE PLAYER, START GAME (Lokesh's choice).
 - **No table** for fixed seats (Connect 4, Tic Tac Toe, Battleship: 2 and 2),
   a `local` game (Undercover, which takes its names itself) or a people-only
   one (Draw & Guess has no SINGLE PLAYER): they start as before.
@@ -513,7 +523,7 @@ compact table instead of starting at once (party.js `tableBlock`):
 | `removeMember(id)` | host only: remove someone (a bot included) |
 | `addBot(team?)` | host only: seat a simulated member; defaults to the emptier side. Returns its id |
 | `bots()` | every bot in the roster (readable by anyone) |
-| `setBotMeta(botId, patch)` | host only: merge fields into a bot's record (not `id`, `name`, `team`, `bot` and the other reserved ones); the quick table's `{ local: true }` |
+| `setBotMeta(botId, patch)` | host only: merge fields into a bot's record (not `id`, `name`, `team`, `bot` and the other reserved ones); the quick table's `{ local: true }`. A message never edits a bot: the host's `__i` handler refuses a bot's id (below) |
 | `emitAs(botId, action, data, opts?)` | host only: send as a bot, and deliver locally too |
 | `NeonArcade.isBotId(id)` | a bot's id is prefixed `bot_`, so routing can tell without the record |
 | `deleteParty()` | host only: end it for everyone |
@@ -1012,6 +1022,16 @@ the icon for exactly this reason. `test-pwa` now parses the file.
 ## Honest gaps
 
 - Per-game design notes and a decision log are still missing.
+- **A member's own record is only as honest as `f`** (review, 2026-11-17).
+  The host takes an `__i` self-edit (name, `setMeta` fields) from whoever
+  the envelope's unsigned `f` names. Since 2026-11-17 it refuses a bot's id
+  and its own, drops every field the record owns (team, bot, host, joined,
+  rs, reconnecting) and `local`, and refuses a relayed copy while it holds a
+  direct link to that member (the real one comes over that link). What
+  stays open: a member the host hears **only through a relay** can be
+  renamed, or its meta (a `secrets.js` public key among them) rewritten, by
+  that relay. Closing it needs signed self-edits (test-plumbing "bot seats
+  and a member's own record" asserts both the fix and the gap).
 - Scanning is verified at realistic code density — a reply code occupying part
   of a full-resolution frame, preceded by seconds of empty aiming frames, on a
   CPU throttled to phone speed — but via a fake capture device, **not** a real

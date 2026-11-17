@@ -30,7 +30,13 @@ go straight into the game. Chosen over teaching the old two-player lobby
   host's phone are bots marked `local` (`room.setBotMeta`), passed to a
   `"sameDevice"` game in `init` — Fission's own setup screen went. A test
   that taps SINGLE PLAYER on such a game must tap START GAME (serve.mjs
-  `passTable`); docs/index.md "The party API".
+  `passTable`); docs/index.md "The party API". PERSON flags are this
+  page's own choice: party.js `tidyPeople` clears them when a second person
+  joins or the crown moves, and the roster tags/toggles them — a stale
+  `local` once hid a pass-the-phone seat behind a BOT tag.
+- **`__i` trusts an unsigned `f`.** The host now refuses bot ids, its own
+  id, reserved fields and `local`, and relayed self-edits for members it
+  links directly; relayed-only members can still be renamed by their relay.
 - **Tests must keep off production.** Without a room-server override a party
   probes the deployed room server; test-bots and the preview recorder set
   `localStorage["neon.rs"]` to an unreachable loopback in every context, or

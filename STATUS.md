@@ -33,7 +33,10 @@ connectivity detail moved to docs/index.md "The party API" / "Connectivity").
   SINGLE PLAYER's Players − n + table with PERSON seats for `"sameDevice"`
   games (Neon Fission's in-game table removed), remembered per game;
   PLAY SOMETHING `start=1`; solo bots dealt to both sides in free games
-  (Bubble Rush TEAMS alone). Waiting on Lokesh's review.
+  (Bubble Rush TEAMS alone). Review fixes (same day): PERSON on the
+  roster and cleared when a second person joins or the crown moves; the
+  host's `__i` handler hardened (docs/index.md Honest gaps); the validator
+  ties `sameDevice` to managed state. Waiting on Lokesh's review.
 - **Bubble Rush on SDK v2** — web-games `bubble-rush-v2` (../arcade-games-v2)
   and this repo's `game-bubble-rush`: fixing review findings, bots being
   softened. Its pin moves by PR.
