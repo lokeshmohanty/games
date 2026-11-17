@@ -420,30 +420,68 @@ reconciles two hosts:
 - a member that computed an heir yields to a host still speaking at the old
   term, which is how a false "the host is gone" heals.
 
-**A split party: only the heir's side carries on** (Lokesh, 2026-11-16). The
-host's departure can leave the rest in pieces that cannot reach each other:
-two guests that talked only through the host (no TURN, by design), or a
-re-dial that had not landed yet. The heir is computed over the roster the
-host last published, not over what this browser's own probes have left of it,
-so every piece names the same member. The piece holding that heir crowns it,
-as above. Every other piece:
+**A split party: one side carries on, never two** (Lokesh, 2026-11-16
+"heir side only", and 2026-11-17 "skip hidden + quorum"). The host's departure
+can leave the rest in pieces that cannot reach each other: two guests that
+talked only through the host (no TURN, by design), or a re-dial that had not
+landed yet. The heir is named by `_successor` over the roster the host last
+published, not over what this browser's own probes have left of it, so every
+piece names the same member. It skips:
 
-- never crowns anyone. Having computed the heir, it waits up to 10 s for its
-  record (net.js `HEIR_WAIT_MS`). Silence, or concluding the heir gone itself
-  (anything but the heir's own goodbye), makes it **lost** (`room.lost`,
-  `onLost(true)`);
-- stops its game, and shows "Lost connection to the party", with TRY AGAIN
-  where a room server may still reach the others (`room.rejoin()`: the
-  re-announce an isolated member makes, also made at once) and LEAVE PARTY;
-- rejoins rather than forks when a path comes back: the heir's record, at the
-  newer term, ends the lost state (`onLost(false)`), and a member the heir
-  dropped meanwhile carries its own seat back in, like any member a crown
-  change left out.
+- members gone by their own goodbye;
+- held seats;
+- heirs already passed over;
+- while anyone else could take it, members whose phone is in the background
+  (`away` on the record, from `visibilitychange`).
 
-An heir that left by its own goodbye is not a split: the crown passes to the
-next in line. If the heir and the host fail together, nobody carries on, and
-everyone is lost. That trade is Lokesh's: one party, never two. Tested in
-test-plumbing ("a split party").
+**A quorum decides who may crown.** Whoever is named crowns only if its piece
+holds a quorum (`_quorum`): more than half of that roster's humans, or exactly
+half with the first heir among them. Two pieces can never both hold one.
+Counted on both sides of the fraction: members gone by their own goodbye are
+left out, and so is the old crown holder (it is no longer a candidate). A
+piece is the member itself and whoever it holds a direct link to; relayed
+members are left out, which can only make a quorum harder to reach.
+
+Every member that only computed the heir (`computed`, which is not the same
+as never having heard anyone: a page fresh from a reload has done neither)
+waits up to 10 s for its record (net.js `HEIR_WAIT_MS`). After that, or once
+its own piece concludes the heir gone (anything but the heir's own goodbye),
+the heir is passed over and the next in line is named, again under the
+quorum rule. A member named without a quorum is **lost** (`room.lost`,
+`onLost(true)`). So is everyone waiting in a piece where nobody can crown.
+
+A lost member:
+
+- **Stops its game and says so.** The screen reads "Lost connection to the
+  party", with TRY AGAIN where a room server may still reach the others, and
+  LEAVE PARTY.
+  - TRY AGAIN calls `room.rejoin()`, the re-announce an isolated member
+    makes. It is also made at once, and again after 5, 15 and 30 s.
+  - The game frame is hidden, not torn down, for 60 s. A phone back in touch
+    within that time resumes it, its own hidden state included.
+- **Rejoins rather than forks when a path comes back.** Its loss ends in any
+  of these cases (`onLost(false)`):
+  - a record at a newer term than it lost at;
+  - the heir itself speaking;
+  - the old host at the old term, but only if that record still seats the
+    heir (otherwise it would put us in a second party beside the heir's).
+
+  A member the heir dropped meanwhile carries its own seat back in.
+- **Can still crown with a quorum.** Lost phones that link up again check
+  for a quorum, after the heir's wait. Without a room server, that, or LEAVE
+  PARTY, is the way forward.
+
+**Cases that are not splits.** An heir that left by its own goodbye is not a
+split: the next in line takes the crown. A host whose seat the room server
+holds sends no `__gone`. Whoever concludes it gone broadcasts that the crown
+is vacant (`__v`), so an heir that reached the host only through a relay
+still learns it.
+
+**Known gaps.** A partition between a *live* host and the rest is not a
+departure: both sides keep a crown, and term ordering heals it on
+reconnection. If the host and every candidate on the majority side fail
+together, nobody carries on. Tested in test-plumbing ("a split party",
+"…reviewed").
 
 A link reported `disconnected` gets 3 s to recover before it counts as dropped,
 because a phone on a briefly lost signal often recovers the same connection.
@@ -494,7 +532,7 @@ lone host before leaving.
 | `setGame(id)` | host only: everyone mounts it; `null` returns to the party |
 | `transferHost(id)` | host only: hand over the crown (never to a bot) |
 | `heir()` | who would take the crown if we left now; skips us, bots and reconnecting seats; `null` if nobody |
-| `lost` / `onLost(on)` | this side of a split party cannot reach the heir's side (see "A split party") |
+| `lost` / `onLost(on)` | this side of a split party cannot take the crown or reach the side that did (see "A split party") |
 | `canRejoin` / `rejoin()` | whether a room server may put us back in touch, and asking it to |
 | `removeMember(id)` | host only: remove someone (a bot included) |
 | `addBot(team?)` | host only: seat a simulated member; defaults to the emptier side. Returns its id |
@@ -1057,7 +1095,10 @@ the icon for exactly this reason. `test-pwa` now parses the file.
   holds the dead link, it sets aside the lower id's offer, and a resend of
   that offer would be dropped as already seen. So when the higher id notices
   and asks about the lower id (`__q`), the lower id abandons its offer and
-  makes a fresh one (`_redial`).
+  makes a fresh one (`_redial`). It abandons only an offer already sent: one
+  still gathering is left to go out, and an offer abandoned while it gathers
+  is never sent. Each offer carries a nonce that its answer echoes, so an
+  answer to an abandoned offer cannot land on the one that replaced it.
 - The 3 s grace on `disconnected` is observed in the NAT lab, not on a phone:
   4 s and 8 s blackouts keep the link; Chrome itself declares `disconnected`
   some seconds in, so a link survives a blackout of roughly 9 s. It cannot

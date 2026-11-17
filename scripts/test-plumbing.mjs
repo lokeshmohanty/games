@@ -56,7 +56,8 @@ function linkPair(a, b) {
 			if (this.closed) return;
 			const copy = structuredClone(env);
 			wire.push({ from: self.selfId, to: other.selfId, env: copy });
-			setTimeout(() => other._inbound(peer(), copy), 1);
+			// A frozen room (a tab in the background) hears nothing.
+			setTimeout(() => other.__frozen || other._inbound(peer(), copy), 1);
 		},
 		close() {
 			this.closed = true;
@@ -651,7 +652,7 @@ for (const first of ["the pair", "the host"]) {
 	const [low, high] = ana.selfId < bo.selfId ? [ana, bo] : [bo, ana];
 	const dials = [];
 	low._openRelayed = (peer) => dials.push(peer);
-	const stale = { peerId: high.selfId, answered: false, close() { this.closed = true; } };
+	const stale = { peerId: high.selfId, answered: false, offerEnv: { __g: "offer" }, close() { this.closed = true; } };
 	low.links.delete(high.selfId);
 	low.pending.set("r:" + high.selfId, stale);
 	low.negotiating.set(high.selfId, stale);
@@ -659,6 +660,179 @@ for (const first of ["the pair", "the host"]) {
 	await sleep(40);
 	check("asked about by a peer that lost its link to us, we offer afresh", dials.join() === high.selfId && stale.closed === true && !low.pending.has("r:" + high.selfId), `${dials.join()} closed=${stale.closed}`);
 	for (const r of [host, ana, bo]) r.leave();
+}
+
+// ---------------------------------------------------------------------------
+console.log("\na split party, reviewed: hidden heirs, a quorum, reloads, the old host");
+
+{
+	// The heir reloaded (its seat held by the room server) and is back,
+	// linked to Cy before the host's record about it went out — then the host
+	// dies. On its fresh page it has heard nobody, which used to read as
+	// "the crown is an heir we only computed": it went lost, and so did Cy.
+	const [h, a, c] = await party(["Host", "Ana", "Cy"], [[0, 1], [0, 2], [1, 2]], { heirWaitMs: 300 });
+	const a2 = bare({ name: "Ana", selfId: a.selfId, heirWaitMs: 300 }, false);
+	a.detach();
+	for (const r of [h, c]) r.party.members.find((m) => m.id === a.selfId).rs = true;
+	for (const r of [h, c]) {
+		const l = r.links.get(a.selfId);
+		if (l) r._linkClosed(l);
+	}
+	await sleep(DEPARTURE);
+	const [toA, toC] = linkPair(c, a2);
+	toA.introducedName = "Ana";
+	toC.introducedName = "Cy";
+	h.__frozen = true;
+	h.detach();
+	c._linkOpened(toA);
+	a2._linkOpened(toC);
+	const l = c.links.get(h.selfId);
+	if (l) c._linkClosed(l);
+	await sleep(DEPARTURE + 1200);
+	check("a reloaded heir takes the crown, not a loss", hosts([a2, c]) === "Ana" && !a2.lost && !c.lost, `${hosts([a2, c])} lost=${a2.lost},${c.lost}`);
+	for (const r of [a2, c]) r.leave();
+}
+
+{
+	// The heir's phone is in the background (`away` on the record): the next
+	// in line takes the crown at once, and the heir agrees.
+	const [h, a, b, c] = await party(["Host", "Ana", "Bo", "Cy"], [[0, 1], [0, 2], [0, 3], [1, 2], [1, 3], [2, 3]], { heirWaitMs: 300 });
+	a.setMeta({ away: true });
+	await sleep(40);
+	h.leave();
+	await sleep(100);
+	check("a hidden heir is skipped: the next awake member takes the crown", hosts([a, b, c]) === "Bo" && ![a, b, c].some((r) => r.lost), `${hosts([a, b, c])}`);
+	check("…and every member names the same one", [a, b, c].every((r) => r.hostId() === b.selfId));
+	for (const r of [a, b, c]) r.leave();
+}
+
+{
+	// The heir's tab is frozen (no messages either way) as the host leaves.
+	// Bo and Cy wait for it, then — holding a quorum, two of the three left —
+	// Bo takes the crown rather than both going lost for good.
+	const [h, a, b, c] = await party(["Host", "Ana", "Bo", "Cy"], [[0, 1], [0, 2], [0, 3], [1, 2], [1, 3], [2, 3]], { heirWaitMs: 300 });
+	a.__frozen = true;
+	h.leave();
+	await sleep(800);
+	check("a silent heir is passed over by a side with a quorum", hosts([b, c]) === "Bo" && !b.lost && !c.lost, `${hosts([b, c])} lost=${b.lost},${c.lost}`);
+	for (const r of [a, b, c]) r.leave();
+}
+
+{
+	// Five seats; the host vanishes, and the heir is cut off alone from the
+	// other three. A side of one out of four holds no quorum, so the heir
+	// does not crown (it would be a second party); the three wait for it,
+	// then the next in line takes the crown with three of four.
+	const [h, a, b, c, d] = await party(["Host", "Ana", "Bo", "Cy", "Dee"], [[0, 1], [0, 2], [0, 3], [0, 4], [1, 2], [1, 3], [1, 4], [2, 3], [2, 4], [3, 4]], { heirWaitMs: 300 });
+	for (const r of [b, c, d]) cut(a, r);
+	await sleep(50);
+	vanish(h, [a, b, c, d]);
+	await sleep(DEPARTURE + 1200);
+	check("an heir alone against three does not crown: it is lost", !a.isHost() && a.lost === true, `ana host=${a.isHost()} lost=${a.lost}`);
+	check("…and the three, holding a quorum, crown the next in line", hosts([a, b, c, d]) === "Bo" && !b.lost && !c.lost && !d.lost, `${hosts([a, b, c, d])}`);
+	for (const r of [a, b, c, d]) r.leave();
+}
+
+{
+	// Everyone is cut off from everyone as the host vanishes: all lost. Then
+	// Bo, Cy and Dee link up again — three of four — and take the crown;
+	// they must not stay lost for good.
+	const [h, a, b, c, d] = await party(["Host", "Ana", "Bo", "Cy", "Dee"], [[0, 1], [0, 2], [0, 3], [0, 4]], { heirWaitMs: 300 });
+	vanish(h, [a, b, c, d]);
+	await sleep(DEPARTURE + 1200);
+	check("(cut off from each other, all four are lost)", [a, b, c, d].every((r) => r.lost && !r.isHost()), [a, b, c, d].map((r) => r.lost).join());
+	for (const [x, y] of [[b, c], [b, d], [c, d]]) {
+		const [toY, toX] = linkPair(x, y);
+		toY.introducedName = y.self().name;
+		toX.introducedName = x.self().name;
+		x._linkOpened(toY);
+		y._linkOpened(toX);
+	}
+	await sleep(800);
+	check("lost phones that link up into a quorum take the crown", hosts([a, b, c, d]) === "Bo" && !b.lost && !c.lost && !d.lost && a.lost, `${hosts([a, b, c, d])} lost=${[a, b, c, d].map((r) => r.lost).join()}`);
+	for (const r of [a, b, c, d]) r.leave();
+}
+
+{
+	// A 1v1 split as the host's network moves: the host is alive, alone.
+	// Bo is lost; the old host then reaches Bo again, at the old term, with
+	// a record that no longer seats Ana. Adopting it would put Bo in a second
+	// party beside Ana's: Bo stays lost.
+	const [h, a, b] = await party(["Host", "Ana", "Bo"], [[0, 1], [0, 2]], { heirWaitMs: 300 });
+	cut(h, a);
+	cut(h, b);
+	await sleep(DEPARTURE + 600);
+	h.party.members = h.party.members.filter((m) => m.id !== a.selfId);
+	const [toB, toH] = linkPair(h, b);
+	toB.introducedName = "Bo";
+	toH.introducedName = "Host";
+	b._linkOpened(toH);
+	h._linkOpened(toB);
+	await sleep(100);
+	check("the old host's record at the old term does not end a loss", b.lost === true && b.hostId() !== h.selfId, `lost=${b.lost} host=${b.hostId() === h.selfId ? "Host" : b.hostId()}`);
+	for (const r of [h, a, b]) r.leave();
+}
+
+{
+	// The host's seat is held by the room server, so its loss is no
+	// `__gone`. Ana reaches it only through Bo; Bo concludes it gone and says
+	// the crown is vacant, so Ana — the heir — takes it, rather than Bo going
+	// lost while Ana waits out a five-minute grace.
+	const [h, a, b] = await party(["Host", "Ana", "Bo"], [[0, 2], [1, 2]], { heirWaitMs: 300 });
+	for (const r of [h, a, b]) r.party.members.find((m) => m.id === h.selfId).rs = true;
+	h.detach();
+	const l = b.links.get(h.selfId);
+	if (l) b._linkClosed(l);
+	await sleep(DEPARTURE + 800);
+	check("a held host's seat: the crown's vacancy reaches an heir behind a relay", hosts([a, b]) === "Ana" && !b.lost, `${hosts([a, b])} lost=${b.lost}`);
+	for (const r of [a, b]) r.leave();
+}
+
+{
+	// A lost side asks the room server more than once.
+	const isolated = [];
+	const [h, a, b] = await party(["Host", "Ana", "Bo"], [[0, 1], [0, 2]], { heirWaitMs: 200, lostRetryMs: [100, 200] });
+	b.onIsolated = () => isolated.push(Date.now());
+	vanish(h, [a, b]);
+	await sleep(DEPARTURE + 700);
+	check("a lost side retries the room server, not once", b.lost && isolated.length >= 3, `${isolated.length}`);
+	for (const r of [a, b]) r.leave();
+}
+
+{
+	// An offer abandoned while it gathered is never sent, and an answer to
+	// an earlier offer cannot land on the one that replaced it.
+	let n = 0;
+	const real = globalThis.RTCPeerConnection;
+	globalThis.RTCPeerConnection = class extends EventTarget {
+		constructor() { super(); this.n = ++n; this.iceGatheringState = "new"; this.connectionState = "new"; this.remote = null; }
+		createDataChannel() { return { close() {} }; }
+		async createOffer() { return { type: "offer", sdp: "offer-" + this.n }; }
+		async setLocalDescription(d) { this.localDescription = d; this.iceGatheringState = "gathering"; setTimeout(() => { this.iceGatheringState = "complete"; this.dispatchEvent(new Event("icegatheringstatechange")); }, 40); }
+		async setRemoteDescription(d) { this.remote = d.sdp; }
+		close() { this.closed = true; }
+	};
+	const room = bare({ name: "Low" }, false);
+	room.selfId = "aaaa";
+	room.party = { host: "hhhh", term: 0, members: [{ id: "aaaa", joined: 1 }, { id: "zzzz", joined: 2 }, { id: "hhhh", joined: 0 }] };
+	const sent = [];
+	room._send = (env) => env.__g && sent.push(env);
+	room._redial("zzzz"); // the far end noticed: we offer
+	await sleep(10);
+	room._redial("zzzz"); // its re-probe while ours still gathers: left alone
+	await sleep(150);
+	check("a re-probe does not abandon an offer still gathering", sent.length === 1, sent.map((e) => e.sdp).join());
+	const first = sent[0];
+	room._redial("zzzz"); // asked again after ours went out: a fresh one
+	await sleep(150);
+	const link = room.pending.get("r:zzzz");
+	check("…but one already sent is made afresh, with a new nonce", sent.length === 2 && sent[1].n && sent[1].n !== first.n, sent.map((e) => e.n).join());
+	await room._onRelayedAnswer("zzzz", "answer-to-the-first", first.n);
+	check("an answer to the abandoned offer does not land on the new one", link && link.pc.remote === null, link?.pc.remote);
+	await room._onRelayedAnswer("zzzz", "answer-to-the-second", sent[1].n);
+	check("…while the answer to the new one does", link?.pc.remote === "answer-to-the-second", link?.pc.remote);
+	room.leave();
+	globalThis.RTCPeerConnection = real;
 }
 
 console.log(failures ? `\n${failures} failing\n` : "\nall passing\n");

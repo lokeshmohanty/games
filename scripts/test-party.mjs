@@ -759,16 +759,47 @@ try {
 		.waitForFunction(() => window.__game.handle.debug().board.flat().filter(Boolean).length === 2, null, { timeout: TIMEOUT })
 		.then(() => true, () => false);
 	check("…which the new host plays", botAnswered);
-	// The lost screen (net.js _lose → onLost; Lokesh, 2026-11-16: only the
-	// heir's side of a split party carries on, the rest stop and say so).
-	// The split itself is forced in test-plumbing; this is the shell's half.
-	await p3.evaluate(() => window.__party.room.onLost(true));
+	// The lost screen (net.js _lose; Lokesh, 2026-11-16/17: only the side
+	// that may take the crown carries on, the rest stop and say so). The
+	// split itself is forced in test-plumbing; this is the shell's half,
+	// through the room's own _lose and the heir's record ending it.
+	await p3.evaluate(() => {
+		window.__lostFrame = document.querySelector(".game-frame");
+		window.__party.room._lose();
+	});
 	const lostSaid = await p3.locator(".lobby-sub", { hasText: "Lost connection to the party" }).waitFor({ timeout: 5000 }).then(() => true, () => false);
-	const lostStopped = await p3.evaluate(() => !document.querySelector(".game-frame") && !document.getElementById("party").hidden);
-	check("a phone cut off from the heir's side says so, and its game stops", lostSaid && lostStopped, `said=${lostSaid} stopped=${lostStopped}`);
-	await p3.evaluate(() => window.__party.room.onLost(false));
-	const lostBack = await p3.locator(".game-frame").first().waitFor({ timeout: TIMEOUT }).then(() => true, () => false);
-	check("…and back in touch, the game comes back", lostBack);
+	const lostState = await p3.evaluate(() => ({
+		lost: window.__party.room.lost,
+		party: !document.getElementById("party").hidden,
+		kept: !!window.__lostFrame?.isConnected,
+		shown: !!window.__lostFrame?.checkVisibility?.(),
+		again: !!document.querySelector(".lobby-row .neon-btn--accent")?.textContent?.includes("TRY AGAIN"),
+		canRejoin: window.__party.room.canRejoin,
+	}));
+	check("a phone cut off from the heir's side says so, and its game stops", lostSaid && lostState.lost && lostState.party && !lostState.shown, JSON.stringify(lostState));
+	check("…its game hidden, not torn down, for a quick return", lostState.kept, JSON.stringify(lostState));
+	check("…and without a room server, no TRY AGAIN: LEAVE PARTY is the way out", !lostState.canRejoin && !lostState.again && (await p3.locator("a[data-leaves]", { hasText: "LEAVE PARTY" }).count()) > 0, JSON.stringify(lostState));
+	await p3.evaluate(() => window.__party.room.rejoin()); // no room server: a no-op, never a throw
+	// At phone sizes, in every theme: nothing sideways, the why readable.
+	const lostFits = [];
+	for (const [w, hgt] of [[390, 844], [354, 696]]) {
+		await p3.setViewportSize({ width: w, height: hgt });
+		for (const theme of [{ theme: "neon" }, { theme: "paper", mode: "light" }, { theme: "paper", mode: "dark" }]) {
+			await p3.evaluate((t) => NeonArcade.theme.set(t), theme);
+			const fit = await p3.evaluate(() => {
+				const why = document.querySelector(".party-lost")?.getBoundingClientRect();
+				return { sideways: document.documentElement.scrollWidth > innerWidth, why: !!why && why.left >= 0 && why.right <= innerWidth && why.height > 0 };
+			});
+			if (fit.sideways || !fit.why) lostFits.push(`${w}x${hgt} ${theme.theme}${theme.mode ? "/" + theme.mode : ""}: ${JSON.stringify(fit)}`);
+		}
+	}
+	await p3.setViewportSize({ width: 390, height: 844 });
+	check("the lost screen fits 390x844 and 354x696 in every theme", !lostFits.length, lostFits.join("; "));
+	// The heir speaks (its record): the loss ends, and the same frame is back.
+	await p2.evaluate(() => window.__party.room._commitParty());
+	const lostBack = await p3.waitForFunction(() => !window.__party.room.lost && !!window.__lostFrame?.checkVisibility?.(), null, { timeout: TIMEOUT }).then(() => true, () => false);
+	const sameFrame = await p3.evaluate(() => document.querySelector(".game-frame") === window.__lostFrame);
+	check("…and back in touch, the same game is shown again", lostBack && sameFrame, `back=${lostBack} same=${sameFrame}`);
 	await p2.evaluate((id) => {
 		window.__party.room.setGame(null);
 		window.__party.room.removeMember(id);
