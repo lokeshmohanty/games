@@ -33,6 +33,7 @@ export const GAMES = Object.assign(Object.create(null), {
 // no results, runs, wins against bots or boards.
 export const NO_BOARD = new Set([
 	"connect4",
+	"lokeshmohanty/draw-guess",
 	"tic-tac-toe-c",
 	"tic-tac-toe-go",
 	"tic-tac-toe-html",
