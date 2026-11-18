@@ -54,7 +54,7 @@ questions about this project from this folder alone.
 | Test Neon Fission's rules and bot | `node scripts/test-neon-fission.mjs` — capacities, a three-wave chain (RULES.md's example), conversion, knock-outs only after a first turn, the chain stopping once one player owns every orb, the bot (legal, fast, takes a win; vs random and greedy players), 210 whole bot games that all end, and the same-device seats in the managed layer |
 | Test the Light Cycles arena | `node light-cycles/test-light-cycles.mjs` in the web-games repo — head-on collisions, spawn symmetry, and the bot measured against a rider that only avoids crashing |
 | Rebuild the app icons | `node scripts/make-icons.mjs` after editing `assets/icon.svg` — renders the PNGs the manifest needs |
-| Get back to the portal | the party has a fixed `.portal-link` ("← Games", in index.html) linking to `./`; it keeps the party (LEAVE PARTY leaves it) |
+| Get back to the portal | the party has a `.portal-link` ("← Games", in index.html) linking to `./`, at the left of the fixed top band once the party mounts (`.top-band`, lib/party.js); it keeps the party (LEAVE PARTY leaves it) |
 
 Per-game recorder scenarios, the conversion profiles, and the NixOS/Playwright
 traps live in the `game-previews` skill (`.agents/skills/game-previews/SKILL.md`).
@@ -79,7 +79,13 @@ game is starred (☆, `lib/stats.js`) and given feedback (💬) only from
 inside it, at the party's top right beside PARTY (2026-11-14; a star on the
 cards was tried on 2026-11-15 and taken out the next day, Lokesh: "Only
 inside games"); a contributor or a collection is starred on its own page.
-Every star lands in My Games at once. Its layout is asserted rather than
+Every star lands in My Games at once. **One tap on a card opens the game's
+party screen**, its quick start (`./?game=<id>&fresh=1`; Lokesh, 2026-11-18:
+it used to take two on a phone, the first only showing the card's two
+buttons). The buttons, SINGLE PLAYER and MULTI-PLAYER, show on hover with a
+mouse, on keyboard focus, and after a long press on a touch screen; a tap
+off them closes them. A sideways swipe of a row is not a tap (a click after
+the pointer moved 10px, or after the row scrolled, is dropped). Its layout is asserted rather than
 eyeballed, in `test-pwa.mjs` and `test-portal.mjs` "My Games · All Games"
 (390x844, Lokesh's phone at 354x696, and 320x640); what is in each section,
 in `test-portal.mjs`.
@@ -116,8 +122,8 @@ sub-tab; an empty one is hidden):
   snapshot), examples aside. The counts are kept on the device
   (`neon.plays`), so the row paints at once and in the same order offline;
   with no counts ever, the catalog's order. Counts that land late never
-  replace a row someone is using (a card tapped open, hovered with a mouse,
-  or reached by keyboard): the row is redrawn when they leave it, at the
+  replace a row someone is using (a finger down on it, a card long-pressed
+  open, hovered with a mouse, or reached by keyboard): the row is redrawn when they leave it, at the
   scroll it had (`lib/portal.js` `inUse`; a slow phone had the card close
   under the finger, review 2026-11-16).
 - **Arcade · Party · Strategy · Puzzle / Single player · Examples** — the
@@ -143,6 +149,41 @@ played and the search were 80% wide on a phone, narrower than the cards,
 because their base rules came after the phone rules in portal.css. On a
 phone the party banner is its two buttons (the heading said what START A
 PARTY says), which paid for the sub-tab row.
+
+**The second Android pass (the same phone, Chrome and Firefox, 2026-11-15;
+fixed 2026-11-19, branch `phone-shell`)**, asserted with computed sizes
+(`scripts/serve.mjs` `phoneFloors`) at 390x844 and 354x696:
+
+- **JOIN WITH A CODE** was the browser's `prompt()`: no number keypad, a
+  wrong code popped a second native dialog, and automated phone testing
+  stalls on native dialogs. It is an in-page dialog now (`src/JoinCode.tsx`):
+  a numeric field (`inputmode="numeric"`, `autocomplete="one-time-code"`, a
+  pasted "12-34-56" keeps its digits), focus in the field and back on the
+  button, Escape / CANCEL / ✕ / a tap outside to close. It stays open while
+  the party joins behind it (lib/party.js `neon:code-join`): a wrong or
+  expired code, a full party or no network is said under the field, and the
+  next code is tried in place (the party's `joinCode`), with no page load.
+- **A card took two taps** — one opens the game now (above).
+- **Firefox with the phone's text larger** (Firefox for Android applies the
+  system font size as text zoom, px included): the in-game top buttons ran
+  into ← Games and the portal's tabs ran under ☰. The game's top band is one
+  row (`.top-band`) and ← Games becomes its arrow alone when its word does
+  not fit; the portal's tabs scroll sideways inside their column, the
+  sub-tabs wrap. Held at 130% and 200%, at both sizes (test-party,
+  test-portal, in Playwright's Firefox).
+- **The game's frame stayed light under a dark page** — in Chrome too.
+  Paper following the system is the default, and `sdk/v2/runtime.js` wrote
+  the choice, "system", into the frame's `data-mode`, which matches no
+  theme block; it writes what shows now (`theme.dark`). test-theme checks
+  every theme in Chrome and Firefox.
+- **The shell's chrome over a game** was under the floors: the top band 33px,
+  the end card's DETAILS 32px and its "you" and captions 11.5px, the party's
+  TEAM and REMOVE buttons 32px and its tags 10.4px. All 44px and 12px now
+  (test-party, test-managed).
+
+Not covered by that pass: the leaderboard view still scrolls sideways at
+200% text, and it and Contributors keep a few labels under 12px
+(9.6–11.5px); iOS remains unverified.
 
 **Nine games have to fit a phone.** They did not: a `minmax(300px, 1fr)` column
 at 80% width is a single column on a 390px screen, and a 200px image plus a
