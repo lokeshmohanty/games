@@ -827,6 +827,8 @@ try {
 		return {
 			labels: btns.map((b) => b.textContent),
 			teamsOff: !!document.querySelector('.br-setup button[data-mode="teams"]')?.disabled,
+			startOff: !!document.querySelector(".br-setup .br-start")?.disabled,
+			picked: btns.filter((b) => b.getAttribute("aria-pressed") === "true").length,
 			minH: Math.min(...boxes.map((b) => b.height)),
 			right: Math.max(...boxes.map((b) => b.right)),
 			bottom: Math.max(...boxes.map((b) => b.bottom)),
@@ -835,6 +837,8 @@ try {
 		};
 	});
 	check("the host picks the mode, then START", brSetup.labels.join() === "FREE-FOR-ALL,TEAMS,START", brSetup.labels.join());
+	// Lokesh (2026-11-18): the game asks every round — no mode picked for them.
+	check("…nothing is picked for the host, and START waits for the pick", brSetup.picked === 0 && brSetup.startOff, JSON.stringify(brSetup));
 	// One person and bots in a free game are dealt out as a team game is
 	// (lib/party.js quickTeams, 2026-11-17): TEAMS can be played alone —
 	// you and one bot against two. Until then everyone sat on Team A.
@@ -843,9 +847,12 @@ try {
 		return r.getMembers().map((m) => [m.id === r.selfId ? "you" : "bot", m.team]);
 	});
 	check("…TEAMS is open alone: you and a bot on Team A, two bots on Team B", !brSetup.teamsOff && brSides.filter(([, t]) => t === "A").length === 2 && brSides.filter(([, t]) => t === "B").length === 2 && brSides[0].join() === "you,A", JSON.stringify({ teamsOff: brSetup.teamsOff, brSides }));
-	// The rest plays free-for-all, picked: every seat scores for itself.
-	await G.locator('.br-setup button[data-mode="ffa"]').click();
+	// The rest plays free-for-all, picked: every seat scores for itself. Picked
+	// with the keyboard (Enter on the focused button): the frame's Space/Enter
+	// START shortcut once swallowed it, so a keyboard host could never pick.
+	await G.locator('.br-setup button[data-mode="ffa"]').press("Enter");
 	await G.waitForFunction(() => window.__game.handle.debug().mode === "ffa", null, { timeout: TIMEOUT });
+	check("…once picked, START is open", await G.locator(".br-setup .br-start").isEnabled());
 	check("…44px taps, on a 390x844 screen, clear of the top band, no sideways scroll",
 		brSetup.minH >= 44 && brSetup.right <= 390 && brSetup.bottom <= 844 && brSetup.top >= 52 && brSetup.doc <= 390, JSON.stringify(brSetup));
 	await G.locator(".br-setup button", { hasText: "START" }).click();
@@ -1085,7 +1092,7 @@ try {
 		const F = await gameScope(p, TIMEOUT);
 		await F.waitForFunction(() => window.__game.handle.debug().phase === "setup", null, { timeout: TIMEOUT });
 		await readyToClick(p);
-		// Alone with bots, the sides are dealt and the round opens on TEAMS: this measures free-for-all.
+		// Alone with bots, the sides are dealt and the host is asked for a mode: this measures free-for-all.
 		await F.locator('.br-setup button[data-mode="ffa"]').tap();
 		await F.waitForFunction(() => window.__game.handle.debug().mode === "ffa", null, { timeout: TIMEOUT });
 		await throttle(ctx, p, F, 4);
@@ -1123,6 +1130,8 @@ try {
 		await throttle(host.ctx, host.p, HF, 4);
 		await throttle(guest.ctx, guest.p, GF, 4);
 		await readyToClick(host.p);
+		await HF.locator('.br-setup button[data-mode="ffa"]').tap();
+		await HF.waitForFunction(() => window.__game.handle.debug().mode === "ffa", null, { timeout: TIMEOUT });
 		await HF.locator(".br-setup button", { hasText: "START" }).tap();
 		await GF.waitForFunction(() => window.__game.handle.debug().phase === "play", null, { timeout: TIMEOUT });
 		const r = await honestTaps(guest.p, GF, { n: 30, holdMs: [100, 300] });

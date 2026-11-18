@@ -41,7 +41,9 @@ before SINGLE PLAYER, last-move markers, and the flaky-test fixes
   theme; Neon Fission toasts pile up; Neon Survival's thumb offset; Connect 4
   bot long task; tap targets and text sizes. iOS remains unverified.
 
-**Open question:** Bubble Rush played solo — open on TEAMS or FFA?
+**Bubble Rush asks every round** (Lokesh, 2026-11-18): no default mode; the
+host picks FREE-FOR-ALL or TEAMS before START (web-games `ask-mode`, its pin
+to move by PR).
 
 **Waiting on others:** Locale (rajarshi99/locale-chess) PR #1 is still open
 (checked 2026-11-15); after he merges, he proposes his own registry pin, and
