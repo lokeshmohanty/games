@@ -203,7 +203,7 @@ try {
 		await page.waitForFunction(() => navigator.serviceWorker.controller !== null, null, { timeout: 20_000 }).catch(() => {});
 		// Poll from Node (an async predicate does not wait in Playwright 1.62).
 		let cached = false;
-		for (let i = 0; i < 100 && !cached; i++) {
+		for (const end = Date.now() + 30_000; !cached && Date.now() < end; ) {
 			cached = await page.evaluate(async () => {
 				for (const k of await caches.keys()) if (await (await caches.open(k)).match("./games/undercover/RULES.md")) return true;
 				return false;

@@ -15,7 +15,7 @@
 import { existsSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { serve, gameFrame, readyToClick } from "./serve.mjs";
+import { serve, gameFrame, readyToClick, settled } from "./serve.mjs";
 import { loadPlaywright } from "./playwright.mjs";
 
 const SITE = await serve(8733);
@@ -467,12 +467,13 @@ try {
 	await host.waitForTimeout(600);
 	const during = await swarm();
 	check("…and the host's simulation stands still meanwhile", before === during && before !== "[]", `${before.slice(0, 80)} → ${during.slice(0, 80)}`);
+	// Both watched for from before the host is back: the count lasts 3 s.
+	const counting = Promise.all([shown(p2, ".host-pause", /Resuming in [1-3]/), shown(host, ".host-pause", /Resuming in [1-3]/)]);
 	await setHidden(host, false);
-	check("back: everyone counts down together", (await shown(p2, ".host-pause", /Resuming in [1-3]/)) && (await shown(host, ".host-pause", /Resuming in [1-3]/)));
+	check("back: everyone counts down together", (await counting).every(Boolean));
 	const resumed = await p2.locator(".host-pause").waitFor({ state: "hidden", timeout: 6000 }).then(() => true, () => false);
 	check("…and play resumes", resumed);
-	await host.waitForTimeout(600);
-	const after = await swarm();
+	const after = await settled(swarm, (now) => now !== during, 8000);
 	check("…with the simulation running again", after !== during, after.slice(0, 80));
 	await p2.locator(".party-pill").click();
 	check("…and AWAY gone", await p2.locator(".party-tag.is-away").first().waitFor({ state: "detached", timeout: 5000 }).then(() => true, () => false));
@@ -562,7 +563,8 @@ try {
 		Object.defineProperty(link.dc, "bufferedAmount", { get: () => 1 << 30, configurable: true });
 		const big = "x".repeat(1 << 20);
 		for (let i = 0; i < 10; i++) link.post(big);
-		await new Promise((r) => setTimeout(r, 50));
+		// The drop runs from a timer, which a background page's may stretch.
+		for (const end = Date.now() + 5000; room.links.get(peer) === link && Date.now() < end; ) await new Promise((r) => setTimeout(r, 50));
 		return { dropped: room.links.get(peer) !== link, queued: link.queued };
 	}, p3Id);
 	check("an overflowing link is dropped and its queue freed", stuck.dropped && stuck.queued === 0, JSON.stringify(stuck));
@@ -592,9 +594,18 @@ try {
 		console.log(`  FAIL page error on p4: ${err.message}`);
 		failures++;
 	});
+	// Every notice the host shows, from before the invite: the one naming p4
+	// lives 4.5 s, and the invite itself can take longer than that.
+	await host.evaluate(() => {
+		window.__notices = [];
+		new MutationObserver((ms) => {
+			for (const m of ms) for (const n of m.addedNodes) if (n.classList?.contains("neon-toast")) window.__notices.push(n.textContent);
+		}).observe(document.body, { childList: true, subtree: true });
+	});
 	await invite(p2, p4, "p4");
 	const p4Name = await p4.evaluate(() => window.__party.room.self().name);
-	check("the host is told who joined", await toastOn(host, `${p4Name} joined the party.`));
+	const joined = await host.waitForFunction((t) => window.__notices.includes(t), `${p4Name} joined the party.`, { timeout: TIMEOUT }).then(() => true, () => false);
+	check("the host is told who joined", joined, await host.evaluate(() => window.__notices));
 	const stillIn = (page) => page.evaluate(() => !!window.__party.room && !window.__party.room.closed);
 
 	// LEAVE PARTY (one page, docs/spa.md: "← Games" only moves to the
@@ -649,21 +660,32 @@ try {
 
 	// Now really leave: the others are told, and how.
 	q = nextDialog(p4, true);
+	// Watched for on both from before LEAVE (a notice lives 4.5 s, and a newer
+	// one can push it out), and measured as it is found: that notice, not
+	// whichever is first in the layer by the time of a later read.
+	const leftNote = (page) =>
+		page
+			.waitForFunction(
+				(text) => {
+					const n = [...document.querySelectorAll(".neon-toast")].find((t) => t.textContent.includes(text));
+					if (!n) return null;
+					const r = n.getBoundingClientRect();
+					const layer = n.closest(".neon-toasts");
+					return { r: { left: r.left, right: r.right, top: r.top }, vw: innerWidth, taps: layer && getComputedStyle(layer).pointerEvents };
+				},
+				`${p4Name} left the party.`,
+				{ timeout: TIMEOUT },
+			)
+			.then((h) => h.jsonValue(), () => null);
+	const leftOn = Promise.all([leftNote(host), leftNote(p3)]);
 	// One page (docs/spa.md): "← Games" keeps the party; LEAVE PARTY leaves.
 	await Promise.all([p4.waitForURL(PORTAL, { timeout: TIMEOUT }), p4.locator("a[data-leaves]", { hasText: "LEAVE PARTY" }).click()]);
 	await q;
 	check("LEAVE leaves for the portal", PORTAL(new URL(p4.url())));
-	check("the host is told who left", await toastOn(host, `${p4Name} left the party.`));
-	check("so is everyone else", await toastOn(p3, `${p4Name} left the party.`));
-	const toastBox = await host.evaluate(() => {
-		const r = document.querySelector(".neon-toast")?.getBoundingClientRect();
-		const layer = document.querySelector(".neon-toasts");
-		return {
-			r: r && { left: r.left, right: r.right, top: r.top },
-			vw: innerWidth,
-			taps: layer && getComputedStyle(layer).pointerEvents,
-		};
-	});
+	const [hostLeft, p3Left] = await leftOn;
+	check("the host is told who left", !!hostLeft);
+	check("so is everyone else", !!p3Left);
+	const toastBox = hostLeft ?? {};
 	check(
 		"the notice fits the phone and takes no taps",
 		!!toastBox.r && toastBox.r.left >= 0 && toastBox.r.right <= toastBox.vw && toastBox.taps === "none",

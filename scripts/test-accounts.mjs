@@ -1191,12 +1191,20 @@ try {
 		check("a signed-in page opens the live socket", ws.readyState === WebSocket.OPEN, ws.readyState);
 		ws.onmessage = (e) => heard.push(JSON.parse(e.data));
 		ws.send(JSON.stringify({ t: "status", game: "connect4" }));
-		await new Promise((r) => setTimeout(r, 400));
-		list = await call("GET", "/api/friends", { token: ana });
-		const boRow = list.body.friends.find((p) => p.id === Bo);
+		// Presence is written by the live socket's Durable Object as the status
+		// lands (worker/api/live.js): asked until it shows, for 10 s.
+		const friendRow = async (until) => {
+			let row;
+			for (const end = Date.now() + 10_000; ; await new Promise((r) => setTimeout(r, 150))) {
+				list = await call("GET", "/api/friends", { token: ana });
+				row = list.body.friends.find((p) => p.id === Bo);
+				if (until(row) || Date.now() > end) return row;
+			}
+		};
+		const boRow = await friendRow((row) => row?.online === true && row.game === "connect4");
 		check("a friend with a page open is online, in their game", boRow?.online === true && boRow.game === "connect4", boRow);
 		r = await call("POST", `/api/friends/${Bo}/invite`, { token: ana, body: { code: "123456" } });
-		await new Promise((res) => setTimeout(res, 300));
+		for (const end = Date.now() + 10_000; !heard.some((m) => m.t === "invite" && m.code === "123456") && Date.now() < end; ) await new Promise((res) => setTimeout(res, 100));
 		check("an invite reaches the friend's open page", r.body.invited === true && heard.some((m) => m.t === "invite" && m.code === "123456" && m.from.id === A), heard);
 		check("…and the answer does not say how many pages got it (appear offline would leak)", r.body.delivered === undefined, r.body);
 		check("inviting someone who is not a friend is refused", (await call("POST", `/api/friends/${C}/invite`, { token: ana, body: { code: "123456" } })).status === 403);
@@ -1209,9 +1217,8 @@ try {
 		const back = list.body.friends.find((p) => p.id === Bo);
 		check("…and turning it off shows them online again at once, in their game", back?.online === true && back.game === "connect4", back);
 		ws.close();
-		await new Promise((r) => setTimeout(r, 500));
-		list = await call("GET", "/api/friends", { token: ana });
-		check("closing the last page goes offline", list.body.friends.find((p) => p.id === Bo)?.online === false);
+		const gone = await friendRow((row) => row?.online === false);
+		check("closing the last page goes offline", gone?.online === false, gone);
 		const bad = new WebSocket(`${B.replace("http", "ws")}/live`, ["neon", "forged.token"]);
 		const refused = await new Promise((r) => {
 			bad.onopen = () => r(false);

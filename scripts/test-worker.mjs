@@ -847,7 +847,7 @@ try {
 			const end = Date.now() + ms;
 			let last;
 			while (Date.now() < end) {
-				last = [await dbg(h), await dbg(g)];
+				last = await Promise.all([dbg(h), dbg(g)]); // read together: the host moves on between reads
 				if (last[0] && last[1] && test(...last)) return { ok: true, last };
 				await sleep(150);
 			}
@@ -961,7 +961,7 @@ try {
 		r = await until((a) => a.racing && a.walls > 12);
 		check("light cycles: the race is on", r.ok, show(r));
 		await reloadGuest("light cycles", "light-cycles");
-		r = await until((a, b) => b.riders.length === a.riders.length && Math.abs(a.walls - b.walls) <= 4 && b.mine === ids.guest, 3000);
+		r = await until((a, b) => b.riders.length === a.riders.length && Math.abs(a.walls - b.walls) <= 4 && b.mine === ids.guest);
 		check("light cycles: the guest sees the riders and the walls so far", r.ok, show(r));
 		await stop();
 
@@ -1392,7 +1392,7 @@ try {
 			const solo = await p.waitForFunction(() => window.__party?.game === "neon-survival-mp", null, { timeout: 15_000 }).then(() => true, () => false);
 			check("SINGLE PLAYER after leaving that page starts the bots game", solo && !/another tab/i.test(await said()), await said());
 			let seat = "id-taken";
-			for (let i = 0; i < 20 && seat === "id-taken"; i++) {
+			for (const end = Date.now() + 15_000; seat === "id-taken" && Date.now() < end; ) {
 				await sleep(500);
 				seat = await claimOf(t.code, t.id);
 			}
@@ -1402,9 +1402,8 @@ try {
 			// Back into the cached page: it was really cached, and it does not
 			// come back claiming a seat this browser has given up.
 			await p.goBack({ waitUntil: "commit" });
-			await sleep(1500);
 			await p.waitForLoadState("load").catch(() => {});
-			const restored = await p.evaluate(() => sessionStorage.getItem("bf.restored") === "1").catch(() => false);
+			const restored = await p.waitForFunction(() => sessionStorage.getItem("bf.restored") === "1", null, { timeout: 10_000 }).then(() => true, () => false);
 			check("(Back restores the page from the back/forward cache)", restored);
 			const back = await p.locator(".party-code-digits, .lobby-sub").first().waitFor({ timeout: TIMEOUT }).then(() => true, () => false);
 			check("…and it starts over rather than say it is open in another tab", back && !/another tab/i.test(await said()), await said());
@@ -1417,14 +1416,22 @@ try {
 			await sleep(2000);
 			await p.evaluate(() => sessionStorage.removeItem("bf.restored"));
 			await p.evaluate((u) => location.assign(u), SITE.url("manifest.webmanifest"));
-			await sleep(1000);
-			const freed = await call(t2.code, { t: "release", id: t2.id, secret: t2.secret });
-			check("a page going into the cache hangs up: its seat is not busy", freed.t === "released", JSON.stringify(freed));
+			await p.waitForURL(/manifest\.webmanifest$/, { timeout: TIMEOUT }).catch(() => {});
+			// The hang-up (pagehide) and the hub's close take a moment: asked
+			// until released, for 10 s (a seat the cached page held would stay
+			// busy for the cache's whole 10 minutes). A busy answer binds nothing.
+			const t3 = Date.now();
+			let freed = await call(t2.code, { t: "release", id: t2.id, secret: t2.secret });
+			while (freed.t !== "released" && Date.now() - t3 < 10_000) {
+				await sleep(250);
+				freed = await call(t2.code, { t: "release", id: t2.id, secret: t2.secret });
+			}
+			check("a page going into the cache hangs up: its seat is not busy", freed.t === "released", JSON.stringify({ ...freed, ms: Date.now() - t3 }));
 			// …and it really was in the cache, not unloaded (an unload closes
 			// the socket anyway, and would prove nothing).
 			await p.goBack({ waitUntil: "commit" });
-			await sleep(1500);
-			check("(that page was in the back/forward cache: Back restores it)", await p.evaluate(() => sessionStorage.getItem("bf.restored") === "1").catch(() => false));
+			await p.waitForLoadState("load").catch(() => {});
+			check("(that page was in the back/forward cache: Back restores it)", await p.waitForFunction(() => sessionStorage.getItem("bf.restored") === "1", null, { timeout: 10_000 }).then(() => true, () => false));
 			await ctx.close();
 		} finally {
 			await bfBrowser.close().catch(() => {});
