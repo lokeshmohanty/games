@@ -489,16 +489,21 @@ try {
 	const nbSeen = {};
 	// Bounded by progress, as Battleship's volleys are: a lot takes a 3.2 s
 	// show and the test's own 1.2 s pause, more on a slow runner, so a count
-	// of polls ran short there. The fault would be a lot that never settles;
-	// the stall outlasts the bid phase's own 60 s deadline (neon-bid.js).
-	const NB_STALL = 70_000;
+	// of polls ran short there. The fault would be a lot that never settles,
+	// so progress is a lot settled or a new one opened (not a phase change: a
+	// bug that cycled phases without settling would never stall). The stall
+	// outlasts a whole lot at its phases' own deadlines (neon-bid.js: bid
+	// 60 s, open 6 s, show 3.2 s), and a hard cap bounds the run whatever.
+	const NB_STALL = 90_000;
+	const NB_CAP = Date.now() + 15 * 60_000;
 	let nbLast = { at: Date.now(), key: "" };
 	for (;;) {
 		const d = await debug(page);
 		if (d.over) break;
-		const key = `${d.round}/${d.results.length}/${d.phase}`;
+		const key = `${d.round}/${d.results.length}`;
 		if (key !== nbLast.key) nbLast = { at: Date.now(), key };
 		else if (Date.now() - nbLast.at > NB_STALL) break;
+		if (Date.now() > NB_CAP) break;
 		if (d.phase === "bid" && (d.lot !== d.round || d.results.length !== d.round)) {
 			drift.push(`bidding lot ${d.round} with lot ${d.lot} next and ${d.results.length} settled`);
 		}
