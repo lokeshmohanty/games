@@ -4,8 +4,8 @@
 // 390x844 (and Lokesh's phone, 354x696).
 
 import { existsSync, readFileSync } from "node:fs";
-import { serve, settled } from "./serve.mjs";
-import { loadPlaywright } from "./playwright.mjs";
+import { phoneFloors, serve, settled } from "./serve.mjs";
+import { launchFirefox, loadPlaywright } from "./playwright.mjs";
 
 const TIMEOUT = 20_000;
 let failures = 0;
@@ -350,6 +350,51 @@ try {
 	await p.locator(".site-subtab", { hasText: "Contributors" }).click();
 	await p.locator(".person").first().waitFor({ timeout: TIMEOUT });
 	check("…and its Contributors tab opens Contributors, Community still on", (await p.locator(".site-subtab.is-on").textContent()) === "Contributors" && (await p.locator(".site-tab.is-on").textContent()) === "Community");
+
+	console.log("\nportal: the bar with the phone's text larger (Firefox)");
+	// Firefox for Android applies the system font size as text zoom: at 130%
+	// the tabs ran under ☰ and the page scrolled sideways (Lokesh's phone,
+	// 2026-11-15). The tabs scroll inside their own column now, the lit one
+	// in view; the sub-tabs wrap; nothing on the bar overlaps.
+	for (const scale of [130, 200]) {
+		const ff = await launchFirefox(pw, { textScale: scale });
+		if (!ff) break;
+		for (const [w, h] of [
+			[390, 844],
+			[354, 696],
+		]) {
+			const fc = await ff.newContext({ viewport: { width: w, height: h }, hasTouch: true });
+			await fc.route("**/api/stats/summary", (r) => r.abort());
+			const fp = await fc.newPage();
+			for (const [page, lit] of [
+				["index.html?page=games&tab=all", "Games"],
+				["./?page=leaderboard", "Leaderboards"],
+				["./?page=contributors", "Community"],
+			]) {
+				await fp.goto(site.url(page));
+				await fp.locator("[data-nav] .site-row").waitFor({ timeout: TIMEOUT });
+				const bar = await fp.evaluate(() => {
+					const r = (n) => n.getBoundingClientRect();
+					const tabs = document.querySelector("[data-nav] .site-tabs");
+					const menu = document.querySelector("[data-nav] .site-menu-btn");
+					const subs = [...document.querySelectorAll("[data-nav] .site-subtab")].map(r);
+					const lit = document.querySelector("[data-nav] .site-tab.is-on");
+					return {
+						clear: r(tabs).right <= r(menu).left && r(menu).right <= innerWidth,
+						lit: lit?.textContent,
+						litInView: !!lit && r(lit).left >= r(tabs).left - 1 && r(lit).right <= r(tabs).right + 1,
+						tabsH: Math.round(r(tabs).height),
+						subsApart: subs.every((a, i) => subs.every((b, j) => i >= j || a.right <= b.left || b.right <= a.left || a.bottom <= b.top || b.bottom <= a.top)),
+						subsInside: subs.every((b) => b.left >= 0 && b.right <= innerWidth && b.height >= 44),
+						sideways: document.documentElement.scrollWidth > innerWidth,
+					};
+				});
+				check(`Firefox, text at ${scale}%, ${w}x${h}, ${page}: tabs clear of ☰ (the lit ${lit} in view), sub-tabs apart and 44px, no sideways scroll`, bar.clear && bar.lit === lit && bar.litInView && bar.tabsH >= 43 && bar.subsApart && bar.subsInside && !(page.startsWith("index") && bar.sideways), bar);
+			}
+			await fc.close();
+		}
+		await ff.close();
+	}
 
 console.log("\nportal: My Games · All Games");
 // Lokesh, 2026-11-15: "All favourites land under My Games". The Games tab

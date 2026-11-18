@@ -40,6 +40,9 @@
   justify-content: center;
   gap: 0.3em;
   text-indent: 0;
+  /* A title filling the row at a large text size (Firefox at 130%) hangs
+     its trailing letter-spacing past the screen: never a sideways scroll. */
+  overflow-x: clip;
 }
 /* Letter-spacing is ~0.1em at both sizes; this takes the trailing one back. */
 :where(.view-portal) .brand > span {

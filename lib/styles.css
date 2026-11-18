@@ -30,16 +30,24 @@ body {
 
 /* Back-to-portal link. Fixed so it survives the absolutely-positioned lobby,
    game and overlay layers; above the overlay (z-index 10) so it stays reachable
-   on a game-over screen. Panels below reserve top space so it never collides. */
+   on a game-over screen. Panels below reserve top space so it never collides.
+   Once the party mounts it sits at the left of the top band (.top-band),
+   44px tall; when its word does not fit beside the band's right end
+   (larger phone text), party.js marks it .is-tight: the arrow alone. */
 .portal-link {
   position: fixed;
-  top: 10px;
-  left: 12px;
+  top: calc(env(safe-area-inset-top) + 4px);
+  left: max(12px, env(safe-area-inset-left));
   z-index: 50;
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   gap: 6px;
-  padding: 7px 12px;
+  box-sizing: border-box;
+  min-width: 44px;
+  min-height: 44px;
+  padding: 0 12px;
+  white-space: nowrap;
   border: 1px solid var(--border);
   border-radius: 999px;
   background: color-mix(in oklch, var(--bg) 82%, transparent);
@@ -55,6 +63,15 @@ body {
 .portal-link:hover {
   color: var(--accent);
   border-color: var(--accent);
+}
+/* Still measured (party.js fitBack), never shown. */
+.portal-link.is-tight {
+  width: 44px;
+  padding: 0;
+}
+.portal-link.is-tight .label {
+  position: absolute;
+  visibility: hidden;
 }
 
 /* Buttons */
@@ -205,7 +222,7 @@ a.neon-btn {
   border-radius: 8px;
   color: var(--accent);
   font-family: var(--font-mono);
-  font-size: 0.72rem;
+  font-size: 0.75rem;
   line-height: 1.35;
   padding: 10px;
   resize: vertical;
@@ -318,7 +335,7 @@ canvas {
   font-size: 0.95rem;
 }
 .party-tag {
-  font-size: 0.65rem;
+  font-size: 0.75rem;
   letter-spacing: 1px;
   padding: 2px 8px;
   border-radius: 20px;
@@ -376,10 +393,10 @@ canvas {
 .party-team,
 .party-mini {
   font-family: var(--font);
-  font-size: 0.65rem;
+  font-size: 0.75rem;
   letter-spacing: 1px;
   padding: 6px 10px;
-  min-height: 32px;
+  min-height: 44px;
   border-radius: 6px;
   border: 1px solid var(--border);
   background: var(--bg);
@@ -846,7 +863,7 @@ canvas {
 }
 .managed-name small {
   color: var(--accent);
-  font-size: 0.72rem;
+  font-size: 0.75rem;
   letter-spacing: 0.06em;
   text-transform: uppercase;
 }
@@ -868,7 +885,7 @@ canvas {
 }
 .managed-toggle {
   align-self: center;
-  min-height: 32px;
+  min-height: 44px;
   padding: 4px 14px;
   border: 1px solid var(--rule);
   border-radius: 999px;
@@ -899,7 +916,7 @@ canvas {
 }
 .just-played-label {
   color: var(--ink-3);
-  font-size: 0.72rem;
+  font-size: 0.75rem;
   letter-spacing: 0.08em;
   text-transform: uppercase;
   margin-bottom: 4px;
@@ -929,7 +946,7 @@ canvas {
 .managed-details caption {
   padding-bottom: 2px;
   color: var(--ink-3);
-  font-size: 0.72rem;
+  font-size: 0.75rem;
   letter-spacing: 0.08em;
   text-align: left;
   text-transform: uppercase;
@@ -968,17 +985,37 @@ canvas {
   display: none;
 }
 
-/* The top right of a game page (party.js): FEEDBACK and FAVOURITE for the
-   game, and PARTY mid-game — the way back to the party screen while a game
-   runs. The portal link's twin on the other side of the same top band, which
-   every game already keeps clear (a 52px band at the top). */
-.top-actions {
+/* The top band of a game page (party.js): ← GAMES at the left; at the
+   right FEEDBACK and FAVOURITE for the game, and PARTY mid-game — the way
+   back to the party screen while a game runs. Every game keeps the top
+   52px clear for it. One row, so the two ends can never overlap however
+   large the phone's text (Firefox at 130% and 200%, 2026-11-15): ← GAMES
+   shrinks to its arrow first (.portal-link). Every button 44px. The band
+   takes no taps between its buttons: the game under it keeps them. */
+.top-band {
   position: fixed;
-  top: calc(env(safe-area-inset-top) + 10px);
+  top: calc(env(safe-area-inset-top) + 4px);
+  left: max(12px, env(safe-area-inset-left));
   right: max(12px, env(safe-area-inset-right));
   z-index: 50;
   display: flex;
+  align-items: flex-start;
   gap: 6px;
+  pointer-events: none;
+}
+.top-band a,
+.top-band button {
+  pointer-events: auto;
+}
+.top-band > .portal-link {
+  position: static;
+  flex: none;
+}
+.top-actions {
+  display: flex;
+  flex: none;
+  gap: 6px;
+  margin-left: auto;
 }
 .top-actions [hidden] {
   display: none;
@@ -987,8 +1024,12 @@ canvas {
 .top-btn {
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   gap: 6px;
-  padding: 7px 14px;
+  box-sizing: border-box;
+  min-width: 44px;
+  min-height: 44px;
+  padding: 0 14px;
   border: 1px solid var(--accent);
   border-radius: 999px;
   background: color-mix(in oklch, var(--bg) 82%, transparent);
@@ -998,10 +1039,11 @@ canvas {
   font-size: 0.78rem;
   letter-spacing: 1px;
   text-transform: uppercase;
+  white-space: nowrap;
   cursor: pointer;
 }
 .top-btn {
-  padding: 7px 12px;
+  padding: 0 12px;
   border-color: var(--border);
   color: var(--muted);
 }
@@ -1027,7 +1069,8 @@ canvas {
     display: none;
   }
   .top-btn {
-    padding: 7px 10px;
+    width: 44px;
+    padding: 0;
   }
 }
 /* The party screen pulled up over a running game, which keeps running
@@ -1244,7 +1287,7 @@ canvas {
 }
 .party-friend .share-hint {
   margin: 0;
-  font-size: 0.72rem;
+  font-size: 0.75rem;
 }
 .party-friends-more {
   margin-top: 6px;
@@ -1385,12 +1428,21 @@ canvas {
   gap: 8px;
   border-bottom: 1px solid var(--rule);
 }
+/* The tabs keep to their column: wider than it (a phone's larger text,
+   Firefox at 130%, 2026-11-15), they scroll sideways inside it rather than
+   run under ☰. (The scroller clips the tab's 1px overlap of the rule.) */
 .site-tabs {
   grid-column: 2;
   display: flex;
-  justify-content: center;
+  justify-content: safe center;
   gap: 4px;
   min-width: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+}
+.site-tabs::-webkit-scrollbar {
+  display: none;
 }
 .site-tab,
 .site-subtab {
@@ -1416,6 +1468,7 @@ canvas {
 }
 .site-subtabs {
   display: flex;
+  flex-wrap: wrap; /* two pills too wide for one row at a large text size */
   justify-content: center;
   gap: 6px;
   padding-top: 8px;
@@ -1517,7 +1570,7 @@ html[data-home="all"] .boot .site-subtab[data-tab="all"] {
   border-radius: 9px;
   background: var(--accent);
   color: var(--on-accent);
-  font: 700 0.7rem/18px var(--font-mono);
+  font: 700 0.75rem/18px var(--font-mono);
   text-align: center;
 }
 .site-menu-btn > .site-badge {
@@ -1584,10 +1637,10 @@ html[data-home="all"] .boot .site-subtab[data-tab="all"] {
   line-height: 1.5;
   overflow-wrap: anywhere;
 }
-/* The party's own chrome (lib/party.js .top-actions: feedback, favourite,
+/* The party's own chrome (lib/party.js .top-band: ← Games, feedback, favourite,
    PARTY; the shell's turn-wait bar and host-pause card) is the party view's:
    hidden while another view shows. */
-body[data-view]:not([data-view="party"]) > :is(.top-actions, .turn-wait, .host-pause) {
+body[data-view]:not([data-view="party"]) > :is(.top-band, .turn-wait, .host-pause) {
   display: none;
 }
 /* A view whose code a deploy removed since the page loaded (src/App.tsx). */
