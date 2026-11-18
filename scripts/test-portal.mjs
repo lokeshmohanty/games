@@ -247,6 +247,23 @@ try {
 		await kp.locator("dialog.join-code button", { hasText: "CANCEL" }).tap();
 		const home = await settled(() => kp.evaluate(() => document.body.dataset.view), (v) => v === "portal", 5000);
 		check("CANCEL after a refused code goes back to the portal", home === "portal", { home, url: kp.url() });
+		// …and the dialog opened again from there, with a live code: joined,
+		// the party on screen (not joined out of sight behind the portal).
+		const live = await kp.evaluate(async () => {
+			window.__samePage = true;
+			const made = await NeonArcade.hostRoom({ name: "Host" });
+			localStorage.removeItem("neon.room");
+			return made.code;
+		});
+		await kp.locator(".join-code-btn").tap();
+		await kp.locator("#join-code-field").fill(live);
+		await kp.keyboard.press("Enter");
+		const again = await settled(
+			() => kp.evaluate(() => ({ open: !!document.querySelector("dialog.join-code"), members: window.__party?.room?.getMembers?.().length ?? 0, view: document.body.dataset.view, same: !!window.__samePage })),
+			(x) => !x.open && x.members === 2 && x.view === "party",
+			TIMEOUT,
+		);
+		check("…opened again there, a live code joins with the party on screen, in the same page", !again.open && again.members === 2 && again.view === "party" && again.same, again);
 		check("no native dialog at all (prompt, alert)", native === 0, native);
 		await kc.close();
 	}

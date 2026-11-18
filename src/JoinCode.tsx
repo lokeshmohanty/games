@@ -78,8 +78,6 @@ function JoinCode(props: { opener: HTMLElement | null; gone: () => void }) {
 		setError("");
 		setBusy(code);
 		const party = (window as any).__party;
-		// A refused code, the party screen behind us: the next one in place.
-		if (party?.joinCode?.(code)) return;
 		// A live party: leaving it is the router's question (src/App.tsx),
 		// then a fresh page; this dialog has done its part.
 		if (party?.room && !party.room.closed) {
@@ -87,6 +85,10 @@ function JoinCode(props: { opener: HTMLElement | null; gone: () => void }) {
 			navigate(`./?party#c=${code}`);
 			return;
 		}
+		// A party that refused a code (even one CANCEL left for the portal):
+		// its screen, and the next code in place.
+		if (party?.joinCode && document.body.dataset.view !== "party") navigate("./?party");
+		if (party?.joinCode?.(code)) return;
 		navigate(`./?party#c=${code}`);
 	};
 
