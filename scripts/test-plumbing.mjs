@@ -1461,6 +1461,41 @@ const idsDescending = async (n) => {
 }
 
 {
+	// Election certificates, built by hand from members' real signatures.
+	// Dee checks each crown at term 1 against the record of term 0 she holds.
+	const [h, a, b, c, d] = await party(["Host", "Ana", "Bo", "Cy", "Dee"], fullMesh(5), { heirWaitMs: 60_000, lostRetryMs: [] });
+	const humans = (...rs) => rs.map((r) => r.selfId).sort().join(",");
+	const ack = async (voter, key, cand) => {
+		const env = { __ka: key, r: 1, n: cand.selfId, f: voter.selfId, t: null, id: `ka${++rawSeq}` };
+		return voter._sign(env);
+	};
+	const crownBy = async (cand, key, voters) => {
+		const acks = await Promise.all(voters.map((v) => ack(v, key, cand)));
+		const env = { __p: { ...structuredClone(d.party), host: cand.selfId, term: 1, rev: Date.now() + rawSeq }, f: cand.selfId, t: null, id: `cp${++rawSeq}`, cp: { v: "vote", key, acks } };
+		await cand._sign(env);
+		cand.links.get(d.selfId).send(env);
+		await sleep(40);
+	};
+	// Made-up voters: ids nobody in Dee's record holds a key for.
+	const strangers = await Promise.all([1, 2, 3].map(() => NeonArcade.identity({ fresh: true })));
+	const fake = `${h.selfId}|0|${c.selfId}|${[c.selfId, ...strangers.map((x) => x.id)].sort().join(",")}`;
+	const sRooms = strangers.map((identity) => ({ selfId: identity.id, _sign: async (env) => ({ ...env, k: identity.pub, s: await identity.sign(NeonArcade._codec.signedText(env)) }) }));
+	await crownBy(c, fake, sRooms);
+	check("an election certificate counting ids outside our record is refused", d.hostId() === h.selfId, d.refusals.slice(-2).join());
+	// Two elections at term 0 with different keys (a record that reached
+	// one side only), each with a real quorum of its own.
+	const [lo, hi] = a.selfId < b.selfId ? [a, b] : [b, a];
+	const kHi = `${h.selfId}|0|${hi.selfId}|${humans(hi, c, d)}`;
+	const kLo = `${h.selfId}|0|${lo.selfId}|${humans(lo, c)}`;
+	await crownBy(hi, kHi, [c, d]);
+	const first = d.hostId() === hi.selfId && d.party.term === 1;
+	await crownBy(lo, kLo, [c]);
+	check("a crown at term 1 is taken on its certificate", first, d.hostId());
+	check("…and a second certified crown at that term is still checked (against term 0): the lower id wins", d.hostId() === lo.selfId, `${d.hostId() === hi.selfId ? "hi" : d.hostId() === lo.selfId ? "lo" : d.hostId()} ${d.refusals.slice(-2).join()}`);
+	for (const r of [h, a, b, c, d]) r.leave();
+}
+
+{
 	// Forged election messages, written by Cy as other members.
 	const [h, a, b, c, d] = await party(["Host", "Ana", "Bo", "Cy", "Dee"], fullMesh(5), { heirWaitMs: 5000, lostRetryMs: [] });
 	const key = d._voteKey("nobodynobodynobo"); // a vacancy nobody holds a link to

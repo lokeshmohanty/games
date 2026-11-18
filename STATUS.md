@@ -28,9 +28,13 @@ after mount, CI-gated deploys, the stuck-party fix, the split-party election
 before SINGLE PLAYER, last-move markers, and the flaky-test fixes
 (test-accounts pins the server clock with `X-Test-Now`, tests only).
 
+**In review: signed party messages** (branch `signed-party`, not merged;
+2026-11-18/19). Ids are key hashes (per tab, IndexedDB), every sender is
+proven (link hello or signature), crowns need proof, old clients refused.
+docs/index.md "Who said it"; memory `signed-messages.md`. Waits for
+Lokesh's review before merge; the open residuals are in Honest gaps.
+
 **Queued (approved by Lokesh, not started):**
-- **Signed party messages** — `f`, `__i`, `pk`, election and `__p` are
-  unsigned; close that before any game relies on `seal.*`.
 - **Web Push** — opt-in, invites only (memory `no-third-party-services`).
 - **Worker** — edge caching of leaderboard GETs; free-plan usage limits;
   D1 backups; worker deploy from CI (Lokesh adds `CLOUDFLARE_API_TOKEN`);

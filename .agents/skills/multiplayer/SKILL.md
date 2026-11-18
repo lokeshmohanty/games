@@ -82,6 +82,9 @@ The browser suites serve the built site (`dist/`, scripts/serve.mjs) over
 - **A digest alone does not make a game honest.** It proves when the secret was
   fixed, not that the player answered truthfully about it. Replay every answer
   against the revealed secret too. See [[unrefereed-honesty]].
+- **Every sender is proven (2026-11-18).** A member's id is its key's hash;
+  a message counts only over its sender's own link or signed by it. A room
+  needs `{ identity: await NeonArcade.identity() }`. See [[signed-messages]].
 - **A bot is a party member, not a mode.** Anything that walks the roster or
   routes a message has to know a `bot_` id has no connection behind it and never
   will. See [[bots-as-members]] for the four places in `net.js` that get this
@@ -111,6 +114,10 @@ The browser suites serve the built site (`dist/`, scripts/serve.mjs) over
   popstate on fragment links, Playwright skipping `beforeunload`).
 - `memory/handover.md` — how a running game survives its host leaving: the
   per-game `takeOver`, `rounds.adopt` and its epoch, and what each game loses.
+- `memory/signed-messages.md` — Lokesh's 2026-11-18 decisions for signed
+  party messages (id = key hash, per tab; sign control + relayable; refuse
+  old clients) and the traps: hello ordering, kept envelopes, the newcomer's
+  vote, replays, crown proofs.
 - `memory/split-party.md` — Lokesh's "heir side only" and "skip hidden +
   quorum" rules for a party that splits as its host leaves (who is named, who
   may crown, who is lost, how a lost side rejoins), and the re-dial traps.

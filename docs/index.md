@@ -8,7 +8,7 @@ questions about this project from this folder alone.
 ## Contents
 
 - [The portal](#the-portal) — the home screen's sub-tabs (My Games · All Games), sections, PLAY SOMETHING, the phone layout and the search
-- [Connecting players](#connecting-players) — the serverless handshake, paid once per person; `scanQr`; connectivity (relaying, STUN, NAT classification, no TURN)
+- [Connecting players](#connecting-players) — the serverless handshake, paid once per person; `scanQr`; connectivity (relaying, STUN, NAT classification, no TURN); who said it (signed party messages)
 - [Parties](#parties) — the persistent group, teams, switching games, host succession; the party API (`mountParty`, the room controller, lib/lobby.js)
 - [Bots](#bots) — why there is no single-player section, and what a bot actually is
 - [Hidden information](#hidden-information) — sealed private state, and commit-reveal
@@ -339,6 +339,149 @@ Moved here from lib/README.md on 2026-11-15; net.js is the code.
   surface as an explicit error rather than an indefinite wait. To cover them
   anyway, pass a TURN entry in `iceServers`.
 
+### Who said it: signed party messages
+
+Since 2026-11-18 a member's id proves itself, and so does every message that
+counts. Before, the sender field `f` was whatever the sender wrote: a relay
+could speak as anyone, a member could evict another, crown itself with a
+higher-term record, or forge election votes. lib/net.js is the code; the
+skill memory `signed-messages.md` keeps the reasons.
+
+**Lokesh's decisions (2026-11-18), settled:**
+
+1. **An id is its key's hash.** Each member has an ECDSA P-256 key pair; the
+   private half is non-extractable and kept in IndexedDB (`neon.keys`). The id
+   is base36 of SHA-256 of the raw public key, 16 characters. The public key
+   crosses a link once it opens, so **codes do not grow** beyond the longer
+   id (16 characters instead of 10 or 12).
+2. **What is signed: control messages and anything relayable.** Game traffic
+   over a direct link is proven by the link's owner, with no per-message
+   signature, so the 15–30 Hz real-time paths cost nothing.
+3. **Old clients are refused, with no transition window.** An old phone
+   cannot join or stay, and both sides are told, never left waiting.
+4. **The key is per tab session.** sessionStorage (`neon.key`) names the key
+   a tab plays as, so a reload keeps the id (reload-mid-game) and a second
+   tab is a second player. The room server's rejoin token holds the id, and a
+   rejoin loads that id's key (`NeonArcade.identity({ id })`). A browser
+   without IndexedDB gets a key for the page only; its id changes per load.
+
+**API.** `await NeonArcade.identity()` is this tab's identity (`{ id, pub,
+sign }`); `{ id }` loads one this browser holds (or null); `{ fresh: true }`
+makes another (tests, a second room in one page). `createHost`/`createGuest`
+**require** `{ identity }`; `hostRoom`/`joinRoom` find it themselves.
+`NeonArcade.isMemberId(id)` tells a member id from a bot's or an old client's.
+
+**A link proves its owner (the hello).** When a data channel opens, each side
+sends `{ __hi: 1, k, s }` before anything else: `k` is its raw public key,
+`s` signs `"neon-link|" + <the far side's DTLS fingerprint> + "|" + <its own>`,
+the fingerprints of this RTCPeerConnection's two descriptions. The receiver
+checks the fingerprints against its own connection, the signature, and that
+the key hashes to the id the code or relayed offer named (`link.peerId`).
+Only then is the link registered (`_linkOpened`), and nothing but the hello
+is taken before. So the hello is good for this connection only, and a member
+who relays an offer under somebody else's id, then answers it itself, gets a
+link that closes unregistered (the relayed-offer hijack). A side never talks
+before its own hello has left, or the far side would take it for an old
+client.
+
+**A message counts only if its sender is proven** (`_authentic`):
+
+- it came over the link whose owner is its sender (`f`), or
+- it carries the sender's signature: `k` (whose hash must be `f`) and `s`
+  over the canonical envelope. That is the envelope with keys sorted at every
+  depth, minus what a relay may change (`h`, `m`) and minus `s`, `k`, `cp` and
+  `fw`. Verified keys are cached per id.
+- A bot's message (`f` a `bot_` id) counts only from the crown: `o` names the
+  host, the host sent it (on its link, or signed), and the bot is in its
+  record.
+
+Everything else is dropped and counted (`room.refused`, `room.refusals`).
+Relays forward signatures untouched. A link's messages are handled in order
+even while one waits on a verification, and our own sends keep their order
+behind a signature (one queue per room). An acknowledgement (`__ka`) is
+verified even on its sender's own link, because it is kept as proof.
+
+**What a proven sender still may not do.**
+
+- `__k` (evict) and `__x` (close the party) count only from the crown.
+- **A record (`__p`) is its host's word.** `f` must be its host, except the
+  record a host sends as it hands the crown over (`transferHost`). Beyond a
+  newcomer's first record, a record is taken only if its crown is proven
+  (`_proven`):
+  - it is the holder whose own record we last took, at that term; or
+  - it carries `cp`, an **election certificate**: the quorum of signed
+    `__ka` the election already gathers. The election's key must fit the
+    record we hold (its term, and humans who are members of it), so nobody
+    can count ids they made up. The candidate's own vote is its record's
+    signature; or
+  - `cp` is a **hand-over**: the previous holder's signed record naming this
+    one, itself proven the same way, at most three hand-overs deep.
+
+  Without this, "a higher term wins" let any member crown itself by signing a
+  record. From the holder already known, only a newer record (`rev`, which
+  rises with the clock across a reload) is taken, so a replayed old record
+  cannot roll the party back.
+- **A member seated on someone else's word is `pend`.** The host seats an id
+  introduced by another member (`__i`), but it does not count toward an
+  election's humans (`_voteKey`, `_successor`, `heir()`) until it speaks for
+  itself: its own `__i`, sent at once when it sees the mark, or a link to the
+  host. A member inventing seats cannot stall an election or sway it.
+  Introductions are broadcasts now. A member used to re-address an `__i` to
+  the host it knew, and that would break the signature.
+- The newcomer's first record is the host's own signed envelope, handed on
+  by whoever linked it and marked `fw`. It gives the newcomer no vote: a page
+  reloaded mid-vote must not grant twice. Established members ignore `fw`
+  copies.
+- Games: a managed game's `v:m$act`/`v:m$in` now carry a proven seat; a
+  guest cannot act as another seat or a bot. lib/bridge.js takes a web app's
+  `p$httpr` only from the member it asked. (`p$addr` is a broadcast any
+  member may send by design, docs/platform.md; its sender is now at least
+  real.)
+
+**Old clients.** A peer that talks before saying hello is a build from
+before signing (an ordered channel, and a current client always says hello
+first). After `HELLO_MS` (6 s) of silence, so is one that never speaks.
+- **We are in the party, the old peer is joining or staying.** We send it an
+  unsigned `__k` naming it, which old code takes as an eviction ("You were
+  removed from the party.").
+- **The old peer is the party, we are the newcomer.** We do not evict
+  anyone from their own party. We say goodbye (`__gone`) instead.
+- **Codes.** An invite or reply whose id is not 16 characters is refused
+  at once: "That reply came from an older version of the arcade. Ask them to
+  reload the page to update". That needs no byte more in the code.
+
+Our own player is told on `onError` (reason `outdated`; `outdated-self` if
+the far side is newer), naming who where it can: "<name> is on an older
+version of the arcade. They need to reload the page to update." A code join
+ends with that message at once, not "nobody answered" 30 s later.
+
+**Costs** (measured 2026-11-19, a Ryzen 7 5875U laptop; per operation):
+
+| | Node 24 | Chrome | Chrome, CPU ×4 | Chrome, CPU ×6 |
+| --- | --- | --- | --- | --- |
+| sign a control message | 70 µs | 76 µs | 216 µs | 299 µs |
+| sign a 6-member record | 86 µs | 113 µs | 258 µs | 340 µs |
+| verify a relayed message (key cached) | 125 µs | 113 µs | 352 µs | 494 µs |
+| an unsigned message on its sender's link | 1 µs | 2 µs | 2 µs | 6 µs |
+| a new key pair and its id (stored) | 0.35 ms | 1.8 ms | 9.5 ms | 28 ms |
+
+Chrome's CPU throttling slows the page's thread, not WebCrypto's own, so
+the throttled columns are a floor for a phone, not a measurement of one
+(VERIFY on a real mid-range Android). Expect around a millisecond per
+signature or verification there. Signatures are made for control messages
+(rare) and for game traffic only when it must be relayed. At 30 Hz that is
+30 signs a second on the sender and 30 verifies a second on whoever receives
+it relayed: a few percent of a phone's CPU, and only on a pair with no
+direct link. Direct game traffic costs a field read.
+
+Tested in test-plumbing "who said it" (every forgery class, and each one seen
+failing on unsigned routing first), the crown and hand-over tests under
+"membership and the crown", and test-party "signed messages". That test has
+four tabs, fully meshed. The host's tab dies and the heir is elected by
+signed grants and acknowledgements over real links (its certificate is
+checked). It also covers ids per tab, an id surviving a reload, and an old
+client's reply refused on screen.
+
 ## Parties
 
 The party (`./?party`, lib/party.js) is the shell that keeps a group together. Because every game is a
@@ -602,14 +745,20 @@ reloading) cannot move the crown for everyone.
   member reaches one side of a split only: the two sides' keys then count
   different rosters, and each could win its own election.
 
-**Threat model.** The election is safe against faults, not against a
-malicious member. The sender field `f` is unsigned, so `__c`, `__gr` and
-`__r` can be forged, as the party record (`__p`) and every other control
-message can. Signing control messages with members' keys is the planned
-follow-up.
+**Threat model.** Since 2026-11-18 every election message is signed by its
+sender ([Who said it](#who-said-it-signed-party-messages)). A relay can drop a
+grant, a commit, an acknowledgement or a release, never write one. A crown
+won by election is shown with every record its holder publishes, as the
+quorum of signed acknowledgements, so a member cannot crown itself with a
+higher term. What remains is a malicious *voter*: one that acknowledges two
+candidates for one key can help make two certificates. The quorum
+intersection assumes each member acknowledges at most one, which an honest
+client does (`committed`). Ids a member makes up never count (`pend`); keys
+a member really holds, in tabs it really runs, are members.
 
 A narrowing, which took election messages only over the sender's own link,
-was dropped: it lost them on a half-dead link, and it never stopped forgery. Tested in test-plumbing ("a split party",
+was dropped: it lost them on a half-dead link (and before signing it never
+stopped forgery either). Tested in test-plumbing ("a split party",
 "…reviewed", "…re-reviewed", "…by election", "…election re-reviewed",
 "…with a commit") and test-party (the lost screen).
 
@@ -700,7 +849,8 @@ compact table instead of starting at once (party.js `tableBlock`):
 
 | method | description |
 | --- | --- |
-| `selfId` | this peer's random id |
+| `selfId` | this member's id: its signing key's hash, 16 characters ([Who said it](#who-said-it-signed-party-messages)) |
+| `refused` / `refusals` | messages dropped as unproven or unauthorised, and the last few reasons |
 | `peerCount()` | number of other members |
 | `getMembers()` | `[{ id, name, team, joined, bot? }]`, in join order |
 | `getMember(id)` / `self()` | one member record |
@@ -1217,22 +1367,37 @@ the icon for exactly this reason. `test-pwa` now parses the file.
 ## Honest gaps
 
 - Per-game design notes and a decision log are still missing.
-- **A member's own record is only as honest as `f`** (review, 2026-11-17).
-  The host takes an `__i` self-edit (name, `setMeta` fields) from whoever
-  the envelope's unsigned `f` names. Since 2026-11-17 it refuses a bot's id
-  and edits of its own record (a `back`/`rs` vouch about the host still
-  lands: it clears a reloaded host's held seat), drops every field the
-  record owns (team, bot, host, joined, rs, reconnecting) and `local`, and
-  refuses a relayed copy while it holds a direct link to that member (the
-  real one comes over that link). Every member also **re-asserts** its own
-  fields (name and `setMeta`: pk, acct, pcode, away) when the host's record
-  has disagreed for a second (net.js `_reassert`), and `secrets.js` checks
-  the pk on its own record before deriving a key. What stays open: a member
-  the host hears **only through a relay** can be renamed, or its meta
-  rewritten, by that relay — for about a second, until the member's
-  re-assert, unless that relay also drops the re-assert. Closing it needs
-  signed self-edits, planned as a separate branch (test-plumbing "bot seats
-  and a member's own record" asserts the fixes, the gap and the re-assert).
+- **Signed party messages: what they do not cover** (2026-11-18; [Who said
+  it](#who-said-it-signed-party-messages)). The sender of every message is
+  proven, which closed the relay renaming a member and swapping its key, the
+  forged eviction, the self-crowning record and forged votes. Still open:
+  - **A newcomer trusts its first record.** A fresh page (a newcomer, a
+    reload) has nothing to check a record against, so the member it links
+    to first can hand it a false party. That member is the one it chose to
+    join through, or the stayer that relinked a reload.
+  - **Replays.** A signed message can be sent again. Records carry `rev`,
+    so an old one cannot roll a party back. Other control messages rely on
+    the 512-id `seen` window and on their own idempotence. A replayed `__gone`
+    of a member's own, after the window, would drop them until their next
+    record.
+  - **The `fw` mark is unsigned.** A member who strips it from the record it
+    hands a reloaded page gives that page back its vote, on a stale record.
+  - **A malicious voter** can acknowledge two candidates for one key. The
+    election's safety assumes it does not (see the threat model under "When
+    the host goes").
+  - **The old side is not always told.** When a new client joins an *old*
+    party, it leaves with a goodbye rather than evict the old host from its
+    own party: the old side sees a member leave, not "reload". A code join
+    from an old client gets no answer from a new party, and its own client
+    says "Nobody in that party answered" after 30 s.
+  - A host whose crown came by election and who reloads takes its proof
+    back only from the stayer's copy of its own record (`_keepProof`).
+    Members two or more crowns behind, or with a record of a different
+    roster, cannot check a certificate and ignore that crown until they
+    rejoin. This is the same "missed record" residual the election has.
+  - Tested over the fake transport (every class) and real links (test-party's
+    four-tab election, test-nat's relayed scenario). No hostile client has
+    been run against a real party.
 - Scanning is verified at realistic code density — a reply code occupying part
   of a full-resolution frame, preceded by seconds of empty aiming frames, on a
   CPU throttled to phone speed — but via a fake capture device, **not** a real
@@ -1264,13 +1429,14 @@ the icon for exactly this reason. `test-pwa` now parses the file.
   2026-11-12 (both inside a full `just test`; standalone 0 of 5, and 0 of 1
   with the new Neon Bid section removed). Not investigated; the page is
   reloaded between sections, so no state is shared with the section before it.
-- The crown term converges two hosts on one, but **the term itself is not
-  authenticated**: any member can publish a record with a higher term and take
-  the crown, exactly as before the term existed any member could publish one
-  naming itself host. A member that wrongly concludes the host is gone *and* is
-  its own computed heir crowns itself, and the real host steps down; the party
-  converges, but on the wrong host. Tested over a fake transport only
-  (`test-plumbing.mjs`); no real partition has been staged.
+- The crown term converges two hosts on one only when the higher is
+  **proven** (an election certificate or a hand-over, since 2026-11-18). Two
+  crown holders at one term, neither proven to the other (two parties' founders
+  meeting), now each keep their own crown. Before, the lower id took both,
+  which a member signing a record naming itself could exploit. Two elections
+  at one term with different keys (the missed-record residual) both carry
+  certificates, and the lower id wins as before. Tested over a fake
+  transport only (`test-plumbing.mjs`); no real partition has been staged.
 - When two direct links to the same peer open at once, each side keeps the one
   that opened *last* and closes the other. If the two sides disagree on the
   order, both links close and the pair falls back to relaying until the next

@@ -19,7 +19,8 @@ same UI paths run, and no game or test notices its absence.
 1. **The rejoin token is the only thing that survives a reload.** It holds
    `{code, id, secret, pass, exp}` in `localStorage` (`pass`/`exp`: the
    member pass, when the server issued one). The id is the seat; the secret is
-   the claim on it. Everything else — the WebSocket, the data channels, the
+   the claim on it. (Since 2026-11-18 the id is also a signing key's hash, and
+   that key, in IndexedDB, survives the reload too: [[signed-messages]].) Everything else — the WebSocket, the data channels, the
    party record — is rebuilt from scratch on every page load.
 
 2. **`serverPeerState` marks, `_linkOpened` clears.** A reconnecting mark is
