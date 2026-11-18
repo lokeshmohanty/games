@@ -127,7 +127,9 @@ try {
 	const cf = await gameFrame(cp, TIMEOUT);
 	const mounted = Date.now() - t0;
 	const early = await faces(cf);
-	check("the frame comes up before the fonts have downloaded, without their faces", early.rules === 0, { mounted, ...early });
+	// The fonts are held, so a frame that waited for them would not come up at
+	// all; the bound (generous for a slow runner) still catches a slow boot.
+	check("the frame comes up before the fonts have downloaded, without their faces", mounted < 5000 && early.rules === 0, { mounted, ...early });
 	await cf.evaluate(() => {
 		window.__themeSets = 0;
 		window.arcade.on("theme.set", () => window.__themeSets++);
