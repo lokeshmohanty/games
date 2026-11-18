@@ -319,25 +319,118 @@ try {
 	await p.locator('.game-card[data-game="connect4"]').first().locator(".card-play", { hasText: "MULTI-PLAYER" }).click();
 	await p.locator("button", { hasText: "INVITE A FRIEND" }).first().waitFor({ timeout: TIMEOUT });
 	check("MULTI-PLAYER lands on the friends view (invite, and the code when there is a server)", (await p.locator(".party-choice").count()) === 0);
-	// A phone: no hover, so the first tap opens the choices and nothing else.
-	const touch = await browser.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
-	// No counts from the deployed worker or the snapshot: their late arrival
-	// reorders Popular (tested on its own, below).
-	await touch.route("**/api/stats/summary", (r) => r.abort());
-	await touch.route("**/summary.json", (r) => r.abort());
-	const tp = await touch.newPage();
-	await tp.goto(site.url("index.html"));
-	await tp.waitForSelector(".game-card:visible");
-	const tcard = tp.locator('.game-card[data-game="connect4"]').first();
-	await tcard.locator("h3").tap();
-	const isOpen = () => tcard.evaluate((c) => c.classList.contains("is-open"));
-	check("on a phone a tap opens a card's choices, without leaving the page", (await settled(isOpen, Boolean, 3000)) && tp.url().endsWith("index.html?page=games&tab=all"), tp.url());
-	const fits = await tcard.locator(".card-play").evaluateAll((as) => as.map((a) => a.getBoundingClientRect()).map((r) => ({ h: Math.round(r.height), right: Math.round(r.right) })));
-	check("…two buttons, 44px tall, inside the phone", fits.length === 2 && fits.every((f) => f.h >= 44 && f.right <= 390), fits);
-	await tp.locator('.game-card[data-game="neon-bid"] h3').first().tap();
-	check("…and opening another card closes the first", !(await settled(isOpen, (open) => !open, 3000)));
-	await touch.close();
-	// A slow phone: the play counts land after a card was tapped open. The
+	// One tap (or click) on a card opens the game's party screen, its quick
+	// start (Lokesh, 2026-11-18: on a phone the first tap only showed the
+	// buttons). The buttons stay a mouse's on hover; a phone long-presses.
+	/** A long press on a touch screen: the browser's contextmenu. */
+	const longPress = (loc) => loc.dispatchEvent("contextmenu");
+	// (party.js drops `fresh` from the address once the party is up.)
+	const quickStart = (u, id) => {
+		const q = new URL(u).searchParams;
+		return q.get("game") === id && !q.has("mode") && !q.has("start");
+	};
+	for (const [w, h] of [
+		[390, 844],
+		[354, 696],
+	]) {
+		const at = `${w}x${h}`;
+		const touch = await browser.newContext({ viewport: { width: w, height: h }, hasTouch: true, isMobile: true });
+		// No counts from the deployed worker or the snapshot: their late arrival
+		// reorders Popular (tested on its own, below).
+		await touch.route("**/api/stats/summary", (r) => r.abort());
+		await touch.route("**/summary.json", (r) => r.abort());
+		const tp = await touch.newPage();
+		await tp.goto(site.url(ALL));
+		await tp.waitForSelector(".game-card:visible");
+		await tp.evaluate(() => (window.__samePage = true));
+		const tcard = tp.locator('[data-section="popular"] .game-card[data-game="connect4"]');
+		await tcard.locator("h3").tap();
+		await tp.waitForFunction(() => document.body.dataset.view === "party", null, { timeout: TIMEOUT }).catch(() => {});
+		const went = { url: tp.url(), same: await tp.evaluate(() => !!window.__samePage) };
+		check(`${at}: one tap on a card opens that game's party screen (./?game=connect4&fresh=1), in the page`, quickStart(went.url, "connect4") && went.same, went);
+		await tp.locator(".party-choice, .quick-table, button:has-text('INVITE A FRIEND')").first().waitFor({ timeout: TIMEOUT }).catch(() => {});
+		check(`${at}: …its quick start, not a game already running`, await tp.evaluate(() => !document.querySelector(".game-frame")));
+		await tp.goto(site.url(ALL));
+		await tp.waitForSelector(".game-card:visible");
+		const isOpen = () => tcard.evaluate((c) => c.classList.contains("is-open"));
+		await longPress(tcard);
+		const fits = await settled(
+			() => tcard.locator(".card-play").evaluateAll((as) => as.map((a) => getComputedStyle(a.parentElement).opacity === "1" && a.getBoundingClientRect()).map((r) => r && { h: Math.round(r.height), right: Math.round(r.right) })),
+			(f) => f.every(Boolean),
+			3000,
+		); // a 0.15 s fade
+		check(`${at}: a long press shows a card's two buttons, 44px tall, inside the phone, without leaving the page`, (await isOpen()) && fits.length === 2 && fits.every((f) => f && f.h >= 44 && f.right <= w) && new URL(tp.url()).searchParams.get("tab") === "all", { fits, url: tp.url() });
+		await tcard.locator(".card-play", { hasText: "SINGLE PLAYER" }).tap();
+		await tp.waitForFunction(() => !!window.__party?.game, null, { timeout: TIMEOUT }).catch(() => {});
+		check(`${at}: …and its SINGLE PLAYER still plays against the bots`, await tp.evaluate(() => window.__party?.game === "connect4" && window.__party.room.getMembers().some((m) => m.id.startsWith("bot_"))), tp.url());
+		await tp.goto(site.url(ALL));
+		await tp.waitForSelector(".game-card:visible");
+		await longPress(tcard);
+		await longPress(tp.locator('[data-section="popular"] .game-card[data-game="neon-bid"]'));
+		check(`${at}: …a long press on another card closes the first`, !(await isOpen()));
+		const bid = tp.locator('[data-section="popular"] .game-card[data-game="neon-bid"]');
+		await bid.tap({ position: { x: 6, y: 6 } }); // its corner: not one of its buttons
+		check(`${at}: …a tap off the buttons of an open card closes it, and stays`, !(await bid.evaluate((c) => c.classList.contains("is-open"))) && new URL(tp.url()).searchParams.get("tab") === "all", tp.url());
+		// A sideways swipe along a row, starting on a card: the row scrolls,
+		// and no game opens. Real touch events (CDP), as a finger sends them.
+		const row = tp.locator('[data-section="popular"] .section-row');
+		await row.evaluate((r) => (r.scrollLeft = 0));
+		const box = await tcard.boundingBox();
+		const cdp = await touch.newCDPSession(tp);
+		const y = box.y + box.height / 2;
+		let x = Math.min(box.x + box.width - 10, w - 20);
+		await cdp.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [{ x, y }] });
+		for (let i = 0; i < 10; i++) {
+			x -= 18;
+			await cdp.send("Input.dispatchTouchEvent", { type: "touchMove", touchPoints: [{ x, y }] });
+			await tp.waitForTimeout(16);
+		}
+		await cdp.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+		await tp.waitForTimeout(600);
+		const swiped = { x: await row.evaluate((r) => r.scrollLeft), url: tp.url(), view: await tp.evaluate(() => document.body.dataset.view) };
+		check(`${at}: a sideways swipe that starts on a card scrolls its row and opens nothing`, swiped.x > 0 && swiped.view === "portal" && new URL(swiped.url).searchParams.get("tab") === "all", swiped);
+		// The same for a click that ends a drag: the row moved under the
+		// pointer between its down and its click (a slow swipe a browser
+		// still reports as a click).
+		const dragged = await tp.evaluate(() => {
+			const c = document.querySelector('[data-section="popular"] .game-card[data-game="connect4"]');
+			const r = c.parentElement;
+			const at = c.getBoundingClientRect();
+			const opt = { bubbles: true, clientX: at.left + 20, clientY: at.top + 20, pointerType: "touch" };
+			c.dispatchEvent(new PointerEvent("pointerdown", opt));
+			const from = r.scrollLeft;
+			r.scrollLeft = from + r.children[1].offsetLeft - r.children[0].offsetLeft; // a snap point: the row really moves
+			const moved = r.scrollLeft - from;
+			c.dispatchEvent(new MouseEvent("click", { ...opt, clientX: at.left + 22 }));
+			c.dispatchEvent(new PointerEvent("pointerup", opt));
+			return { moved, view: document.body.dataset.view };
+		});
+		await tp.waitForTimeout(300);
+		check(`${at}: …and a click that ends a scroll of its row opens nothing`, dragged.moved > 0 && dragged.view === "portal" && (await tp.evaluate(() => document.body.dataset.view)) === "portal", { dragged, url: tp.url() });
+		await touch.close();
+	}
+	// A mouse: a click on the card (off its buttons) does the same, and a
+	// drag across it does not.
+	await p.goto(site.url(ALL));
+	await p.waitForSelector(".game-card:visible");
+	const mcard = p.locator('[data-section="popular"] .game-card[data-game="connect4"]');
+	const mb = await mcard.boundingBox();
+	await p.mouse.move(mb.x + mb.width - 8, mb.y + 8);
+	await p.mouse.down();
+	await p.mouse.move(mb.x + 8, mb.y + 40, { steps: 6 });
+	await p.mouse.up();
+	await p.waitForTimeout(300);
+	check("a mouse drag across a card opens nothing", (await p.evaluate(() => document.body.dataset.view)) === "portal", p.url());
+	await mcard.click({ position: { x: 6, y: 6 } });
+	await p.waitForFunction(() => document.body.dataset.view === "party", null, { timeout: TIMEOUT }).catch(() => {});
+	check("a mouse click on a card, off its buttons, opens the game's party screen", quickStart(p.url(), "connect4"), p.url());
+	await p.goto(site.url(ALL));
+	await p.waitForSelector(".game-card:visible");
+	await p.locator('[data-section="popular"] .game-card[data-game="connect4"]').focus();
+	await p.keyboard.press("Enter");
+	await p.waitForFunction(() => document.body.dataset.view === "party", null, { timeout: TIMEOUT }).catch(() => {});
+	check("…and so does Enter on a card reached by keyboard", quickStart(p.url(), "connect4"), p.url());
+	// A slow phone: the play counts land after a card was long-pressed open. The
 	// row is not replaced under the finger (it closed the card, or slid
 	// another game beneath it); it is redrawn once the card closes, where
 	// it had been scrolled to.
@@ -362,12 +455,12 @@ try {
 			return { ids: r.dataset.ids, x: r.scrollLeft };
 		});
 		const bid = sp.locator('[data-section="popular"] .game-card[data-game="neon-bid"]');
-		await bid.locator("h3").tap();
+		await bid.dispatchEvent("contextmenu"); // a long press
 		release();
 		await sp.waitForFunction(() => !!localStorage.getItem("neon.plays"), null, { timeout: TIMEOUT });
 		await sp.waitForTimeout(400);
 		const during = await row.evaluate((r) => ({ ids: r.dataset.ids, x: r.scrollLeft, open: r.querySelector(".game-card.is-open")?.dataset.game ?? null, same: !!r.querySelector('.game-card[data-game="neon-bid"]').__tapped }));
-		check("a card tapped open stays open when the play counts land late (same card, same row, same scroll)", before.x > 0 && during.open === "neon-bid" && during.same && during.ids === before.ids && during.x === before.x, { before, during });
+		check("a card long-pressed open stays open when the play counts land late (same card, same row, same scroll)", before.x > 0 && during.open === "neon-bid" && during.same && during.ids === before.ids && during.x === before.x, { before, during });
 		await bid.tap({ position: { x: 6, y: 6 } }); // its corner: not one of its two buttons
 		await sp.waitForFunction(() => document.querySelector('[data-section="popular"] .game-card')?.dataset.game === "lokeshmohanty/sudoku", null, { timeout: TIMEOUT }).catch(() => {});
 		const after = await row.evaluate((r) => ({ ids: r.dataset.ids, x: r.scrollLeft, pending: r.dataset.pending ?? null }));
@@ -392,7 +485,7 @@ try {
 		["./?page=profile", null, null],
 	]) {
 		await p.goto(site.url(page));
-		await p.locator(".site-row").waitFor({ timeout: TIMEOUT });
+		await p.locator("[data-nav] .site-menu-list").waitFor({ state: "attached", timeout: TIMEOUT }); // nav.js's row, not the static first frame's
 		const read = () =>
 			p.evaluate(() => {
 				const box = (s) => document.querySelector(s)?.getBoundingClientRect();
@@ -425,9 +518,12 @@ try {
 		check(`${page}: Esc closes it, focus back on ☰`, await p.evaluate(() => document.querySelector(".site-menu-list").hidden && document.activeElement === document.querySelector(".site-menu-btn")));
 	}
 	await p.goto(site.url("index.html"));
-	await p.locator(".site-menu-btn").click();
+	await p.locator("[data-nav] .site-menu-list").waitFor({ state: "attached", timeout: TIMEOUT }); // not the static first frame's ☰
+	await p.locator("[data-nav] .site-menu-btn").click();
 	await p.mouse.click(200, 600);
-	check("a tap outside closes the menu", await p.evaluate(() => document.querySelector(".site-menu-list").hidden));
+	check("a tap outside closes the menu", await p.evaluate(() => document.querySelector(".site-menu-list")?.hidden === true));
+	await p.waitForTimeout(300);
+	check("…and does nothing else: the game card under it stays shut", (await p.evaluate(() => document.body.dataset.view)) === "portal", p.url());
 	await p.locator(".site-tab", { hasText: "Community" }).click();
 	await p.locator(".site-subtab.is-on").waitFor({ timeout: TIMEOUT });
 	check("Community opens on Collections", (await p.locator(".site-subtab.is-on").textContent()) === "Collections" && new URL(p.url()).searchParams.get("page") === "collections");
@@ -622,7 +718,7 @@ console.log("\nportal: My Games · All Games");
 		// the switch, held its row back, and My Games froze).
 		await pg.evaluate(() => ["connect4", "neon-bid"].forEach((id) => NeonArcade.stats.toggleFav(id)));
 		await pg.locator('[data-section="favs"] .game-card[data-game="connect4"]').waitFor({ timeout: TIMEOUT });
-		await pg.locator('[data-section="favs"] .game-card[data-game="connect4"] h3').tap();
+		await pg.locator('[data-section="favs"] .game-card[data-game="connect4"]').dispatchEvent("contextmenu"); // a long press
 		const opened = await settled(() => pg.locator('[data-section="favs"] .game-card.is-open').count(), (n) => n === 1, 3000);
 		await pg.locator(".site-subtab", { hasText: "All Games" }).click();
 		await pg.locator('[data-section="popular"]:not([hidden]) .game-card').first().waitFor({ timeout: TIMEOUT });

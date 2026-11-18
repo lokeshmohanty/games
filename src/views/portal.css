@@ -275,8 +275,9 @@
 }
 /*
   A card's two ways to play (lib/portal.js): over the card on hover, on
-  keyboard focus, or after a tap on a touch screen — no PLAY NOW button
-  to get to them (Lokesh, 2026-11-13).
+  keyboard focus, or after a long press on a touch screen — no PLAY NOW
+  button to get to them (Lokesh, 2026-11-13). A tap on the card itself
+  opens the game's party screen (Lokesh, 2026-11-18).
 */
 :where(.view-portal) .card-actions {
   position: absolute;
@@ -294,16 +295,23 @@
   transition: opacity 0.15s ease;
 }
 :where(.view-portal) .game-card:hover .card-actions,
-:where(.view-portal) .game-card:focus-within .card-actions,
+:where(.view-portal) .game-card:focus-visible .card-actions,
+:where(.view-portal) .game-card:has(:focus-visible) .card-actions,
 :where(.view-portal) .game-card.is-open .card-actions {
   opacity: 1;
   pointer-events: auto;
 }
-/* A touch screen "hovers" whatever was tapped last: only the tap counts. */
+/* A touch screen "hovers" (and focuses) whatever was tapped last: only a
+   long press counts, so a tap never lands on a button it just uncovered. */
 @media (hover: none) {
-  :where(.view-portal) .game-card:hover:not(.is-open):not(:focus-within) .card-actions {
+  :where(.view-portal) .game-card:hover:not(.is-open):not(:focus-visible):not(:has(:focus-visible)) .card-actions {
     opacity: 0;
     pointer-events: none;
+  }
+  :where(.view-portal) .game-card {
+    -webkit-touch-callout: none;
+    -webkit-user-select: none;
+    user-select: none;
   }
 }
 :where(.view-portal) .card-play {
