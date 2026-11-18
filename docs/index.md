@@ -567,9 +567,12 @@ A lost member:
 
   Without a room server, that, or LEAVE PARTY, is the way forward.
 - **Says when it is stranded.** A phone sworn to a candidate that is past its
-  deadline without a crown (`room.stranded`) cannot help elect anyone. The
-  screen says the party can't continue from here and offers NEW PARTY, not
-  TRY AGAIN.
+  deadline with no crown reaching the phone (`room.stranded`) cannot help
+  elect anyone. That candidate may also have won and carried on out of
+  reach. The screen says the phone gave its vote to a player it can't reach.
+  - With a room server, TRY AGAIN stays, because it may find them, and NEW
+    PARTY sits beside it.
+  - Without a room server, NEW PARTY and LEAVE PARTY are the way on.
 
 **Cases that are not splits.** An heir that left by its own goodbye is not a
 split: it is passed over after the wait, and the next in line takes the

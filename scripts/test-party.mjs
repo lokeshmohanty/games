@@ -835,43 +835,52 @@ try {
 	}
 	await p3.setViewportSize({ width: 390, height: 844 });
 	check("the lost screen fits 390x844 and 354x696 in every theme", !lostFits.length, lostFits.join("; "));
-	// Sworn to a candidate that never came back (net.js `stranded`): the
-	// screen says the party cannot continue and offers a new one, not TRY
-	// AGAIN — at both phone sizes, in every theme.
+	// Sworn to a candidate this phone can't reach (net.js `stranded`): it may
+	// have won and carried on, so with a room server TRY AGAIN stays and NEW
+	// PARTY joins it; without one, NEW PARTY (and LEAVE PARTY). Both, at both
+	// phone sizes, in every theme.
 	await p3.evaluate(() => {
 		const r = window.__party.room;
-		window.__keep = { key: r.voteKey, at: r.committedAt };
+		window.__keep = { key: r.voteKey, at: r.committedAt, iso: r.onIsolated };
 		r.voteKey = r.voteKey ?? "test|0|x|x";
 		r.committed.set(r.voteKey, "somebody-gone");
 		r.committedAt = performance.now() - 3_600_000;
-		r._emitParty();
 	});
 	const strandedFits = [];
-	for (const [w, hgt] of [[390, 844], [354, 696]]) {
-		await p3.setViewportSize({ width: w, height: hgt });
-		for (const theme of [{ theme: "neon" }, { theme: "paper", mode: "light" }, { theme: "paper", mode: "dark" }]) {
-			await p3.evaluate((t) => NeonArcade.theme.set(t), theme);
-			const fit = await p3.evaluate(() => {
-				const why = document.querySelector(".party-lost");
-				const box = why?.getBoundingClientRect();
-				const fresh = [...document.querySelectorAll(".lobby-row .neon-btn")].find((b) => b.textContent === "NEW PARTY")?.getBoundingClientRect();
-				return {
-					says: /can't continue/.test(why?.textContent ?? ""),
-					again: [...document.querySelectorAll("button")].some((b) => b.textContent === "TRY AGAIN"),
-					sideways: document.documentElement.scrollWidth > innerWidth,
-					fits: !!box && box.left >= 0 && box.right <= innerWidth && !!fresh && fresh.left >= 0 && fresh.right <= innerWidth,
-				};
-			});
-			if (!fit.says || fit.again || fit.sideways || !fit.fits) strandedFits.push(`${w}x${hgt} ${theme.theme}${theme.mode ? "/" + theme.mode : ""}: ${JSON.stringify(fit)}`);
+	for (const rs of [false, true]) {
+		await p3.evaluate((rs) => {
+			const r = window.__party.room;
+			r.onIsolated = rs ? () => {} : window.__keep.iso; // canRejoin follows it
+			r._emitParty();
+		}, rs);
+		for (const [w, hgt] of [[390, 844], [354, 696]]) {
+			await p3.setViewportSize({ width: w, height: hgt });
+			for (const theme of [{ theme: "neon" }, { theme: "paper", mode: "light" }, { theme: "paper", mode: "dark" }]) {
+				await p3.evaluate((t) => NeonArcade.theme.set(t), theme);
+				const fit = await p3.evaluate(() => {
+					const why = document.querySelector(".party-lost");
+					const box = why?.getBoundingClientRect();
+					const buttons = [...document.querySelectorAll(".lobby-row .neon-btn")].filter((b) => ["TRY AGAIN", "NEW PARTY"].includes(b.textContent));
+					return {
+						says: /vote to a player it can't reach/.test(why?.textContent ?? ""),
+						labels: buttons.map((b) => b.textContent).join(","),
+						sideways: document.documentElement.scrollWidth > innerWidth,
+						fits: !!box && box.left >= 0 && box.right <= innerWidth && buttons.every((b) => b.getBoundingClientRect().left >= 0 && b.getBoundingClientRect().right <= innerWidth),
+					};
+				});
+				const want = rs ? "TRY AGAIN,NEW PARTY" : "NEW PARTY";
+				if (!fit.says || fit.labels !== want || fit.sideways || !fit.fits) strandedFits.push(`${rs ? "rs" : "classic"} ${w}x${hgt} ${theme.theme}${theme.mode ? "/" + theme.mode : ""}: ${JSON.stringify(fit)}`);
+			}
 		}
 	}
 	await p3.setViewportSize({ width: 390, height: 844 });
-	check("sworn to a candidate that never came back: no TRY AGAIN, a NEW PARTY — fitting both phones in every theme", !strandedFits.length, strandedFits.join("; "));
+	check("sworn to a player it can't reach: TRY AGAIN and NEW PARTY with a room server, NEW PARTY without — fitting both phones in every theme", !strandedFits.length, strandedFits.join("; "));
 	await p3.evaluate(() => {
 		const r = window.__party.room;
 		r.committed.clear();
 		r.voteKey = window.__keep.key;
 		r.committedAt = window.__keep.at;
+		r.onIsolated = window.__keep.iso;
 		r._emitParty();
 	});
 	// The heir speaks (its record): the loss ends, and the same frame is back.
