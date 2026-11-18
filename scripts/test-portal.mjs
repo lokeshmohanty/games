@@ -159,13 +159,97 @@ try {
 	check("…and a link with ?q= opens searched", (await p.locator("[data-search]").inputValue()) === "tag:strategy" && (await shown()).length > 0 && (await shown()).length < all);
 
 	console.log("\nportal: one page (src/views/Portal.tsx)");
-	await p.goto(site.url("index.html"));
-	await p.waitForSelector(".game-card:visible");
-	await p.evaluate(() => (window.__samePage = true));
-	p.once("dialog", (d) => d.accept("12-34-56"));
-	await p.locator(".join-code-btn").click();
-	await p.waitForFunction(() => document.body.dataset.view === "party", null, { timeout: TIMEOUT });
-	check("JOIN WITH A CODE opens the party in the page, with the code", (await p.evaluate(() => window.__samePage)) && new URL(p.url()).hash === "#c=123456", p.url());
+	// JOIN WITH A CODE (src/JoinCode.tsx): an in-page dialog, never
+	// prompt() (Lokesh's phone, 2026-11-15: no number keypad, a wrong code
+	// popped another native dialog). The room server is the page's own mock
+	// (?mockroom=1): a code nobody holds is refused as the real one would.
+	for (const [w, h] of [
+		[390, 844],
+		[354, 696],
+	]) {
+		const jc = await browser.newContext({ viewport: { width: w, height: h }, hasTouch: true, isMobile: true });
+		await jc.route("**/api/stats/summary", (r) => r.abort());
+		const jp = await jc.newPage();
+		let native = 0;
+		jp.on("dialog", (d) => (native++, d.dismiss().catch(() => {})));
+		jp.on("pageerror", (e) => check(`no page error (${e.message})`, false));
+		await jp.goto(site.url("index.html?mockroom=1"));
+		await jp.locator(".join-code-btn").waitFor({ timeout: TIMEOUT });
+		await jp.evaluate(() => (window.__samePage = true));
+		const dlg = jp.locator("dialog.join-code[open]");
+		const field = jp.locator("#join-code-field");
+		const view = () => jp.evaluate(() => document.body.dataset.view);
+		await jp.locator(".join-code-btn").tap();
+		await dlg.waitFor({ timeout: TIMEOUT });
+		const look = await jp.evaluate(() => {
+			const d = document.querySelector("dialog.join-code");
+			const f = document.querySelector("#join-code-field");
+			const r = d.getBoundingClientRect();
+			return { modal: d.matches(":modal"), focus: document.activeElement === f, inputmode: f.inputMode, auto: f.autocomplete, inside: r.left >= 0 && r.right <= innerWidth && r.top >= 0 && r.bottom <= innerHeight, label: f.labels?.[0]?.textContent ?? "" };
+		});
+		const at = `${w}x${h}`;
+		check(`${at}: JOIN WITH A CODE opens an in-page dialog (modal, on screen), the field focused, a number keypad (inputmode numeric, one-time-code)`, look.modal && look.focus && look.inputmode === "numeric" && look.auto === "one-time-code" && look.inside && /six-digit/.test(look.label), look);
+		const floors = await phoneFloors(jp, "dialog.join-code");
+		check(`${at}: …every button 44px, every line 12px`, floors.measured.taps >= 4 && !floors.taps.length && !floors.text.length, floors);
+		await jp.keyboard.press("Escape");
+		const esc = await settled(() => jp.evaluate(() => ({ open: !!document.querySelector("dialog.join-code"), back: document.activeElement === document.querySelector(".join-code-btn") })), (x) => !x.open, 3000);
+		check(`${at}: Escape closes it, focus back on JOIN WITH A CODE`, !esc.open && esc.back && (await view()) === "portal", esc);
+		if (w !== 390) {
+			check(`${at}: no native dialog at all`, native === 0, native);
+			await jc.close();
+			continue;
+		}
+		await jp.locator(".join-code-btn").tap();
+		await jp.locator("dialog.join-code button", { hasText: "CANCEL" }).tap();
+		check("CANCEL closes it", await settled(() => jp.locator("dialog.join-code").count(), (n) => n === 0, 3000).then((n) => n === 0));
+		await jp.locator(".join-code-btn").tap();
+		await field.pressSequentially("12");
+		await jp.keyboard.press("Enter");
+		const short = await jp.evaluate(() => ({ open: !!document.querySelector("dialog.join-code[open]"), error: document.querySelector(".join-code-error").textContent, invalid: document.querySelector("#join-code-field").getAttribute("aria-invalid") }));
+		check("too few digits: said under the field, the dialog stays, nothing navigates", short.open && /six digits/.test(short.error) && short.invalid === "true" && (await view()) === "portal", short);
+		await field.fill("");
+		await jp.keyboard.insertText("Code: 12-34-56 7");
+		check("a pasted code keeps its six digits (\"Code: 12-34-56 7\" → 123456)", (await field.inputValue()) === "123456", await field.inputValue());
+		await jp.keyboard.press("Enter");
+		const refused = await settled(
+			() => jp.evaluate(() => ({ open: !!document.querySelector("dialog.join-code[open]"), error: document.querySelector(".join-code-error")?.textContent ?? "", focus: document.activeElement?.id, view: document.body.dataset.view })),
+			(x) => !!x.error,
+			TIMEOUT,
+		);
+		check("a code nobody holds (expired): the reason under the field, the dialog still open, the field ready for another", refused.open && /no longer meeting|expired/.test(refused.error) && refused.focus === "join-code-field", refused);
+		// A party that is meeting, hosted on the page's own mock server: its
+		// code is tried in place (the party's joinCode), with no page load.
+		const code = await jp.evaluate(async () => {
+			const made = await NeonArcade.hostRoom({ name: "Host" });
+			window.__host = made;
+			localStorage.removeItem("neon.room"); // the host's seat is not ours
+			return made.code;
+		});
+		await field.fill(code);
+		await jp.keyboard.press("Enter");
+		const joined = await settled(
+			() => jp.evaluate(() => ({ open: !!document.querySelector("dialog.join-code"), members: window.__party?.room?.getMembers?.().length ?? 0, view: document.body.dataset.view, same: !!window.__samePage })),
+			(x) => !x.open && x.members === 2,
+			TIMEOUT,
+		);
+		check("…then a live code: joined, the dialog gone, the party on screen, in the same page", !joined.open && joined.members === 2 && joined.view === "party" && joined.same && !new URL(jp.url()).hash, { ...joined, url: jp.url() });
+		await jc.close();
+		// CANCEL after a refused code leaves the party screen for the portal.
+		const kc = await browser.newContext({ viewport: { width: w, height: h }, hasTouch: true, isMobile: true });
+		await kc.route("**/api/stats/summary", (r) => r.abort());
+		const kp = await kc.newPage();
+		kp.on("dialog", (d) => (native++, d.dismiss().catch(() => {})));
+		await kp.goto(site.url("index.html?mockroom=1"));
+		await kp.locator(".join-code-btn").tap();
+		await kp.locator("#join-code-field").fill("654321");
+		await kp.keyboard.press("Enter");
+		await kp.waitForFunction(() => !!document.querySelector(".join-code-error")?.textContent, null, { timeout: TIMEOUT });
+		await kp.locator("dialog.join-code button", { hasText: "CANCEL" }).tap();
+		const home = await settled(() => kp.evaluate(() => document.body.dataset.view), (v) => v === "portal", 5000);
+		check("CANCEL after a refused code goes back to the portal", home === "portal", { home, url: kp.url() });
+		check("no native dialog at all (prompt, alert)", native === 0, native);
+		await kc.close();
+	}
 	await p.goto(site.url("index.html"));
 	await p.waitForSelector(".game-card:visible");
 	await p.evaluate(() => (window.__samePage = true));
@@ -390,6 +474,20 @@ try {
 					};
 				});
 				check(`Firefox, text at ${scale}%, ${w}x${h}, ${page}: tabs clear of ☰ (the lit ${lit} in view), sub-tabs apart and 44px, no sideways scroll`, bar.clear && bar.lit === lit && bar.litInView && bar.tabsH >= 43 && bar.subsApart && bar.subsInside && !(page.startsWith("index") && bar.sideways), bar);
+			}
+			if (scale === 200 && w === 354) {
+				// JOIN WITH A CODE in Firefox, its text at 200%: still 44px and
+				// 12px, and a refused code said in the dialog.
+				await fp.goto(site.url("index.html?mockroom=1"));
+				await fp.locator(".join-code-btn").tap();
+				await fp.locator("dialog.join-code[open]").waitFor({ timeout: TIMEOUT });
+				const floors = await phoneFloors(fp, "dialog.join-code");
+				await fp.keyboard.insertText("12 34 56");
+				await fp.keyboard.press("Enter");
+				const said = await fp
+					.waitForFunction(() => document.querySelector(".join-code-error")?.textContent, null, { timeout: TIMEOUT })
+					.then((h) => h.jsonValue(), () => "");
+				check("Firefox, text at 200%, 354x696: JOIN WITH A CODE's buttons 44px, its lines 12px, a refused code said in place", floors.measured.taps >= 4 && !floors.taps.length && !floors.text.length && /no longer meeting/.test(said) && (await fp.locator("dialog.join-code[open]").count()) === 1, { floors, said });
 			}
 			await fc.close();
 		}

@@ -1125,6 +1125,7 @@ canvas {
   letter-spacing: 1px;
 }
 .neon-sheet-x {
+  flex: none; /* 44px still, beside a title a large text size makes long */
   width: 44px;
   height: 44px;
   border: none;
@@ -1146,6 +1147,51 @@ canvas {
   margin: 12px 0 0;
   color: var(--muted);
   font-size: 0.8rem;
+}
+/* JOIN WITH A CODE (src/JoinCode.tsx): six digits, set like the party
+   code they copy (tabular, spaced), and the reason a code was refused. */
+.join-code .neon-sheet-text {
+  display: block;
+}
+.join-code-field {
+  display: block;
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 56px;
+  padding: 8px 12px;
+  border: 2px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface-2);
+  color: var(--accent);
+  font: 600 1.6rem var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.3em;
+  text-align: center;
+}
+.join-code-field::placeholder {
+  color: var(--ink-3);
+  opacity: 0.5;
+}
+.join-code-field:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 12px var(--accent-glow);
+}
+.join-code-field[aria-invalid="true"] {
+  border-color: var(--danger);
+}
+.join-code-error {
+  min-height: 1.4em;
+  margin: 8px 0 12px;
+  color: var(--danger);
+  font-size: 0.85rem;
+  line-height: 1.4;
+}
+.join-code-actions {
+  justify-content: flex-end;
+}
+.join-code-actions .neon-btn {
+  min-height: 44px;
 }
 /* lib/rules.js: a game's RULES.md over the game ("?" in .top-actions). The
    body scrolls between a fixed head and a fixed GOT IT. */
