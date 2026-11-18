@@ -4,7 +4,7 @@
 // 390x844 (and Lokesh's phone, 354x696).
 
 import { existsSync, readFileSync } from "node:fs";
-import { serve } from "./serve.mjs";
+import { serve, settled } from "./serve.mjs";
 import { loadPlaywright } from "./playwright.mjs";
 
 const TIMEOUT = 20_000;
@@ -78,13 +78,19 @@ try {
 	check("on a phone a section is one row that scrolls sideways inside itself", rows.widest.scrollWidth > rows.widest.clientWidth, rows.widest);
 	check("…and the page never does", !rows.sideways && rows.inside, rows);
 	// Only what is on screen plays: a card per game per section is dozens.
+	// 1.5 s for any off-screen clip to start (it must not), then until the
+	// on-screen ones have.
 	await p.waitForTimeout(1500);
-	const playing = await p.evaluate(() =>
-		[...document.querySelectorAll("video.card-preview")].map((v) => {
-			const r = v.getBoundingClientRect();
-			const seen = Math.max(0, Math.min(r.bottom, innerHeight) - Math.max(r.top, 0)) * Math.max(0, Math.min(r.right, innerWidth) - Math.max(r.left, 0));
-			return { playing: !v.paused, half: r.width * r.height > 0 && seen / (r.width * r.height) >= 0.45 };
-		}),
+	const playing = await settled(
+		() =>
+			p.evaluate(() =>
+				[...document.querySelectorAll("video.card-preview")].map((v) => {
+					const r = v.getBoundingClientRect();
+					const seen = Math.max(0, Math.min(r.bottom, innerHeight) - Math.max(r.top, 0)) * Math.max(0, Math.min(r.right, innerWidth) - Math.max(r.left, 0));
+					return { playing: !v.paused, half: r.width * r.height > 0 && seen / (r.width * r.height) >= 0.45 };
+				}),
+			),
+		(vs) => vs.some((v) => v.playing),
 	);
 	check("only the cards on screen play their previews", playing.filter((v) => v.playing).length > 0 && playing.every((v) => !v.playing || v.half), { videos: playing.length, playing: playing.filter((v) => v.playing).length });
 	check("…the rest wait", playing.filter((v) => !v.playing).length >= 10);
@@ -213,13 +219,11 @@ try {
 	const visible = () => c4card.locator(".card-actions").evaluate((a) => getComputedStyle(a).opacity === "1");
 	check("hidden until wanted", !(await visible()));
 	await c4card.hover();
-	await p.waitForTimeout(250);
-	check("a mouse hovering shows them", await visible());
+	check("a mouse hovering shows them", await settled(visible, Boolean, 3000)); // an opacity transition
 	await p.mouse.move(1, 1);
 	await p.keyboard.press("Tab");
 	await c4card.focus();
-	await p.waitForTimeout(250);
-	check("…and so does keyboard focus", await visible());
+	check("…and so does keyboard focus", await settled(visible, Boolean, 3000));
 	await c4card.locator(".card-play", { hasText: "SINGLE PLAYER" }).click();
 	await p.waitForSelector(".game-frame", { timeout: TIMEOUT });
 	check("SINGLE PLAYER goes straight into the game, bots seated: no second choice, no START", (await p.locator(".party-choice").count()) === 0 && (await p.evaluate(() => window.__party.room.getMembers().some((m) => m.id.startsWith("bot_")))));
@@ -242,12 +246,12 @@ try {
 	await tp.waitForSelector(".game-card:visible");
 	const tcard = tp.locator('.game-card[data-game="connect4"]').first();
 	await tcard.locator("h3").tap();
-	await tp.waitForTimeout(250);
-	check("on a phone a tap opens a card's choices, without leaving the page", (await tcard.evaluate((c) => c.classList.contains("is-open"))) && tp.url().endsWith("index.html?page=games&tab=all"), tp.url());
+	const isOpen = () => tcard.evaluate((c) => c.classList.contains("is-open"));
+	check("on a phone a tap opens a card's choices, without leaving the page", (await settled(isOpen, Boolean, 3000)) && tp.url().endsWith("index.html?page=games&tab=all"), tp.url());
 	const fits = await tcard.locator(".card-play").evaluateAll((as) => as.map((a) => a.getBoundingClientRect()).map((r) => ({ h: Math.round(r.height), right: Math.round(r.right) })));
 	check("…two buttons, 44px tall, inside the phone", fits.length === 2 && fits.every((f) => f.h >= 44 && f.right <= 390), fits);
 	await tp.locator('.game-card[data-game="neon-bid"] h3').first().tap();
-	check("…and opening another card closes the first", !(await tcard.evaluate((c) => c.classList.contains("is-open"))));
+	check("…and opening another card closes the first", !(await settled(isOpen, (open) => !open, 3000)));
 	await touch.close();
 	// A slow phone: the play counts land after a card was tapped open. The
 	// row is not replaced under the finger (it closed the card, or slid
@@ -406,6 +410,7 @@ console.log("\nportal: My Games · All Games");
 		const frame = () =>
 			pg.evaluate(() => {
 				const box = (n) => {
+					if (!n) return null;
 					const r = n.getBoundingClientRect();
 					return [Math.round(r.left), Math.round(r.top), Math.round(r.width), Math.round(r.height)].join(",");
 				};
@@ -422,7 +427,10 @@ console.log("\nportal: My Games · All Games");
 		const first = await frame();
 		await pg.unroute(/\/app\/[^/]+\.js(\?|$)/);
 		await pg.goto(site.url("index.html"));
-		await pg.locator(".site-subtab.is-on").waitFor({ timeout: TIMEOUT });
+		// The app's own row and heading, not the static frame's: that one has
+		// a lit sub-tab too, and the app's heading can follow its nav (a
+		// runner read no h1 here, CI run 44143511384).
+		await pg.waitForFunction(() => !document.querySelector(".boot") && document.querySelector("[data-nav] .site-subtab.is-on") && document.querySelector("main h1"), null, { timeout: TIMEOUT }).catch(() => {});
 		const drawn = await frame();
 		const other = want === "mine" ? "all" : "mine";
 		check(`first paint (${want === "mine" ? "a game played" : "a first visit"}): the static frame lights ${want === "mine" ? "My Games" : "All Games"}, as the app does`, first.boot && first.bg[want] === drawn.bg[want] && first.bg[other] === drawn.bg[other] && first.bg[want] !== first.bg[other] && drawn.on === want, { first, drawn });
@@ -472,14 +480,13 @@ console.log("\nportal: My Games · All Games");
 		await pg.evaluate(() => ["connect4", "neon-bid"].forEach((id) => NeonArcade.stats.toggleFav(id)));
 		await pg.locator('[data-section="favs"] .game-card[data-game="connect4"]').waitFor({ timeout: TIMEOUT });
 		await pg.locator('[data-section="favs"] .game-card[data-game="connect4"] h3').tap();
-		const opened = await pg.locator('[data-section="favs"] .game-card.is-open').count();
+		const opened = await settled(() => pg.locator('[data-section="favs"] .game-card.is-open').count(), (n) => n === 1, 3000);
 		await pg.locator(".site-subtab", { hasText: "All Games" }).click();
 		await pg.locator('[data-section="popular"]:not([hidden]) .game-card').first().waitFor({ timeout: TIMEOUT });
 		await pg.evaluate(() => NeonArcade.stats.toggleFav("connect4"));
 		await pg.locator(".site-subtab", { hasText: "My Games" }).click();
 		await pg.locator('[data-section="favs"]:not([hidden]) .game-card').first().waitFor({ timeout: TIMEOUT });
-		await pg.waitForTimeout(300);
-		const back = { favs: await favs(), open: await pg.locator(".game-card.is-open").count() };
+		const back = await settled(async () => ({ favs: await favs(), open: await pg.locator(".game-card.is-open").count() }), (b) => b.favs === "neon-bid" && b.open === 0, 5000);
 		check("a card left open, a sub-tab away, a star changed: My Games is current on return", opened === 1 && back.favs === "neon-bid" && back.open === 0, { opened, back });
 		await c.close();
 	}
@@ -862,11 +869,17 @@ console.log("\nportal: My Games · All Games");
 	await cp.goto(site.url("index.html"));
 	await cp.waitForSelector(".game-card:visible");
 	await cp.evaluate(() => NeonArcade.catalogs);
-	await cp.waitForTimeout(1500);
-	const firstScreen = await cp.evaluate(() =>
-		[...document.querySelectorAll("video.card-preview")]
-			.filter((v) => !v.paused)
-			.map((v) => ({ game: v.closest(".game-card").dataset.game, src: v.currentSrc, poster: !!v.poster, ready: v.readyState })),
+	// A clip plays (not paused) from play(), before its fetch and decode
+	// have landed: until every playing one has a frame to show.
+	const firstScreen = await settled(
+		() =>
+			cp.evaluate(() =>
+				[...document.querySelectorAll("video.card-preview")]
+					.filter((v) => !v.paused)
+					.map((v) => ({ game: v.closest(".game-card").dataset.game, src: v.currentSrc, poster: !!v.poster, ready: v.readyState })),
+			),
+		(vs) => vs.length > 0 && vs.every((v) => v.poster && v.src.startsWith("blob:") && v.ready >= 2),
+		15_000,
 	);
 	check("at 390x844 the first screen plays its previews, over their posters", firstScreen.length > 0 && firstScreen.every((v) => v.poster && v.src.startsWith("blob:") && v.ready >= 2), firstScreen);
 	await cp.evaluate(async () => {
