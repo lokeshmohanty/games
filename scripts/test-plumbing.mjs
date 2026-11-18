@@ -53,7 +53,8 @@ function linkPair(a, b) {
 		peerId: other.selfId,
 		closed: false,
 		send(env) {
-			if (this.closed) return;
+			// A muted room (its uplink dead) sends nothing.
+			if (this.closed || self.__mute) return;
 			const copy = structuredClone(env);
 			wire.push({ from: self.selfId, to: other.selfId, env: copy });
 			// A frozen room (a tab in the background) hears nothing.
@@ -1103,23 +1104,103 @@ console.log("\na split party, election re-reviewed: keys, lapsing grants, retrie
 	for (const r of [a, b, c, d]) r.leave();
 }
 
+
+// ---------------------------------------------------------------------------
+console.log("\na split party, with a commit: acknowledged grants never lapse");
+
 {
-	// An election message that claims a neighbour as its sender but arrives
-	// through somebody else is dropped (the neighbour's own copy comes over
-	// its own link). Only a narrowing: `f` is unsigned.
-	const [h, a, b, c] = await party(["Host", "Ana", "Bo", "Cy"], fullMesh(4), E);
+	// Ana gets every grant and crowns — but nothing she sends after her
+	// request gets out. Her voters' grants lapsed and Bo won too: two crowns.
+	// Now she must commit and hear a quorum acknowledge first; her commit
+	// never leaves, so she never crowns, and Bo is elected once the grants
+	// lapse.
+	const [h, a, b, c, d] = await party(["Host", "Ana", "Bo", "Cy", "Dee"], fullMesh(5), E);
+	const send = a._send.bind(a);
+	a._send = (env, from) => {
+		send(env, from);
+		if (env.__c) a.__mute = true;
+	};
+	h.leave();
+	await sleep(4000);
+	const w = crowns([a, b, c, d]);
+	check("a winner whose record never gets out: never two crowns", w.split(",").filter(Boolean).length <= 1, w);
+	check("…and the party is not lost for it: the next in line is elected", w === "Bo" && [c, d].every((r) => r.hostId() === b.selfId), w);
+	for (const r of [a, b, c, d]) r.leave();
+}
+
+{
+	// Ana commits and her voters acknowledge, but she dies before their
+	// acknowledgements reach her: they are bound to her for good, so nobody
+	// else is elected (the narrow window a commit costs), and never two.
+	const [h, a, b, c, d] = await party(["Host", "Ana", "Bo", "Cy", "Dee"], fullMesh(5), E);
+	const send = a._send.bind(a);
+	a._send = (env, from) => {
+		send(env, from);
+		if (env.__ck) {
+			a.__mute = true;
+			a.__frozen = true;
+		}
+	};
+	h.leave();
+	await sleep(3000);
+	const w = crowns([a, b, c, d]);
+	check("a candidate that dies after its commit: no crown, and its voters stay bound", !w && [b, c, d].every((r) => r.committed.get(r.voteKey) === a.selfId), `${w} ${[b, c, d].map((r) => r.committed.get(r.voteKey) === a.selfId).join()}`);
+	for (const r of [a, b, c, d]) r.leave();
+}
+
+/** A half-dead link: `from`'s end still sends into it, and nothing arrives. */
+const halfDead = (from, to) => {
+	from.links.get(to.selfId).send = () => {};
+};
+
+{
+	// Ana's link to Bo is half dead (nothing she sends him arrives), and Cy is
+	// frozen: Ana needs Bo. Her request and commit reach him through Dee.
+	const [h, a, b, c, d] = await party(["Host", "Ana", "Bo", "Cy", "Dee"], fullMesh(5), { heirWaitMs: 1000, lostRetryMs: [] });
+	c.__frozen = true;
+	d._asked = () => {}; // Dee carries messages but grants nobody
+	halfDead(a, b);
+	h.leave();
+	await sleep(600);
+	check("a half-dead link from the candidate: its request and commit still arrive (flooded)", crowns([a, b, d]) === "Ana" && b.committed.get(b.voteKey) === a.selfId, crowns([a, b, d]) || "none");
+	for (const r of [a, b, c, d]) r.leave();
+}
+
+{
+	// Bo's link to Ana is half dead: his grant and acknowledgement still
+	// reach her through Dee.
+	const [h, a, b, c, d] = await party(["Host", "Ana", "Bo", "Cy", "Dee"], fullMesh(5), { heirWaitMs: 1000, lostRetryMs: [] });
+	c.__frozen = true;
+	d._asked = () => {};
+	halfDead(b, a);
+	h.leave();
+	await sleep(600);
+	check("a half-dead link to the candidate: grants and acknowledgements still arrive (flooded)", crowns([a, b, d]) === "Ana", crowns([a, b, d]) || "none");
+	for (const r of [a, b, c, d]) r.leave();
+}
+
+{
+	// Ana stands without a quorum (Cy and Eve frozen, Dee still holding the
+	// host's link: two of five) and releases; her link to Bo is half dead.
+	// Bo is freed by the release, through Dee, well before his grant would
+	// lapse.
+	const [h, a, b, c, d, e] = await party(["Host", "Ana", "Bo", "Cy", "Dee", "Eve"], fullMesh(6), { heirWaitMs: 1000, lostRetryMs: [] });
+	c.__frozen = true;
+	e.__frozen = true;
+	halfDead(a, b);
 	h.__frozen = true;
 	h.detach();
-	for (const r of [a, b, c]) {
+	for (const r of [a, b]) {
 		const l = r.links.get(h.selfId);
 		if (l) r._linkClosed(l);
 	}
-	const key = b._voteKey(h.selfId);
-	const fromCy = b.links.get(c.selfId);
-	b._inbound(fromCy, { __c: key, r: 7, f: a.selfId, t: null, id: "forged-1", h: 2 });
-	await sleep(20);
-	check("a request relayed in a neighbour's name is not granted", !(b.granted.get(key)?.round === 7), JSON.stringify(b.granted.get(key) ?? null));
-	for (const r of [a, b, c]) r.leave();
+	a._applyGone(h.selfId);
+	b._applyGone(h.selfId);
+	await sleep(300);
+	const held = b.granted.get(b.voteKey)?.n === a.selfId;
+	await sleep(1100); // Ana's window ends at 1 s: she releases
+	check("a half-dead link from the candidate: its release still frees the voter", held && !a.isHost() && b.granted.get(b.voteKey)?.n !== a.selfId, `held=${held} now=${b.granted.get(b.voteKey)?.n === a.selfId} anaHost=${a.isHost()}`);
+	for (const r of [a, b, c, d, e]) r.leave();
 }
 
 console.log(failures ? `\n${failures} failing\n` : "\nall passing\n");

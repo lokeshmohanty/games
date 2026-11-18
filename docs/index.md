@@ -439,19 +439,37 @@ seat that its relink had cleared. `_successor` skips:
 A member gone by its own goodbye since the record is not on the record
 either: if it was the heir, it is passed over after the wait.
 
-**An election decides who may crown** (2026-11-17; Raft's vote, without
-terms). The member named stands for the crown: it grants itself and asks
-everyone (`__c`). Every member grants **one** candidate per vacancy and
-replies (`__gr`, relayed). A candidate crowns when its grants are more than
-half of the record's humans, or exactly half with the first heir among them.
-The old crown holder is left out of both sides of the fraction.
+**An election decides who may crown** (2026-11-17/18; Raft's vote, without
+terms). It has two phases.
 
-Grant sets are disjoint, so at most one candidate ever crowns: at most one
-can hold more than half, and two exact halves cannot both hold the first
-heir. An earlier version counted who had said "here" through the mesh
-instead. A member that reached both sides before a split was counted twice,
-and a review got two crowns that way, three once. Any presence count fails
-like that.
+1. **Grants.** The member named stands: it grants itself and asks everyone
+   (`__c`). Every member grants **one** candidate per vacancy (`__gr`). A
+   candidate counts grants only inside the heir's wait from when it stood.
+2. **Commit.** With a quorum of grants, the candidate commits (`__ck`). A
+   voter that still holds its grant to that candidate acknowledges (`__ka`),
+   and is then bound to it for that vacancy **for good**. From then on the
+   voter's grant never lapses, it grants nobody else, and it acknowledges no
+   other commit. The candidate crowns only on a quorum of acknowledgements.
+
+A quorum is more than half of the record's humans, or exactly half with the
+tie-break heir among them. The old crown holder is left out of both sides of
+the fraction.
+
+**Why there is never a second crown.** Any two quorums of one vacancy share a
+member, and that member acknowledges at most one commit, so at most one
+candidate ever crowns, however late its record gets out. Grants alone were
+not enough. A winner whose record never left kept its voters only until
+their grants lapsed, and then a second candidate won too (2026-11-18). An
+earlier version counted who had said "here" through the mesh instead. A
+member that reached both sides before a split was counted twice, which gave
+two crowns, and three once. Any presence count fails like that.
+
+**Messages are re-sent and flooded.** Election messages are not acknowledged
+by the transport. A candidate repeats its request or commit every 2 s
+(`REASK_MS`) while it matters, and says a release three times. Voters answer
+a repeat as they answered the first. The messages go round the whole mesh
+rather than only to the members the sender could not reach itself, so a
+half-dead link loses none of them.
 
 Members vote only on an equal key: who left, the record's term, the
 tie-break heir and the record's humans. Two records of one term can differ,
@@ -471,11 +489,14 @@ It waits for the crown's record, and is lost after the heir's wait. A member
 still linked to the host that left grants nobody, because the host is not
 gone for it.
 
-**Grants lapse.** A voter frees its grant twice the heir's wait after it was
-asked, on its own clock. A candidate counts a grant only inside the heir's
-wait from when it stood, by both its monotonic and its wall clock. The
-request reaches a voter after the candidate stood, so a grant the candidate
-still counts has not lapsed, and stays exclusive.
+**Grants lapse, unless acknowledged.** A voter frees its grant twice the
+heir's wait after it was asked, on its own clock, unless it acknowledged that
+candidate's commit. A candidate counts grants only inside the heir's wait
+from when it stood, by both its monotonic and its wall clock. A voter
+acknowledges only while it still holds the grant. The candidate waits for
+acknowledgements until every grant it holds could have lapsed, then gives up
+and releases the rest. Crown safety rests on the commit, not on these clocks.
+The clocks only keep a quorum of grants meaningful when the commit is made.
 
 - **Background clocks.** Timers can only fire late, which frees a grant
   later. That is safe.
@@ -485,9 +506,16 @@ still counts has not lapsed, and stays exclusive.
 - **Residual.** A backward jump of the wall clock during a candidate's sleep
   could defeat both checks.
 
-Lapsing is what stops one candidate whose tab dies after asking, which never
-releases, from leaving everyone bound to it for good. Members that granted a
-named heir wait for their grant to lapse before naming the next.
+**Liveness.**
+
+- **A candidate that dies before committing** never releases. Its grants
+  lapse, and the next in line is elected after about twice the heir's wait
+  (about 20 s).
+- **A candidate that dies between its commit and its crown** leaves the
+  voters that acknowledged bound to it for good. That quorum cannot elect
+  anyone else, so the window is narrower, but it costs the vacancy.
+- Members that granted a named heir wait for their grant to lapse before
+  naming the next.
 
 **A refused request is kept.** It is refused while the voter still holds the
 link of the member that left, or while the voter's grant is given. It is
@@ -565,12 +593,10 @@ malicious member. The sender field `f` is unsigned, so `__c`, `__gr` and
 message can. Signing control messages with members' keys is the planned
 follow-up.
 
-As a cheap narrowing, an election message is taken only over its sender's
-own link, or relayed only when we hold no link to that sender (the rule `__i`
-introductions follow). A copy that claims a neighbour but arrives through
-somebody else is dropped unseen. Tested in test-plumbing ("a split party",
-"…reviewed", "…re-reviewed", "…by election", "…election re-reviewed") and
-test-party (the lost screen).
+A narrowing, which took election messages only over the sender's own link,
+was dropped: it lost them on a half-dead link, and it never stopped forgery. Tested in test-plumbing ("a split party",
+"…reviewed", "…re-reviewed", "…by election", "…election re-reviewed",
+"…with a commit") and test-party (the lost screen).
 
 A link reported `disconnected` gets 3 s to recover before it counts as dropped,
 because a phone on a briefly lost signal often recovers the same connection.

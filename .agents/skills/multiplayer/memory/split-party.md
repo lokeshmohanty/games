@@ -18,29 +18,40 @@ How net.js does it (docs/index.md "A split party"):
 - **One record, nothing local.** All of those marks come from the record
   itself. Our copy is never read: a relink clears `reconnecting` locally, and
   a review found two sides naming different heirs, both crowning.
-- **Who may crown: an election.** This replaced counting "here" messages,
-  which double-counted members across a split: two crowns, three once.
-  - A named candidate grants itself and asks (`__c`). Each member grants
-    **one** candidate per vacancy key (`granted`) and replies (`__gr`).
-  - The candidate crowns on more than half of the record's humans, or
-    exactly half including `firstHeir`. Grant sets are disjoint, so there is
-    never a second crown.
+- **Who may crown: an election in two phases.** This replaced counting
+  "here" messages, which double-counted members across a split: two crowns,
+  three once.
+  - **Grants:** a named candidate grants itself and asks (`__c`). Each
+    member grants **one** candidate per vacancy key (`granted`) and replies
+    (`__gr`).
+  - **Commit:** with a grant quorum, the candidate broadcasts `__ck`. A
+    voter still holding its grant acknowledges (`__ka`) and is bound for
+    good (`committed`). The candidate crowns only on an acknowledgement
+    quorum.
+  - **Safety:** quorums intersect, and the shared member acknowledges at most
+    one commit per key. Grants alone failed when a winner's record never got
+    out: the grants lapsed and a second candidate won.
+  - **Quorum:** more than half of the record's humans, or exactly half
+    including the tie-break heir.
+  - **Delivery:** election messages flood the whole mesh (not only "missing"
+    members). Requests and commits repeat every `REASK_MS`, and a release is
+    said three times. A direct-link-only narrowing lost them on half-dead
+    links and was dropped.
   - The key is: vacated, the record's term, the **tie-break heir** and the
     human ids. Members vote only on an equal key.
   - The tie-break heir is the oldest human by `joined`, never by
     `away`/`reconnecting`. Those change within a term, and a record marking
     the heir away that reached one side only made two keys, then two crowns.
-  - **Grants lapse.** The voter frees a grant `2 × HEIR_WAIT_MS` after being
-    asked. The candidate counts only within `HEIR_WAIT_MS` of standing, by
+  - **Grants lapse (unless acknowledged).** The voter frees a grant
+    `2 × HEIR_WAIT_MS` after being asked. The candidate counts only within `HEIR_WAIT_MS` of standing, by
     both the monotonic and the wall clock. A dead candidate no longer binds
     everyone. Members that granted the named heir wait for the lapse before
     naming the next.
   - **Refused requests are kept** (`asks`): one refused because the host's
     link lingered, or because our grant was given, is granted when that
     changes.
-  - **Narrowing, not defence:** election messages are accepted only over the
-    sender's own link, or relayed when we have none to it. `f` is unsigned;
-    signing is the planned follow-up.
+  - **Threat model:** election messages can be forged, since `f` is unsigned
+    (as with `__p`). Signing is the planned follow-up.
   - No quorum in `HEIR_WAIT_MS`: release (`__r`), never count them again,
     step aside. A voter is freed only by hearing that release; a release
     that overtook its request is remembered (`releases`).
@@ -78,6 +89,8 @@ How net.js does it (docs/index.md "A split party"):
   - With 2 humans and one fresh from a reload, nobody crowns if the reloaded
     one is the oldest.
   - A missed record that changes the humans set can still fork.
+  - A candidate dying between its commit and its crown binds its quorum:
+    nobody is elected for that vacancy.
 
 The re-dial (fix-host-loss, then this):
 - A dropped direct link is re-dialled on the **second** vouch (2.5 s), not the
