@@ -755,6 +755,7 @@ async function manualHandshake(off, ans, delayMs, check) {
 	const mk = (host) => `async () => {
 		const room = (window.__m = NeonArcade[${JSON.stringify(host ? "createHost" : "createGuest")}]({
 			name: ${JSON.stringify(host ? "Off" : "Ans")},
+			identity: await NeonArcade.identity(),
 			onOpen: () => (window.__mOpen ??= Date.now()),
 			onError: (m, x) => (window.__mErr ??= [m, x?.reason ?? null, Date.now()]),
 		}));

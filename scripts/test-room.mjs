@@ -628,7 +628,7 @@ try {
 			return send.call(sock, raw);
 		};
 		// A real offer to answer, from a room outside this one.
-		const other = NeonArcade.createHost({ name: "Other" });
+		const other = NeonArcade.createHost({ name: "Other", identity: await NeonArcade.identity({ fresh: true }) });
 		const { code: theirs } = await other.createInvite();
 		const peer = "zzzzzzzzzzzz"; // above any minted id: A's offer stands
 		a.room.createInvite = () => new Promise((_, no) => setTimeout(() => no(new Error("gather failed")), 300));
@@ -1084,7 +1084,7 @@ try {
 			say({ t: "peer", id: peer, connected: true, offering: h.room.selfId });
 			await offered(peer);
 			const before = unanswered(h.room, peer);
-			const other = NeonArcade.createHost({ name: "Other" });
+			const other = NeonArcade.createHost({ name: "Other", identity: await NeonArcade.identity({ fresh: true }) });
 			const { code: theirs } = await other.createInvite();
 			say({ t: "offer", from: peer, sdp: theirs });
 			for (let i = 0; i < 60 && !sent.some((m) => m.t === "answer" && m.to === peer); i++) await wait(100);
@@ -1143,7 +1143,7 @@ try {
 		await wait(50);
 		// Their answer to ours (for a slot this stub never made: ignored).
 		say({ t: "answer", from: peer, sdp: await NeonArcade._codec.packSignal({ s: "none", i: peer }, "v=0\r\n") });
-		const other = NeonArcade.createHost({ name: "Other" });
+		const other = NeonArcade.createHost({ name: "Other", identity: await NeonArcade.identity({ fresh: true }) });
 		const plain = (await other.createInvite()).code;
 		const retry = (await other.createInvite({ retry: true })).code;
 		say({ t: "offer", from: peer, sdp: plain });
@@ -1436,8 +1436,8 @@ try {
 	const slowReply = await page.evaluate(async () => {
 		const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 		const errs = [];
-		const host = NeonArcade.createHost({ name: "H", onError: (m, i) => errs.push("host:" + (i?.reason ?? m)) });
-		const guest = NeonArcade.createGuest({ name: "G", onError: (m, i) => errs.push("guest:" + (i?.reason ?? m)) });
+		const host = NeonArcade.createHost({ name: "H", identity: await NeonArcade.identity({ fresh: true }), onError: (m, i) => errs.push("host:" + (i?.reason ?? m)) });
+		const guest = NeonArcade.createGuest({ name: "G", identity: await NeonArcade.identity({ fresh: true }), onError: (m, i) => errs.push("guest:" + (i?.reason ?? m)) });
 		host.resume?.();
 		guest.resume?.();
 		host.openTimeoutMs = 3000;
@@ -1474,8 +1474,8 @@ try {
 		const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 		const T = 1500;
 		const run = async (iceConnected) => {
-			const host = NeonArcade.createHost({ name: "H" });
-			const guest = NeonArcade.createGuest({ name: "G" });
+			const host = NeonArcade.createHost({ name: "H", identity: await NeonArcade.identity({ fresh: true }) });
+			const guest = NeonArcade.createGuest({ name: "G", identity: await NeonArcade.identity({ fresh: true }) });
 			guest.openTimeoutMs = T;
 			const fails = [];
 			const failed = guest._linkFailed.bind(guest);
@@ -1539,7 +1539,7 @@ try {
 			h.room.createInvite = (o) => (asked.push(o), Promise.resolve({ code: (o.hard ? "h." : "") + "OURS" }));
 			if (ours) say({ t: "peer", id: peer, connected: true, offering: h.room.selfId });
 			await wait(50);
-			const other = NeonArcade.createHost({ name: "Other" });
+			const other = NeonArcade.createHost({ name: "Other", identity: await NeonArcade.identity({ fresh: true }) });
 			say({ t: "offer", from: peer, sdp: (await other.createInvite({ hard: theirsHard })).code });
 			// An answer needs a real gather (up to 4 s without a reflexive
 			// candidate, net.js ICE_TIMEOUT_MS): a deadline past it, then 300 ms
@@ -1612,7 +1612,11 @@ try {
 			const say = (msg) => socket.onmessage({ data: JSON.stringify(msg) });
 			// The old tab: a real room whose offer is real, and which never
 			// answers H's (H's own invite is a stub that goes nowhere).
-			const old = NeonArcade.createHost({ name: "Old", selfId: ours ? "zzzzzzzzzzzz" : "000000000000" });
+			// An id above ours (or below): ids are key hashes now, so draw
+			// keys until one falls on the wanted side.
+			let oldId = await NeonArcade.identity({ fresh: true });
+			while (ours ? oldId.id < h.room.selfId : oldId.id > h.room.selfId) oldId = await NeonArcade.identity({ fresh: true });
+			const old = NeonArcade.createHost({ name: "Old", identity: oldId });
 			const peer = old.selfId;
 			const sent = [];
 			const send = socket.send;
@@ -1877,8 +1881,11 @@ try {
 			localStorage.removeItem("neon.room");
 			let a = await NeonArcade.joinRoom(h.code, { name: "A", reconnectGraceMs: 60_000 });
 			const aToken = NeonArcade.rejoinToken();
-			localStorage.setItem("neon.room", JSON.stringify({ code: h.code, id: "000000000000", secret: `lowest-id-${drops}` }));
-			const b = await NeonArcade.joinRoom(h.code, { name: "B", reconnectGraceMs: 60_000 });
+			// B must be the lowest id: ids are key hashes, so draw keys until one is.
+			let bId = await NeonArcade.identity({ fresh: true });
+			while (bId.id > h.room.selfId || bId.id > a.room.selfId) bId = await NeonArcade.identity({ fresh: true });
+			localStorage.removeItem("neon.room");
+			const b = await NeonArcade.joinRoom(h.code, { name: "B", reconnectGraceMs: 60_000, identity: bId });
 			const aid = a.room.selfId;
 			for (const end = Date.now() + 20_000; Date.now() < end && b.room.directPeers().length < 2; ) await wait(100);
 			const meshed = b.room.directPeers().length === 2;
@@ -2017,22 +2024,33 @@ try {
 	// page owns, and the token naming it.
 	console.log("\nroom: a ghost seat never sticks");
 	{
-		const GHOST = { code: "424242", id: "ghostseat", secret: "ghostsecret" };
+		// The ghost's id is a key this browser holds (net.js identity: an id
+		// is its key's hash, and a seat is reconnected only with its key), so
+		// it is made in the context first and the mock reads it from storage.
+		const GHOST = { code: "424242", id: null, secret: "ghostsecret" };
 		const gctx = await browser.newContext({ viewport: { width: 390, height: 844 } });
-		await gctx.addInitScript((g) => {
+		await gctx.addInitScript(() => {
 			let mock;
 			Object.defineProperty(window, "__neonRoomMock", {
 				configurable: true,
 				get: () => mock,
 				set(m) {
 					mock = m;
+					const g = JSON.parse(localStorage.getItem("__ghost") ?? "null");
+					if (!g) return;
 					const socket = { readyState: 1, closedWith: null, close(c) { this.readyState = 3; this.closedWith = c; } };
 					window.__ghostSocket = socket;
 					m.rooms.set(g.code, new Map([[g.id, { id: g.id, secret: g.secret, socket, joinedAt: 0 }]]));
 				},
 			});
-		}, GHOST);
+		});
 		const a = await gctx.newPage();
+		await a.goto(SERVED(""));
+		GHOST.id = await a.evaluate(async (g) => {
+			const { id } = await NeonArcade.identity({ fresh: true });
+			localStorage.setItem("__ghost", JSON.stringify({ ...g, id }));
+			return id;
+		}, GHOST);
 		a.on("pageerror", (err) => {
 			console.log(`  FAIL page error: ${err.message}`);
 			failures++;

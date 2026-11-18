@@ -91,6 +91,12 @@ function linkPair(a, b, { hello = false } = {}) {
 	return [linkA, linkB];
 }
 
+const fullMesh = (n) => {
+	const t = [];
+	for (let i = 0; i < n; i++) for (let j = i + 1; j < n; j++) t.push([i, j]);
+	return t;
+};
+
 function connect(a, b) {
 	const [linkA, linkB] = linkPair(a, b);
 	a.links.set(b.selfId, linkA);
@@ -404,42 +410,39 @@ const bare = async (opts, host = true) => {
 }
 
 {
-	// Two hosts at the same term — a partition that crowned on both sides —
-	// settle on the lower id, and the one stepping down is not lost from it.
+	// Two crown holders at one term, neither proven to the other. Before
+	// signed messages the lower id took both — and a member signing a record
+	// that names itself could do just that (2026-11-18). Now a crown moves
+	// only on proof (an election's, a hand-over's: net.js _proven), so each
+	// keeps its own.
 	const a = await bare({ name: "A" });
 	const b = await bare({ name: "B" });
 	connect(a, b);
 	a._commitParty();
 	b._commitParty();
 	await sleep(40);
-	const [low, high] = a.selfId < b.selfId ? [a, b] : [b, a];
-	check("two hosts at one term agree on one crown", a.hostId() === b.hostId());
-	check("the lower id keeps it", low.isHost() && !high.isHost(), `host=${a.hostId()}`);
-	check("the host that stepped down keeps its seat", ids(a) === ids(b) && a.getMembers().length === 2, `${ids(a)} / ${ids(b)}`);
+	check("an unproven second crown at our term is not taken", a.isHost() && b.isHost() && a.refusals.includes("crown unproven") && b.refusals.includes("crown unproven"), `${a.hostId() === a.selfId} ${b.hostId() === b.selfId}`);
 	a.leave();
 	b.leave();
 }
 
 {
-	// A higher term wins whatever the ids, and the host that loses carries the
-	// members only it can reach into the winning record.
-	const c = await bare({ name: "C" });
-	const d = await bare({ name: "D" });
-	const e = await bare({ name: "E" }, false);
-	connect(c, e);
-	c._addMember(e.selfId, "E");
-	c._commitParty();
-	await sleep(20);
-	connect(c, d);
-	d.party.term = 3;
-	d._commitParty();
-	c._commitParty();
+	// A hand-over (transferHost) is proven by the record that made it: the
+	// old holder's, signed, carried inside the new holder's. Fay is frozen
+	// through two hand-overs and then hears only the latest record — two
+	// terms behind, she checks the chain back to the holder she knew.
+	const [c, d, e, f] = await party(["C", "D", "E", "F"], fullMesh(4));
+	f.__frozen = true;
+	c.transferHost(d.selfId);
 	await sleep(60);
-	check("the higher term takes the crown", c.hostId() === d.selfId && d.isHost(), `c sees ${c.hostId()}`);
-	check("the old host stepped down", !c.isHost());
-	check("its members followed it into the winning record", ids(d) === [c.selfId, d.selfId, e.selfId].sort().join(","), ids(d));
-	check("and they hear the new host", e.hostId() === d.selfId, `e sees ${e.hostId()}`);
-	for (const r of [c, d, e]) r.leave();
+	check("a hand-over moves the crown", [c, d, e].every((r) => r.hostId() === d.selfId) && d.isHost() && d.party.term === 1, [c, d, e].map((r) => r.hostId() === d.selfId).join());
+	d.transferHost(e.selfId);
+	await sleep(60);
+	f.__frozen = false;
+	e.setGame(null);
+	await sleep(60);
+	check("a member two hand-overs behind takes the latest crown on its proof", f.hostId() === e.selfId && f.party.term === 2 && [c, d, e].every((r) => r.hostId() === e.selfId), `f sees ${f.hostId() === e.selfId} term ${f.party.term}`);
+	for (const r of [c, d, e, f]) r.leave();
 }
 
 {
@@ -627,11 +630,6 @@ const vanish = (host, others) => {
 	}
 };
 const hosts = (rooms) => rooms.filter((r) => r.isHost()).map((r) => r.self().name).join(",");
-const fullMesh = (n) => {
-	const t = [];
-	for (let i = 0; i < n; i++) for (let j = i + 1; j < n; j++) t.push([i, j]);
-	return t;
-};
 const DEPARTURE = 2800; // past net.js DEPARTURE_GRACE_MS
 
 {
@@ -1097,8 +1095,8 @@ console.log("\na split party, election re-reviewed: keys, lapsing grants, retrie
 	// reaches her: no release ever comes. Every grant bound to her used to
 	// mean total loss; grants lapse now, and the next in line is elected.
 	const [h, a, b, c, d] = await party(["Host", "Ana", "Bo", "Cy", "Dee"], fullMesh(5), E);
-	const send = a._send.bind(a);
-	a._send = (env, from) => {
+	const send = a._route.bind(a); // where a message really leaves (signing queues _send)
+	a._route = (env, from) => {
 		send(env, from);
 		if (env.__c) a.__frozen = true;
 	};
@@ -1161,8 +1159,8 @@ console.log("\na split party, with a commit: acknowledged grants never lapse");
 	// never leaves, so she never crowns, and Bo is elected once the grants
 	// lapse.
 	const [h, a, b, c, d] = await party(["Host", "Ana", "Bo", "Cy", "Dee"], fullMesh(5), E);
-	const send = a._send.bind(a);
-	a._send = (env, from) => {
+	const send = a._route.bind(a); // where a message really leaves (signing queues _send)
+	a._route = (env, from) => {
 		send(env, from);
 		if (env.__c) a.__mute = true;
 	};
@@ -1179,8 +1177,8 @@ console.log("\na split party, with a commit: acknowledged grants never lapse");
 	// acknowledgements reach her: they are bound to her for good, so nobody
 	// else is elected (the narrow window a commit costs), and never two.
 	const [h, a, b, c, d] = await party(["Host", "Ana", "Bo", "Cy", "Dee"], fullMesh(5), E);
-	const send = a._send.bind(a);
-	a._send = (env, from) => {
+	const send = a._route.bind(a); // where a message really leaves (signing queues _send)
+	a._route = (env, from) => {
 		send(env, from);
 		if (env.__ck) {
 			a.__mute = true;
@@ -1261,9 +1259,9 @@ const halfDead = (from, to) => {
 	for (const r of [a, b]) h.party.members.find((m) => m.id === r.selfId).away = true;
 	h._commitParty();
 	await sleep(30);
-	const send = c._send.bind(c);
+	const send = c._route.bind(c); // where a message really leaves (signing queues _send)
 	let once = false;
-	c._send = (env, from) => {
+	c._route = (env, from) => {
 		send(env, from);
 		if (env.__ck && !once) {
 			once = true;
@@ -1333,20 +1331,17 @@ console.log("\nbot seats and a member's own record");
 	cy.setName("Cyd");
 	await sleep(40);
 	check("…while that member's own edit, over its link, still lands", rec(host, cy.selfId).name === "Cyd");
-	// Ana claiming to be Bo, whom the host hears only through Ana: the gap no unsigned id closes.
+	// Ana claiming to be Bo, whom the host hears only through Ana: the gap
+	// unsigned ids left (a relay renaming, or swapping secrets.js's key),
+	// closed by signatures (2026-11-18).
 	forge({ id: bo.selfId, name: "Bob?" }, bo.selfId);
 	await sleep(40);
-	check("(known gap) a relay can rename a member the host has no direct link to, for a moment — name and meta only", rec(host, bo.selfId).name === "Bob?" && rec(host, bo.selfId).team === "A");
-	// …a moment: Bo sees the host's record disagree with what Bo said, and says it again (Room._reassert).
-	await sleep(1300);
-	check("…Bo re-asserts its own name, and the host's record is right again", rec(host, bo.selfId).name === "Boz" && rec(ana, bo.selfId).name === "Boz", rec(host, bo.selfId).name);
+	check("a relay cannot rename a member the host has no direct link to", rec(host, bo.selfId).name === "Boz" && rec(host, bo.selfId).team === "A", rec(host, bo.selfId).name);
 	bo.setMeta({ pk: "bo-key" });
 	await sleep(60);
 	forge({ id: bo.selfId, pk: "ana-key" }, bo.selfId);
 	await sleep(60);
-	const forged = rec(host, bo.selfId).pk;
-	await sleep(1300);
-	check("a forged pk on a relay-only member is corrected by that member's re-assert", forged === "ana-key" && rec(host, bo.selfId).pk === "bo-key" && rec(cy, bo.selfId).pk === "bo-key", JSON.stringify({ forged, now: rec(host, bo.selfId).pk }));
+	check("…nor swap its public key (secrets.js's pk)", rec(host, bo.selfId).pk === "bo-key" && rec(cy, bo.selfId).pk === "bo-key", JSON.stringify(rec(host, bo.selfId).pk));
 
 	// A vouch about the host still lands (test-worker's handover): its link to
 	// a member opened again, so the host's held seat is cleared.
@@ -1362,7 +1357,7 @@ console.log("\nbot seats and a member's own record");
 console.log("\nwho said it: signed party messages");
 
 /** The data channel opened: the room's hello path (net.js _linkUp). */
-const opened = (room, end) => (room._linkUp ?? room._linkOpened).call(room, end);
+const opened = (room, end) => room._linkUp(end);
 /** A modified client writing whatever it likes straight onto its link. */
 let rawSeq = 0;
 const raw = (from, to, env) => from.links.get(to.selfId).send({ id: `raw${++rawSeq}`, h: 2, m: null, t: null, ...env });
@@ -1448,6 +1443,21 @@ const idsDescending = async (n) => {
 	await sleep(40);
 	check("a forged __p at the same term, from a non-host that sorts first: ignored", [host, ana, bo].every((r) => r.hostId() === host.selfId), [host, ana, bo].map((r) => r.hostId() === host.selfId).join());
 	for (const r of [host, ana, bo, cy]) r.leave();
+}
+
+{
+	// A signed record can be sent again by anybody: an old one of the
+	// host's, replayed once its id has left everyone's memory, must not roll
+	// the party back.
+	const [host, ana, bo] = await party(["Host", "Ana", "Bo"], fullMesh(3));
+	const old = structuredClone(wire.filter((w) => w.from === host.selfId && w.env.__p).at(-1).env);
+	host.setName("Hosty");
+	await sleep(40);
+	bo.seen.clear(); // as if SEEN_MAX newer messages had gone by
+	raw(ana, bo, { ...old });
+	await sleep(40);
+	check("a replayed old host record does not roll the party back", bo.getMember(host.selfId)?.name === "Hosty", bo.getMember(host.selfId)?.name);
+	for (const r of [host, ana, bo]) r.leave();
 }
 
 {
