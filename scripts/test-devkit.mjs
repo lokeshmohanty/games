@@ -136,12 +136,14 @@ console.log("\ndevkit: the old public address");
 
 console.log("\ndevkit: only this machine");
 const away = await ctx.newPage();
-await away.goto(`${site.base}/?dev=${encodeURIComponent("https://example.com/game/")}&game=dev%2Fx&fresh=1`);
-const warned = await away
+// Watched for from before the page loads: the notice comes around the load
+// event and lives 4.5 s.
+const warned = away
 	.locator(".neon-toast", { hasText: "must be a server on this machine" })
 	.waitFor({ timeout: TIMEOUT })
 	.then(() => true, () => false);
-check("a ?dev= that is not loopback is refused, and says why", warned);
+await away.goto(`${site.base}/?dev=${encodeURIComponent("https://example.com/game/")}&game=dev%2Fx&fresh=1`);
+check("a ?dev= that is not loopback is refused, and says why", await warned);
 
 await browser.close();
 site.stop();

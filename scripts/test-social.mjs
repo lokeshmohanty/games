@@ -151,8 +151,13 @@ try {
 	check("…with a JOIN for this party's code", ((await banner.locator("a", { hasText: "JOIN" }).getAttribute("href")) ?? "").endsWith(`#c=${(await ana.p.locator(".party-code-digits").textContent()).replace(/\D/g, "")}`));
 	// Unanswered, it would wait on the server for Bo's next page; NOT NOW forgets it.
 	await banner.locator("button", { hasText: "NOT NOW" }).click();
-	await boPortal.waitForTimeout(500);
-	check("NOT NOW forgets the invite on the server too", (await boPortal.evaluate(() => NeonArcade.account.api("/api/invites"))).invites.length === 0);
+	// Its DELETE is sent without waiting (keepalive): asked until it has landed.
+	let invites = null;
+	for (const end = Date.now() + 10_000; Date.now() < end; await boPortal.waitForTimeout(200)) {
+		invites = (await boPortal.evaluate(() => NeonArcade.account.api("/api/invites"))).invites;
+		if (!invites.length) break;
+	}
+	check("NOT NOW forgets the invite on the server too", invites?.length === 0, invites);
 	await boPortal.close();
 
 	console.log("\nsocial: Connect 4 between two signed-in people: played, not ranked");
@@ -183,7 +188,9 @@ try {
 		await drop(ana.p, fa, 0);
 		await fa.waitForFunction((n) => window.__game.handle.debug().board.flat().filter(Boolean).length >= n, 2 * i + 1, { timeout: TIMEOUT });
 		if (i < 3) {
-			await bo.p.waitForTimeout(150);
+			// Bo's own frame must have Ana's move and see its turn: a tap
+			// before that is no move (connect4.js myTurn).
+			await fb.waitForFunction((n) => { const d = window.__game.handle.debug(); return d.board.flat().filter(Boolean).length >= n && d.winner === null && d.turn === d.you; }, 2 * i + 1, { timeout: TIMEOUT });
 			await drop(bo.p, fb, 1);
 			await fa.waitForFunction((n) => window.__game.handle.debug().board.flat().filter(Boolean).length >= n, 2 * i + 2, { timeout: TIMEOUT });
 		}
@@ -353,7 +360,7 @@ try {
 			await drop(ana.p, fa, 0);
 			await fa.waitForFunction((n) => window.__game.handle.debug().board.flat().filter(Boolean).length >= n, 2 * i + 1, { timeout: TIMEOUT });
 			if (i < 3) {
-				await kit.p.waitForTimeout(150);
+				await fk.waitForFunction((n) => { const d = window.__game.handle.debug(); return d.board.flat().filter(Boolean).length >= n && d.winner === null && d.turn === d.you; }, 2 * i + 1, { timeout: TIMEOUT });
 				await drop(kit.p, fk, 1);
 				await fa.waitForFunction((n) => window.__game.handle.debug().board.flat().filter(Boolean).length >= n, 2 * i + 2, { timeout: TIMEOUT });
 			}

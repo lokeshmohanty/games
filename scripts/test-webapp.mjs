@@ -14,11 +14,10 @@
  * page load; neither frame can reach the network, from JS or from Python; and
  * when the host leaves, the game ends rather than half-running.
  */
-import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { PORT_OFFSET, serve } from "./serve.mjs";
+import { PORT_OFFSET, serve, spawnServer } from "./serve.mjs";
 import { loadPlaywright } from "./playwright.mjs";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
@@ -45,10 +44,9 @@ if (!chrome) {
 }
 const { chromium } = loadPlaywright();
 
-const site = await serve(8737);
-const dev = spawn("node", [join(ROOT, "sdk/dev-server.mjs"), join(ROOT, "scripts/fixtures"), String(DEV_PORT)], { stdio: "ignore" });
-process.on("exit", () => dev.kill());
-await new Promise((r) => setTimeout(r, 500));
+// Its own port: test-protocol, just before it in shard 3, serves on 8737.
+const site = await serve(8748);
+const dev = await spawnServer("node", [join(ROOT, "sdk/dev-server.mjs"), join(ROOT, "scripts/fixtures"), String(DEV_PORT)], {}, /^serving /m);
 const PARTY = `${site.base}/?${new URLSearchParams({ dev: `http://127.0.0.1:${DEV_PORT}/webapp/`, game: "dev/webapp-fixture", fresh: "1", rs: "http://127.0.0.1:1" })}`;
 
 const browser = await chromium.launch({ executablePath: chrome, args: ["--no-sandbox"] });
@@ -104,6 +102,9 @@ try {
 	let hf = await appFrame(host);
 	let gf = await appFrame(guest);
 	check("the app's frames are sandboxed (opaque origin)", (await hf.evaluate(() => self.origin)) === "null" && (await gf.evaluate(() => self.origin)) === "null");
+	// The host's server frame comes after a lazy load (lib/bridge.js): waited
+	// for, then counted on both.
+	await host.locator("iframe[title$=' server']").first().waitFor({ state: "attached", timeout: TIMEOUT }).catch(() => {});
 	check("the server frame runs only on the host", (await host.locator("iframe[title$=' server']").count()) === 1 && (await guest.locator("iframe[title$=' server']").count()) === 0);
 	check("the host's app reaches the Python server", await text(hf, "hello", "hello from python"));
 	check("the guest's app reaches it too, over the party", await text(gf, "hello", "hello from python"));
