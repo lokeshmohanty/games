@@ -12,7 +12,7 @@
 
 import { existsSync } from "node:fs";
 import { join } from "node:path";
-import { gameScope, serve } from "./serve.mjs";
+import { gameScope, passTable, serve } from "./serve.mjs";
 import { loadPlaywright } from "./playwright.mjs";
 
 const TIMEOUT = 30_000;
@@ -43,9 +43,10 @@ async function phone({ theme = null, scheme = "light", init = null } = {}) {
 	return { ctx, page };
 }
 
-/** A game with bots, straight from a card's SINGLE PLAYER (?mode=bots). */
+/** A game with bots, straight from a card's SINGLE PLAYER (?mode=bots), past its quick table (START GAME). */
 async function play(page, id) {
 	await page.goto(site.url(`index.html?game=${id}&mode=bots`));
+	await passTable(page, TIMEOUT);
 	await page.waitForFunction((id) => window.__game?.id === id || window.__party?.room?.getGame?.() === id, id, { timeout: TIMEOUT });
 	await gameScope(page, TIMEOUT);
 }

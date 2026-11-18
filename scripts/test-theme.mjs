@@ -123,11 +123,14 @@ try {
 	const refused = [];
 	cp.on("console", (m) => /Content Security Policy|Refused to/.test(m.text()) && refused.push(m.text()));
 	const t0 = Date.now();
-	await cp.goto(site.url("?game=neon-fission&fresh=1&mode=bots"), { waitUntil: "commit" });
+	// start=1 (PLAY SOMETHING's address): no quick table in the way, so this times the frame.
+	await cp.goto(site.url("?game=neon-fission&fresh=1&mode=bots&start=1"), { waitUntil: "commit" });
 	const cf = await gameFrame(cp, TIMEOUT);
 	const mounted = Date.now() - t0;
 	const early = await faces(cf);
-	check("the frame comes up before the fonts have downloaded, without their faces", early.rules === 0, { mounted, ...early });
+	// The fonts are held, so a frame that waited for them would not come up at
+	// all; the bound (generous for a slow runner) still catches a slow boot.
+	check("the frame comes up before the fonts have downloaded, without their faces", mounted < 5000 && early.rules === 0, { mounted, ...early });
 	await cf.evaluate(() => {
 		window.__themeSets = 0;
 		window.arcade.on("theme.set", () => window.__themeSets++);
@@ -143,7 +146,7 @@ try {
 	// sizes its board from the heights of its text.
 	const lightFontsGo = holdFonts();
 	const lp = await cold.newPage();
-	await lp.goto(site.url("?game=lokeshmohanty/light-cycles&fresh=1&mode=bots"), { waitUntil: "commit" });
+	await lp.goto(site.url("?game=lokeshmohanty/light-cycles&fresh=1&mode=bots&start=1"), { waitUntil: "commit" });
 	const lf = await gameFrame(lp, TIMEOUT);
 	const board = () => lf.evaluate(() => arena.style.height);
 	const atMount = await board();
@@ -176,11 +179,11 @@ try {
 		} catch {}
 	});
 	const wp = await warmCtx.newPage();
-	await wp.goto(site.url("?game=neon-fission&fresh=1&mode=bots"));
+	await wp.goto(site.url("?game=neon-fission&fresh=1&mode=bots&start=1"));
 	await gameFrame(wp, TIMEOUT);
 	await wp.evaluate(() => navigator.serviceWorker?.ready);
 	await wp.waitForFunction(() => !!navigator.serviceWorker?.controller, null, { timeout: 15_000 }).catch(() => {});
-	await wp.goto(site.url("?game=neon-fission&fresh=1&mode=bots"));
+	await wp.goto(site.url("?game=neon-fission&fresh=1&mode=bots&start=1"));
 	const warmFaces = await faces(await gameFrame(wp, TIMEOUT));
 	check("a later visit has every face in the document: no swap", warmFaces.rules === 4 && !warmFaces.late, warmFaces);
 

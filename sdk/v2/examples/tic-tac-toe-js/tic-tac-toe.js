@@ -71,10 +71,30 @@ const cells = Array.from({ length: 9 }, (_, i) => {
 });
 const nameOf = (id) => arcade.party.members.find((m) => m.id === id)?.name ?? "Player";
 
+// The last mark placed is ringed. The view does not say which it was, and it
+// stays as the other six lanes have it (the conformance test compares them),
+// so it is found here: the square that filled since the board drawn before.
+let drawn = null; // the board drawn last
+let last = -1; // the square holding the last mark, or -1 for none
+/** The last mark's square in `board`, given the board drawn `before` and the square ringed then (`kept`). */
+function lastMark(before, kept, board) {
+	// A board that lost a mark is a new match: compare it with an empty one.
+	const base = before && before.every((m, i) => !m || m === board[i]) ? before : null;
+	const added = board.flatMap((m, i) => (m && !base?.[i] ? [i] : []));
+	if (added.length === 1) return added[0];
+	if (base && !added.length) return kept; // the same board again (a new host's first view)
+	// Several new marks (views missed, a phone that joined a game under way):
+	// which came last cannot be told, so no ring rather than a guess.
+	return -1;
+}
+
 arcade.on("view", ({ state: v }) => {
+	last = lastMark(drawn, last, v.board);
+	drawn = [...v.board];
 	v.board.forEach((m, i) => {
 		cells[i].textContent = m === 1 ? "X" : m === 2 ? "O" : "";
-		cells[i].className = m === 2 ? "o" : "";
+		cells[i].className = (m === 2 ? "o" : "") + (i === last ? " last" : "");
+		cells[i].setAttribute("aria-label", `square ${i + 1}${i === last ? ", the last move" : ""}`);
 	});
 	const mover = v.turn === 1 ? v.x : v.o;
 	hud.textContent = v.winner !== null ? "" : !v.you ? "SPECTATING" : v.turn === v.you ? "YOUR TURN" : `${nameOf(mover)} TO MOVE`;

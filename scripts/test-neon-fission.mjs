@@ -334,21 +334,19 @@ console.log("\nthe managed layer: one phone, several people");
 	globalThis.addEventListener = () => {};
 	globalThis.arcade = { managed: (r) => (rules = r), on() {}, init: new Promise(() => {}), toast() {}, act() {}, theme: null };
 	new Function(read("../games/neon-fission/neon-fission.js"))();
+	// The platform's quick table made seat 2 a person beside the host
+	// (lib/party.js; `local` on that seat, lib/sdk-managed.js).
 	const seats = [
 		{ id: "host", name: "Lokesh", team: "A", bot: false },
-		{ id: "bot_a", name: "Bot Ada", team: "A", bot: true },
+		{ id: "bot_a", name: "Bot Ada", team: "A", bot: true, local: true },
 		{ id: "bot_b", name: "Bot Bo", team: "A", bot: true },
 	];
 	rules.init({ seats, seed: 5, match: 0 });
-	check("one person and bots: the table is set first, by them", rules.view({ seat: "host" }).phase === "setup" && same(rules.turn(), ["host"]));
-	check("no bot moves while the table is set", rules.bot({ seat: "bot_a" }) === null);
-	check("only a bot seat can be handed to a person", typeof rules.apply({ action: { seat: 0, local: true }, by: "host" }) === "string");
-	check("only the person setting the table can change it", typeof rules.apply({ action: { seat: 1, local: true }, by: "bot_a" }) === "string");
-	check("seat 2 becomes a player on this device", rules.apply({ action: { seat: 1, local: true }, by: "host" }) === undefined);
 	let v = rules.view({ seat: "host" });
-	check("…named Player 2, not the bot's name", v.players[1].name === "Player 2" && v.players[1].kind === "local" && v.players[2].kind === "bot");
-	rules.apply({ action: { start: true }, by: "host" });
-	check("START begins play, the person first", rules.view({ seat: "host" }).phase === "play" && same(rules.turn(), ["host"]));
+	check("one person, a person beside them and a bot: play starts at once, no table in the game", v.phase === undefined && same(rules.turn(), ["host"]) && v.moves === 0);
+	check("…seat 2 is a player on this device, named Player 2, not the bot's name", v.players[1].name === "Player 2" && v.players[1].kind === "local" && v.players[2].kind === "bot");
+	check("…no table-setting moves any more", typeof rules.apply({ action: { seat: 2, local: true }, by: "host" }) === "string" && rules.view({ seat: "host" }).players[2].kind === "bot");
+	check("…the person moves first", same(rules.turn(), ["host"]));
 	rules.apply({ action: { cell: 0 }, by: "host" });
 	check("Player 2's turn is reported as the person's: no bot, no waiting banner", same(rules.turn(), ["host"]));
 	check("a second tap meant for the person's own move is refused, not played for Player 2", rules.apply({ action: { cell: 0, n: 0 }, by: "host" }) === "that move has passed" && rules.view({ seat: "host" }).moves === 1);
@@ -372,18 +370,19 @@ console.log("\nthe managed layer: one phone, several people");
 	check("a title naming the winner as the game does", /wins$/.test(res?.title ?? ""), res?.title);
 	check("details: turns played, biggest chain, cells held",
 		["Turns played", "Biggest chain", "Cells held at the end"].every((l) => res?.details?.some((d) => d.label === l)), JSON.stringify(res?.details));
-	// PLAY AGAIN keeps the table as it was.
+	// PLAY AGAIN: the platform sends the same seats, so the table is as it was.
 	rules.init({ seats, seed: 6, match: 1 });
 	check("PLAY AGAIN keeps Player 2 at the table", rules.view({ seat: "host" }).players[1].kind === "local");
 	// The person leaving: bots take the local seats over.
-	rules.apply({ action: { start: true }, by: "host" });
 	rules.leave({ seat: "host" });
 	v = rules.view({ seat: null });
 	check("if the person leaves, their local seats go back to the bots", v.players[1].kind === "bot" && v.players[1].name === "Bot Ada");
 
-	// Different devices: two people and a bot need no setting up.
+	// Different devices: two people and a bot. A `local` seat means nothing
+	// with two people (no one phone to pass): it is a bot.
 	rules.init({ seats: [seats[0], { id: "sam", name: "Sam", team: "A", bot: false }, seats[1]], seed: 7, match: 0 });
-	check("two people on their own phones: play starts at once", rules.view({ seat: "sam" }).phase === "play" && same(rules.turn(), ["host"]));
+	check("two people on their own phones: play starts at once", same(rules.turn(), ["host"]));
+	check("…and a seat marked local is a bot then, under its own name", rules.view({ seat: "sam" }).players[2].kind === "bot" && rules.view({ seat: "sam" }).players[2].name === "Bot Ada");
 	rules.apply({ action: { cell: 0 }, by: "host" });
 	check("…each plays their own seat only", typeof rules.apply({ action: { cell: 1 }, by: "host" }) === "string" && rules.apply({ action: { cell: 5 }, by: "sam" }) === undefined);
 	check("…and no names are given for the end card", (() => {

@@ -77,7 +77,8 @@ the sections of the sub-tab showing.
   unmoved. **Change nav.js's tabs and that markup together.**
 - **PLAY SOMETHING** (Popular's heading; on My Games, Recently played's
   heading, else ★ Favourites', and the empty state) is the SINGLE PLAYER
-  address of a game from the five most played that one person can play now
+  address, plus `start=1` (the game's remembered quick table at once, never
+  shown: docs/index.md "The party API"), of a game from the five most played that one person can play now
   (bots, or one-device and playable alone), never a people-only or Python
   game. Picked at random once per visit and kept for the visit, even when
   late play counts reorder the pool; saved as the last pick (`neon.quick`)
@@ -119,6 +120,12 @@ stage.
   service worker pins every page it takes over, a first visit included, so
   this is rare.
 - **Viewport.** It is fixed (no zoom) only while the party view shows.
+- **SINGLE PLAYER's quick table** (2026-11-17) is part of this screen, not
+  a view of its own: `./?game=<id>&fresh=1&mode=bots` of a game whose seats
+  leave a choice draws Players − n + and the seats before START GAME, with
+  no room server (the bots path), so it works offline. PLAY SOMETHING's
+  `&start=1` skips it; party.js drops `start` from the address with `fresh`
+  and `mode`. The design is docs/index.md "The party API".
 
 ## The build
 

@@ -68,6 +68,20 @@ async function startSolo(page, file, button) {
 
 const debug = async (page) => (await gameScope(page, TIMEOUT)).evaluate(() => window.__game.handle.debug());
 
+/** The quick table's Players count (lib/party.js tableBlock). */
+const tableCount = (p) => p.locator(".quick-table .quick-n").textContent({ timeout: TIMEOUT }).then(Number);
+/** Set the quick table to `n` players with its − and +, as a thumb would. */
+async function setPlayers(p, n) {
+	await p.locator(".quick-table").waitFor({ timeout: TIMEOUT });
+	for (let k = 0; k < 20; k++) {
+		const now = await tableCount(p);
+		if (now === n) return;
+		await p.locator(`.quick-table [data-qt="${now < n ? "plus" : "minus"}"]`).click();
+		await p.waitForFunction((was) => Number(document.querySelector(".quick-table .quick-n")?.textContent) !== was, now, { timeout: TIMEOUT });
+	}
+	throw new Error(`the quick table would not seat ${n}`);
+}
+
 /**
  * What this device's stats (lib/stats.js) hold for `game`, and whether they
  * match the game's own ending: played once, against bots only, and won
@@ -419,7 +433,7 @@ try {
 	console.log("\nbots: neon bid plays twelve sealed lots at a full table");
 	await page.goto(url("?game=neon-bid&fresh=1"));
 	await page.locator("button", { hasText: "SINGLE PLAYER" }).first().click();
-	for (let i = 0; i < 6; i++) await page.locator("button", { hasText: "ADD BOT" }).first().click();
+	await setPlayers(page, 8);
 	await page.locator("button", { hasText: "START GAME" }).first().click();
 	await page.waitForFunction(() => window.__game?.handle, null, { timeout: TIMEOUT });
 	G = await gameScope(page, TIMEOUT);
@@ -489,16 +503,21 @@ try {
 	const nbSeen = {};
 	// Bounded by progress, as Battleship's volleys are: a lot takes a 3.2 s
 	// show and the test's own 1.2 s pause, more on a slow runner, so a count
-	// of polls ran short there. The fault would be a lot that never settles;
-	// the stall outlasts the bid phase's own 60 s deadline (neon-bid.js).
-	const NB_STALL = 70_000;
+	// of polls ran short there. The fault would be a lot that never settles,
+	// so progress is a lot settled or a new one opened (not a phase change: a
+	// bug that cycled phases without settling would never stall). The stall
+	// outlasts a whole lot at its phases' own deadlines (neon-bid.js: bid
+	// 60 s, open 6 s, show 3.2 s), and a hard cap bounds the run whatever.
+	const NB_STALL = 90_000;
+	const NB_CAP = Date.now() + 15 * 60_000;
 	let nbLast = { at: Date.now(), key: "" };
 	for (;;) {
 		const d = await debug(page);
 		if (d.over) break;
-		const key = `${d.round}/${d.results.length}/${d.phase}`;
+		const key = `${d.round}/${d.results.length}`;
 		if (key !== nbLast.key) nbLast = { at: Date.now(), key };
 		else if (Date.now() - nbLast.at > NB_STALL) break;
+		if (Date.now() > NB_CAP) break;
 		if (d.phase === "bid" && (d.lot !== d.round || d.results.length !== d.round)) {
 			drift.push(`bidding lot ${d.round} with lot ${d.lot} next and ${d.results.length} settled`);
 		}
@@ -613,6 +632,31 @@ try {
 	check("both boards are on screen once the shooting starts", battle.visibleGrids === 2, `${battle.visibleGrids}`);
 	check("both boards fit the phone", battle.bottom <= 844 && battle.docWidth <= battle.winWidth, JSON.stringify(battle));
 
+	// The last shot on each board is marked: two volleys by hand, each square
+	// we fire at checked against the mark on their board, and the bot's
+	// latest shot against the mark on ours. One mark a board, never two.
+	/** The squares marked as the last shot: { theirs: [[r, c]…], mine: […] }. */
+	const lastMarks = () => G.evaluate(() => Object.fromEntries(["theirs", "mine"].map((b) => [b, [...document.querySelectorAll(`[data-board="${b}"] .bs-cell.last`)].map((c) => [+c.dataset.r, +c.dataset.c])])));
+	let marksOk = true;
+	let marksSeen = "";
+	for (let v = 1; v <= 2; v++) {
+		await G.waitForFunction(() => window.__game.handle.debug().phase === "fire", null, { timeout: TIMEOUT });
+		const at = await G.evaluate(() => {
+			const at = window.battleshipRules.botTarget(window.__game.handle.debug().theirBoard);
+			document.querySelector(`[data-board="theirs"] .bs-cell[data-r="${at[0]}"][data-c="${at[1]}"]`).click();
+			return at;
+		});
+		await G.waitForFunction((v) => {
+			const d = window.__game.handle.debug();
+			return d.shotsAtThem === v && d.shotsAtMe === v;
+		}, v, { timeout: TIMEOUT });
+		const d = await debug(page);
+		const marks = await lastMarks();
+		marksSeen += ` volley ${v}: fired ${at}, marks ${JSON.stringify(marks)}, at us ${JSON.stringify(d.myBoard.map((s) => s.at))};`;
+		marksOk &&= JSON.stringify(marks.theirs) === JSON.stringify([at]) && JSON.stringify(marks.mine) === JSON.stringify([d.myBoard.at(-1).at]);
+	}
+	check("the last shot is marked on each board: ours where we fired, theirs where the bot did", marksOk, marksSeen);
+
 	// Play it out, using the game's own targeting so a game actually ends.
 	//
 	// Bounded by progress, not by a count of polls. A volley takes the game's
@@ -664,6 +708,13 @@ try {
 	check("and both audited clean", Object.keys(bs.audits).length === 2 && Object.values(bs.audits).every((a) => a === null), fought);
 	check("the phase leaves the firing state", bs.phase === "over", fought);
 	if (bs.over?.winner !== undefined) await resultReached(page, "lokeshmohanty/battleship", bs.over.winner === (await selfOf(page)));
+	const endMarks = await lastMarks();
+	check("…the final volley still marked, one a board", endMarks.theirs.length === 1 && endMarks.mine.length === 1, endMarks);
+	// NEW GAME: fresh boards and no mark left over from the last one.
+	await G.evaluate(() => [...document.querySelectorAll(".bs-actions button")].find((b) => b.textContent === "NEW GAME").click());
+	await G.waitForFunction(() => window.__game.handle.debug().phase === "place", null, { timeout: TIMEOUT });
+	const newMarks = await lastMarks();
+	check("…and NEW GAME clears them", !newMarks.theirs.length && !newMarks.mine.length, newMarks);
 
 	// The claim, tested by breaking it: a fleet that does not match the answers
 	// given must fail the audit. This is done against the real helper rather
@@ -702,9 +753,7 @@ try {
 	console.log("\nbots: light cycles runs a whole round on a phone");
 	await page.goto(url("?game=lokeshmohanty%2Flight-cycles&fresh=1"));
 	await page.locator("button", { hasText: "SINGLE PLAYER" }).first().click();
-	for (let i = 0; i < 3; i++) {
-		await page.locator("button", { hasText: "ADD BOT" }).first().click();
-	}
+	await setPlayers(page, 4);
 	await page.locator("button", { hasText: "START GAME" }).first().click();
 	await page.waitForFunction(() => window.__game?.handle, null, { timeout: TIMEOUT });
 	G = await gameScope(page, TIMEOUT);
@@ -766,7 +815,7 @@ try {
 	console.log("\nbots: bubble rush, a whole round against three bots");
 	await page.goto(url("?game=lokeshmohanty%2Fbubble-rush&fresh=1"));
 	await page.locator("button", { hasText: "SINGLE PLAYER" }).first().click();
-	for (let i = 0; i < 3; i++) await page.locator("button", { hasText: "ADD BOT" }).first().click();
+	await setPlayers(page, 4);
 	await page.locator("button", { hasText: "START GAME" }).first().click();
 	await page.waitForFunction(() => window.__game?.handle, null, { timeout: TIMEOUT });
 	G = await gameScope(page, TIMEOUT);
@@ -786,7 +835,17 @@ try {
 		};
 	});
 	check("the host picks the mode, then START", brSetup.labels.join() === "FREE-FOR-ALL,TEAMS,START", brSetup.labels.join());
-	check("…TEAMS waits for players on both sides", brSetup.teamsOff);
+	// One person and bots in a free game are dealt out as a team game is
+	// (lib/party.js quickTeams, 2026-11-17): TEAMS can be played alone —
+	// you and one bot against two. Until then everyone sat on Team A.
+	const brSides = await page.evaluate(() => {
+		const r = window.__party.room;
+		return r.getMembers().map((m) => [m.id === r.selfId ? "you" : "bot", m.team]);
+	});
+	check("…TEAMS is open alone: you and a bot on Team A, two bots on Team B", !brSetup.teamsOff && brSides.filter(([, t]) => t === "A").length === 2 && brSides.filter(([, t]) => t === "B").length === 2 && brSides[0].join() === "you,A", JSON.stringify({ teamsOff: brSetup.teamsOff, brSides }));
+	// The rest plays free-for-all, picked: every seat scores for itself.
+	await G.locator('.br-setup button[data-mode="ffa"]').click();
+	await G.waitForFunction(() => window.__game.handle.debug().mode === "ffa", null, { timeout: TIMEOUT });
 	check("…44px taps, on a 390x844 screen, clear of the top band, no sideways scroll",
 		brSetup.minH >= 44 && brSetup.right <= 390 && brSetup.bottom <= 844 && brSetup.top >= 52 && brSetup.doc <= 390, JSON.stringify(brSetup));
 	await G.locator(".br-setup button", { hasText: "START" }).click();
@@ -1020,12 +1079,15 @@ try {
 		const { ctx, p } = await phone();
 		await p.goto(url("?game=lokeshmohanty%2Fbubble-rush&fresh=1"));
 		await p.locator("button", { hasText: "SINGLE PLAYER" }).first().click();
-		for (let i = 0; i < 3; i++) await p.locator("button", { hasText: "ADD BOT" }).first().click();
+		await setPlayers(p, 4); // the quick table: you and three bots
 		await p.locator("button", { hasText: "START GAME" }).first().click();
 		await p.waitForFunction(() => window.__game?.handle, null, { timeout: TIMEOUT });
 		const F = await gameScope(p, TIMEOUT);
 		await F.waitForFunction(() => window.__game.handle.debug().phase === "setup", null, { timeout: TIMEOUT });
 		await readyToClick(p);
+		// Alone with bots, the sides are dealt and the round opens on TEAMS: this measures free-for-all.
+		await F.locator('.br-setup button[data-mode="ffa"]').tap();
+		await F.waitForFunction(() => window.__game.handle.debug().mode === "ffa", null, { timeout: TIMEOUT });
 		await throttle(ctx, p, F, 4);
 		await F.locator(".br-setup button", { hasText: "START" }).tap();
 		await F.waitForFunction(() => window.__game.handle.debug().phase === "play", null, { timeout: TIMEOUT });
@@ -1108,6 +1170,13 @@ try {
 	check("a bot took the second seat", state.red !== null && state.yellow !== null);
 	check("the bot is the one that is not us", state.yellow?.startsWith("bot_"), state.yellow);
 	check("the board starts empty", state.board.every((r) => r.every((v) => v === 0)));
+	/** The move line under the board, and whether it is a polite live region. */
+	const movedLine = () => c4.evaluate(() => {
+		const e = document.getElementById("moved");
+		return { text: e.textContent, live: e.getAttribute("role") === "status" && e.getAttribute("aria-live") === "polite" };
+	});
+	let said = await movedLine();
+	check("the move line is a polite live region, silent on the first view", said.live && said.text === "", JSON.stringify(said));
 
 	/** Drop a disc in `col` by clicking the board where a player would. */
 	async function drop(col) {
@@ -1158,6 +1227,17 @@ try {
 
 	await drop(0);
 	check("the bot answers with no network at all", await botReplies(0));
+
+	// The last move is ringed (connect4.js draw): the bot's disc, once it has
+	// fallen. Our own is checked after PLAY AGAIN, under reduced motion.
+	const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+	state = await debug(page);
+	const botDisc = state.board.flatMap((row, r) => row.flatMap((v, c) => (v === 2 ? [[r, c]] : [])));
+	await c4.waitForFunction((at) => JSON.stringify(window.__game.handle.debug().marked) === JSON.stringify(at), botDisc[0] ?? null, { timeout: 3000 }).catch(() => {});
+	state = await debug(page);
+	check("the bot's disc is ringed as the last move, after it falls into place", botDisc.length === 1 && same(state.last, botDisc[0]) && same(state.marked, botDisc[0]) && state.drops >= 1, JSON.stringify({ botDisc, last: state.last, marked: state.marked, drops: state.drops }));
+	said = await movedLine();
+	check("…and said in words: Yellow dropped in its column", said.text === `Yellow dropped in column ${(botDisc[0]?.[1] ?? -2) + 1}`, JSON.stringify(said));
 
 	// Build a threat and see whether it is honoured. The bot is not told what we
 	// are doing; it has to find the block itself.
@@ -1229,6 +1309,30 @@ try {
 	check("the finished game is in this device's stats, counted once", mine.stats?.[c4Id]?.played === 1, JSON.stringify(mine.stats?.[c4Id] ?? mine.stats));
 	check("…against a bot", mine.stats?.[c4Id]?.vsBots === 1);
 	check("…and it is the most recent game", mine.recent?.[0] === c4Id, JSON.stringify(mine.recent));
+
+	// PLAY AGAIN: a fresh board, and no ring left over from the game before.
+	await page.locator(".managed-over button", { hasText: "PLAY AGAIN" }).click({ timeout: TIMEOUT });
+	await c4.waitForFunction(() => {
+		const d = window.__game.handle.debug();
+		return d.match === 2 && d.board.every((r) => r.every((v) => v === 0));
+	}, null, { timeout: TIMEOUT }).catch(() => {});
+	state = await debug(page);
+	check("PLAY AGAIN: an empty board with no last move ringed", state.match === 2 && state.last === null && state.marked === null, JSON.stringify({ match: state.match, last: state.last, marked: state.marked }));
+	said = await movedLine();
+	check("…and no move said", said.text === "", JSON.stringify(said));
+	// Reduced motion: no fall, and the ring is on our disc in the same paint.
+	await page.emulateMedia({ reducedMotion: "reduce" });
+	const dropsBefore = state.drops;
+	await c4.waitForFunction(() => window.__game.handle.debug().turn === window.__game.handle.debug().you, null, { timeout: TIMEOUT });
+	await drop(3);
+	state = await c4.waitForFunction(() => {
+		const d = window.__game.handle.debug();
+		return d.board[5][3] !== 0 && d;
+	}, null, { timeout: TIMEOUT }).then((h) => h.jsonValue(), () => debug(page));
+	check("…our disc is ringed at once under reduced motion, with no fall", same(state.marked, [5, 3]) && same(state.last, [5, 3]) && state.drops === dropsBefore, JSON.stringify({ marked: state.marked, last: state.last, drops: [dropsBefore, state.drops] }));
+	said = await movedLine();
+	check("…and said: Red dropped in column 4", said.text === "Red dropped in column 4", JSON.stringify(said));
+	await page.emulateMedia({ reducedMotion: null });
 	// A game played: ./ opens on My Games now, with Recently played; the
 	// cards with your record are All Games' (lib/portal.js).
 	await page.goto(url("index.html"));
@@ -1240,24 +1344,36 @@ try {
 
 	// ------------------------------------------------------ neon fission
 	//
-	// A managed ffa game with a same-device mode: before the first move the
-	// one person seated may turn bot seats into people beside them, whose
-	// turns are played on this phone (games/neon-fission/neon-fission.js).
+	// A managed ffa game with a same-device mode: SINGLE PLAYER opens on the
+	// shell's quick table (lib/party.js tableBlock), where the one person
+	// seated may make bot seats people beside them, whose turns are played on
+	// this phone (games/neon-fission/neon-fission.js, "sameDevice").
 
-	/** Open Neon Fission's party with `bots` bots seated, start, and wait for the table. */
-	async function openFission(p, bots) {
+	/**
+	 * Open Neon Fission's SINGLE PLAYER, seat `players` at its quick table —
+	 * the seats in `people` played by people on this phone, every other one a
+	 * bot (a table remembered from an earlier run is set back) — START GAME,
+	 * and wait for the first view.
+	 */
+	async function openFission(p, players, people = []) {
 		await p.goto(url("index.html?game=neon-fission&fresh=1"));
 		const solo = p.locator("button", { hasText: "SINGLE PLAYER" }).first();
 		await solo.waitFor({ timeout: TIMEOUT });
 		const label = await solo.textContent();
 		await solo.click();
-		for (let i = 1; i < bots; i++) await p.locator("button", { hasText: "ADD BOT" }).first().click();
-		await p.locator("button", { hasText: "START GAME" }).first().click();
+		await setPlayers(p, players);
+		for (let i = 1; i < players; i++) {
+			const want = p.locator(`.quick-table [data-qt="seat${i}-${people.includes(i) ? "person" : "bot"}"]`);
+			if ((await want.getAttribute("aria-pressed")) !== "true") await want.click();
+			await p.waitForFunction((q) => document.querySelector(q)?.getAttribute("aria-pressed") === "true", `.quick-table [data-qt="seat${i}-${people.includes(i) ? "person" : "bot"}"]`, { timeout: TIMEOUT });
+		}
+		const table = await p.evaluate(() => [...document.querySelectorAll(".quick-seat")].map((li) => li.querySelector(".quick-who").textContent));
+		await p.locator(".quick-table button", { hasText: "START GAME" }).click();
 		await p.waitForFunction(() => window.__game?.handle, null, { timeout: TIMEOUT });
 		const F = await gameScope(p, TIMEOUT);
-		await F.waitForFunction(() => window.__game.handle.debug().phase === "setup", null, { timeout: TIMEOUT });
+		await F.waitForFunction(() => window.__game.handle.debug().match != null, null, { timeout: TIMEOUT });
 		await readyToClick(p);
-		return { F, label };
+		return { F, label, table };
 	}
 	const fission = (F) => F.evaluate(() => window.__game.handle.debug());
 	/** Tap a cell this phone may play, as a person would. */
@@ -1274,24 +1390,10 @@ try {
 
 	console.log("\nbots: neon fission, single player against a bot, to the end");
 	{
-		const { F, label } = await openFission(page, 1);
-		check("the party offers SINGLE PLAYER / SAME DEVICE (a party game)", label.trim() === "SINGLE PLAYER / SAME DEVICE", label);
-		const table = await F.evaluate(() => {
-			const btns = [...document.querySelectorAll("#setup button")].map((b) => b.getBoundingClientRect());
-			return {
-				labels: [...document.querySelectorAll("#setup button")].map((b) => b.textContent),
-				minH: Math.min(...btns.map((b) => b.height)),
-				right: Math.max(...btns.map((b) => b.right)),
-				bottom: Math.max(...btns.map((b) => b.bottom)),
-				top: Math.min(...btns.map((b) => b.top)),
-				doc: document.documentElement.scrollWidth,
-			};
-		});
-		check("the table first: the bot's seat can be a PLAYER, then START", table.labels.join() === "BOT,PLAYER,START", table.labels.join());
-		check("…44px taps, all on a 390x844 screen, clear of the top band, no sideways scroll",
-			table.minH >= 44 && table.right <= 390 && table.bottom <= 844 && table.top >= 52 && table.doc <= 390, JSON.stringify(table));
-		await F.locator("#setup button", { hasText: "START" }).click();
-		await F.waitForFunction(() => window.__game.handle.debug().phase === "play", null, { timeout: TIMEOUT });
+		const { F, label } = await openFission(page, 2);
+		check("the party offers SINGLE PLAYER / SAME DEVICE (its seats can be people here)", label.trim() === "SINGLE PLAYER / SAME DEVICE", label);
+		let v = await fission(F);
+		check("the game opens on play, not a table of its own: our move, the board empty", (await F.locator("#setup").count()) === 0 && v.turn === 0 && v.moves === 0 && v.canPlay && v.players.map((p) => p.kind).join() === "human,bot", JSON.stringify({ turn: v.turn, moves: v.moves, kinds: v.players.map((p) => p.kind) }));
 		const fit = await F.evaluate(() => {
 			const b = document.getElementById("board").getBoundingClientRect();
 			const t = document.getElementById("turn").getBoundingClientRect();
@@ -1300,7 +1402,6 @@ try {
 		});
 		check("two players: a 6 × 9 grid with cells of at least 44px, all on screen", fit.cols === 6 && fit.rows === 9 && fit.cell >= 44 && fit.left >= 0 && fit.right <= 390 && fit.bottom <= 844 && fit.doc <= 390, JSON.stringify(fit));
 		check("…the turn line clear of the shell's top band; drawn at the device's pixel ratio", fit.hudTop >= 52 && Math.abs(fit.dpr - (await page.evaluate(() => devicePixelRatio))) < 0.05, JSON.stringify(fit));
-		let v = await fission(F);
 		let botMoved = false;
 		let acted = -1;
 		for (const end = Date.now() + 120_000; Date.now() < end && v.winner === null; v = await fission(F)) {
@@ -1318,7 +1419,7 @@ try {
 		await resultReached(page, "neon-fission", v.winner === 0);
 	}
 
-	console.log("\nlocal: neon fission on one phone, two people and a bot");
+	console.log("\nlocal: neon fission on one phone, two people and a bot, set at the quick table");
 	{
 		const ctx2 = await newContext();
 		const hot = await ctx2.newPage();
@@ -1326,12 +1427,12 @@ try {
 			console.log(`  FAIL page error: ${err.message}`);
 			failures++;
 		});
-		const { F } = await openFission(hot, 2);
-		await F.locator('#setup .seg button[data-seat="1"]', { hasText: "PLAYER" }).click();
-		await F.waitForFunction(() => window.__game.handle.debug().players[1].kind === "local", null, { timeout: TIMEOUT });
+		const { F, table } = await openFission(hot, 3, [1]);
+		check("the table names seat 2 Player 2 once it is a PERSON, as the game does; seat 3 keeps its bot's name", table[1] === "Player 2" && table[2] !== "Player 3", JSON.stringify(table));
+		const marked = await hot.evaluate(() => window.__party.room.getMembers().map((m) => [m.id.startsWith("bot_"), m.local === true]));
+		check("…a person here is a bot seat to the party, marked local", JSON.stringify(marked) === JSON.stringify([[false, false], [true, true], [true, false]]), JSON.stringify(marked));
 		let v = await fission(F);
-		check("seat 2 is now a player on this device, named Player 2; seat 3 stays a bot", v.players[1].name === "Player 2" && v.players[2].kind === "bot", JSON.stringify(v.players.map((p) => [p.name, p.kind])));
-		await F.locator("#setup button", { hasText: "START" }).click();
+		check("the game has seat 2 as a player on this device, named Player 2; seat 3 a bot", v.players[1].name === "Player 2" && v.players[1].kind === "local" && v.players[2].kind === "bot", JSON.stringify(v.players.map((p) => [p.name, p.kind])));
 		const taps = { 0: 0, 1: 0 };
 		const seatMoves = { 0: 0, 1: 0, 2: 0 };
 		let lastSeen = 0;
@@ -1369,6 +1470,293 @@ try {
 		await ctx2.close();
 	}
 
+	// ------------------------------------------------------- quick table
+	//
+	// Lokesh, 2026-11-17: "I don't see option to add more players/bots in
+	// single player mode in neon fission." SINGLE PLAYER of a game whose
+	// seats leave a choice opens on a quick table — Players − n +, the seats
+	// named and coloured, START GAME — remembered per game; fixed seats and
+	// PLAY SOMETHING start at once (lib/party.js tableBlock).
+
+	console.log("\nquick table: SINGLE PLAYER chooses how many play");
+	{
+		const qctx = await newContext();
+		// Whether a table was ever drawn on this page, even for a frame.
+		await qctx.addInitScript(() => {
+			window.__sawTable = false;
+			new MutationObserver(() => {
+				if (document.querySelector(".quick-table")) window.__sawTable = true;
+			}).observe(document, { subtree: true, childList: true });
+		});
+		const q = await qctx.newPage();
+		q.on("pageerror", (err) => {
+			console.log(`  FAIL page error: ${err.message}`);
+			failures++;
+		});
+		const tableNow = () =>
+			q.evaluate(() => {
+				const r = window.__party.room;
+				const root = getComputedStyle(document.documentElement);
+				return {
+					mounted: window.__party.game,
+					n: Number(document.querySelector(".quick-n")?.textContent),
+					minus: document.querySelector('[data-qt="minus"]')?.disabled,
+					plus: document.querySelector('[data-qt="plus"]')?.disabled,
+					labels: [...document.querySelectorAll(".quick-step")].map((b) => b.getAttribute("aria-label")),
+					group: document.querySelector(".quick-stepper")?.getAttribute("aria-label"),
+					live: document.querySelector('.visually-hidden[role="status"]')?.textContent ?? null,
+					focus: document.activeElement?.dataset?.qt ?? null,
+					says: document.querySelector(".quick-table .party-bots-count")?.textContent,
+					seats: [...document.querySelectorAll(".quick-seat")].map((li, i) => ({
+						who: li.querySelector(".quick-who").textContent,
+						tag: li.querySelector(".party-tag")?.textContent ?? null,
+						seg: [...li.querySelectorAll(".quick-seg-btn")].map((b) => b.textContent).join(),
+						colour: getComputedStyle(li.querySelector(".quick-dot")).backgroundColor,
+						want: (() => {
+							const probe = document.createElement("span");
+							probe.style.color = root.getPropertyValue(`--p${i + 1}`);
+							document.body.append(probe);
+							const c = getComputedStyle(probe).color;
+							probe.remove();
+							return c;
+						})(),
+					})),
+					members: r.getMembers().map((m) => ({ bot: m.id.startsWith("bot_"), name: m.name, local: m.local === true })),
+					saved: JSON.parse(localStorage.getItem("neon.table") ?? "{}"),
+				};
+			});
+
+		// From the card's address (SINGLE PLAYER, ?mode=bots): the table, not the game.
+		await q.goto(url("?game=neon-fission&fresh=1&mode=bots"));
+		await q.locator(".quick-table").waitFor({ timeout: TIMEOUT });
+		let t = await tableNow();
+		check("Neon Fission's SINGLE PLAYER opens on the quick table, not the game", !t.mounted && t.n === 2, JSON.stringify({ mounted: t.mounted, n: t.n }));
+		check("…Players − 2 +: from its minimum, − off there, + on", t.group === "Players" && t.minus === true && t.plus === false && t.labels.join() === "One player fewer,One player more", JSON.stringify(t));
+		check("…you, then the bot by name, each in their seat's colour", t.seats.length === 2 && t.seats[0].tag === "YOU" && t.seats[1].who === t.members[1].name && t.seats.every((s) => s.colour === s.want), JSON.stringify(t.seats));
+		check("…a bot seat can be a PERSON here (a same-device game)", t.seats[1].seg === "BOT,PERSON", t.seats[1].seg);
+
+		// The keyboard: arrows on the stepper; the live region says what changed; the focus stays.
+		await q.locator('[data-qt="plus"]').focus();
+		await q.keyboard.press("ArrowUp");
+		await q.waitForFunction(() => document.querySelector(".quick-n")?.textContent === "3", null, { timeout: TIMEOUT });
+		t = await tableNow();
+		check("ArrowUp adds a player: 3, a second bot by name", t.n === 3 && t.members.filter((m) => m.bot).length === 2 && t.seats[2].who === t.members[2].name, JSON.stringify({ n: t.n, seats: t.seats.map((s) => s.who) }));
+		check("…announced in the live region, the focus kept on the stepper", t.live === "3 players. You and 2 bots." && t.focus === "plus", JSON.stringify({ live: t.live, focus: t.focus }));
+		await q.keyboard.press("Home");
+		await q.waitForFunction(() => document.querySelector(".quick-n")?.textContent === "2", null, { timeout: TIMEOUT });
+		t = await tableNow();
+		check("Home goes back to the minimum; + kept the focus (− went off)", t.n === 2 && t.focus === "plus", JSON.stringify({ n: t.n, focus: t.focus }));
+
+		// 4 players by tapping +: START GAME starts with 3 bots.
+		await setPlayers(q, 4);
+		t = await tableNow();
+		check("tapping + to 4: you and 3 bots at the table", t.n === 4 && t.says === "You and 3 bots" && t.members.filter((m) => m.bot).length === 3, JSON.stringify({ n: t.n, says: t.says }));
+		await q.locator(".quick-table button", { hasText: "START GAME" }).click();
+		let F = await gameScope(q, TIMEOUT);
+		await F.waitForFunction(() => window.__game.handle.debug().match != null, null, { timeout: TIMEOUT });
+		let v = await fission(F);
+		check("choosing 4 players starts Neon Fission with 3 bots", v.players.length === 4 && v.players.map((p) => p.kind).join() === "human,bot,bot,bot", JSON.stringify(v.players.map((p) => p.kind)));
+		check("…and the table is remembered for this game", JSON.stringify((await q.evaluate(() => JSON.parse(localStorage.getItem("neon.table"))))["neon-fission"]) === JSON.stringify({ n: 4, people: [] }));
+
+		// Again: the table as it was, so a repeat play is SINGLE PLAYER, START GAME.
+		await q.goto(url("?game=neon-fission&fresh=1&mode=bots"));
+		await q.locator(".quick-table").waitFor({ timeout: TIMEOUT });
+		t = await tableNow();
+		check("the next SINGLE PLAYER opens on the remembered table: 4 players, 3 bots", t.n === 4 && t.members.filter((m) => m.bot).length === 3, JSON.stringify({ n: t.n }));
+		await q.locator(".quick-table button", { hasText: "START GAME" }).click();
+		F = await gameScope(q, TIMEOUT);
+		await F.waitForFunction(() => window.__game.handle.debug().match != null, null, { timeout: TIMEOUT });
+		check("…one tap, START GAME, plays it", (await fission(F)).players.length === 4);
+
+		// PLAY SOMETHING's address (?start=1): that table at once, never drawn.
+		await q.goto(url("?game=neon-fission&fresh=1&mode=bots&start=1"));
+		await q.waitForFunction(() => window.__party?.game === "neon-fission", null, { timeout: TIMEOUT });
+		const quickStart = await q.evaluate(() => ({ saw: window.__sawTable, bots: window.__party.room.getMembers().filter((m) => m.id.startsWith("bot_")).length, search: location.search }));
+		check("PLAY SOMETHING (start=1) skips the table: the remembered 4 players, at once", !quickStart.saw && quickStart.bots === 3, JSON.stringify(quickStart));
+		check("…and start=1 leaves the address, so a reload is not a new start", !/start=|fresh=|mode=/.test(quickStart.search), quickStart.search);
+
+		// The portal's PLAY SOMETHING links say start=1, and one tap plays without a table.
+		await q.goto(url("index.html?page=games&tab=all"));
+		const quick = q.locator('[data-section="popular"] [data-quick]');
+		const href = await quick.getAttribute("href", { timeout: TIMEOUT });
+		const pick = await quick.getAttribute("data-game");
+		check("PLAY SOMETHING's link is the card's SINGLE PLAYER plus start=1", new URLSearchParams(href.slice(2)).get("start") === "1" && new URLSearchParams(href.slice(2)).get("game") === pick, href);
+		await quick.click();
+		await q.waitForFunction((id) => window.__party?.game === id, pick, { timeout: TIMEOUT });
+		check("…one tap into it, no table on the way", !(await q.evaluate(() => window.__sawTable)), pick);
+
+		// Fixed seats (Connect 4: 2 and 2) have nothing to choose: straight in, as before.
+		await q.goto(url("?game=connect4&fresh=1&mode=bots"));
+		await q.waitForFunction(() => window.__party?.game === "connect4", null, { timeout: TIMEOUT });
+		check("Connect 4 skips the table: SINGLE PLAYER starts at once, against one bot", !(await q.evaluate(() => window.__sawTable)) && (await q.evaluate(() => window.__party.room.getMembers().length)) === 2);
+
+		// A one-seat game alone: Players 1, no bots.
+		await q.goto(url("?game=lokeshmohanty%2Flight-cycles&fresh=1&mode=bots"));
+		await q.locator(".quick-table").waitFor({ timeout: TIMEOUT });
+		t = await tableNow();
+		check("Light Cycles: Players 1 is just you (playing alone stays possible), − off", t.n === 1 && t.minus === true && t.says === "Just you" && t.members.length === 1, JSON.stringify({ n: t.n, says: t.says }));
+		check("…its bot seats are bots only: no PERSON (not a same-device game)", (await (async () => {
+			await setPlayers(q, 2);
+			const s = (await tableNow()).seats[1];
+			return s.tag === "BOT" && s.seg === "";
+		})()));
+		await q.close();
+		await qctx.close();
+	}
+
+	console.log("\nquick table: a PERSON seat never counts as a bot");
+	{
+		const rctx = await newContext();
+		const r = await rctx.newPage();
+		r.on("pageerror", (err) => {
+			console.log(`  FAIL page error: ${err.message}`);
+			failures++;
+		});
+		/** Fission's table at 3, seat 2 a PERSON or a BOT; record the runs asked for (lib/account.js startRun); START. */
+		const startWithPerson = async (personHere) => {
+			await r.goto(url("?game=neon-fission&fresh=1&mode=bots"));
+			await setPlayers(r, 3);
+			const want = `[data-qt="seat1-${personHere ? "person" : "bot"}"]`;
+			const seg = r.locator(`.quick-table ${want}`);
+			if ((await seg.getAttribute("aria-pressed")) !== "true") await seg.click();
+			await r.waitForFunction((q) => document.querySelector(q)?.getAttribute("aria-pressed") === "true", want, { timeout: TIMEOUT });
+			await r.evaluate(() => {
+				window.__runs = [];
+				const A = NeonArcade.account;
+				if (A) A.startRun = (game, o) => (window.__runs.push({ game, vs: o?.vs ?? "solo" }), Promise.resolve(null));
+			});
+			await r.locator(".quick-table button", { hasText: "START GAME" }).click();
+			const F = await gameScope(r, TIMEOUT);
+			await F.waitForFunction(() => window.__game.handle.debug().match != null, null, { timeout: TIMEOUT });
+			await sleep(300);
+			return { kinds: (await fission(F)).players.map((p) => p.kind).join(), runs: await r.evaluate(() => window.__runs), local: await r.evaluate(() => window.__party.room.getMembers()[1].local === true) };
+		};
+		let got = await startWithPerson(true);
+		check("with a PERSON at the table, the game seats them (local) and no run against bots is asked for", got.kinds === "human,local,bot" && !got.runs.some((x) => x.vs === "bots"), JSON.stringify(got));
+		got = await startWithPerson(false);
+		check("…the same table with that seat a BOT: the run against bots is asked for", !got.local && got.kinds === "human,bot,bot" && got.runs.some((x) => x.vs === "bots" && x.game === "neon-fission"), JSON.stringify(got));
+		// PLAY SOMETHING (start=1): the remembered table's count, but bots only — its PERSON seats need the table on screen.
+		await r.goto(url("?game=neon-fission&fresh=1&mode=bots&start=1"));
+		await r.waitForFunction(() => window.__party?.game === "neon-fission", null, { timeout: TIMEOUT });
+		const ps = await r.evaluate(() => window.__party.room.getMembers().map((m) => m.local === true));
+		check("PLAY SOMETHING restores the remembered count but no PERSON seat", ps.length === 3 && !ps.some(Boolean), JSON.stringify(ps));
+		await rctx.close();
+	}
+
+	console.log("\nquick table: PERSON seats after the table — on the roster, and gone when someone joins");
+	{
+		const sctx = await newContext();
+		const h = await sctx.newPage();
+		const g = await sctx.newPage();
+		for (const p of [h, g]) {
+			p.on("pageerror", (err) => {
+				console.log(`  FAIL page error: ${err.message}`);
+				failures++;
+			});
+		}
+		await openFission(h, 3, [1]);
+		// END GAME, back to the party screen.
+		await h.locator(".party-pill").click();
+		await h.locator("button", { hasText: "END GAME" }).first().click();
+		await h.locator('dialog.neon-ask[open] [data-ask="yes"]').click();
+		await h.waitForFunction(() => !window.__party.game, null, { timeout: TIMEOUT });
+		await h.locator(".party-member").nth(2).waitFor({ timeout: TIMEOUT });
+		const roster = () =>
+			h.evaluate(() =>
+				[...document.querySelectorAll(".party-member")].map((row) => ({
+					tag: row.querySelector(".party-tag.is-bot")?.textContent ?? null,
+					person: row.querySelector(".party-person")?.getAttribute("aria-pressed") ?? null,
+					h: row.querySelector(".party-person")?.getBoundingClientRect().height ?? null,
+				})),
+			);
+		let ro = await roster();
+		const hint = await h.locator(".party-person-hint").textContent().catch(() => "");
+		check("back on the party screen the seat says PERSON, not BOT, with its toggle on", ro[1].tag === "PERSON" && ro[1].person === "true" && ro[2].tag === "BOT" && ro[2].person === "false" && ro[0].person === null, JSON.stringify(ro));
+		check("…a 44px toggle, and a line saying where a PERSON plays (Neon Fission)", ro[1].h >= 44 && /Neon Fission/.test(hint), JSON.stringify({ h: ro[1].h, hint }));
+		await h.locator(".party-member").nth(1).locator(".party-person").click();
+		await h.waitForFunction(() => window.__party.room.getMembers()[1].local !== true, null, { timeout: TIMEOUT });
+		ro = await roster();
+		check("the roster's toggle turns it back into a BOT", ro[1].tag === "BOT" && ro[1].person === "false", JSON.stringify(ro));
+		await h.locator(".party-member").nth(2).locator(".party-person").click();
+		await h.waitForFunction(() => window.__party.room.getMembers()[2].local === true, null, { timeout: TIMEOUT });
+		// Neon Fission from the party screen: the roster's PERSON plays.
+		await h.locator(".party-game", { hasText: "NEON FISSION" }).click();
+		const F = await gameScope(h, TIMEOUT);
+		await F.waitForFunction(() => window.__game.handle.debug().match != null, null, { timeout: TIMEOUT });
+		check("…and the roster's PERSON plays in the game started from the party screen", (await fission(F)).players.map((p) => p.kind).join() === "human,bot,local");
+		await h.locator(".party-pill").click();
+		await h.locator("button", { hasText: "END GAME" }).first().click();
+		await h.locator('dialog.neon-ask[open] [data-ask="yes"]').click();
+		await h.waitForFunction(() => !window.__party.game, null, { timeout: TIMEOUT });
+
+		// A friend joins: nobody is passing this phone round any more.
+		await h.locator("button", { hasText: "ADD PLAYER" }).first().click();
+		const box = h.locator("textarea.share-code").first();
+		await box.waitFor({ timeout: TIMEOUT });
+		await g.goto(await box.inputValue());
+		const reply = g.locator("textarea.share-code").first();
+		await reply.waitFor({ timeout: TIMEOUT });
+		await h.locator("textarea.share-code").last().fill(await reply.inputValue());
+		await h.locator("button.neon-btn", { hasText: /^CONNECT$/ }).first().click();
+		await g.locator(".party-member").nth(3).waitFor({ timeout: TIMEOUT });
+		await h.waitForFunction(() => !window.__party.room.getMembers().some((m) => m.local === true), null, { timeout: TIMEOUT }).catch(() => {});
+		const after = await h.evaluate(() => ({ local: window.__party.room.getMembers().filter((m) => m.local === true).length, toggles: document.querySelectorAll(".party-person").length, tags: [...document.querySelectorAll(".party-tag.is-bot")].map((t) => t.textContent) }));
+		const onGuest = await g.evaluate(() => window.__party.room.getMembers().filter((m) => m.local === true).length);
+		check("a second person in the party turns every PERSON seat back into a bot, on every phone", after.local === 0 && onGuest === 0 && after.tags.every((t) => t === "BOT"), JSON.stringify({ after, onGuest }));
+		check("…and the roster offers no PERSON toggle while they are here", after.toggles === 0, JSON.stringify(after));
+		await sctx.close();
+	}
+
+	console.log("\nquick table: fits 390x844 and 354x696, in every theme");
+	for (const [w, h] of [[390, 844], [354, 696]]) {
+		for (const [name, theme, scheme] of [
+			["paper, light", { theme: "paper", mode: "light" }, "light"],
+			["paper, dark", { theme: "paper", mode: "dark" }, "dark"],
+			["neon", { theme: "neon", mode: "dark" }, "dark"],
+		]) {
+			const lctx = await browser.newContext({ viewport: { width: w, height: h }, colorScheme: scheme });
+			await lctx.addInitScript((th) => {
+				try {
+					localStorage.setItem("neon.rs", "http://127.0.0.1:9");
+					localStorage.setItem("neon.theme", JSON.stringify(th));
+				} catch {}
+			}, theme);
+			const lp = await lctx.newPage();
+			await lp.goto(url("?game=neon-fission&fresh=1&mode=bots"));
+			await setPlayers(lp, 8);
+			await lp.locator('.quick-table [data-qt="seat1-person"]').click();
+			await lp.waitForFunction(() => document.querySelector('[data-qt="seat1-person"]')?.getAttribute("aria-pressed") === "true", null, { timeout: TIMEOUT });
+			const l = await lp.evaluate(() => {
+				const r = (q) => document.querySelector(q).getBoundingClientRect();
+				const taps = [...document.querySelectorAll(".quick-table button")].map((b) => b.getBoundingClientRect());
+				const rows = [...document.querySelectorAll(".quick-seat")].map((li) => li.getBoundingClientRect());
+				const ink = getComputedStyle(document.querySelector(".quick-who")).color;
+				const card = getComputedStyle(document.querySelector(".quick-seat")).backgroundColor;
+				const n = getComputedStyle(document.querySelector(".quick-n")).color;
+				return {
+					doc: document.documentElement.scrollWidth,
+					minTap: Math.min(...taps.map((b) => Math.min(b.height, b.width))),
+					stepper: r(".quick-stepper"),
+					start: r(".quick-go .neon-btn"),
+					rowsRight: Math.max(...rows.map((b) => b.right)),
+					rowsLeft: Math.min(...rows.map((b) => b.left)),
+					seats: rows.length,
+					overflow: [...document.querySelectorAll(".quick-who")].some((e) => e.scrollWidth > e.clientWidth + 1 && getComputedStyle(e).textOverflow !== "ellipsis"),
+					ink,
+					card,
+					n,
+				};
+			});
+			const where = `${w}x${h}, ${name}`;
+			check(`${where}: no sideways scroll; every control at least 44px`, l.doc <= w && l.minTap >= 44, JSON.stringify(l));
+			check(`${where}: Players and START GAME on screen with 8 seats, START at once below the stepper`, l.stepper.top >= 52 && l.start.bottom <= h && l.start.top > l.stepper.bottom, JSON.stringify({ stepper: l.stepper, start: l.start }));
+			check(`${where}: the 8 seats inside the screen's width, names never spilling`, l.seats === 8 && l.rowsLeft >= 0 && l.rowsRight <= w && !l.overflow, JSON.stringify(l));
+			check(`${where}: names and the count are not the card's colour`, l.ink !== l.card && l.n !== l.card, JSON.stringify({ ink: l.ink, card: l.card, n: l.n }));
+			if (process.env.NEON_SHOTS) await lp.screenshot({ path: join(process.env.NEON_SHOTS, `quick-table-${w}x${h}-${name.replace(/\W+/g, "-")}.png`) }).catch(() => {});
+			await lctx.close();
+		}
+	}
+
 	// ------------------------------------------------------ neon survival
 
 	console.log("\nbots: neon survival runs for one player, and for one plus bots");
@@ -1388,9 +1776,7 @@ try {
 	// Now the same page with company.
 	await page.goto(url("?game=neon-survival-mp&fresh=1"));
 	await page.locator("button", { hasText: "SINGLE PLAYER" }).first().click();
-	const addBot = page.locator("button", { hasText: "ADD BOT" }).first();
-	await addBot.click();
-	await addBot.click();
+	await setPlayers(page, 3);
 	await page.locator("button", { hasText: "START GAME" }).first().click();
 	await page.waitForFunction(() => window.__game?.handle, null, { timeout: TIMEOUT });
 	G = await gameScope(page, TIMEOUT);
@@ -1602,6 +1988,13 @@ try {
 			await hostP.locator("button", { hasText: "START GAME" }).first().click();
 			await guestP.waitForFunction(() => window.__game?.handle, null, { timeout: TIMEOUT });
 			await (await gameScope(guestP, TIMEOUT)).waitForFunction(() => window.__game.handle.debug().started, null, { timeout: TIMEOUT });
+			// Red drops a disc before the host goes: the new host's view still rings it.
+			for (const p of [hostP, guestP]) {
+				const F = await gameScope(p, TIMEOUT);
+				await F.evaluate(() => window.__game.handle.debug().red === window.arcade.party.self && window.arcade.act({ col: 2 }));
+			}
+			await (await gameScope(guestP, TIMEOUT)).waitForFunction(() => window.__game.handle.debug().board[5][2] !== 0, null, { timeout: TIMEOUT });
+			await sleep(500); // the heir's copy follows each move
 		}
 		// Watched for from before the host goes: the notice lives 4.5 s.
 		const msg = midGame ? "You are the host now — CONNECT 4 goes on." : "You are the host now.";
@@ -1639,6 +2032,10 @@ try {
 			midGame ? "…holds the game, and wins it: the other side left for good" : "…and holds the party, back on its screen",
 			after,
 		);
+		if (midGame) {
+			const held = await debug(guestP);
+			check("…and the disc dropped before the host left is still the one ringed", JSON.stringify(held.marked) === "[5,2]" && JSON.stringify(held.last) === "[5,2]", JSON.stringify({ marked: held.marked, last: held.last }));
+		}
 		await pair.close();
 	}
 

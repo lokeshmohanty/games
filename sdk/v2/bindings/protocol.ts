@@ -618,6 +618,11 @@ export interface RulesCallSeatsItem {
 	name: string;
 	team?: string | null;
 	bot: boolean;
+	/**
+	 * A bot seat a person on the host's phone plays (the quick table's PERSON);
+	 * only for a game with manifest `sameDevice`.
+	 */
+	local?: boolean;
 }
 
 /**

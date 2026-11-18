@@ -56,6 +56,8 @@ export function catalogEntries(files, root) {
 			players: m.players ?? null,
 			bots: m.bots !== false && m.kind !== "shared",
 			local: m.kind === "local",
+			// Bot seats may be people on the host's phone (the quick table's PERSON); omitted when not.
+			...(m.sameDevice === true && m.bots !== false ? { sameDevice: true } : {}),
 			kind: m.kind,
 			// No online boards for it (game.json "leaderboard": false); omitted when it has them.
 			...(m.leaderboard === false ? { leaderboard: false } : {}),

@@ -26,7 +26,7 @@ questions about this project from this folder alone.
 - [Testing across real networks](network-testing.md) — the NAT lab: symmetric NAT, network switches, lossy links, a blocked room server
 - [`../lib/README.md`](../lib/README.md) — every lib/ file in a line, with pointers here for depth
 - [Neon Bid](neon-bid.md) — the sealed-bid gem auction's design, as approved
-- Neon Fission (`games/neon-fission/`, rules in its `RULES.md`) — the chain-reaction grid for 2–8: a managed ffa game; one person with bots can hand bot seats to people on the same phone before the first move (those seats' turns are reported as the person's, so no bot plays them; the end card names them via the result's `names`, docs/sdk-v2.md). Each move's chain is replayed on every phone, about 1.5 s at most, and a tap skips it. The move that ends the game plays wave by wave and then marks the cells it took: 5.25 s at most for any chain, its waves sharing a 4.3 s budget (at most 300 ms each, about 40 ms in a 104-wave chain), so it always ends inside the end card's 6 s hold. The turn line and chips wait for it, and so does the end card (`arcade.idle()`, docs/sdk-v2.md; rules.js `pace`). Under reduced motion nothing animates
+- Neon Fission (`games/neon-fission/`, rules in its `RULES.md`) — the chain-reaction grid for 2–8: a managed ffa game; `"sameDevice"`: at SINGLE PLAYER's quick table ([The party API](#the-party-api)) one person can make bot seats PERSON, people on the same phone (the seat arrives with `local` in `init`; those seats' turns are reported as the person's, so no bot plays them; the end card names them via the result's `names`, docs/sdk-v2.md). Its own "set the table" screen before the first move went on 2026-11-17: the platform's table is the one place. Each move's chain is replayed on every phone, about 1.5 s at most, and a tap skips it. The move that ends the game plays wave by wave and then marks the cells it took: 5.25 s at most for any chain, its waves sharing a 4.3 s budget (at most 300 ms each, about 40 ms in a 104-wave chain), so it always ends inside the end card's 6 s hold. The turn line and chips wait for it, and so does the end card (`arcade.idle()`, docs/sdk-v2.md; rules.js `pace`). Under reduced motion nothing animates
 - (still missing: design notes for the other games, decision log)
 
 ## How-to (verified commands)
@@ -633,14 +633,65 @@ succession.
 **A game's address is a shortcut into it** (2026-11-13): `./?game=<id>&fresh=1`,
 a portal card's link ([spa.md](spa.md)). With `?game=` the host of a fresh
 party gets a **quick start** first: the game's name as the title, INVITE A
-FRIEND and PLAY A BOT / PLAY ALONE (enough bots to make it legal), then ADD
+FRIEND and SINGLE PLAYER (enough bots to make it legal), then ADD
 BOT / REMOVE BOT and START GAME (START alone for a local game, which shows
 nothing else). START seats people by the rule the old game pages had — host on
 A; a one-against-one game puts the first other member on B and the rest watch;
 a bigger team game deals the others out alternately, B first; any other game
-seats everyone on one side; past the game's seats, the rest watch. After the
+seats everyone on one side — except one person and bots in a `free` game,
+dealt out like a team game (2026-11-17), so Bubble Rush's TEAMS can be played
+alone; past the game's seats, the rest watch. After the
 first game it is an ordinary party. A party opened this way does not ask a
 lone host before leaving.
+
+**The quick table** (Lokesh, 2026-11-17: "I don't see option to add more
+players/bots in single player mode in neon fission"; he chose "Quick table
+before start"). SINGLE PLAYER of a game whose seats leave a choice —
+`seats.max > seats.min`, bots allowed, not a `local` game — opens on a
+compact table instead of starting at once (party.js `tableBlock`):
+- **Players − n +** from `seats.min` to `seats.max` (capped at the party's
+  `maxMembers`). You fill seat 1 and bots the rest; each seat is listed with
+  its bot's name and its seat colour (`--p1`…`--p8`). A one-seat game keeps
+  Players 1: alone, no bots. The stepper adds and removes real bots as it
+  moves, so the table is the party.
+- **PERSON seats**, for a game with `"sameDevice": true` (Neon Fission): each
+  bot seat toggles BOT / PERSON — someone beside you, passed the phone on
+  their turn. A PERSON seat is a bot to the party, marked `local: true` on
+  its record (`room.setBotMeta`), shown as "Player n" (as the game names
+  it); lib/sdk-managed.js passes `local` on that seat to the game's `init`
+  (only for a game that declares `sameDevice`), and never asks for a solo
+  run against bots with one at the table (that person is no bot). The game
+  plays such a seat for the one person; with two or more people there is no
+  one phone, so it is a bot.
+- **PERSON seats never hide** (review, 2026-11-17). After the table the
+  party screen's roster tags such a seat PERSON, not BOT, and gives every
+  bot row a 44 px PERSON toggle while the host is the only person here and
+  no game runs (with a line naming the games that take it); a game started
+  from the party screen plays them too. They are this page's own choice and
+  are cleared (party.js `tidyPeople`, on every party change) when a second
+  person joins, when the crown moves to another phone, when "Play with
+  friends instead" is chosen, and when a quick start other than the table
+  starts the game; PLAY SOMETHING (`start=1`) seats the remembered count as
+  bots only, never its PERSON seats.
+- **START GAME** sits right under the stepper whatever the count. The table
+  is remembered per game (localStorage `neon.table`,
+  `{ [id]: { n, people: [seat…] } }`, written at START), so a repeat play is
+  two taps: SINGLE PLAYER, START GAME (Lokesh's choice).
+- **No table** for fixed seats (Connect 4, Tic Tac Toe, Battleship: 2 and 2),
+  a `local` game (Undercover, which takes its names itself) or a people-only
+  one (Draw & Guess has no SINGLE PLAYER): they start as before.
+  **PLAY SOMETHING** adds `start=1` to the card's address: the remembered (or
+  smallest) table at once, never drawn (`quickGoing`); `start` is dropped
+  from the address with `fresh` and `mode`.
+- **Offline** it is the same table (a bots game never asks the room server);
+  the friends link hides while `navigator.onLine` is false.
+- **Phones and access:** every control is 44 px, the list ellipsises names
+  at 354 px; the stepper is a labelled group with arrow keys, Home and End;
+  a live region outside the rebuilt screen announces "4 players. You and 3
+  bots."; the control in use keeps the focus across re-renders.
+- Tested in test-bots ("quick table", at 390×844 and 354×696 in all three
+  themes), test-pwa (offline, for exactly the games with a choice) and
+  test-portal (PLAY SOMETHING draws no table).
 
 **The room controller** (lib/net.js `createHost` / `createGuest`):
 
@@ -664,6 +715,7 @@ lone host before leaving.
 | `removeMember(id)` | host only: remove someone (a bot included) |
 | `addBot(team?)` | host only: seat a simulated member; defaults to the emptier side. Returns its id |
 | `bots()` | every bot in the roster (readable by anyone) |
+| `setBotMeta(botId, patch)` | host only: merge fields into a bot's record (not `id`, `name`, `team`, `bot` and the other reserved ones); the quick table's `{ local: true }`. A message never edits a bot: the host's `__i` handler refuses a bot's id (below) |
 | `emitAs(botId, action, data, opts?)` | host only: send as a bot, and deliver locally too |
 | `NeonArcade.isBotId(id)` | a bot's id is prefixed `bot_`, so routing can tell without the record |
 | `deleteParty()` | host only: end it for everyone |
@@ -996,6 +1048,15 @@ What the flag changes is small and deliberate:
 Everything else is the ordinary game contract. The game keeps its own list of
 players and ignores the party's members entirely.
 
+**A seated game can share one phone too** (2026-11-17): with `"sameDevice":
+true` (Neon Fission) the party's seats stay the game's seats, and SINGLE
+PLAYER's quick table lets the one person make bot seats PERSON — someone
+beside them, passed the phone on their turn ([The party API](#the-party-api),
+"The quick table"). The card then says SINGLE PLAYER / SAME DEVICE, as it
+does for a `local` game; until that day every `party`-category game said so,
+including Neon Bid and Liar's Dice, whose sealed bids and hidden cups cannot
+share a screen.
+
 **What such a game is actually responsible for** is narrower than it looks. The
 describing, the arguing and the voting happen between people; the phone deals
 the secrets, remembers who is out, and — the only part that really matters —
@@ -1153,6 +1214,22 @@ the icon for exactly this reason. `test-pwa` now parses the file.
 ## Honest gaps
 
 - Per-game design notes and a decision log are still missing.
+- **A member's own record is only as honest as `f`** (review, 2026-11-17).
+  The host takes an `__i` self-edit (name, `setMeta` fields) from whoever
+  the envelope's unsigned `f` names. Since 2026-11-17 it refuses a bot's id
+  and edits of its own record (a `back`/`rs` vouch about the host still
+  lands: it clears a reloaded host's held seat), drops every field the
+  record owns (team, bot, host, joined, rs, reconnecting) and `local`, and
+  refuses a relayed copy while it holds a direct link to that member (the
+  real one comes over that link). Every member also **re-asserts** its own
+  fields (name and `setMeta`: pk, acct, pcode, away) when the host's record
+  has disagreed for a second (net.js `_reassert`), and `secrets.js` checks
+  the pk on its own record before deriving a key. What stays open: a member
+  the host hears **only through a relay** can be renamed, or its meta
+  rewritten, by that relay — for about a second, until the member's
+  re-assert, unless that relay also drops the re-assert. Closing it needs
+  signed self-edits, planned as a separate branch (test-plumbing "bot seats
+  and a member's own record" asserts the fixes, the gap and the re-assert).
 - Scanning is verified at realistic code density — a reply code occupying part
   of a full-resolution frame, preceded by seconds of empty aiming frames, on a
   CPU throttled to phone speed — but via a fake capture device, **not** a real

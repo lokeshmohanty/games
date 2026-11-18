@@ -36,6 +36,7 @@ jobs:
   static:
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository
     runs-on: ubuntu-24.04
+    timeout-minutes: 10  # about 30 s; a hung step must not hold a runner for 6 h
     steps:
       - uses: actions/checkout@v7
         with:
@@ -58,6 +59,7 @@ jobs:
   build:
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository
     runs-on: ubuntu-24.04
+    timeout-minutes: 20  # about 2 min; more with cold caches (Pyodide, web app builds)
     steps:
       - uses: actions/checkout@v7
         with:
@@ -125,6 +127,7 @@ jobs:
   shard:
     needs: [static, build]
     runs-on: ubuntu-24.04
+    timeout-minutes: 25  # 4-7 min; a hung suite fails here, not after 6 h
     strategy:
       fail-fast: false
       matrix:

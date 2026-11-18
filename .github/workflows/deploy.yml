@@ -49,6 +49,7 @@ jobs:
   build-community:
     if: ${{ inputs.skip_tests }}
     runs-on: ubuntu-24.04
+    timeout-minutes: 20  # as test.yml build: cold caches take longer
     permissions:
       contents: read
     steps:
@@ -98,6 +99,7 @@ jobs:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     runs-on: ubuntu-24.04
+    timeout-minutes: 10  # an upload and a deploy
     steps:
       - name: Setup Pages
         uses: actions/configure-pages@v6

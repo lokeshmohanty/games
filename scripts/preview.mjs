@@ -571,19 +571,18 @@ const GAMES = {
 	"neon-fission": {
 		file: "?game=neon-fission&fresh=1",
 		// One phone against three bots: no handshake, so the harness skips its
-		// own and `beforeStart` seats the bots, sets the table and plays the
+		// own and `beforeStart` sets the quick table to 4 players and plays the
 		// quiet opening off camera; the clip opens on a grid about to chain.
 		peers: 1,
 		seconds: 14,
 		async beforeStart([page]) {
 			await page.locator("button", { hasText: "SINGLE PLAYER" }).first().click();
-			for (let i = 0; i < 2; i++) await page.locator("button", { hasText: "ADD BOT" }).first().click();
+			for (let i = 0; i < 8 && Number(await page.locator(".quick-n").textContent()) < 4; i++) await page.locator('.quick-table [data-qt="plus"]').click();
 			await page.locator("button", { hasText: "START GAME" }).first().click();
 			await page.waitForFunction(() => window.__game?.handle, null, { timeout: 20_000 });
 			const G = await gameScope(page, 20_000);
-			await G.waitForFunction(() => window.__game.handle.debug().phase === "setup", null, { timeout: 20_000 });
+			await G.waitForFunction(() => window.__game.handle.debug().match, null, { timeout: 20_000 });
 			await readyToClick(page);
-			await G.locator("#setup button", { hasText: "START" }).click();
 			const end = Date.now() + 40_000;
 			while (Date.now() < end && (await fissionStep(page, G)) < 22) await sleep(80);
 		},
