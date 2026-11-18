@@ -46,20 +46,31 @@ const wire = [];
 /**
  * A fake link pair, not yet registered with either room — hand each end to
  * `_linkOpened` to exercise the real "a connection just opened" path. A closed
- * end stops carrying anything, as a real channel would.
+ * end stops carrying anything, as a real channel would. What crosses it is
+ * what a data channel carries: the real `toWire` strings, read back by the
+ * real `fromWire` (an election request once died there, unseen here).
  */
+const { toWire, fromWire } = NeonArcade._codec;
 function linkPair(a, b) {
 	const end = (self, other, peer) => ({
 		peerId: other.selfId,
 		closed: false,
+		chunks: new Map(),
 		send(env) {
 			// A muted room (its uplink dead) sends nothing.
 			if (this.closed || self.__mute) return;
-			const copy = structuredClone(env);
-			wire.push({ from: self.selfId, to: other.selfId, env: copy });
+			wire.push({ from: self.selfId, to: other.selfId, env: structuredClone(env) });
+			const strings = toWire(env);
 			// A frozen room (a tab in the background) hears nothing.
 			// A deaf one (its downlink dead) too.
-			setTimeout(() => other.__frozen || other.__deaf || other._inbound(peer(), copy), 1);
+			setTimeout(() => {
+				if (other.__frozen || other.__deaf) return;
+				const far = peer();
+				for (const str of strings) {
+					const msg = fromWire(far.chunks, str);
+					if (msg) other._inbound(far, msg);
+				}
+			}, 1);
 		},
 		close() {
 			this.closed = true;
@@ -104,6 +115,24 @@ async function party(names, topology, opts = {}) {
 }
 
 // ---------------------------------------------------------------------------
+console.log("\nthe wire: what a data channel carries");
+{
+	const chunks = new Map();
+	const read = (env) => toWire(env).map((str) => fromWire(chunks, str)).filter(Boolean);
+	const ask = { __c: "k1", r: 0, f: "aaa", t: null, id: "e1", h: 2, m: ["b", "c"] };
+	const got = read(ask);
+	check("an election request ({ __c: key, … }) arrives whole, not taken for a part", got.length === 1 && JSON.stringify(got[0]) === JSON.stringify(ask), JSON.stringify(got));
+	const big = { a: "x", d: "y".repeat(40_000), f: "aaa", t: null, id: "e2" };
+	const parts = toWire(big);
+	const back = parts.map((str) => fromWire(chunks, str)).filter(Boolean);
+	check("a big message goes as parts and arrives once, whole", parts.length === 4 && back.length === 1 && back[0].d === big.d, `${parts.length} parts, ${back.length} back`);
+	const huge = fromWire(chunks, JSON.stringify({ __c: "z", i: 0, n: 1e6, p: "{" }));
+	check("a part claiming a million parts is not a part: nothing is held for it", !chunks.has("z") && huge?.n === 1e6, JSON.stringify(huge));
+	fromWire(chunks, JSON.stringify({ __c: "w", i: 0, n: 2, p: '{"a":' }));
+	check("a part disagreeing about the count is dropped", fromWire(chunks, JSON.stringify({ __c: "w", i: 1, n: 3, p: '"x"}' })) === null && chunks.get("w").length === 2);
+	check("not JSON, or not an object: nothing", fromWire(chunks, "{oops") === null && fromWire(chunks, "7") === null && fromWire(chunks, "null") === null);
+}
+
 console.log("\nprivate channels");
 
 {
