@@ -6,7 +6,7 @@
 
 import { existsSync } from "node:fs";
 import { createServer } from "node:http";
-import { gameFrame, serve } from "./serve.mjs";
+import { gameFrame, serve, settled } from "./serve.mjs";
 import { loadPlaywright } from "./playwright.mjs";
 
 const TIMEOUT = 30_000;
@@ -80,8 +80,7 @@ try {
 	await f.waitForFunction(() => document.documentElement.dataset.theme === "neon", null, { timeout: 5000 }).catch(() => {});
 	a = await f.evaluate(() => ({ ...document.documentElement.dataset }));
 	check("switching on the page switches the frame", a.theme === "neon", a);
-	await p.waitForTimeout(200);
-	const after = await boardColour();
+	const after = await settled(boardColour, (c) => c !== before, 5000);
 	check("…and the game repaints its canvas in the new colours", before !== after, `${before} → ${after}`);
 	// A v2 frame has the theme as values (sdk/v2/runtime.js arcade.theme).
 	const same = await Promise.all([p.evaluate(() => NeonArcade.palette().bg), f.evaluate(() => window.arcade?.theme?.tokens.bg ?? NeonArcade.palette().bg)]);
@@ -109,8 +108,17 @@ try {
 			localStorage.setItem("neon.rs", "http://127.0.0.1:9");
 		} catch {}
 	});
-	const slowFonts = (route) => setTimeout(() => route.continue().catch(() => {}), 2500);
-	await cold.route("**/assets/fonts/*.woff2", slowFonts);
+	// The fonts are held until the test lets them go, not for a fixed 2.5 s
+	// that a slow runner's boot could outlast: a frame that waited for them
+	// would never come up.
+	let gate = null;
+	const holdFonts = () => {
+		let open;
+		gate = new Promise((r) => (open = r));
+		return open;
+	};
+	await cold.route("**/assets/fonts/*.woff2", (route) => gate.then(() => route.continue().catch(() => {})));
+	const fontsGo = holdFonts();
 	const cp = await cold.newPage();
 	const refused = [];
 	cp.on("console", (m) => /Content Security Policy|Refused to/.test(m.text()) && refused.push(m.text()));
@@ -120,11 +128,14 @@ try {
 	const cf = await gameFrame(cp, TIMEOUT);
 	const mounted = Date.now() - t0;
 	const early = await faces(cf);
-	check("the frame comes up before the fonts have downloaded, without their faces", mounted < 2500 && early.rules === 0, { mounted, ...early });
+	// The fonts are held, so a frame that waited for them would not come up at
+	// all; the bound (generous for a slow runner) still catches a slow boot.
+	check("the frame comes up before the fonts have downloaded, without their faces", mounted < 5000 && early.rules === 0, { mounted, ...early });
 	await cf.evaluate(() => {
 		window.__themeSets = 0;
 		window.arcade.on("theme.set", () => window.__themeSets++);
 	});
+	fontsGo();
 	await cf.waitForFunction(() => [...document.fonts].filter((x) => x.status === "loaded").length >= 4, null, { timeout: 15_000 }).catch(() => {});
 	const lateFaces = await faces(cf);
 	check("…then all four faces arrive as data and load", lateFaces.rules === 4 && lateFaces.late && ["Space Grotesk Variable", "Nunito Variable", "Cascadia Code Variable"].every((x) => lateFaces.loaded.includes(x)), lateFaces);
@@ -133,6 +144,7 @@ try {
 	// A game that measured its layout in the fallback font measures again
 	// (the runtime dispatches `resize` once the fonts are in): Light Cycles
 	// sizes its board from the heights of its text.
+	const lightFontsGo = holdFonts();
 	const lp = await cold.newPage();
 	await lp.goto(site.url("?game=lokeshmohanty/light-cycles&fresh=1&mode=bots&start=1"), { waitUntil: "commit" });
 	const lf = await gameFrame(lp, TIMEOUT);
@@ -143,6 +155,7 @@ try {
 		addEventListener("resize", () => window.__seen.push(["resize", performance.now()]));
 		document.fonts.addEventListener("loadingdone", () => window.__seen.push(["fonts", performance.now()]));
 	});
+	lightFontsGo();
 	await lf.waitForFunction(() => [...document.fonts].filter((x) => x.status === "loaded").length >= 4, null, { timeout: 15_000 }).catch(() => {});
 	await lp.waitForTimeout(300);
 	const afterFonts = await board();

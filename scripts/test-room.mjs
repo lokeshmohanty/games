@@ -1541,7 +1541,10 @@ try {
 			await wait(50);
 			const other = NeonArcade.createHost({ name: "Other" });
 			say({ t: "offer", from: peer, sdp: (await other.createInvite({ hard: theirsHard })).code });
-			for (let i = 0; i < 30 && !sent.some((m) => m.to === peer && (m.t === "answer" || m.t === "offer")); i++) await wait(100);
+			// An answer needs a real gather (up to 4 s without a reflexive
+			// candidate, net.js ICE_TIMEOUT_MS): a deadline past it, then 300 ms
+			// for any extra offer.
+			for (const end = Date.now() + 10_000; Date.now() < end && !sent.some((m) => m.to === peer && (m.t === "answer" || m.t === "offer")); ) await wait(100);
 			await wait(300);
 			const offers = sent.filter((m) => m.t === "offer" && m.to === peer).map((m) => m.sdp);
 			const answered = sent.some((m) => m.t === "answer" && m.to === peer);
@@ -1634,11 +1637,16 @@ try {
 			for (let i = 0; i < 20 && !offerAt(); i++) await wait(50);
 			// A well-formed code for no slot of H's: taken as an answer, ignored.
 			if (answerOurs) say({ t: "answer", from: peer, sdp: theirs });
-			for (let i = 0; i < 100 && !(h.room.links.get(peer)?.open && old.links.get(h.room.selfId)?.open); i++) await wait(100);
+			// GLARE_FALLBACK_MS (6 s) passes before the answer even starts: a
+			// deadline well past it, three of these running at once.
+			const t1 = Date.now();
+			for (const end = t1 + 20_000; Date.now() < end && !(h.room.links.get(peer)?.open && old.links.get(h.room.selfId)?.open); ) await wait(100);
+			const linkMs = Date.now() - t1;
 			const out = {
 				offered: sent.filter((m) => m.t === "offer" && m.to === peer).map((m) => m.sdp),
 				answeredAfter: answering && offerAt() ? Math.round(answering - offerAt()) : null,
 				linked: !!h.room.links.get(peer)?.open,
+				linkMs,
 			};
 			old.leave();
 			h.room.leave();
@@ -1813,7 +1821,7 @@ try {
 		localStorage.setItem("neon.room", JSON.stringify({ code: h.code, id: "000000000000", secret: "lowest-id" }));
 		const b = await NeonArcade.joinRoom(h.code, { name: "B", reconnectGraceMs: 60_000 });
 		const hid = h.room.selfId;
-		for (let i = 0; i < 100 && !(b.room.directPeers().includes(a.room.selfId) && b.room.directPeers().includes(hid)); i++) await wait(100);
+		for (const end = Date.now() + 20_000; Date.now() < end && !(b.room.directPeers().includes(a.room.selfId) && b.room.directPeers().includes(hid)); ) await wait(100);
 		const meshed = b.room.directPeers().length === 2;
 		window.__reload(h, hToken);
 		// B's own conclusion, as if its vouch request found nobody linked.
@@ -1872,7 +1880,7 @@ try {
 			localStorage.setItem("neon.room", JSON.stringify({ code: h.code, id: "000000000000", secret: `lowest-id-${drops}` }));
 			const b = await NeonArcade.joinRoom(h.code, { name: "B", reconnectGraceMs: 60_000 });
 			const aid = a.room.selfId;
-			for (let i = 0; i < 100 && b.room.directPeers().length < 2; i++) await wait(100);
+			for (const end = Date.now() + 20_000; Date.now() < end && b.room.directPeers().length < 2; ) await wait(100);
 			const meshed = b.room.directPeers().length === 2;
 			b.room.relayTimeoutMs = 4000;
 			// The host loses B's relayed offers to A, as a forwarder with no

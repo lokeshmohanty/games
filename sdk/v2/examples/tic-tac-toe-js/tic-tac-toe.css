@@ -7,6 +7,15 @@ body { margin: 0; min-height: 100dvh; display: grid; place-content: center; gap:
 #ttt button { aspect-ratio: 1; font-size: min(14vw, 64px); background: var(--surface);
   border: 2px solid var(--rule); border-radius: 12px; color: var(--accent); font-family: var(--font-display); }
 #ttt button.o { color: var(--accent-2); }
+/* The last mark: ringed in its own colour, with a dot in the corner (a shape,
+   not colour alone). It pops once as it appears, unless motion is reduced. */
+#ttt button.last { position: relative; border-color: currentColor; box-shadow: inset 0 0 0 2px currentColor; }
+#ttt button.last::after { content: ""; position: absolute; top: 10%; right: 10%; width: 10%; aspect-ratio: 1;
+  border-radius: 50%; background: currentColor; }
+@media (prefers-reduced-motion: no-preference) {
+  #ttt button.last::after { animation: ttt-last 360ms ease-out; }
+}
+@keyframes ttt-last { from { transform: scale(2.4); opacity: 0.3; } }
 #over { position: fixed; inset: 0; display: grid; place-content: center; background: var(--scrim); }
 #over .card { display: grid; gap: 16px; padding: 24px 32px; background: var(--surface); color: var(--ink); border-radius: 16px; }
 #over[hidden] { display: none; }

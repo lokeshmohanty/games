@@ -341,7 +341,14 @@ try {
 	await startSolo(page, "?game=lokeshmohanty%2Fliars-dice&fresh=1", "SINGLE PLAYER");
 	G = await gameScope(page, TIMEOUT);
 	await readyToClick(page);
-	await sleep(1200);
+	// Rolled, both cups committed and collected, the clock on to "bid": a few
+	// round trips through the shell, not a fixed time. The clock collects
+	// before it moves on (lib/rounds.js), so digests read at "bid" still prove
+	// every cup was committed first.
+	await G.waitForFunction(() => {
+		const d = window.__game.handle.debug();
+		return d.phase === "bid" || !!d.over;
+	}, null, { timeout: TIMEOUT }).catch(() => {});
 
 	let ld = await debug(page);
 	check("two seats, five dice each", ld.seats.length === 2 && ld.seats.every((s) => s.dice === 5), JSON.stringify(ld.seats));
@@ -381,10 +388,11 @@ try {
 	// raise is always plausible, so neither side ever has a reason to call and
 	// the round runs until the phase deadline. The test wants the chain, not a
 	// good game of dice.
+	// Bounded by a deadline (two bot answers and a settle take seconds), and
+	// read where the call is first seen: a new roll clears lastCall.
 	let myBids = 0;
-	for (let i = 0; i < 120; i++) {
-		const d = await debug(page);
-		if (d.lastCall || d.over) break;
+	ld = await debug(page);
+	for (const end = Date.now() + 60_000; !(ld.lastCall || ld.over) && Date.now() < end; ld = await debug(page)) {
 		myBids += await G.evaluate((bidsSoFar) => {
 			const btns = [...document.querySelectorAll(".ld-actions button")];
 			const bid = btns.find((b) => b.textContent.startsWith("BID"));
@@ -403,7 +411,6 @@ try {
 		await sleep(300);
 	}
 
-	ld = await debug(page);
 	check("a call settled a round", !!ld.lastCall, JSON.stringify({ phase: ld.phase, bid: ld.bid }));
 	check("every cup was opened", ld.revealed === 2, `${ld.revealed}`);
 	check("and every one audited clean", Object.values(ld.verdicts).every((v) => v === null), JSON.stringify(ld.verdicts));
@@ -494,9 +501,23 @@ try {
 	const placed = { 0: 6 };
 	const drift = [];
 	const nbSeen = {};
-	for (let i = 0; i < 400; i++) {
+	// Bounded by progress, as Battleship's volleys are: a lot takes a 3.2 s
+	// show and the test's own 1.2 s pause, more on a slow runner, so a count
+	// of polls ran short there. The fault would be a lot that never settles,
+	// so progress is a lot settled or a new one opened (not a phase change: a
+	// bug that cycled phases without settling would never stall). The stall
+	// outlasts a whole lot at its phases' own deadlines (neon-bid.js: bid
+	// 60 s, open 6 s, show 3.2 s), and a hard cap bounds the run whatever.
+	const NB_STALL = 90_000;
+	const NB_CAP = Date.now() + 15 * 60_000;
+	let nbLast = { at: Date.now(), key: "" };
+	for (;;) {
 		const d = await debug(page);
 		if (d.over) break;
+		const key = `${d.round}/${d.results.length}`;
+		if (key !== nbLast.key) nbLast = { at: Date.now(), key };
+		else if (Date.now() - nbLast.at > NB_STALL) break;
+		if (Date.now() > NB_CAP) break;
 		if (d.phase === "bid" && (d.lot !== d.round || d.results.length !== d.round)) {
 			drift.push(`bidding lot ${d.round} with lot ${d.lot} next and ${d.results.length} settled`);
 		}
@@ -517,9 +538,8 @@ try {
 		}
 		await sleep(250);
 	}
-	await sleep(500);
 	nb = await debug(page);
-	check("the game reaches the final table", !!nb.over, JSON.stringify({ phase: nb.phase, lot: nb.lot }));
+	check("the game reaches the final table", !!nb.over, JSON.stringify({ phase: nb.phase, lot: nb.lot, round: nb.round, settled: nb.results.length, stalledFor: Date.now() - nbLast.at }));
 	check("all twelve lots were settled", nb.results.length === 12, `${nb.results.length}`);
 	check("the lot on screen is always the lot being settled", !drift.length, [...new Set(drift)].slice(0, 3).join("; "));
 	const meBid = nb.players[0].id;
@@ -612,6 +632,31 @@ try {
 	check("both boards are on screen once the shooting starts", battle.visibleGrids === 2, `${battle.visibleGrids}`);
 	check("both boards fit the phone", battle.bottom <= 844 && battle.docWidth <= battle.winWidth, JSON.stringify(battle));
 
+	// The last shot on each board is marked: two volleys by hand, each square
+	// we fire at checked against the mark on their board, and the bot's
+	// latest shot against the mark on ours. One mark a board, never two.
+	/** The squares marked as the last shot: { theirs: [[r, c]…], mine: […] }. */
+	const lastMarks = () => G.evaluate(() => Object.fromEntries(["theirs", "mine"].map((b) => [b, [...document.querySelectorAll(`[data-board="${b}"] .bs-cell.last`)].map((c) => [+c.dataset.r, +c.dataset.c])])));
+	let marksOk = true;
+	let marksSeen = "";
+	for (let v = 1; v <= 2; v++) {
+		await G.waitForFunction(() => window.__game.handle.debug().phase === "fire", null, { timeout: TIMEOUT });
+		const at = await G.evaluate(() => {
+			const at = window.battleshipRules.botTarget(window.__game.handle.debug().theirBoard);
+			document.querySelector(`[data-board="theirs"] .bs-cell[data-r="${at[0]}"][data-c="${at[1]}"]`).click();
+			return at;
+		});
+		await G.waitForFunction((v) => {
+			const d = window.__game.handle.debug();
+			return d.shotsAtThem === v && d.shotsAtMe === v;
+		}, v, { timeout: TIMEOUT });
+		const d = await debug(page);
+		const marks = await lastMarks();
+		marksSeen += ` volley ${v}: fired ${at}, marks ${JSON.stringify(marks)}, at us ${JSON.stringify(d.myBoard.map((s) => s.at))};`;
+		marksOk &&= JSON.stringify(marks.theirs) === JSON.stringify([at]) && JSON.stringify(marks.mine) === JSON.stringify([d.myBoard.at(-1).at]);
+	}
+	check("the last shot is marked on each board: ours where we fired, theirs where the bot did", marksOk, marksSeen);
+
 	// Play it out, using the game's own targeting so a game actually ends.
 	//
 	// Bounded by progress, not by a count of polls. A volley takes the game's
@@ -663,6 +708,13 @@ try {
 	check("and both audited clean", Object.keys(bs.audits).length === 2 && Object.values(bs.audits).every((a) => a === null), fought);
 	check("the phase leaves the firing state", bs.phase === "over", fought);
 	if (bs.over?.winner !== undefined) await resultReached(page, "lokeshmohanty/battleship", bs.over.winner === (await selfOf(page)));
+	const endMarks = await lastMarks();
+	check("…the final volley still marked, one a board", endMarks.theirs.length === 1 && endMarks.mine.length === 1, endMarks);
+	// NEW GAME: fresh boards and no mark left over from the last one.
+	await G.evaluate(() => [...document.querySelectorAll(".bs-actions button")].find((b) => b.textContent === "NEW GAME").click());
+	await G.waitForFunction(() => window.__game.handle.debug().phase === "place", null, { timeout: TIMEOUT });
+	const newMarks = await lastMarks();
+	check("…and NEW GAME clears them", !newMarks.theirs.length && !newMarks.mine.length, newMarks);
 
 	// The claim, tested by breaking it: a fleet that does not match the answers
 	// given must fail the audit. This is done against the real helper rather
@@ -706,6 +758,8 @@ try {
 	await page.waitForFunction(() => window.__game?.handle, null, { timeout: TIMEOUT });
 	G = await gameScope(page, TIMEOUT);
 	await readyToClick(page);
+	// The frame is up before the host's first view reaches it (riders: none).
+	await G.waitForFunction(() => window.__game.handle.debug().riders.length === 4, null, { timeout: TIMEOUT }).catch(() => {});
 
 	let lc = await debug(page);
 	check("four riders took the arena", lc.riders.length === 4, `${lc.riders.length}`);
@@ -718,7 +772,7 @@ try {
 
 	await G.waitForFunction(() => window.__game.handle.debug().racing, null, { timeout: TIMEOUT });
 	const wallsAtStart = (await debug(page)).walls;
-	await sleep(1500);
+	await G.waitForFunction((w) => window.__game.handle.debug().walls > w, wallsAtStart, { timeout: 10_000 }).catch(() => {});
 	lc = await debug(page);
 	check("walls are being laid down", lc.walls > wallsAtStart, `${wallsAtStart} -> ${lc.walls}`);
 
@@ -817,22 +871,36 @@ try {
 		const c = document.querySelector(".br-field canvas");
 		return { x: c.clientLeft, y: c.clientTop };
 	});
-	const tapField = (x, y) => page.mouse.click(canvasBox.x + inset.x + x, canvasBox.y + inset.y + y);
+	// One finger's pace: the frame takes a tap within TAP_MIN_MS (80 ms) of the
+	// last as a bounce, and a judged tap can come back sooner than that.
+	let lastTapAt = 0;
+	const tapField = async (x, y) => {
+		await sleep(Math.max(0, lastTapAt + 150 - Date.now()));
+		lastTapAt = Date.now();
+		await page.mouse.click(canvasBox.x + inset.x + x, canvasBox.y + inset.y + y);
+	};
+	// A tap is judged on the host and comes back in a view (`ack`, the last of
+	// this phone's taps judged): read after that, not after a fixed pause.
+	const judged = (taps) =>
+		G.waitForFunction((t) => {
+			const d = window.__game.handle.debug();
+			return d.taps > t && d.ack >= d.taps;
+		}, taps, { timeout: 5000 }).catch(() => {});
 	let popped = false;
-	for (let i = 0; i < 60 && !popped; i++) {
+	for (const end = Date.now() + 20_000; !popped && Date.now() < end; ) {
 		const d = await debug(page);
 		const b = d.bubbles.filter((b) => b.k !== "x" && b.py > b.pr && b.py < d.field.h - b.pr).sort((p, q) => p.py - q.py)[0];
 		if (b && !d.stunned) {
 			const before = d.scores[d.you] ?? 0;
 			await tapField(b.px, b.py);
-			await sleep(300);
+			await judged(d.taps);
 			popped = ((await debug(page)).scores[d.you] ?? 0) > before;
 		} else await sleep(150);
 	}
 	check("a tap on a bubble pops it: the host judged it and scored it", popped);
 	// Empty field: a spot near the top no bubble is near, as far as this phone sees.
 	let missed = null;
-	for (let i = 0; i < 40 && missed === null; i++) {
+	for (const end = Date.now() + 20_000; missed === null && Date.now() < end; ) {
 		const d = await debug(page);
 		const spot = [[0.08, 0.04], [0.92, 0.04], [0.5, 0.04]]
 			.map(([x, y]) => [d.field.w * x, d.field.h * y])
@@ -840,9 +908,10 @@ try {
 		if (spot && !d.stunned) {
 			const before = d.scores[d.you] ?? 0;
 			await tapField(...spot);
-			await sleep(300);
+			await judged(d.taps);
 			const after = await debug(page);
-			missed = { before, after: after.scores[d.you] ?? 0, streak: after.streak, misses: after.misses - d.misses };
+			// A tap the frame did not take (the round paused, say) is tapped again.
+			if (after.taps > d.taps) missed = { before, after: after.scores[d.you] ?? 0, streak: after.streak, misses: after.misses - d.misses, taps: after.taps, ack: after.ack };
 		} else await sleep(150);
 	}
 	check("a tap on empty field scores nothing, counts one miss on the host, and breaks the streak", missed && missed.after === missed.before && missed.misses === 1 && missed.streak === 0, JSON.stringify(missed));
@@ -952,6 +1021,9 @@ try {
 				const real = window.requestAnimationFrame;
 				const queued = [];
 				window.requestAnimationFrame = (cb) => (queued.push(cb), 0);
+				// Callbacks run in the order asked for: this one runs after a
+				// frame already on its way has drawn.
+				window.__held = new Promise((r) => real(() => r()));
 				return () => {
 					window.requestAnimationFrame = real;
 					for (const cb of queued.splice(0)) real(cb);
@@ -965,7 +1037,7 @@ try {
 		const counts = () => F.evaluate(() => ({ popped: view.mine?.popped ?? 0, misses: view.mine?.misses ?? 0 }));
 		for (let i = 0, tries = 0; out.pops + out.misses < n && tries < n * 3; tries++) {
 			await F.evaluate(() => (window.__release = window.__hold()));
-			await sleep(30); // a frame already on its way finishes
+			await F.evaluate(() => window.__held); // a frame already on its way finishes
 			const b = await F.evaluate(() => {
 				const t = window.__shown;
 				if (t === null || view?.phase !== "play") return null;
@@ -988,11 +1060,12 @@ try {
 			await sleep(holdMs[0] + Math.random() * (holdMs[1] - holdMs[0]));
 			await p.touchscreen.tap(box.x + inset + b.px, box.y + inset + b.py);
 			await F.evaluate(() => window.__release());
-			let after = before;
-			for (let k = 0; k < 25 && after.popped === before.popped && after.misses === before.misses; k++) {
-				await sleep(60);
-				after = await counts();
-			}
+			// Until the host has judged this tap (its view's `ack` reaches this
+			// phone's tap number): a late answer must not land in the next tap's
+			// count, and a slow one is not "someone popped it first".
+			const tapped = await F.evaluate(() => tapN);
+			await F.waitForFunction((n) => (view?.ack ?? 0) >= n, tapped, { timeout: 5000 }).catch(() => {});
+			const after = await counts();
 			if (after.popped > before.popped) out.pops++;
 			else if (after.misses > before.misses) out.misses++;
 			else out.first++; // someone popped it first: neither
@@ -1097,6 +1170,13 @@ try {
 	check("a bot took the second seat", state.red !== null && state.yellow !== null);
 	check("the bot is the one that is not us", state.yellow?.startsWith("bot_"), state.yellow);
 	check("the board starts empty", state.board.every((r) => r.every((v) => v === 0)));
+	/** The move line under the board, and whether it is a polite live region. */
+	const movedLine = () => c4.evaluate(() => {
+		const e = document.getElementById("moved");
+		return { text: e.textContent, live: e.getAttribute("role") === "status" && e.getAttribute("aria-live") === "polite" };
+	});
+	let said = await movedLine();
+	check("the move line is a polite live region, silent on the first view", said.live && said.text === "", JSON.stringify(said));
 
 	/** Drop a disc in `col` by clicking the board where a player would. */
 	async function drop(col) {
@@ -1147,6 +1227,17 @@ try {
 
 	await drop(0);
 	check("the bot answers with no network at all", await botReplies(0));
+
+	// The last move is ringed (connect4.js draw): the bot's disc, once it has
+	// fallen. Our own is checked after PLAY AGAIN, under reduced motion.
+	const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+	state = await debug(page);
+	const botDisc = state.board.flatMap((row, r) => row.flatMap((v, c) => (v === 2 ? [[r, c]] : [])));
+	await c4.waitForFunction((at) => JSON.stringify(window.__game.handle.debug().marked) === JSON.stringify(at), botDisc[0] ?? null, { timeout: 3000 }).catch(() => {});
+	state = await debug(page);
+	check("the bot's disc is ringed as the last move, after it falls into place", botDisc.length === 1 && same(state.last, botDisc[0]) && same(state.marked, botDisc[0]) && state.drops >= 1, JSON.stringify({ botDisc, last: state.last, marked: state.marked, drops: state.drops }));
+	said = await movedLine();
+	check("…and said in words: Yellow dropped in its column", said.text === `Yellow dropped in column ${(botDisc[0]?.[1] ?? -2) + 1}`, JSON.stringify(said));
 
 	// Build a threat and see whether it is honoured. The bot is not told what we
 	// are doing; it has to find the block itself.
@@ -1218,6 +1309,30 @@ try {
 	check("the finished game is in this device's stats, counted once", mine.stats?.[c4Id]?.played === 1, JSON.stringify(mine.stats?.[c4Id] ?? mine.stats));
 	check("…against a bot", mine.stats?.[c4Id]?.vsBots === 1);
 	check("…and it is the most recent game", mine.recent?.[0] === c4Id, JSON.stringify(mine.recent));
+
+	// PLAY AGAIN: a fresh board, and no ring left over from the game before.
+	await page.locator(".managed-over button", { hasText: "PLAY AGAIN" }).click({ timeout: TIMEOUT });
+	await c4.waitForFunction(() => {
+		const d = window.__game.handle.debug();
+		return d.match === 2 && d.board.every((r) => r.every((v) => v === 0));
+	}, null, { timeout: TIMEOUT }).catch(() => {});
+	state = await debug(page);
+	check("PLAY AGAIN: an empty board with no last move ringed", state.match === 2 && state.last === null && state.marked === null, JSON.stringify({ match: state.match, last: state.last, marked: state.marked }));
+	said = await movedLine();
+	check("…and no move said", said.text === "", JSON.stringify(said));
+	// Reduced motion: no fall, and the ring is on our disc in the same paint.
+	await page.emulateMedia({ reducedMotion: "reduce" });
+	const dropsBefore = state.drops;
+	await c4.waitForFunction(() => window.__game.handle.debug().turn === window.__game.handle.debug().you, null, { timeout: TIMEOUT });
+	await drop(3);
+	state = await c4.waitForFunction(() => {
+		const d = window.__game.handle.debug();
+		return d.board[5][3] !== 0 && d;
+	}, null, { timeout: TIMEOUT }).then((h) => h.jsonValue(), () => debug(page));
+	check("…our disc is ringed at once under reduced motion, with no fall", same(state.marked, [5, 3]) && same(state.last, [5, 3]) && state.drops === dropsBefore, JSON.stringify({ marked: state.marked, last: state.last, drops: [dropsBefore, state.drops] }));
+	said = await movedLine();
+	check("…and said: Red dropped in column 4", said.text === "Red dropped in column 4", JSON.stringify(said));
+	await page.emulateMedia({ reducedMotion: null });
 	// A game played: ./ opens on My Games now, with Recently played; the
 	// cards with your record are All Games' (lib/portal.js).
 	await page.goto(url("index.html"));
@@ -1642,7 +1757,9 @@ try {
 	console.log("\nbots: neon survival runs for one player, and for one plus bots");
 	await startSolo(page, "?game=neon-survival-mp&fresh=1", "SINGLE PLAYER");
 	G = await gameScope(page, TIMEOUT);
-	await sleep(600);
+	// The frame is up before the platform has run the game's init: until then
+	// nothing flies, and "no bots" would hold of an empty world.
+	await G.waitForFunction(() => window.gameActive, null, { timeout: TIMEOUT }).catch(() => {});
 	let solo = await G.evaluate(() => ({
 		active: window.gameActive,
 		ships: Object.keys(window.botShips ?? {}).length,
@@ -1658,7 +1775,7 @@ try {
 	await page.locator("button", { hasText: "START GAME" }).first().click();
 	await page.waitForFunction(() => window.__game?.handle, null, { timeout: TIMEOUT });
 	G = await gameScope(page, TIMEOUT);
-	await sleep(400);
+	await G.waitForFunction(() => Object.keys(window.botShips ?? {}).length === 2, null, { timeout: TIMEOUT }).catch(() => {});
 
 	const before = await G.evaluate(() =>
 		Object.entries(window.botShips).map(([id, s]) => [id, s.x, s.y]),
@@ -1823,16 +1940,18 @@ try {
 			.then(() => true)
 			.catch(() => false);
 		check("LEAVE PARTY asks before it walks out on the other player", asked);
-		await Promise.all([
-			replier.waitForURL(PORTAL, { timeout: TIMEOUT }),
-			replier.locator('dialog.neon-ask[open] [data-ask="yes"]').click(),
-		]);
-		const told = await inviter
+		// Watched for from before the yes: the notice lives 4.5 s, and the
+		// replier's page load can take longer than that on a slow runner.
+		const told = inviter
 			.locator(".neon-toast", { hasText: `${guestName} left the party.` })
 			.waitFor({ timeout: TIMEOUT })
 			.then(() => true)
 			.catch(() => false);
-		check("…and the one left behind is told", told);
+		await Promise.all([
+			replier.waitForURL(PORTAL, { timeout: TIMEOUT }),
+			replier.locator('dialog.neon-ask[open] [data-ask="yes"]').click(),
+		]);
+		check("…and the one left behind is told", await told);
 		await pair.close();
 	}
 
@@ -1864,15 +1983,23 @@ try {
 			await hostP.locator("button", { hasText: "START GAME" }).first().click();
 			await guestP.waitForFunction(() => window.__game?.handle, null, { timeout: TIMEOUT });
 			await (await gameScope(guestP, TIMEOUT)).waitForFunction(() => window.__game.handle.debug().started, null, { timeout: TIMEOUT });
+			// Red drops a disc before the host goes: the new host's view still rings it.
+			for (const p of [hostP, guestP]) {
+				const F = await gameScope(p, TIMEOUT);
+				await F.evaluate(() => window.__game.handle.debug().red === window.arcade.party.self && window.arcade.act({ col: 2 }));
+			}
+			await (await gameScope(guestP, TIMEOUT)).waitForFunction(() => window.__game.handle.debug().board[5][2] !== 0, null, { timeout: TIMEOUT });
+			await sleep(500); // the heir's copy follows each move
 		}
-		await hostP.close();
+		// Watched for from before the host goes: the notice lives 4.5 s.
 		const msg = midGame ? "You are the host now — CONNECT 4 goes on." : "You are the host now.";
-		const told = await guestP
+		const told = guestP
 			.locator(".neon-toast", { hasText: msg })
 			.waitFor({ timeout: TIMEOUT })
 			.then(() => true)
 			.catch(() => false);
-		check(`${midGame ? "mid-game" : "before START"}: the guest is told (${msg})`, told);
+		await hostP.close();
+		check(`${midGame ? "mid-game" : "before START"}: the guest is told (${msg})`, await told);
 		let after = await guestP
 			.waitForFunction(
 				(mid) => {
@@ -1900,6 +2027,10 @@ try {
 			midGame ? "…holds the game, and wins it: the other side left for good" : "…and holds the party, back on its screen",
 			after,
 		);
+		if (midGame) {
+			const held = await debug(guestP);
+			check("…and the disc dropped before the host left is still the one ringed", JSON.stringify(held.marked) === "[5,2]" && JSON.stringify(held.last) === "[5,2]", JSON.stringify({ marked: held.marked, last: held.last }));
+		}
 		await pair.close();
 	}
 

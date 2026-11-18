@@ -21,15 +21,16 @@
  * Camera access needs a secure context, so the repo is served over
  * http://localhost rather than opened from file://.
  */
-import { execFileSync, spawn } from "node:child_process";
+import { execFileSync } from "node:child_process";
 import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { dirname, join, resolve as resolvePath } from "node:path";
 import { fileURLToPath } from "node:url";
 import { loadPlaywright } from "./playwright.mjs";
+import { PORT_OFFSET, spawnServer } from "./serve.mjs";
 
 const ROOT = resolvePath(dirname(fileURLToPath(import.meta.url)), "..");
-const PORT = 8731;
+const PORT = 8731 + PORT_OFFSET; // NEON_PORT_OFFSET, as every other suite
 
 function chromePath() {
 	const found = [
@@ -70,17 +71,13 @@ const PAYLOAD = "A".repeat(0) +
 	).toString("latin1");
 
 // Serve the repo so the harness runs in a secure context.
-const server = spawn("python3", ["-m", "http.server", String(PORT), "--bind", "127.0.0.1"], {
-	cwd: ROOT,
-	stdio: "ignore",
-});
+const server = await spawnServer("python3", ["-u", "-m", "http.server", String(PORT), "--bind", "127.0.0.1"], { cwd: ROOT }, /Serving HTTP on/);
 const cleanup = () => {
 	try {
 		server.kill();
 	} catch {}
 };
 process.on("exit", cleanup);
-await new Promise((r) => setTimeout(r, 900));
 
 /** Render the code as a PNG exactly `pxWide` across, as it appears on a screen. */
 async function makeCodePng(pxWide) {
