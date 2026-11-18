@@ -228,8 +228,10 @@ async function checkBrowser(games) {
 					continue;
 				}
 				await solo.click({ timeout: TIMEOUT });
+				// A game whose seats leave a choice opens on the quick table,
+				// already at its minimum; fixed seats show ADD BOT.
 				const add = page.locator("button", { hasText: "ADD BOT" }).first();
-				for (let i = 1; i < m.seats.min && (await add.isEnabled().catch(() => false)); i++) await add.click();
+				for (let i = 1; i < m.seats.min && (await add.count()) && (await add.isEnabled().catch(() => false)); i++) await add.click();
 				await page.locator("button", { hasText: "START GAME" }).first().click({ timeout: TIMEOUT });
 			}
 			const frame = await gameFrame(page, TIMEOUT).catch(() => null);

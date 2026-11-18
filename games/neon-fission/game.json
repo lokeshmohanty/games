@@ -14,6 +14,7 @@
     "max": 8
   },
   "bots": true,
+  "sameDevice": true,
   "kind": "ffa",
   "tags": [
     "alone",

@@ -6,7 +6,9 @@
 let s = null;
 arcade.managed({
 	init({ seats }) {
-		s = { ticks: 0, dt: 0, score: Object.fromEntries(seats.map((p) => [p.id, 0])), last: {} };
+		// `local`: the seats it was told a person on the host's phone plays —
+		// never, as this game has no "sameDevice" (test-managed checks).
+		s = { ticks: 0, dt: 0, score: Object.fromEntries(seats.map((p) => [p.id, 0])), last: {}, local: seats.filter((p) => p.local).map((p) => p.id) };
 	},
 	tick({ inputs, dt }) {
 		s.ticks += 1;

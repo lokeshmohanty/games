@@ -64,7 +64,7 @@ import { createServer } from "node:net";
 import { homedir, tmpdir } from "node:os";
 import { dirname, join, resolve as resolvePath } from "node:path";
 import { fileURLToPath } from "node:url";
-import { gameFrame, readyToClick, serve } from "./serve.mjs";
+import { gameFrame, passTable, readyToClick, serve } from "./serve.mjs";
 import { loadPlaywright } from "./playwright.mjs";
 
 const ROOT = resolvePath(dirname(fileURLToPath(import.meta.url)), "..");
@@ -1391,6 +1391,7 @@ try {
 			await p.locator(".lobby-sub", { hasText: "Reconnecting" }).waitFor({ timeout: TIMEOUT });
 			await sleep(2000); // its join has bound the seat; alone, nobody answers it for 30 s
 			await p.evaluate((u) => location.assign(u), SITE.url("?game=neon-survival-mp&fresh=1&mode=bots"));
+			await passTable(p, 15_000).catch(() => {}); // its quick table: START GAME
 			const solo = await p.waitForFunction(() => window.__party?.game === "neon-survival-mp", null, { timeout: 15_000 }).then(() => true, () => false);
 			check("SINGLE PLAYER after leaving that page starts the bots game", solo && !/another tab/i.test(await said()), await said());
 			let seat = "id-taken";

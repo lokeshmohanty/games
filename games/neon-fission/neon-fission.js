@@ -6,11 +6,13 @@
 // turn-wait banner, draws the end card and hands over to the heir.
 //
 // Different devices: each phone is a seat, bots fill the rest. Same device:
-// when exactly one person is seated (SINGLE PLAYER / SAME DEVICE), they set
-// the table before the first move and may turn any bot seat into a "player
-// on this device". Such a seat is still a bot id to the platform, but its
-// turn is reported as the person's (turn()), so no bot plays it and no
-// "waiting for" banner shows; the person's tap is applied for it.
+// the platform's quick table (SINGLE PLAYER / SAME DEVICE, lib/party.js;
+// "sameDevice" in game.json) may make any bot seat a person beside the one
+// player, and says so with `local` on that seat in init. Such a seat is
+// still a bot id to the platform, but its turn is reported as the person's
+// (turn()), so no bot plays it and no "waiting for" banner shows; the
+// person's tap is applied for it. (Until 2026-11-17 the game set that table
+// itself, on a screen before the first move.)
 
 const R = globalThis.neonFissionRules;
 
@@ -24,7 +26,7 @@ function draw01() {
 	return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
 }
 
-// { match, phase: "setup"|"play", g, ids, names, kinds: "human"|"bot"|"local", owner, last, rng }
+// { match, g, ids, names, kinds: "human"|"bot"|"local", owner, last, rng }
 let s = null;
 const seatOf = (id) => (s ? s.ids.indexOf(id) : -1);
 const hasLocal = () => s.kinds.includes("local");
@@ -35,14 +37,13 @@ const nameFor = (kind, seat, name) => (kind === "local" ? `Player ${seat + 1}` :
 arcade.managed({
 	init({ seats, seed, match }) {
 		const humans = seats.filter((p) => !p.bot);
-		// The one person seated may hand bot seats to people beside them. Kept
-		// from the last match of this table, so PLAY AGAIN starts as it was.
+		// The one person seated plays the seats of the people beside them
+		// (the platform's `local`; it keeps them for PLAY AGAIN). With more
+		// than one person there is no one phone to pass: those are bots.
 		const owner = humans.length === 1 ? humans[0].id : null;
-		const wasLocal = new Set(s && s.owner === owner ? s.ids.filter((_, i) => s.kinds[i] === "local") : []);
-		const kinds = seats.map((p) => (!p.bot ? "human" : owner && wasLocal.has(p.id) ? "local" : "bot"));
+		const kinds = seats.map((p) => (!p.bot ? "human" : owner && p.local ? "local" : "bot"));
 		s = {
 			match: match + 1,
-			phase: owner && seats.some((p) => p.bot) ? "setup" : "play",
 			g: R.newGame(seats.length),
 			ids: seats.map((p) => p.id),
 			bare: seats.map((p) => p.name ?? "Player"),
@@ -55,18 +56,6 @@ arcade.managed({
 	},
 	apply({ action, by }) {
 		if (!action || typeof action !== "object") return "no such move";
-		if (s.phase === "setup") {
-			if (by !== s.owner) return "the table is being set";
-			if (action.start) {
-				s.phase = "play";
-				return;
-			}
-			const i = action.seat;
-			if (!Number.isInteger(i) || s.kinds[i] === "human" || s.kinds[i] === undefined) return "only a bot seat can change";
-			s.kinds[i] = action.local ? "local" : "bot";
-			s.names[i] = nameFor(s.kinds[i], i, s.bare[i]);
-			return;
-		}
 		const g = s.g;
 		if (g.winner !== null) return "the game is over";
 		if (moverOf(g.turn) !== by) return "not your turn";
@@ -83,7 +72,6 @@ arcade.managed({
 		const { cells, orbs } = R.holdings(g);
 		return {
 			match: s.match,
-			phase: s.phase,
 			cols: g.cols,
 			rows: g.rows,
 			owner: g.owner,
@@ -93,19 +81,18 @@ arcade.managed({
 			winner: g.winner,
 			players: s.ids.map((id, i) => ({ name: s.names[i], kind: s.kinds[i], out: g.out[i] !== null, gone: g.gone[i], cells: cells[i], orbs: orbs[i] })),
 			you: seat ? seatOf(seat) : -1,
-			// This phone sets the table and plays the local seats.
+			// This phone plays the local seats.
 			setter: !!seat && seat === s.owner,
 			ownerName: s.owner ? s.names[seatOf(s.owner)] : null,
 			last: s.last,
 		};
 	},
 	turn() {
-		if (s.phase === "setup") return [s.owner];
 		if (s.g.winner !== null) return [];
 		return [moverOf(s.g.turn)];
 	},
 	bot({ seat }) {
-		if (s.phase !== "play" || s.g.winner !== null || s.ids[s.g.turn] !== seat || s.kinds[s.g.turn] !== "bot") return null;
+		if (s.g.winner !== null || s.ids[s.g.turn] !== seat || s.kinds[s.g.turn] !== "bot") return null;
 		return { cell: R.botMove(s.g, draw01) };
 	},
 	result() {
@@ -128,12 +115,8 @@ arcade.managed({
 		}
 		return out;
 	},
-	// The host's SKIP TURN: setting the table ends; a move is missed.
+	// The host's SKIP TURN: a move is missed.
 	skip() {
-		if (s.phase === "setup") {
-			s.phase = "play";
-			return true;
-		}
 		return R.skip(s.g);
 	},
 	leave({ seat }) {
@@ -144,7 +127,6 @@ arcade.managed({
 			s.kinds = s.kinds.map((k) => (k === "local" ? "bot" : k));
 			s.names = s.names.map((n, j) => nameFor(s.kinds[j], j, s.bare[j]));
 			s.owner = null;
-			s.phase = "play";
 		}
 		return R.leave(s.g, i);
 	},
@@ -159,7 +141,6 @@ arcade.managed({
 const turnEl = document.getElementById("turn");
 const seatsEl = document.getElementById("seats");
 const wrapEl = document.getElementById("wrap");
-const setupEl = document.getElementById("setup");
 const canvas = document.getElementById("board");
 const c2d = canvas.getContext("2d");
 const reduced = matchMedia("(prefers-reduced-motion: reduce)");
@@ -365,7 +346,7 @@ function animate(last) {
 }
 
 const canPlay = () =>
-	!!view && view.phase === "play" && view.winner === null && (view.turn === view.you || (view.setter && view.players[view.turn]?.kind === "local"));
+	!!view && view.winner === null && (view.turn === view.you || (view.setter && view.players[view.turn]?.kind === "local"));
 
 function hud() {
 	if (!view) return;
@@ -374,8 +355,7 @@ function hud() {
 	const local = players.some((p) => p.kind === "local");
 	let text = "";
 	let sub = "";
-	if (view.phase === "setup") text = "Set the table";
-	else if (view.winner !== null) text = view.winner >= 0 ? (view.winner === view.you && !local ? "You win" : `${players[view.winner].name} wins`) : "Game over";
+	if (view.winner !== null) text = view.winner >= 0 ? (view.winner === view.you && !local ? "You win" : `${players[view.winner].name} wins`) : "Game over";
 	else if (players[view.turn].kind === "local" && view.setter) {
 		text = players[view.turn].name;
 		sub = "pass the phone";
@@ -395,11 +375,11 @@ function hud() {
 		parts.push(s2);
 	}
 	turnEl.replaceChildren(...parts);
-	turnEl.style.setProperty("--seat", view.phase === "setup" || turnSeat < 0 ? "var(--accent)" : seatVar(turnSeat));
+	turnEl.style.setProperty("--seat", turnSeat < 0 ? "var(--accent)" : seatVar(turnSeat));
 	seatsEl.replaceChildren(
 		...players.map((p, i) => {
 			const chip = document.createElement("span");
-			chip.className = "chip" + (view.phase === "play" && view.winner === null && i === view.turn ? " is-turn" : "") + (p.out || p.gone ? " is-out" : "");
+			chip.className = "chip" + (view.winner === null && i === view.turn ? " is-turn" : "") + (p.out || p.gone ? " is-out" : "");
 			chip.style.setProperty("--seat", seatVar(i));
 			chip.title = p.name;
 			const d = document.createElement("span");
@@ -414,65 +394,6 @@ function hud() {
 			return chip;
 		}),
 	);
-}
-
-function setup() {
-	const on = view?.phase === "setup";
-	setupEl.hidden = !on;
-	canvas.style.visibility = on ? "hidden" : "";
-	if (!on) return;
-	const h = document.createElement("h2");
-	h.textContent = "NEON FISSION";
-	const p = document.createElement("p");
-	const list = document.createElement("ol");
-	view.players.forEach((pl, i) => {
-		const li = document.createElement("li");
-		li.style.setProperty("--seat", seatVar(i));
-		const d = document.createElement("span");
-		d.className = "dot";
-		const who = document.createElement("span");
-		who.className = "who";
-		who.textContent = pl.name;
-		li.append(d, who);
-		if (pl.kind === "human") {
-			const tag = document.createElement("span");
-			tag.className = "tag";
-			tag.textContent = i === view.you ? "YOU" : "PLAYER";
-			li.append(tag);
-		} else if (view.setter) {
-			const seg = document.createElement("span");
-			seg.className = "seg";
-			seg.setAttribute("role", "group");
-			seg.setAttribute("aria-label", `Seat ${i + 1}`);
-			for (const [label, local] of [["BOT", false], ["PLAYER", true]]) {
-				const b = document.createElement("button");
-				b.type = "button";
-				b.textContent = label;
-				b.dataset.seat = String(i);
-				b.setAttribute("aria-pressed", String((pl.kind === "local") === local));
-				b.onclick = () => (pl.kind === "local") !== local && arcade.act({ seat: i, local });
-				seg.append(b);
-			}
-			li.append(seg);
-		} else {
-			const tag = document.createElement("span");
-			tag.className = "tag";
-			tag.textContent = pl.kind === "local" ? "PLAYER" : "BOT";
-			li.append(tag);
-		}
-		list.append(li);
-	});
-	const parts = [h, p, list];
-	if (view.setter) {
-		p.textContent = "Playing with people beside you? Make their seats PLAYER and pass the phone on their turns.";
-		const go = document.createElement("button");
-		go.type = "button";
-		go.className = "neon-btn neon-btn--accent";
-		go.textContent = "START";
-		go.onclick = () => arcade.act({ start: true });
-		parts.push(go);
-	} else p.textContent = `${view.ownerName ?? "The host"} is setting the table…`;
-	setupEl.replaceChildren(...parts);
 }
 
 canvas.addEventListener("click", (e) => {
@@ -499,7 +420,6 @@ arcade.on("view", ({ state }) => {
 	const fresh = view && state.match !== view.match;
 	view = state;
 	if (fresh) shownMove = -1;
-	setup();
 	if (reshaped) resize();
 	const last = state.last;
 	if (last && last.n !== shownMove) {
@@ -524,4 +444,4 @@ arcade.on("rejected", (m) => arcade.toast(m.reason, "warn"));
 arcade.init.then(resize);
 
 /** The game as this phone sees it, for the tests. */
-arcade.debug = () => (view ? { ...view, canPlay: canPlay(), animating: !!anim, replayMs: anim ? Math.round(anim.total) : 0, painted, cell } : { phase: null });
+arcade.debug = () => (view ? { ...view, canPlay: canPlay(), animating: !!anim, replayMs: anim ? Math.round(anim.total) : 0, painted, cell } : { match: null });

@@ -937,6 +937,9 @@ type RulesCallSeatsItem struct {
 	Name string   `json:"name"`
 	Team *string  `json:"team,omitempty"`
 	Bot  bool     `json:"bot"`
+	// A bot seat a person on the host's phone plays (the quick table's PERSON);
+	// only for a game with manifest `sameDevice`.
+	Local *bool `json:"local,omitempty"`
 }
 
 // RulesCall: One call into a managed game's rules. `fn` names the rule; the

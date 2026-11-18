@@ -532,6 +532,32 @@ try {
 		solo.stop();
 	}
 
+	// ---------------------------------------------------------------- 4b
+	console.log("\nmanaged: a PERSON seat is told only to a game that takes it");
+	// The roster's PERSON (lib/party.js, for "sameDevice" games) marks a bot
+	// `local`; lib/sdk-managed.js passes that on only to a game whose
+	// manifest says "sameDevice". The fixture does not.
+	{
+		const fx4 = await devServer("scripts/fixtures", 5199, "tick-game");
+		const P = await party(fx4.base, 1);
+		const [pp] = P.pages;
+		await pp.locator("button", { hasText: "ADD BOT" }).first().click({ timeout: TIMEOUT });
+		await pp.locator(".party-member").nth(1).waitFor({ timeout: TIMEOUT });
+		await pp.locator(".party-member").nth(1).locator(".party-person").click({ timeout: TIMEOUT });
+		await pp.waitForFunction(() => window.__party.room.getMembers()[1].local === true, null, { timeout: TIMEOUT });
+		await pp.evaluate(() => {
+			const r = window.__party.room;
+			for (const m of r.getMembers()) r.setTeam(m.id, "A");
+		});
+		await pp.locator(".party-game", { hasText: "TICK CHECK" }).first().click({ timeout: TIMEOUT });
+		const pf = await gameFrame(pp, TIMEOUT);
+		const v = await viewUntil(pf, (v) => v.ticks >= 1);
+		check("the bot is marked local in the party, but the game without sameDevice is not told", Array.isArray(v?.local) && v.local.length === 0 && Object.keys(v.score).length === 2, v && { local: v.local, seats: Object.keys(v.score) });
+		await P.collect();
+		await P.context.close();
+		fx4.stop();
+	}
+
 	// ---------------------------------------------------------------- 5
 	console.log("\nmanaged: the end card waits for the last move's replay (Neon Fission)");
 	// Lokesh, 2026-11-15: a winning chain flipped half his cells in one turn,
@@ -556,14 +582,13 @@ try {
 		const F = await gameFrame(nf, TIMEOUT);
 		const dbg = () => F.evaluate(() => window.__game.handle.debug());
 		/**
-		 * Match `m`: set the table, play the game up to its last move on the
+		 * Match `m`: play the game up to its last move on the
 		 * host's rules, then make the last move. Its board is set as Connect
 		 * 4's is above (the frame's own state).
 		 */
 		const lastMove = async (m) => {
-			await F.waitForFunction((m) => window.arcade.view?.match === m && window.arcade.view.phase === "setup", m, { timeout: TIMEOUT });
-			await F.evaluate(() => window.arcade.act({ start: true }));
-			await F.waitForFunction(() => window.arcade.view?.phase === "play" && window.arcade.view.turn === window.arcade.view.you, null, { timeout: TIMEOUT });
+			// No table to set first (the platform's quick table sets it, 2026-11-17): match m opens on our move.
+			await F.waitForFunction((m) => window.arcade.view?.match === m && window.arcade.view.turn === window.arcade.view.you, m, { timeout: TIMEOUT });
 			await F.evaluate((game) => {
 				for (const c of game.slice(0, -1)) R.play(s.g, c);
 				window.arcade.act({ cell: game.at(-1), n: s.g.moves });

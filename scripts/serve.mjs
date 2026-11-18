@@ -152,3 +152,19 @@ export async function settled(read, ok = Boolean, ms = 10_000, every = 100) {
 	}
 	return value;
 }
+
+/**
+ * SINGLE PLAYER of a game whose seats leave a choice opens on the quick
+ * table (lib/party.js tableBlock, 2026-11-17): tap its START GAME, as a
+ * person would. Waits for the table or the game, whichever comes; true when
+ * there was a table.
+ */
+export async function passTable(page, timeout = 30_000) {
+	const shown = () => {
+		const go = document.querySelector(".quick-table .quick-go button");
+		return go && go.getClientRects().length ? "table" : window.__party?.game ? "game" : null;
+	};
+	const which = await (await page.waitForFunction(shown, null, { timeout })).jsonValue();
+	if (which === "table") await page.locator(".quick-table .quick-go button").click({ timeout });
+	return which === "table";
+}

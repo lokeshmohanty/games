@@ -124,7 +124,7 @@ by hand:
 
 ```js
 arcade.managed({
-  init({ seats, opts, seed, match }) { … },   // seats: [{ id, name, team, bot }]
+  init({ seats, opts, seed, match }) { … },   // seats: [{ id, name, team, bot, local? }] — local: below
   apply({ action, by }) { … },                // return nothing to allow; a string to refuse (the reason)
   view({ seat }) { return … },                // what this seat may see; seat null = a spectator
   turn() { return [ids…] },                   // whose move it is: drives bots and the turn-wait banner
@@ -150,6 +150,14 @@ How it runs:
   `rejected { reason }`.
 - **Bots.** After every change the host asks `turn()`. A bot on turn moves
   after a 0.6–1.1 s pause, through `bot({ seat })` and then `apply`.
+- **People on the host's phone** (2026-11-17). A game with `"sameDevice":
+  true` in game.json may get a bot seat with `local: true` in `init`: the
+  one person at SINGLE PLAYER's quick table made it a PERSON, someone beside
+  them (docs/index.md "The party API"). It is still a bot id; the game plays
+  it for that person — report their id in `turn()` on that seat's turn, so
+  no bot moves and no banner shows, and accept their `apply` for it. With
+  more than one person seated, treat it as a bot. Neon Fission is the
+  example.
 - **Waiting.** When exactly one person is on turn and they have switched
   apps, are reconnecting, or have left, the shell's turn-wait banner shows.
   SKIP TURN calls `skip`; a game without `skip` says it cannot.
