@@ -76,6 +76,13 @@ How net.js does it (docs/index.md "A split party"):
     itself, or the old host at the old term **if it still seats the heir**.
   - Lost phones that relink stand again in a new round of the same election
     (`_standAgain`).
+    - A member others are sworn to stands regardless of rank.
+    - Members seen acknowledging another candidate are left out of the
+      ranking (the `sworn` map, from the flooded `__ka`).
+    - Ranking by age alone left everyone lost for good once the first-ranked
+      member was sworn to a candidate that gave up.
+  - `room.stranded` means lost, sworn to a candidate past its deadline. The
+    shell then offers NEW PARTY, not TRY AGAIN.
   - The shell withdraws a ranked start at the loss (`account.partyGone`).
   - The kept frame comes back only on the same run (`mounted.run`).
 - **A held host's seat:** a host the room server holds a seat for sends no

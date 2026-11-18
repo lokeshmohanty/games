@@ -58,7 +58,8 @@ function linkPair(a, b) {
 			const copy = structuredClone(env);
 			wire.push({ from: self.selfId, to: other.selfId, env: copy });
 			// A frozen room (a tab in the background) hears nothing.
-			setTimeout(() => other.__frozen || other._inbound(peer(), copy), 1);
+			// A deaf one (its downlink dead) too.
+			setTimeout(() => other.__frozen || other.__deaf || other._inbound(peer(), copy), 1);
 		},
 		close() {
 			this.closed = true;
@@ -1201,6 +1202,43 @@ const halfDead = (from, to) => {
 	await sleep(1100); // Ana's window ends at 1 s: she releases
 	check("a half-dead link from the candidate: its release still frees the voter", held && !a.isHost() && b.granted.get(b.voteKey)?.n !== a.selfId, `held=${held} now=${b.granted.get(b.voteKey)?.n === a.selfId} anaHost=${a.isHost()}`);
 	for (const r of [a, b, c, d, e]) r.leave();
+}
+
+{
+	// Ana and Bo are away on the record, so Cy is named. Cy commits and Ana,
+	// Bo and Dee acknowledge — but Cy hears nothing back (its downlink dies
+	// as it commits) and gives up. Everyone is lost, sworn to Cy. Then Cy
+	// hears again and links come back. Ranked by age, Ana (sworn to Cy) was
+	// first and could not stand, Cy never ranked first, and nobody ever
+	// crowned. Now Cy stands because others are sworn to it, and the sworn
+	// are left out of the ranking.
+	const [h, a, b, c, d] = await party(["Host", "Ana", "Bo", "Cy", "Dee"], fullMesh(5), E);
+	for (const r of [a, b]) h.party.members.find((m) => m.id === r.selfId).away = true;
+	h._commitParty();
+	await sleep(30);
+	const send = c._send.bind(c);
+	let once = false;
+	c._send = (env, from) => {
+		send(env, from);
+		if (env.__ck && !once) {
+			once = true;
+			c.__deaf = true;
+		}
+	};
+	h.leave();
+	await sleep(3000);
+	const swornToCy = [a, b, d].every((r) => r.committed.get(r.voteKey) === c.selfId);
+	c.__deaf = false;
+	for (const [x, y] of [[c, d], [a, b]]) {
+		cut(x, y);
+		await sleep(20);
+		connect(x, y);
+		x._linkOpened(x.links.get(y.selfId));
+		y._linkOpened(y.links.get(x.selfId));
+	}
+	await sleep(3000);
+	check("sworn to a candidate that gave up: once it hears again, it stands and is crowned", swornToCy && crowns([a, b, c, d]) === "Cy", `sworn=${swornToCy} crowns=${crowns([a, b, c, d]) || "none"}`);
+	for (const r of [a, b, c, d]) r.leave();
 }
 
 console.log(failures ? `\n${failures} failing\n` : "\nall passing\n");

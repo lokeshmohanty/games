@@ -556,11 +556,20 @@ A lost member:
 
   A member the heir dropped meanwhile carries its own seat back in.
 - **Can still win an election.** After the heir's wait, lost phones that
-  link up again stand again in a new round of the same election: the member
-  that ranks first among them and the members it now links to directly. The
-  key is the same, so the same grants bind, and a member still bound to a
-  candidate that never released it does not grant. Without a room server,
-  that, or LEAVE PARTY, is the way forward.
+  link up again stand again in a new round of the same election.
+  - A member others are sworn to stands first, whatever its rank, because
+    they can elect nobody else.
+  - Otherwise the member that ranks first stands, among those it now links
+    to directly. Members seen acknowledging another's commit are left out of
+    that ranking (the acknowledgements flood, so everyone sees them).
+  - The key is the same, so the same grants bind, and a sworn member grants
+    nobody else.
+
+  Without a room server, that, or LEAVE PARTY, is the way forward.
+- **Says when it is stranded.** A phone sworn to a candidate that is past its
+  deadline without a crown (`room.stranded`) cannot help elect anyone. The
+  screen says the party can't continue from here and offers NEW PARTY, not
+  TRY AGAIN.
 
 **Cases that are not splits.** An heir that left by its own goodbye is not a
 split: it is passed over after the wait, and the next in line takes the
