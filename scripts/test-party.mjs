@@ -792,6 +792,113 @@ try {
 		.waitForFunction(() => window.__game.handle.debug().board.flat().filter(Boolean).length === 2, null, { timeout: TIMEOUT })
 		.then(() => true, () => false);
 	check("…which the new host plays", botAnswered);
+	// The lost screen (net.js _lose; Lokesh, 2026-11-16/17: only the side
+	// that may take the crown carries on, the rest stop and say so). The
+	// split itself is forced in test-plumbing; this is the shell's half,
+	// through the room's own _lose and the heir's record ending it.
+	await p3.evaluate(() => {
+		window.__lostFrame = document.querySelector(".game-frame");
+		// A ranked start without a result is withdrawn the moment we are lost
+		// (the frame is kept, so the game's own matchEnd would not).
+		window.__partyGone = 0;
+		const account = (NeonArcade.account ??= {});
+		const was = account.partyGone;
+		account.partyGone = () => (window.__partyGone++, was?.());
+		window.__party.room._lose();
+	});
+	const lostSaid = await p3.locator(".lobby-sub", { hasText: "Lost connection to the party" }).waitFor({ timeout: 5000 }).then(() => true, () => false);
+	const lostState = await p3.evaluate(() => ({
+		lost: window.__party.room.lost,
+		party: !document.getElementById("party").hidden,
+		kept: !!window.__lostFrame?.isConnected,
+		shown: !!window.__lostFrame?.checkVisibility?.(),
+		again: !!document.querySelector(".lobby-row .neon-btn--accent")?.textContent?.includes("TRY AGAIN"),
+		canRejoin: window.__party.room.canRejoin,
+	}));
+	check("a phone cut off from the heir's side says so, and its game stops", lostSaid && lostState.lost && lostState.party && !lostState.shown, JSON.stringify(lostState));
+	check("…its game hidden, not torn down, for a quick return", lostState.kept, JSON.stringify(lostState));
+	check("…and its ranked start withdrawn at once", (await p3.evaluate(() => window.__partyGone)) === 1, String(await p3.evaluate(() => window.__partyGone)));
+	check("…and without a room server, no TRY AGAIN: LEAVE PARTY is the way out", !lostState.canRejoin && !lostState.again && (await p3.locator("a[data-leaves]", { hasText: "LEAVE PARTY" }).count()) > 0, JSON.stringify(lostState));
+	await p3.evaluate(() => window.__party.room.rejoin()); // no room server: a no-op, never a throw
+	// At phone sizes, in every theme: nothing sideways, the why readable.
+	const lostFits = [];
+	for (const [w, hgt] of [[390, 844], [354, 696]]) {
+		await p3.setViewportSize({ width: w, height: hgt });
+		for (const theme of [{ theme: "neon" }, { theme: "paper", mode: "light" }, { theme: "paper", mode: "dark" }]) {
+			await p3.evaluate((t) => NeonArcade.theme.set(t), theme);
+			const fit = await p3.evaluate(() => {
+				const why = document.querySelector(".party-lost")?.getBoundingClientRect();
+				return { sideways: document.documentElement.scrollWidth > innerWidth, why: !!why && why.left >= 0 && why.right <= innerWidth && why.height > 0 };
+			});
+			if (fit.sideways || !fit.why) lostFits.push(`${w}x${hgt} ${theme.theme}${theme.mode ? "/" + theme.mode : ""}: ${JSON.stringify(fit)}`);
+		}
+	}
+	await p3.setViewportSize({ width: 390, height: 844 });
+	check("the lost screen fits 390x844 and 354x696 in every theme", !lostFits.length, lostFits.join("; "));
+	// Sworn to a candidate this phone can't reach (net.js `stranded`): it may
+	// have won and carried on, so with a room server TRY AGAIN stays and NEW
+	// PARTY joins it; without one, NEW PARTY (and LEAVE PARTY). Both, at both
+	// phone sizes, in every theme.
+	await p3.evaluate(() => {
+		const r = window.__party.room;
+		window.__keep = { key: r.voteKey, at: r.committedAt, iso: r.onIsolated };
+		r.voteKey = r.voteKey ?? "test|0|x|x";
+		r.committed.set(r.voteKey, "somebody-gone");
+		r.committedAt = performance.now() - 3_600_000;
+	});
+	const strandedFits = [];
+	for (const rs of [false, true]) {
+		await p3.evaluate((rs) => {
+			const r = window.__party.room;
+			r.onIsolated = rs ? () => {} : window.__keep.iso; // canRejoin follows it
+			r._emitParty();
+		}, rs);
+		for (const [w, hgt] of [[390, 844], [354, 696]]) {
+			await p3.setViewportSize({ width: w, height: hgt });
+			for (const theme of [{ theme: "neon" }, { theme: "paper", mode: "light" }, { theme: "paper", mode: "dark" }]) {
+				await p3.evaluate((t) => NeonArcade.theme.set(t), theme);
+				const fit = await p3.evaluate(() => {
+					const why = document.querySelector(".party-lost");
+					const box = why?.getBoundingClientRect();
+					const buttons = [...document.querySelectorAll(".lobby-row .neon-btn")].filter((b) => ["TRY AGAIN", "NEW PARTY"].includes(b.textContent));
+					return {
+						says: /vote to a player it can't reach/.test(why?.textContent ?? ""),
+						labels: buttons.map((b) => b.textContent).join(","),
+						sideways: document.documentElement.scrollWidth > innerWidth,
+						fits: !!box && box.left >= 0 && box.right <= innerWidth && buttons.every((b) => b.getBoundingClientRect().left >= 0 && b.getBoundingClientRect().right <= innerWidth),
+					};
+				});
+				const want = rs ? "TRY AGAIN,NEW PARTY" : "NEW PARTY";
+				if (!fit.says || fit.labels !== want || fit.sideways || !fit.fits) strandedFits.push(`${rs ? "rs" : "classic"} ${w}x${hgt} ${theme.theme}${theme.mode ? "/" + theme.mode : ""}: ${JSON.stringify(fit)}`);
+			}
+		}
+	}
+	await p3.setViewportSize({ width: 390, height: 844 });
+	check("sworn to a player it can't reach: TRY AGAIN and NEW PARTY with a room server, NEW PARTY without — fitting both phones in every theme", !strandedFits.length, strandedFits.join("; "));
+	await p3.evaluate(() => {
+		const r = window.__party.room;
+		r.committed.clear();
+		r.voteKey = window.__keep.key;
+		r.committedAt = window.__keep.at;
+		r.onIsolated = window.__keep.iso;
+		r._emitParty();
+	});
+	// The heir speaks (its record): the loss ends, and the same frame is back.
+	await p2.evaluate(() => window.__party.room._commitParty());
+	const lostBack = await p3.waitForFunction(() => !window.__party.room.lost && !!window.__lostFrame?.checkVisibility?.(), null, { timeout: TIMEOUT }).then(() => true, () => false);
+	const sameFrame = await p3.evaluate(() => document.querySelector(".game-frame") === window.__lostFrame);
+	check("…and back in touch, the same game is shown again", lostBack && sameFrame, `back=${lostBack} same=${sameFrame}`);
+	// Lost again, and meanwhile the heir starts the same game afresh (a new
+	// run): found, the phone mounts the new run, not the frame it kept.
+	await p3.evaluate(() => {
+		window.__lostFrame = document.querySelector(".game-frame");
+		window.__party.room._lose();
+	});
+	await p2.evaluate(() => window.__party.room.setGame("connect4"));
+	const freshRun = await p3
+		.waitForFunction(() => !window.__party.room.lost && !!document.querySelector(".game-frame") && document.querySelector(".game-frame") !== window.__lostFrame, null, { timeout: TIMEOUT })
+		.then(() => true, () => false);
+	check("…but found on a new run of that game, it mounts the new run, not the kept frame", freshRun, await p3.evaluate(() => JSON.stringify({ lost: window.__party.room.lost, same: document.querySelector(".game-frame") === window.__lostFrame })));
 	await p2.evaluate((id) => {
 		window.__party.room.setGame(null);
 		window.__party.room.removeMember(id);
