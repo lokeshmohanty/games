@@ -238,11 +238,44 @@ try {
 		await frame.locator("#ttt button").nth(i).click();
 		return viewUntil(f3, (v) => v.board.filter(Boolean).length === after);
 	};
+	/** The squares ringed as the last move on `frame`'s board (tic-tac-toe.js). */
+	const ringed = (frame) => frame.evaluate(() => [...document.querySelectorAll("#ttt button")].flatMap((b, i) => (b.classList.contains("last") ? [i] : [])));
+	/** Every phone's ringed squares, once each shows exactly `want` (or after a wait). */
+	const ringsOn = async (frames, want) => {
+		const out = [];
+		for (const f of frames) {
+			await f.waitForFunction((w) => JSON.stringify([...document.querySelectorAll("#ttt button")].flatMap((b, i) => (b.classList.contains("last") ? [i] : []))) === JSON.stringify(w), want, { timeout: 5000 }).catch(() => {});
+			out.push(await ringed(f));
+		}
+		return out;
+	};
+	const ringsAre = (seen, want) => seen.every((r) => JSON.stringify(r) === JSON.stringify(want));
 	await play(host, fh, 0, 1);
+	let rings = await ringsOn([fh, f2, f3], [0]);
+	check("the first mark is ringed as the last move on every phone, the spectator's too", ringsAre(rings, [0]), rings);
 	await play(p2, f2, 3, 2);
+	rings = await ringsOn([fh, f2, f3], [3]);
+	check("…the next mark takes the ring: only ever one", ringsAre(rings, [3]), rings);
 	await play(host, fh, 1, 3);
 	await play(p2, f2, 4, 4);
 	const last = await play(host, fh, 2, 5);
+	rings = await ringsOn([fh, f2, f3], [2]);
+	check("…and the winning mark is the one ringed at the end", ringsAre(rings, [2]), rings);
+	// The page's own rule (tic-tac-toe.js lastMark), for what a live game
+	// rarely shows: views missed. Two new marks, even after a skip, ring
+	// neither; one new mark is the last; the same board keeps its ring; a
+	// board that lost marks is a new match.
+	const rule = await f3.evaluate(() => ({
+		missedAfterSkip: lastMark([1, 0, 0, 0, 2, 0, 0, 0, 0], 4, [1, 0, 2, 0, 2, 0, 0, 0, 1]),
+		missedTwo: lastMark([1, 0, 0, 0, 0, 0, 0, 0, 0], 0, [1, 2, 1, 0, 0, 0, 0, 0, 0]),
+		one: lastMark([1, 0, 0, 0, 0, 0, 0, 0, 0], 0, [1, 0, 0, 0, 2, 0, 0, 0, 0]),
+		same: lastMark([1, 0, 0, 0, 2, 0, 0, 0, 0], 4, [1, 0, 0, 0, 2, 0, 0, 0, 0]),
+		firstSight: lastMark(null, -1, [1, 0, 0, 0, 2, 0, 0, 0, 0]),
+		rematch: lastMark([1, 1, 1, 2, 2, 0, 0, 0, 0], 2, [0, 0, 0, 0, 0, 0, 0, 0, 0]),
+		rematchOne: lastMark([1, 1, 1, 2, 2, 0, 0, 0, 0], 2, [0, 0, 0, 0, 0, 0, 0, 0, 1]),
+	}));
+	check("the ring rule: several new marks (views missed, a skip among them) ring none; one new mark is the last; the same board keeps it; a new match starts clear",
+		rule.missedAfterSkip === -1 && rule.missedTwo === -1 && rule.one === 4 && rule.same === 4 && rule.firstSight === -1 && rule.rematch === -1 && rule.rematchOne === 8, rule);
 	// Tic Tac Toe never says `idle`: nothing holds its card back.
 	const tttCard = await host.locator(".managed-over").waitFor({ timeout: 1000 }).then(() => true, () => false);
 	check("a game that never says idle gets its end card at once", tttCard);
@@ -278,6 +311,9 @@ try {
 	await host.locator(".managed-over button", { hasText: "PLAY AGAIN" }).click();
 	const fresh = await viewUntil(f2, (v) => v.board.every((m) => m === 0));
 	check("PLAY AGAIN: a fresh board on every phone, and the card goes", !!fresh && (await p2.locator(".managed-over").count()) === 0 && (await host.locator(".managed-over").count()) === 0);
+	await Promise.all([fh, f3].map((f) => viewUntil(f, (v) => v.board.every((m) => m === 0))));
+	rings = await ringsOn([fh, f2, f3], []);
+	check("…with no ring left over from the last game", ringsAre(rings, []), rings);
 
 	// Mid-match the host's tab closes: p2 (the longest-present) is the heir.
 	// The heir's copy follows each move, a rules call after the views, so p2
@@ -298,6 +334,8 @@ try {
 	check("the host leaves mid-match: the heir takes the crown and the game goes on", await kept);
 	const carried = await view(f2);
 	check("…from its copy of the board, not a fresh one", JSON.stringify(carried?.board) === JSON.stringify([1, 0, 0, 0, 2, 0, 0, 0, 0]), carried);
+	rings = await ringsOn([f2, f3], [4]);
+	check("…the last mark before the host left still ringed, on the new host's phone and the spectator's", ringsAre(rings, [4]), rings);
 	// It is X's turn, and X has gone: the shell's banner, then SKIP TURN.
 	const skip = p2.locator(".turn-wait:not([hidden]) button", { hasText: "SKIP TURN" });
 	const offered = await skip.waitFor({ timeout: TIMEOUT }).then(() => true, () => false);
@@ -309,6 +347,8 @@ try {
 	await play(p2, f2, 8, 3);
 	const after = await viewUntil(f3, (v) => v.board[8] === 2, 10_000);
 	check("…SKIP passes their turn, and the new host's move reaches the spectator", after?.board[8] === 2, after);
+	rings = await ringsOn([f2, f3], [8]);
+	check("…and takes the ring there too", ringsAre(rings, [8]), rings);
 	await A.collect();
 	await A.context.close();
 	ttt.stop();

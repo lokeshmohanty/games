@@ -29,6 +29,11 @@ stubs (the shell's addresses are the only ones), creates docs/platform.md
 connectivity detail moved to docs/index.md "The party API" / "Connectivity").
 
 **In progress on other branches:**
+- **Last-move markers** — `last-move` (../games-lastmove, 2026-11-17, not
+  merged): Connect 4 rings the last disc (`last` in its view) after a short
+  fall; Tic Tac Toe (JS lane) rings the last mark by diffing boards on the
+  drawing side; web-games `last-move` (../web-games-lastmove, 527a907) marks
+  Battleship's last shot on each board, its pin to move.
 - **Bubble Rush on SDK v2** — web-games `bubble-rush-v2` (../arcade-games-v2)
   and this repo's `game-bubble-rush`: fixing review findings, bots being
   softened. Its pin moves by PR.
