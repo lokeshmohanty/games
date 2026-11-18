@@ -124,9 +124,15 @@ export async function readyToClick(page) {
 	const twice = () => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
 	await page.bringToFront();
 	await page.evaluate(twice);
-	const frames = page.frames().filter((f) => f !== page.mainFrame() && !f.isDetached());
-	// A frame on its way out may never answer: two seconds, then go on.
-	await Promise.all(frames.map((f) => Promise.race([f.evaluate(twice).catch(() => {}), new Promise((r) => setTimeout(r, 2000))])));
+	// Only frames on show: a hidden one draws nothing, so would only wait.
+	const frames = [];
+	for (const f of page.frames()) {
+		if (f === page.mainFrame() || f.isDetached()) continue;
+		const el = await f.frameElement().catch(() => null);
+		if (el && (await el.isVisible().catch(() => false))) frames.push(f);
+	}
+	// A frame on its way out may never answer: a second, then go on.
+	await Promise.all(frames.map((f) => Promise.race([f.evaluate(twice).catch(() => {}), new Promise((r) => setTimeout(r, 1000))])));
 	await page.evaluate(twice);
 }
 
