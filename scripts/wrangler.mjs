@@ -68,20 +68,33 @@ export async function startWrangler(vars = {}) {
 	process.on("exit", stop);
 	/**
 	 * Run SQL on the same local D1 the Worker uses (`wrangler d1 execute
-	 * --local`), for a test's setup or a query plan: the rows of each
-	 * statement, as wrangler's --json gives them.
+	 * --local`), for a test's setup or a query plan: resolves to the rows of
+	 * each statement, as wrangler's --json gives them.
+	 *
+	 * Not spawnSync: that froze our event loop for the seconds the command
+	 * takes on a loaded machine, so the HTTP client never saw wrangler dev
+	 * close an idle keep-alive socket meanwhile, and the next request went out
+	 * on it ("fetch failed: other side closed", every run under CPU load).
 	 */
-	const sql = (command) => {
-		const out = spawnSync(cmd, [...pre, "d1", "execute", "arcade", "--local", "--persist-to", state, "--json", "--command", command], {
-			cwd: join(ROOT, "worker"),
-			env,
-			encoding: "utf8",
-			timeout: 120_000,
-			maxBuffer: 64 * 1024 * 1024,
+	const sql = (command) =>
+		new Promise((resolve, reject) => {
+			const run = spawn(cmd, [...pre, "d1", "execute", "arcade", "--local", "--persist-to", state, "--json", "--command", command], { cwd: join(ROOT, "worker"), env });
+			let out = "";
+			let err = "";
+			run.stdout.on("data", (d) => (out += d));
+			run.stderr.on("data", (d) => (err += d));
+			const timer = setTimeout(() => run.kill(), 120_000);
+			run.on("error", reject);
+			run.on("close", (status) => {
+				clearTimeout(timer);
+				if (status !== 0) return reject(new Error(`d1 execute failed: ${(err || out).split("\n").slice(-8).join("\n")}`));
+				try {
+					resolve(JSON.parse(out).map((r) => r.results ?? []));
+				} catch (e) {
+					reject(e);
+				}
+			});
 		});
-		if (out.status !== 0) throw new Error(`d1 execute failed: ${(out.stderr || out.stdout || "").split("\n").slice(-8).join("\n")}`);
-		return JSON.parse(out.stdout).map((r) => r.results ?? []);
-	};
 	const base = `http://127.0.0.1:${port}`;
 	const deadline = Date.now() + 180_000;
 	while (Date.now() < deadline && !exited) {
