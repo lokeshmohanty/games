@@ -2,12 +2,14 @@
 //
 // The default is paper following the system; the picker switches theme and
 // mode and remembers it; a running game's sandboxed frame follows the page
-// (attributes, fonts, its canvas colours); and nothing scrolls sideways.
+// (attributes, fonts, its canvas colours) in every theme, at 390x844 and
+// 354x696, in Chrome and (when it starts here: scripts/playwright.mjs
+// launchFirefox) Firefox; and nothing scrolls sideways.
 
 import { existsSync } from "node:fs";
 import { createServer } from "node:http";
 import { gameFrame, serve, settled } from "./serve.mjs";
-import { loadPlaywright } from "./playwright.mjs";
+import { launchFirefox, loadPlaywright } from "./playwright.mjs";
 
 const TIMEOUT = 30_000;
 let failures = 0;
@@ -91,6 +93,47 @@ try {
 	});
 	check("the frame has the fonts too (inlined: it may load nothing)", ff.some((x) => /Space Grotesk|Nunito|Cascadia/.test(x)), ff);
 	await ctx.close();
+
+	// Every theme, in Chrome and Firefox, at 390x844 and Lokesh's 354x696.
+	// Paper following a dark system (the default) gave the frame Paper
+	// light under a dark page: sdk/v2/runtime.js wrote the choice, "system",
+	// into data-mode, which no theme block matches (his phone, 2026-11-15).
+	const firefox = await launchFirefox(pw);
+	for (const [name, b] of [["Chrome", browser], ["Firefox", firefox]]) {
+		if (!b) continue;
+		console.log(`\ntheme: a game's frame wears the page's theme, every theme (${name})`);
+		for (const [w, h] of [
+			[390, 844],
+			[354, 696],
+		]) {
+			for (const [system, choice, want] of [
+				["dark", { theme: "paper", mode: "system" }, "paper dark"],
+				["light", { theme: "paper", mode: "system" }, "paper light"],
+				["light", { theme: "paper", mode: "dark" }, "paper dark"],
+				["dark", { theme: "paper", mode: "light" }, "paper light"],
+				["light", { theme: "neon", mode: "system" }, "neon dark"],
+			]) {
+				const c = await b.newContext({ viewport: { width: w, height: h }, colorScheme: system });
+				await c.addInitScript((t) => localStorage.setItem("neon.theme", JSON.stringify(t)), choice);
+				const tp = await c.newPage();
+				await tp.goto(site.url("?game=connect4&fresh=1&mode=bots&start=1"));
+				const tf = await gameFrame(tp, TIMEOUT);
+				// The colour the frame's own CSS paints, against the page's.
+				const look = (pg) => pg.evaluate(() => ({ is: `${document.documentElement.dataset.theme} ${document.documentElement.dataset.mode}`, bg: getComputedStyle(document.body).backgroundColor, ink: getComputedStyle(document.body).color }));
+				const [pageLook, frameLook] = [await look(tp), await look(tf)];
+				check(`${w}x${h}, a ${system} system, ${choice.theme} ${choice.mode}: page and frame both ${want}, the same paint`, pageLook.is === want && frameLook.is === want && frameLook.bg === pageLook.bg && frameLook.ink === pageLook.ink, { page: pageLook, frame: frameLook });
+				if (choice.mode === "system" && choice.theme === "paper" && w === 390) {
+					// The system turning while the game runs: the frame turns too.
+					await tp.emulateMedia({ colorScheme: system === "dark" ? "light" : "dark" });
+					const turned = system === "dark" ? "paper light" : "paper dark";
+					const after = await settled(() => look(tf), (l) => l.is === turned, 5000);
+					check(`…the system turning ${system === "dark" ? "light" : "dark"} mid-game turns the frame`, after.is === turned && after.bg === (await look(tp)).bg, after);
+				}
+				await c.close();
+			}
+		}
+	}
+	await firefox?.close();
 
 	console.log("\ntheme: a first cold visit does not wait for the frame's fonts");
 	// The fonts not yet on the phone (no worker cache, still downloading)
