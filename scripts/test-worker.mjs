@@ -961,7 +961,9 @@ try {
 		r = await until((a) => a.racing && a.walls > 12);
 		check("light cycles: the race is on", r.ok, show(r));
 		await reloadGuest("light cycles", "light-cycles");
-		r = await until((a, b) => b.riders.length === a.riders.length && Math.abs(a.walls - b.walls) <= 4 && b.mine === ids.guest);
+		// Mid-race on both: after a round the whole grid is sent anew, which
+		// would match the walls without any catch-up having worked.
+		r = await until((a, b) => a.racing && b.racing && b.riders.length === a.riders.length && Math.abs(a.walls - b.walls) <= 4 && b.mine === ids.guest);
 		check("light cycles: the guest sees the riders and the walls so far", r.ok, show(r));
 		await stop();
 
