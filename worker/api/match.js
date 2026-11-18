@@ -90,7 +90,7 @@
 
 import { reportBotsWin } from "./bots.js";
 import { GAMES, KINDS as RESULT_KINDS, NO_BOARD } from "./games.js";
-import { HttpError, body, now, randomId, sha256 } from "./http.js";
+import { HttpError, body, now, randomId, requestNow, sha256 } from "./http.js";
 import { SOLO_PER_DAY, boardKind, checkSoloRun, claimRun } from "./runs.js";
 
 export const REPORT_TTL_MS = 15 * 60_000;
@@ -405,6 +405,7 @@ export async function withdrawStart(env, me, request) {
 
 /** POST /api/match/report */
 export async function report(env, me, request) {
+	const t = requestNow(env, request);
 	const b = await body(request);
 	if (typeof b.game !== "string" || !GAMES[b.game]) throw new HttpError(400, "unknown game");
 	// "leaderboard": false in its manifest: nothing of it is ranked (the page does not send this).
@@ -414,14 +415,13 @@ export async function report(env, me, request) {
 	if (b.kind === "local") return { counted: false, why: "one-phone games are not ranked" };
 	const r = toAccounts(b);
 	// Never ranked: at most a win on the game's board against bots.
-	if (r.bots) return reportBotsWin(env, me, b, now());
+	if (r.bots) return reportBotsWin(env, me, b, t);
 	if (!r.accounts.includes(me.id)) throw new HttpError(400, "you can only report a match you played");
 	// Alone only when the match *began* with one seat (`seats`, lib/account.js):
 	// a match whose other players all left also ends with one id in it, and is
 	// not a run played alone (review, 2026-11-16).
 	const solo = b.seats === 1 && b.ranking.flat().length === 1 && r.accounts.length === 1 && !r.departed.length;
 	const key = await sha256(`${b.game}|${b.run}|${match}`);
-	const t = now();
 	// Reporting a match is being there: our own start of it is used up (rule
 	// 1) whatever becomes of this report — refused, voided, or too late.
 	if (!solo) await env.DB.prepare("DELETE FROM reports WHERE match = ? AND account = ? AND digest = 'start'").bind(await startKey(b.game, b.run, match), me.id).run();

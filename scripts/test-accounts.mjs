@@ -526,7 +526,7 @@ try {
 		r = await report(ana, ttt);
 		check("no win against bots for it either", r.body.counted === false && r.body.code === "no-board", r.body);
 		// The live D1 has old rows for these games: they stay, and are not served.
-		w.sql(`INSERT INTO ratings (account, game, elo, games, wins, best) VALUES ('${A}', 'connect4', 1250, 7, 4, NULL); INSERT INTO bot_wins (account, game, wins, first, at) VALUES ('${A}', 'tic-tac-toe-js', 2, 1, 1);`);
+		await w.sql(`INSERT INTO ratings (account, game, elo, games, wins, best) VALUES ('${A}', 'connect4', 1250, 7, 4, NULL); INSERT INTO bot_wins (account, game, wins, first, at) VALUES ('${A}', 'tic-tac-toe-js', 2, 1, 1);`);
 		const mm = await matchesOfTok(ana);
 		check("an old Connect 4 rating and Tic Tac Toe wins against bots are not served", !mm.ratings.some((x) => x.game === "connect4") && !mm.botWins.some((x) => x.game === "tic-tac-toe-js"), { ratings: mm.ratings, botWins: mm.botWins });
 		const pub = (await call("GET", `/api/u/${A}`)).body;
@@ -626,7 +626,7 @@ try {
 		// An account keeps its newest three starts: a fourth evicts the oldest.
 		const starts = (n) => call("POST", "/api/match/start", { token: lia, body: { game: "lokeshmohanty/battleship", run: `cap${n}`, match: 1 } });
 		for (let n = 0; n < 4; n++) await starts(n);
-		const live = w.sql(`SELECT COUNT(*) AS n FROM reports WHERE account = '${L3}' AND digest = 'start'`)[0][0].n;
+		const live = (await w.sql(`SELECT COUNT(*) AS n FROM reports WHERE account = '${L3}' AND digest = 'start'`))[0][0].n;
 		const first = await starts(0);
 		check("an account keeps at most three live starts: a fourth evicts the oldest", live === 3 && first.body.wrote === true && first.body.beat !== true, { live, first: first.body });
 		let fresh = 0;
@@ -785,6 +785,10 @@ try {
 		// Tests only: move a run's start into the past, as if time had passed.
 		const age = (run, ms) => call("POST", "/api/admin/age-run", { body: { run, ms } });
 		const report = (token, body) => call("POST", "/api/match/report", { token, body });
+		// A report as of the moment its run was issued, on the server's own
+		// clock (X-Test-Now, tests only): a run aged `ms` is then exactly `ms`
+		// old, however long the requests took on a slow runner.
+		const reportAsIssued = (token, body, run) => call("POST", "/api/match/report", { token, body, headers: { "X-Test-Now": String(run.at) } });
 		const surv = (run, score, extra = {}) => ({ game: "neon-survival-mp", run, match: 1, kind: "coop", ranking: [["pa"]], roster: { pa: A }, scores: { pa: score }, seats: 1, ...extra });
 		const ratingOf = async (token, game) => (await call("GET", "/api/me/matches", { token })).body.ratings.find((x) => x.game === game);
 		const fresh = async (token = ana, ms = 60_000) => {
@@ -826,16 +830,16 @@ try {
 		r = await report(ana, surv(old.run, 12));
 		check("…and an expired one (six hours)", r.body.counted === false && /expired/.test(r.body.why), r.body);
 		const quick = await fresh(ana, 0);
-		r = await report(ana, surv(quick.run, 1));
+		r = await reportAsIssued(ana, surv(quick.run, 1), quick);
 		check("a report sooner than the game's shortest run is refused", r.body.counted === false && /too fast/.test(r.body.why), r.body);
 		const greedy = await fresh(ana, 10_000);
-		r = await report(ana, surv(greedy.run, 100));
+		r = await reportAsIssued(ana, surv(greedy.run, 100), greedy);
 		check("a score above what the time since the run began allows is refused", r.body.counted === false && /more than a 10-second run/.test(r.body.why), r.body);
 		for (const [bad, label] of [[1e308, "1e308"], [-1, "negative"], [2.5, "fractional"], [null, "missing"]]) {
-			r = await report(ana, surv(greedy.run, bad));
+			r = await reportAsIssued(ana, surv(greedy.run, bad), greedy);
 			check(`…so is a ${label} score`, r.body.counted === false && /score/.test(r.body.why), r.body);
 		}
-		r = await report(ana, surv(greedy.run, 12, { match: 2 }));
+		r = await reportAsIssued(ana, surv(greedy.run, 12, { match: 2 }), greedy);
 		check("a refused report does not use the run up (it is claimed only once it counts)", r.body.counted === true, r.body);
 
 		// Only SOLO games rank alone: no made-up score on any other game.
@@ -1024,13 +1028,20 @@ try {
 	console.log("\naccounts: Light Cycles alone, a time bounded by the server's clock");
 	{
 		const GAME = "lokeshmohanty/light-cycles";
+		const issued = new Map(); // run -> when the server issued it (its own clock)
 		const start = async (token, ms) => {
 			const s = (await call("POST", "/api/run/start", { token, body: { game: GAME } })).body;
 			if (ms) await call("POST", "/api/admin/age-run", { body: { run: s.run, ms } });
+			issued.set(s.run, s.at);
 			return s;
 		};
 		const ride = (run, secs, extra = {}) => ({ game: GAME, run, match: 1, kind: "ffa", ranking: [["pa"]], roster: { pa: A }, scores: { pa: secs }, seats: 1, ...extra });
-		const report = (token, body) => call("POST", "/api/match/report", { token, body });
+		// Every report here as of the moment its run was issued, on the
+		// server's own clock (X-Test-Now, tests only): a run aged `ms` is then
+		// exactly `ms` old. Its ceiling was a tenth of a second from 7.9 after
+		// 10 s, and a slow runner's requests took longer than that (CI run
+		// 44245172109 counted 7.9).
+		const report = (token, body) => call("POST", "/api/match/report", { token, body, headers: { "X-Test-Now": String(issued.get(body.run)) } });
 		let run = await start(ana, 0);
 		let r = await report(ana, ride(run.run, 0.4));
 		check("a round reported sooner than the countdown allows is refused", r.body.counted === false && /too fast/.test(r.body.why), r.body);
@@ -1043,14 +1054,20 @@ try {
 		check("…on the game's solo board, best score, in seconds", alone.body.kind === "coop" && alone.body.unit === "s" && alone.body.rows[0]?.id === A && alone.body.rows[0].best === 42.3, alone.body);
 		const races = await call("GET", `/api/lb/${GAME}`);
 		check("…beside its races (wins), which name the solo board and the one against bots", races.body.kind === "ffa" && races.body.levels?.join() === "alone" && races.body.botsBoard === true && !races.body.rows.some((x) => x.id === A), races.body);
+		const tenths = await start(ana, 10_000);
+		r = await report(ana, ride(tenths.run, 7.55));
+		check("a time that is not in tenths is refused", r.body.counted === false && /score/.test(r.body.why), r.body);
 		run = await start(ana, 10_000);
 		r = await report(ana, ride(run.run, 7.9));
 		check("a time over the seconds since the run began, less the 3.2 s countdown, plus 1 s, is refused (7.9 after 10 s)", r.body.counted === false && /more than a 10-second run/.test(r.body.why), r.body);
-		r = await report(ana, ride(run.run, 7.55));
-		check("…so is one that is not in tenths", r.body.counted === false && /score/.test(r.body.why), r.body);
 		r = await report(ana, ride(run.run, 7.8));
 		check("…while 7.8 s after 10 s counts (the same run: a refusal does not use it up)", r.body.counted === true, r.body);
 		check("…and a lower time does not lower the best", (await call("GET", `/api/lb/${GAME}@alone`)).body.rows[0].best === 42.3);
+		// The pin is what makes those exact, and it is honoured: the same 7.9
+		// after 10 s, reported 0.2 s later on the server's clock, counts.
+		const later = await start(ana, 10_000);
+		r = await call("POST", "/api/match/report", { token: ana, body: ride(later.run, 7.9), headers: { "X-Test-Now": String(later.at + 200) } });
+		check("(the server's clock is the one pinned: 7.9 counts 10.2 s after its run began)", r.body.counted === true, r.body);
 		// Review, 2026-11-15: the clock alone let a run kept for hours post
 		// thousands of seconds. A 40 × 40 arena allows 107.9 s at most.
 		run = await start(ana, 5.9 * 3600_000);
@@ -1636,7 +1653,7 @@ try {
 		const fid = (i) => `bulk${String(i).padStart(3, "0")}`;
 		const now = Date.now();
 		const grp = "bulkgroup1";
-		w.sql(
+		await w.sql(
 			[
 				`INSERT INTO accounts (id, provider, provider_uid, name, created) VALUES ${Array.from({ length: N }, (_, i) => `(${q(fid(i))}, 'test', ${q(fid(i))}, ${q(`Bulk ${i}`)}, ${now})`).join(", ")};`,
 				`INSERT INTO friends (a, b, state, at) VALUES ${Array.from({ length: N }, (_, i) => `(${q(fid(i))}, ${q(A)}, 'friends', ${now})`).join(", ")};`,
@@ -1659,7 +1676,7 @@ try {
 		// The group board's query, as D1 plans it: driven from the game's
 		// matches (newest first, bounded), never a scan of match_players.
 		const bound = GROUP_MATCHES_SQL.replace("?", "'lokeshmohanty/battleship'").replace("?", String(GROUP_SCAN)).replace("?", q(grp)).replace("?", String(GROUP_REPLAY));
-		const plan = w.sql(`EXPLAIN QUERY PLAN ${bound}`)[0].map((r) => r.detail);
+		const plan = (await w.sql(`EXPLAIN QUERY PLAN ${bound}`))[0].map((r) => r.detail);
 		console.log(`  (plan: ${plan.join(" | ")})`);
 		check("the group board's plan: the game's matches by index matches_game_at", plan.some((d) => /SEARCH matches USING (COVERING )?INDEX matches_game_at/.test(d)), plan);
 		check("…match_players only by its primary key, per match — no full scan", plan.some((d) => /SEARCH p USING .*(PRIMARY KEY|sqlite_autoindex_match_players)/.test(d)) && !plan.some((d) => /SCAN (p|match_players)\b/.test(d)), plan);
