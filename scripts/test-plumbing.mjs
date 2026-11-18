@@ -51,9 +51,19 @@ const wire = [];
  * real `fromWire` (an election request once died there, unseen here).
  */
 const { toWire, fromWire } = NeonArcade._codec;
-function linkPair(a, b) {
-	const end = (self, other, peer) => ({
+let fpSeq = 0;
+/**
+ * `hello`: the ends start unverified, as a real channel does, and the rooms'
+ * own hellos (net.js _linkUp) must prove who is on each end — each end has
+ * a DTLS fingerprint of its own, as a real one does. Without it the ends
+ * come pre-verified, as if their hellos had already crossed.
+ */
+function linkPair(a, b, { hello = false } = {}) {
+	const fps = [`FA${++fpSeq}`, `FB${fpSeq}`];
+	const end = (self, other, peer, [local, remote]) => ({
 		peerId: other.selfId,
+		owner: hello ? null : other.selfId,
+		fingerprints: () => ({ local, remote }),
 		closed: false,
 		chunks: new Map(),
 		send(env) {
@@ -76,8 +86,8 @@ function linkPair(a, b) {
 			this.closed = true;
 		},
 	});
-	const linkA = end(a, b, () => linkB);
-	const linkB = end(b, a, () => linkA);
+	const linkA = end(a, b, () => linkB, fps);
+	const linkB = end(b, a, () => linkA, [fps[1], fps[0]]);
 	return [linkA, linkB];
 }
 
@@ -94,9 +104,13 @@ function connect(a, b) {
  * cannot see each other.
  */
 async function party(names, topology, opts = {}) {
-	const rooms = names.map((name, i) =>
-		i === 0 ? NeonArcade.createHost({ ...opts, name }) : NeonArcade.createGuest({ ...opts, name }),
-	);
+	const rooms = [];
+	const { ids: given, ...rest } = opts;
+	opts = rest;
+	for (const [i, name] of names.entries()) {
+		const identity = given?.[i] ?? (await NeonArcade.identity({ fresh: true }));
+		rooms.push(i === 0 ? NeonArcade.createHost({ ...opts, name, identity }) : NeonArcade.createGuest({ ...opts, name, identity }));
+	}
 	for (const r of rooms) {
 		r._meshUp = () => {};
 		r.resume();
@@ -364,8 +378,9 @@ console.log("\nround clock");
 console.log("\nmembership and the crown");
 
 const ids = (room) => room.getMembers().map((m) => m.id).sort().join(",");
-const bare = (opts, host = true) => {
-	const r = host ? NeonArcade.createHost(opts) : NeonArcade.createGuest(opts);
+const bare = async (opts, host = true) => {
+	const o = { ...opts, identity: opts.identity ?? (await NeonArcade.identity({ fresh: true })) };
+	const r = host ? NeonArcade.createHost(o) : NeonArcade.createGuest(o);
 	r._meshUp = () => {};
 	r.resume();
 	return r;
@@ -391,8 +406,8 @@ const bare = (opts, host = true) => {
 {
 	// Two hosts at the same term — a partition that crowned on both sides —
 	// settle on the lower id, and the one stepping down is not lost from it.
-	const a = bare({ name: "A" });
-	const b = bare({ name: "B" });
+	const a = await bare({ name: "A" });
+	const b = await bare({ name: "B" });
 	connect(a, b);
 	a._commitParty();
 	b._commitParty();
@@ -408,9 +423,9 @@ const bare = (opts, host = true) => {
 {
 	// A higher term wins whatever the ids, and the host that loses carries the
 	// members only it can reach into the winning record.
-	const c = bare({ name: "C" });
-	const d = bare({ name: "D" });
-	const e = bare({ name: "E" }, false);
+	const c = await bare({ name: "C" });
+	const d = await bare({ name: "D" });
+	const e = await bare({ name: "E" }, false);
 	connect(c, e);
 	c._addMember(e.selfId, "E");
 	c._commitParty();
@@ -443,8 +458,8 @@ const bare = (opts, host = true) => {
 	// The newcomer's side of a fresh link used to introduce its inviter to the
 	// host under the name baked into the invite — renaming the host back to
 	// whatever it was called when it minted it.
-	const host = bare({ name: "Host" });
-	const guest = bare({ name: "Newbie" }, false);
+	const host = await bare({ name: "Host" });
+	const guest = await bare({ name: "Newbie" }, false);
 	host.setName("Renamed");
 	const [toGuest, toHost] = linkPair(host, guest);
 	toHost.introducedName = "Host"; // what the invite said
@@ -483,7 +498,7 @@ const bare = (opts, host = true) => {
 	check("heir() skips a reconnecting seat", host.heir() === cy.selfId, host.heir());
 	delete host.party.members.find((m) => m.id === bo.selfId).reconnecting;
 	check("heir() never names a bot", host.heir() !== botId);
-	check("heir() is null with nobody to take it", bare({ name: "Solo" }).heir() === null);
+	check("heir() is null with nobody to take it", (await bare({ name: "Solo" })).heir() === null);
 
 	host.transferHost(botId);
 	check("the crown cannot be handed to a bot", host.isHost());
@@ -522,7 +537,7 @@ const bare = (opts, host = true) => {
 	// The room server's "back on the socket" clears a mark it set itself, so a
 	// member reached only by relay is not RECONNECTING forever after a blip —
 	// but a mark the mesh concluded is still the link's to clear.
-	const host = bare({ name: "Host", reconnectGraceMs: 60_000 });
+	const host = await bare({ name: "Host", reconnectGraceMs: 60_000 });
 	host.party.members.push({ id: "relayonly", name: "R", team: null, joined: Date.now(), rs: true });
 	host.serverPeerState("relayonly", false);
 	check("a socket drop marks a room-server member", !!host.getMember("relayonly").reconnecting);
@@ -560,7 +575,7 @@ const bare = (opts, host = true) => {
 			this.closed = true;
 		}
 	};
-	const room = NeonArcade.createHost({ name: "Host", selfId: "0000000000" });
+	const room = NeonArcade.createHost({ name: "Host", identity: await NeonArcade.identity({ fresh: true }) });
 	room.relayTimeoutMs = 60;
 	room.party.members.push({ id: "zzzzzzzzzz", name: "Z", team: null, joined: Date.now() });
 	room._meshUp();
@@ -715,7 +730,7 @@ for (const withBo of [true, false]) {
 	const [h, a] = rooms;
 	const rest = rooms.slice(2);
 	const c = rooms.at(-1);
-	const a2 = bare({ name: "Ana", selfId: a.selfId, heirWaitMs: 300 }, false);
+	const a2 = await bare({ name: "Ana", identity: a.identity, heirWaitMs: 300 }, false);
 	a.detach();
 	for (const r of [h, ...rest]) r.party.members.find((m) => m.id === a.selfId).rs = true;
 	for (const r of [h, ...rest]) {
@@ -865,7 +880,7 @@ for (const withBo of [true, false]) {
 		async setRemoteDescription(d) { this.remote = d.sdp; }
 		close() { this.closed = true; }
 	};
-	const room = bare({ name: "Low" }, false);
+	const room = await bare({ name: "Low" }, false);
 	room.selfId = "aaaa";
 	room.party = { host: "hhhh", term: 0, members: [{ id: "aaaa", joined: 1 }, { id: "zzzz", joined: 2 }, { id: "hhhh", joined: 0 }] };
 	const sent = [];
@@ -910,7 +925,7 @@ console.log("\na split party, re-reviewed: one record, and who said here");
 		if (l) r._linkClosed(l);
 	}
 	await sleep(DEPARTURE + 200);
-	const a2 = bare({ ...o, name: "Ana", selfId: a.selfId }, false);
+	const a2 = await bare({ ...o, name: "Ana", identity: a.identity }, false);
 	h.__frozen = true;
 	h.detach();
 	const [toA, toC] = linkPair(c, a2);
@@ -1023,7 +1038,7 @@ const E = { heirWaitMs: 300, lostRetryMs: [] };
 	h.leave();
 	await sleep(2300); // Ana's wait: Bo stands, Vic grants him
 	const grantedBo = [...(v.granted?.values() ?? [])].some((g) => g.n === b.selfId);
-	const v2 = bare({ name: "Vic", selfId: v.selfId, heirWaitMs: 2000, lostRetryMs: [] }, false);
+	const v2 = await bare({ name: "Vic", identity: v.identity, heirWaitMs: 2000, lostRetryMs: [] }, false);
 	v.detach();
 	const [toV, toC] = linkPair(c, v2);
 	toV.introducedName = "Vic";
@@ -1340,6 +1355,185 @@ console.log("\nbot seats and a member's own record");
 	await sleep(40);
 	check("a back vouch about the host still clears its held seat, and carries no edit", rec(host, host.selfId).reconnecting === undefined && rec(host, host.selfId).name === "Host" && rec(host, host.selfId).team === "A", JSON.stringify(rec(host, host.selfId)));
 	for (const r of [host, ana, bo, cy]) r.leave();
+}
+
+
+// ---------------------------------------------------------------------------
+console.log("\nwho said it: signed party messages");
+
+/** The data channel opened: the room's hello path (net.js _linkUp). */
+const opened = (room, end) => (room._linkUp ?? room._linkOpened).call(room, end);
+/** A modified client writing whatever it likes straight onto its link. */
+let rawSeq = 0;
+const raw = (from, to, env) => from.links.get(to.selfId).send({ id: `raw${++rawSeq}`, h: 2, m: null, t: null, ...env });
+/** Fresh identities, highest id first: the host can be made to sort last. */
+const idsDescending = async (n) => {
+	const all = [];
+	for (let i = 0; i < n; i++) all.push(await NeonArcade.identity({ fresh: true }));
+	return all.sort((x, y) => (x.id < y.id ? 1 : -1));
+};
+
+{
+	// Forged `f`, on a direct link and through a relay. Host–Ana–Bo, no
+	// host–Bo link: Ana is the relay between them.
+	const [host, ana, bo] = await party(["Host", "Ana", "Bo"], [[0, 1], [1, 2]]);
+	const heard = { host: [], bo: [] };
+	host.makeAction("chat").onMessage = (d, { peerId }) => heard.host.push([d, peerId]);
+	bo.makeAction("chat").onMessage = (d, { peerId }) => heard.bo.push([d, peerId]);
+	raw(ana, host, { a: "chat", d: "as Bo", f: bo.selfId, t: host.selfId });
+	await sleep(30);
+	check("forged f on a direct link: Ana cannot speak as Bo", !heard.host.some(([d]) => d === "as Bo"), JSON.stringify(heard.host));
+	raw(ana, bo, { a: "chat", d: "as Host", f: host.selfId });
+	raw(ana, bo, { a: "chat", d: "as Host, signed by Ana", f: host.selfId, ...(ana._sign ? await ana._sign({ a: "chat", d: "x", f: host.selfId, t: null, id: "fake1" }) : {}) });
+	await sleep(30);
+	check("forged f relayed: Ana cannot pass off her words as the host's", !heard.bo.some(([d]) => String(d).startsWith("as Host")), JSON.stringify(heard.bo));
+	host.makeAction("chat").send("hello Bo");
+	await sleep(40);
+	check("…while the host's own broadcast, relayed by Ana, still reaches Bo as the host's", heard.bo.some(([d, p]) => d === "hello Bo" && p === host.selfId), JSON.stringify(heard.bo));
+	ana.makeAction("chat").send("from Ana", { target: host.selfId });
+	await sleep(30);
+	check("…and Ana's own words reach the host as hers", heard.host.some(([d, p]) => d === "from Ana" && p === ana.selfId));
+
+	// A bot speaks only through the host that plays it.
+	const bot = host.addBot("B");
+	await sleep(30);
+	heard.bo.length = 0;
+	raw(ana, bo, { a: "chat", d: "bot by Ana", f: bot });
+	raw(ana, bo, { a: "chat", d: "bot by Ana, o", f: bot, o: ana.selfId });
+	raw(ana, host, { a: "chat", d: "bot to host", f: bot, t: host.selfId });
+	await sleep(30);
+	check("f = a bot from a guest is refused", !heard.bo.length && !heard.host.some(([d]) => String(d).startsWith("bot")), JSON.stringify([heard.bo, heard.host]));
+	host.emitAs(bot, "chat", "bot by host");
+	await sleep(40);
+	check("…while the host's own bot move, relayed, reaches Bo as the bot's", heard.bo.some(([d, p]) => d === "bot by host" && p === bot), JSON.stringify(heard.bo));
+
+	// A managed game's action and input (sdk-managed `v:m$act`/`v:m$in`)
+	// are an ordinary channel's: f is the seat.
+	const acts = [];
+	host.makeAction("v:m$act").onMessage = (d, { peerId }) => acts.push(peerId);
+	raw(ana, host, { a: "v:m$act", d: { a: { move: 1 } }, f: bo.selfId, t: host.selfId });
+	raw(ana, host, { a: "v:m$act", d: { a: { move: 1 } }, f: bot, t: host.selfId });
+	await sleep(30);
+	check("a managed act as another seat (a person's or a bot's) is refused", !acts.length, acts.join());
+	for (const r of [host, ana, bo]) r.leave();
+}
+
+{
+	// Control messages only the host may send, from a member who signs
+	// them honestly as herself.
+	const [host, ana, bo] = await party(["Host", "Ana", "Bo"], fullMesh(3));
+	ana._send({ __k: bo.selfId, f: ana.selfId, t: null }, null);
+	await sleep(40);
+	check("__k from a non-host does not evict", !bo.closed && !!host.getMember(bo.selfId) && !!bo.getMember(bo.selfId), `closed=${bo.closed}`);
+	ana._send({ __x: 1, f: ana.selfId, t: null }, null);
+	await sleep(40);
+	check("__x from a non-host does not close the party", !bo.closed && !host.closed);
+	host.removeMember(bo.selfId);
+	await sleep(40);
+	check("…the host's own __k still evicts", bo.closed === true && !ana.getMember(bo.selfId));
+	for (const r of [host, ana]) r.leave();
+}
+
+{
+	// A member crowning itself by record: at a higher term with no proof
+	// of the crown, and at the same term (it sorts first).
+	const ids = await idsDescending(4);
+	const [host, ana, bo, cy] = await party(["Host", "Ana", "Bo", "Cy"], fullMesh(4), { ids });
+	const forger = cy; // the lowest id
+	forger._send({ __p: { ...structuredClone(forger.party), host: forger.selfId, term: forger.party.term + 5 }, f: forger.selfId, t: null }, null);
+	await sleep(40);
+	check("a forged __p at a higher term, no proof of the crown: ignored", [host, ana, bo].every((r) => r.hostId() === host.selfId), [host, ana, bo].map((r) => r.hostId() === host.selfId).join());
+	forger.party = structuredClone(host.party); // back in line
+	forger._send({ __p: { ...structuredClone(forger.party), host: forger.selfId }, f: forger.selfId, t: null }, null);
+	await sleep(40);
+	check("a forged __p at the same term, from a non-host that sorts first: ignored", [host, ana, bo].every((r) => r.hostId() === host.selfId), [host, ana, bo].map((r) => r.hostId() === host.selfId).join());
+	for (const r of [host, ana, bo, cy]) r.leave();
+}
+
+{
+	// Forged election messages, written by Cy as other members.
+	const [h, a, b, c, d] = await party(["Host", "Ana", "Bo", "Cy", "Dee"], fullMesh(5), { heirWaitMs: 5000, lostRetryMs: [] });
+	const key = d._voteKey("nobodynobodynobo"); // a vacancy nobody holds a link to
+	raw(c, d, { __c: key, r: 1, f: b.selfId });
+	await sleep(30);
+	check("a forged __c (Bo standing, written by Cy) binds no grant", d.granted.get(key)?.n !== b.selfId, JSON.stringify(d.granted.get(key)));
+	a._send({ __c: key, r: 1, f: a.selfId, t: null }, null); // Ana really stands
+	await sleep(30);
+	const toAna = d.granted.get(key)?.n === a.selfId;
+	raw(c, d, { __r: key, r: 1, f: a.selfId });
+	await sleep(30);
+	check("a forged __r (Ana's release, written by Cy) frees no grant", toAna && d.granted.get(key)?.n === a.selfId, `granted=${toAna} now=${d.granted.get(key)?.n}`);
+	raw(c, d, { __ck: key, r: 1, f: a.selfId });
+	await sleep(30);
+	check("a forged __ck (Ana's commit, written by Cy) binds nobody for good", toAna && !d.committed.has(key), `granted=${toAna} committed=${d.committed.get(key)}`);
+	for (const r of [h, a, b, c, d]) r.leave();
+}
+
+{
+	// Cy forges Bo's and Dee's grants and acknowledgements for Ana. Bo and
+	// Dee are frozen and Cy grants nobody: Ana alone is no quorum.
+	const [h, a, b, c, d] = await party(["Host", "Ana", "Bo", "Cy", "Dee"], fullMesh(5), { heirWaitMs: 1500, lostRetryMs: [] });
+	b.__frozen = true;
+	d.__frozen = true;
+	c._asked = () => {};
+	c._commitAsked = () => {};
+	h.leave();
+	await sleep(100);
+	const key = a.candidacy?.key;
+	for (const who of [b, d]) raw(c, a, { __gr: key, r: a.candidacy?.round, n: a.selfId, f: who.selfId });
+	await sleep(40);
+	for (const who of [b, d]) raw(c, a, { __ka: key, r: a.candidacy?.round, n: a.selfId, f: who.selfId });
+	await sleep(40);
+	check("forged __gr and __ka (Bo's and Dee's, written by Cy) crown nobody", !!key && !a.isHost(), `key=${!!key} anaHost=${a.isHost()}`);
+	for (const r of [a, b, c, d]) r.leave();
+}
+
+{
+	// A relayed offer whose f is the victim: whoever answers it must not
+	// end up with Mallory's connection registered as the victim's.
+	const [host, vic, mal] = await party(["Host", "Vic", "Mal"], fullMesh(3));
+	const target = await bare({ name: "Tess" }, false);
+	const [toTarget, toMal] = linkPair(mal, target, { hello: true });
+	toMal.peerId = vic.selfId; // what the forged offer's f said
+	opened(target, toMal);
+	opened(mal, toTarget);
+	await sleep(60);
+	check("a link whose far end cannot sign as the claimed id is never registered (relayed-offer hijack)", target.links.get(vic.selfId) !== toMal && toMal.closed === true, `registered=${target.links.get(vic.selfId) === toMal} closed=${toMal.closed}`);
+	const [toT2, toV2] = linkPair(vic, target, { hello: true });
+	opened(target, toV2);
+	opened(vic, toT2);
+	await sleep(60);
+	check("…while the real one proves itself and is", target.links.get(vic.selfId) === toV2, `${target.links.get(vic.selfId) === toV2}`);
+	for (const r of [host, vic, mal, target]) r.leave();
+}
+
+{
+	// An old (unsigned) client: it never says hello, and talks at once.
+	const host = await bare({ name: "Host" });
+	const errors = [];
+	host.onError = (msg, info) => errors.push([msg, info?.reason]);
+	const oldGot = [];
+	const old = { selfId: "oldclient1", _inbound: (_l, msg) => oldGot.push(msg) };
+	const [toOld, fromOld] = linkPair(host, old, { hello: true });
+	toOld.introducedName = "Grandpa";
+	opened(host, toOld);
+	fromOld.send({ __alive: host.selfId, f: "oldclient1", t: null, id: "o1", h: 2 });
+	await sleep(60);
+	check("an old client is refused: not seated", !host.getMember("oldclient1") && !host.links.has("oldclient1"));
+	check("…the new side is told who and why", errors.some(([m, r]) => /Grandpa/.test(m) && /older version/.test(m) && r === "outdated"), JSON.stringify(errors));
+	check("…and the old side is told in words it knows (an unsigned __k naming it)", oldGot.some((m) => m.__k === "oldclient1"), JSON.stringify(oldGot));
+	host.leave();
+
+	// Invites and replies from old clients fail at once, clearly.
+	const sdp = ["v=0", "a=ice-ufrag:abcd", "a=ice-pwd:abcdefghijklmnopqrstuv", "a=fingerprint:sha-256 AA:BB", "a=setup:actpass", "a=candidate:1 1 udp 1 1.2.3.4 5 typ host", ""].join("\r\n");
+	const oldCode = await NeonArcade._codec.packSignal({ s: "slot", i: "oldclient1", n: "Grandpa" }, sdp);
+	const g = await bare({ name: "G" }, false);
+	const why = async (p) => p.then(() => "accepted", (e) => `${e.reason}: ${e.message}`);
+	const asInvite = await why(g.answerInvite(oldCode));
+	const asReply = await why(g.acceptAnswer(oldCode));
+	check("an invite from an old client fails with a clear message", /^outdated: .*older version/.test(asInvite), asInvite);
+	check("a reply from an old client fails with a clear message", /^outdated: .*older version/.test(asReply), asReply);
+	g.leave();
 }
 
 console.log(failures ? `\n${failures} failing\n` : "\nall passing\n");
