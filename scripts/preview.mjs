@@ -465,7 +465,9 @@ const GAMES = {
 			await readyToClick(a);
 			await H.locator('.br-setup button[data-mode="teams"]').click().catch(() => {});
 			await sleep(400);
-			await H.locator(".br-setup button", { hasText: "START" }).click().catch(() => {});
+			// START waits for a mode (asked every round): FREE-FOR-ALL if TEAMS could not be picked.
+			if (!(await H.locator(".br-setup .br-start").isEnabled().catch(() => false))) await H.locator('.br-setup button[data-mode="ffa"]').click();
+			await H.locator(".br-setup button", { hasText: "START" }).click();
 			// A person's tap, on the page's mouse: their own colour or gold,
 			// never a bomb, and not always the first one up.
 			const tap = async (page, G) => {
