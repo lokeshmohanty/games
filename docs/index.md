@@ -420,6 +420,196 @@ reconciles two hosts:
 - a member that computed an heir yields to a host still speaking at the old
   term, which is how a false "the host is gone" heals.
 
+**A split party: one side carries on, never two** (Lokesh, 2026-11-16
+"heir side only", and 2026-11-17 "skip hidden + quorum"). The host's departure
+can leave the rest in pieces that cannot reach each other: two guests that
+talked only through the host (no TURN, by design), or a re-dial that had not
+landed yet. The heir is named by `_successor` from the roster the host last
+published (`lastRecord`). Every input comes from that record and none from
+this browser's own copy, which a probe, a relink or a goodbye may have
+changed since, so every piece names the same member. A review found two
+pieces naming different heirs, and both crowning, because one read a held
+seat that its relink had cleared. `_successor` skips:
+
+- held seats (`reconnecting` on the record);
+- heirs already passed over;
+- while anyone else could take it, members whose phone is in the background
+  (`away` on the record, from `visibilitychange`).
+
+A member gone by its own goodbye since the record is not on the record
+either: if it was the heir, it is passed over after the wait.
+
+**An election decides who may crown** (2026-11-17/18; Raft's vote, without
+terms). It has two phases.
+
+1. **Grants.** The member named stands: it grants itself and asks everyone
+   (`__c`). Every member grants **one** candidate per vacancy (`__gr`). A
+   candidate counts grants only inside the heir's wait from when it stood.
+2. **Commit.** With a quorum of grants, the candidate commits (`__ck`). A
+   voter that still holds its grant to that candidate acknowledges (`__ka`),
+   and is then bound to it for that vacancy **for good**. From then on the
+   voter's grant never lapses, it grants nobody else, and it acknowledges no
+   other commit. The candidate crowns only on a quorum of acknowledgements.
+
+A quorum is more than half of the record's humans, or exactly half with the
+tie-break heir among them. The old crown holder is left out of both sides of
+the fraction.
+
+**Why there is never a second crown.** Any two quorums of one vacancy share a
+member, and that member acknowledges at most one commit, so at most one
+candidate ever crowns, however late its record gets out. Grants alone were
+not enough. A winner whose record never left kept its voters only until
+their grants lapsed, and then a second candidate won too (2026-11-18). An
+earlier version counted who had said "here" through the mesh instead. A
+member that reached both sides before a split was counted twice, which gave
+two crowns, and three once. Any presence count fails like that.
+
+**Messages are re-sent and flooded.** Election messages are not acknowledged
+by the transport. A candidate repeats its request or commit every 2 s
+(`REASK_MS`) while it matters, and says a release three times. Voters answer
+a repeat as they answered the first. The messages go round the whole mesh
+rather than only to the members the sender could not reach itself, so a
+half-dead link loses none of them.
+
+Members vote only on an equal key: who left, the record's term, the
+tie-break heir and the record's humans. Two records of one term can differ,
+and different fractions could both be met.
+
+The tie-break heir is the oldest of those humans by `joined`, whatever their
+`away` or held seat. Those marks change within a term, and a review got two
+crowns from a record marking the first heir away that reached only one side
+of a split: the two keys differed in the tie-break alone, and each side won
+its exact half. `away` and held seats still steer who is *named*, never who
+wins a tie.
+
+A page with no record heard from a crown holder (a fresh reload, a newcomer)
+has no vote. That is also what stops a page reloaded mid-vote from granting
+a second candidate: its grant died with the old page, and so did its record.
+It waits for the crown's record, and is lost after the heir's wait. A member
+still linked to the host that left grants nobody, because the host is not
+gone for it.
+
+**Grants lapse, unless acknowledged.** A voter frees its grant twice the
+heir's wait after it was asked, on its own clock, unless it acknowledged that
+candidate's commit. A candidate counts grants only inside the heir's wait
+from when it stood, by both its monotonic and its wall clock. A voter
+acknowledges only while it still holds the grant. The candidate waits for
+acknowledgements until every grant it holds could have lapsed, then gives up
+and releases the rest. Crown safety rests on the commit, not on these clocks.
+The clocks only keep a quorum of grants meaningful when the commit is made.
+
+- **Background clocks.** Timers can only fire late, which frees a grant
+  later. That is safe.
+- **Relayed delivery.** A relay only delays the request, so it is also safe.
+- **A device asleep.** A sleeping device stops the monotonic clock but not
+  the wall clock, so the candidate checks both.
+- **Residual.** A backward jump of the wall clock during a candidate's sleep
+  could defeat both checks.
+
+**Liveness.**
+
+- **A candidate that dies before committing** never releases. Its grants
+  lapse, and the next in line is elected after about twice the heir's wait
+  (about 20 s).
+- **A candidate that dies between its commit and its crown** leaves the
+  voters that acknowledged bound to it for good. That quorum cannot elect
+  anyone else, so the window is narrower, but it costs the vacancy.
+- Members that granted a named heir wait for their grant to lapse before
+  naming the next.
+
+**A refused request is kept.** It is refused while the voter still holds the
+link of the member that left, or while the voter's grant is given. It is
+granted when that changes (the link drops, the grant lapses or is released),
+if it is still young enough to count.
+
+**Waiting, standing aside, and being lost:**
+
+- Every member that only computed the heir (`computed`, which is not the
+  same as never having heard anyone: a fresh page has done neither) waits up
+  to 10 s for its record (net.js `HEIR_WAIT_MS`).
+- A silent or frozen heir never asks, so nobody is bound to it. When its
+  wait runs out, or the member's own piece concludes it gone (anything but
+  the heir's own goodbye), the next in line is named.
+- A candidate without a quorum within the heir's wait releases its grants
+  (`__r`) and never counts them again. It steps aside for the next in line.
+  A voter is free again only when it hears that release.
+- A member named with nobody left, or bound to a candidate it cannot reach,
+  is **lost** (`room.lost`, `onLost(true)`).
+
+A lost member:
+
+- **Stops its game and says so.** The screen reads "Lost connection to the
+  party", with TRY AGAIN where a room server may still reach the others, and
+  LEAVE PARTY. A ranked start without a result is withdrawn at once, so
+  leaving while lost is never booked as a departure.
+  - TRY AGAIN calls `room.rejoin()`, the re-announce an isolated member
+    makes. It is also made at once, and again after 5, 15 and 30 s.
+  - The game frame is hidden, not torn down, for 60 s. A phone back in touch
+    within that time resumes it, its own hidden state included, but only if
+    it is the same run of the same game. A new run mounts fresh.
+- **Rejoins rather than forks when a path comes back.** Its loss ends in any
+  of these cases (`onLost(false)`):
+  - a record at a newer term than it lost at;
+  - the heir itself speaking;
+  - the old host at the old term, but only if that record still seats the
+    heir (otherwise it would put us in a second party beside the heir's).
+
+  A member the heir dropped meanwhile carries its own seat back in.
+- **Can still win an election.** After the heir's wait, lost phones that
+  link up again stand again in a new round of the same election.
+  - A member others are sworn to stands first, whatever its rank, because
+    they can elect nobody else.
+  - Otherwise the member that ranks first stands, among those it now links
+    to directly. Members seen acknowledging another's commit are left out of
+    that ranking (the acknowledgements flood, so everyone sees them).
+  - The key is the same, so the same grants bind, and a sworn member grants
+    nobody else.
+
+  Without a room server, that, or LEAVE PARTY, is the way forward.
+- **Says when it is stranded.** A phone sworn to a candidate that is past its
+  deadline with no crown reaching the phone (`room.stranded`) cannot help
+  elect anyone. That candidate may also have won and carried on out of
+  reach. The screen says the phone gave its vote to a player it can't reach.
+  - With a room server, TRY AGAIN stays, because it may find them, and NEW
+    PARTY sits beside it.
+  - Without a room server, NEW PARTY and LEAVE PARTY are the way on.
+
+**Cases that are not splits.** An heir that left by its own goodbye is not a
+split: it is passed over after the wait, and the next in line takes the
+crown. A host whose seat the room server
+holds sends no `__gone`. Whoever concludes it gone broadcasts that the crown
+is vacant (`__v`), so an heir that reached the host only through a relay
+still learns it. The receiver does not take it on trust: it probes the host
+itself and concludes in its turn, so one member's false alarm (a host
+reloading) cannot move the crown for everyone.
+
+**Known gaps:**
+
+- **A live host's partition.** A partition between a *live* host and the
+  rest is not a departure: both sides keep a crown, and term ordering heals
+  it on reconnection.
+- **Host and majority fail together.** If the host and every candidate on
+  the majority side fail together, nobody carries on.
+- **Two humans, one reloading.** If one of the two humans is fresh from a
+  reload when the host dies, that one has no vote. The other has only half,
+  and wins only if it is the tie-break heir. If the reloaded one is the
+  oldest, nobody crowns. The same holds whenever the tie-break heir's vote
+  died in a reload and the rest split evenly.
+- **A missed record that changes the humans.** A record that adds or drops a
+  member reaches one side of a split only: the two sides' keys then count
+  different rosters, and each could win its own election.
+
+**Threat model.** The election is safe against faults, not against a
+malicious member. The sender field `f` is unsigned, so `__c`, `__gr` and
+`__r` can be forged, as the party record (`__p`) and every other control
+message can. Signing control messages with members' keys is the planned
+follow-up.
+
+A narrowing, which took election messages only over the sender's own link,
+was dropped: it lost them on a half-dead link, and it never stopped forgery. Tested in test-plumbing ("a split party",
+"…reviewed", "…re-reviewed", "…by election", "…election re-reviewed",
+"…with a commit") and test-party (the lost screen).
+
 A link reported `disconnected` gets 3 s to recover before it counts as dropped,
 because a phone on a briefly lost signal often recovers the same connection.
 The cost is paid by a closed tab, which also arrives as `disconnected`: in
@@ -520,6 +710,8 @@ compact table instead of starting at once (party.js `tableBlock`):
 | `setGame(id)` | host only: everyone mounts it; `null` returns to the party |
 | `transferHost(id)` | host only: hand over the crown (never to a bot) |
 | `heir()` | who would take the crown if we left now; skips us, bots and reconnecting seats; `null` if nobody |
+| `lost` / `onLost(on)` | this side of a split party cannot take the crown or reach the side that did (see "A split party") |
+| `canRejoin` / `rejoin()` | whether a room server may put us back in touch, and asking it to |
 | `removeMember(id)` | host only: remove someone (a bot included) |
 | `addBot(team?)` | host only: seat a simulated member; defaults to the emptier side. Returns its id |
 | `bots()` | every bot in the roster (readable by anyone) |
@@ -1101,9 +1293,18 @@ the icon for exactly this reason. `test-pwa` now parses the file.
   round (2026-11-12, for NATs that connect in one direction only); after
   that nothing retries it on a timer — the next roster change does. A pair that failed once stays
   relay-only until somebody joins, leaves or is edited. A direct link that *drops* while
-  the member stays reachable is different: the first vouch for it dials it
-  again at once (net.js `_vouch`, 2026-11-16). Left relay-only, a pair split
-  in two when their relay — the host — left, each crowning itself.
+  the member stays reachable is different. The second vouch for it, 2.5 s
+  after the drop, dials it again (net.js `_vouch`, 2026-11-16). The second,
+  not the first, so that a stale vouch for a member who is leaving does not
+  cost an offer. Left relay-only, a pair split in two when their relay, the
+  host, left. A drop is often seen at one end first. When the higher id still
+  holds the dead link, it sets aside the lower id's offer, and a resend of
+  that offer would be dropped as already seen. So when the higher id notices
+  and asks about the lower id (`__q`), the lower id abandons its offer and
+  makes a fresh one (`_redial`). It abandons only an offer already sent: one
+  still gathering is left to go out, and an offer abandoned while it gathers
+  is never sent. Each offer carries a nonce that its answer echoes, so an
+  answer to an abandoned offer cannot land on the one that replaced it.
 - The 3 s grace on `disconnected` is observed in the NAT lab, not on a phone:
   4 s and 8 s blackouts keep the link; Chrome itself declares `disconnected`
   some seconds in, so a link survives a blackout of roughly 9 s. It cannot

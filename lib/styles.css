@@ -1576,6 +1576,14 @@ html[data-home="all"] .boot .site-subtab[data-tab="all"] {
   justify-content: center;
   margin-top: 24px;
 }
+/* Cut off from the side of a split party that carries on (lib/party.js
+   lostScreen): the why, in a readable measure, over TRY AGAIN. */
+.party-lost {
+  max-width: 34rem;
+  margin: 8px auto 16px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
 /* The party's own chrome (lib/party.js .top-actions: feedback, favourite,
    PARTY; the shell's turn-wait bar and host-pause card) is the party view's:
    hidden while another view shows. */
