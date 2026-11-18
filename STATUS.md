@@ -14,48 +14,34 @@ separate `TODO.md`.*
 (empty — the Tug of War item was processed 2026-11-15; its block is in
 `STATUS-archive.md`)
 
-## Now (2026-11-15)
+## Now (2026-11-18)
 
-**main** has SDK v2 (docs/sdk-v2.md), the one-page Solid shell (docs/spa.md),
-the features round, Neon Fission, the web-games rename and pin (63360fd), the
-Community tab and ☰ menu, and one listed Tic Tac Toe. Tug of War is retired
-(unlisted; its folder is deleted on web-games `bubble-rush-v2`).
-**Worker deployed 2026-11-15** from 3510c58, migration 0003 applied remotely
-(version b112bde4): solo runs and Sudoku verification are live (main b8909c6).
+**main f41a01e is live** (Pages deploy gated on tests; worker version
+7846f9ec deployed 2026-11-18, D1 migrations through 0005 applied remotely).
+Everything from the 2026-11-15..18 round is merged: SDK v1 removal and
+docs/platform.md, Bubble Rush on v2 (and its tap fix: a tap is judged on the
+frame on screen), solo and vs-bots boards, friends/groups/invites, ratings
+(pairwise Elo, leaving = loss) and optional boards (none for Tic Tac Toe,
+Connect 4, Undercover, Draw & Guess — web-games pin fa18304, PR #11), fonts
+after mount, CI-gated deploys, the stuck-party fix, the split-party election
+(docs: `.agents/skills/multiplayer/memory/split-party.md`), the quick table
+before SINGLE PLAYER, last-move markers, and the flaky-test fixes
+(test-accounts pins the server clock with `X-Test-Now`, tests only).
 
-**This branch, `cleanup-v1`** (not merged): removes SDK v1 and the old page
-stubs (the shell's addresses are the only ones), creates docs/platform.md
-(was docs/sdk.md), and shortens lib/README.md to an index (its API and
-connectivity detail moved to docs/index.md "The party API" / "Connectivity").
+**Queued (approved by Lokesh, not started):**
+- **Signed party messages** — `f`, `__i`, `pk`, election and `__p` are
+  unsigned; close that before any game relies on `seal.*`.
+- **Web Push** — opt-in, invites only (memory `no-third-party-services`).
+- **Worker** — edge caching of leaderboard GETs; free-plan usage limits;
+  D1 backups; worker deploy from CI (Lokesh adds `CLOUDFLARE_API_TOKEN`);
+  join-failure counting.
+- **Settings** (sound/vibration) and an accessibility pass.
+- **Phone fixes** from the Android pass: JOIN WITH A CODE uses a native
+  prompt; Connect 4's canvas is blurry (DPR); Firefox top bar and frame
+  theme; Neon Fission toasts pile up; Neon Survival's thumb offset; Connect 4
+  bot long task; tap targets and text sizes. iOS remains unverified.
 
-**In progress on other branches:**
-- **Bubble Rush on SDK v2** — web-games `bubble-rush-v2` (../arcade-games-v2)
-  and this repo's `game-bubble-rush`: fixing review findings, bots being
-  softened. Its pin moves by PR.
-- **Solo and vs-bots leaderboards** — `solo-boards` (../games-boards) plus
-  web-games `light-cycles-solo` (../web-games-lc). Adds D1 migration
-  `0004_bot_wins.sql`: Claude applies it remotely and deploys the worker after
-  the merge (Lokesh approved).
-- **Match integrity and ratings** — `social-ratings` (../games-ratings,
-  2026-11-16, not merged): a match counts only for accounts that reported
-  it; leaving a ranked match is a loss (with the leaver's own start as
-  evidence); pairwise-Elo rating for free-for-all and teams, provisional
-  for 10 games; the rating change on the end card; the Worker's generated
-  table of games (worker/api/games.js); no migration. Deploy:
-  `just deploy-worker` after the merge (docs/accounts.md "Deploying the
-  ratings and integrity changes"). Also optional boards: `"leaderboard":
-  false` for Tic Tac Toe, Connect 4, Undercover; Draw & Guess on web-games
-  branch `no-board-draw-guess` (../web-games-dg, 5521041), its pin to move.
-  Parallel: `social-friends` (friends, groups, profile UI, migration 0005).
-- **Real-device testing** on Lokesh's Android phone (scanning, installing,
-  Neon Fission, web-app start-up time). iOS and Firefox's install hints remain
-  unverified (docs/index.md "Honest gaps").
-- **Then, approved by Lokesh:** frame prebuild at deploy; edge caching of
-  leaderboard GETs; preview GIFs out of the repo; the rating change on the end
-  card; quick play; sound/vibration settings and an accessibility pass;
-  free-plan usage limits; join-failure measurement; worker deploy from CI
-  with approval (Lokesh will add a `CLOUDFLARE_API_TOKEN` secret) plus D1
-  backups.
+**Open question:** Bubble Rush played solo — open on TEAMS or FFA?
 
 **Waiting on others:** Locale (rajarshi99/locale-chess) PR #1 is still open
 (checked 2026-11-15); after he merges, he proposes his own registry pin, and
