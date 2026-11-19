@@ -407,7 +407,8 @@ client.
   record.
 - Game traffic counts only from a member of the record: anybody can make a
   key, and a stranger's signed message carried in by a member used to reach
-  the game.
+  the game. A proven sender not yet in our copy (its record is still on the
+  way) is held 3 s for the record that seats it, so a first move is not lost.
 - `seen` (the duplicate filter) is keyed by sender and id, so a member cannot
   send something of its own under the id another's message will carry and
   have that one dropped as a copy.
@@ -446,36 +447,59 @@ verified even on its sender's own link, because it is kept as proof.
     - or its own proof checks back to one we hold.
 
     So a member cannot write itself a key with only itself as human (review,
-    2026-11-19). The candidate's own vote is its record's signature; or
+    2026-11-19). A record older than the latest of that holder's we hold
+    counts only if its humans include every human of the latest, since a
+    smaller roster makes the quorum easier. The candidate's own vote is its
+    record's signature; or
   - `cp` is a **hand-over**: the previous holder's signed record naming this
-    one, itself proven the same way.
+    one, itself proven the same way. The new holder must be a voting (not
+    `pend`) member of the record handed over, and of our record of that
+    holder where we hold one. A self-vote wrapped in hand-overs through a
+    key made for the purpose and back was taken (re-review, 2026-11-19).
 
   Proofs nest — a certificate carries its record, and that record its own
   proof — up to three crowns back (`PROOF_DEPTH`). So a phone asleep through
   two changes of host checks the chain back to the record it holds, and
-  follows. A newer record it still cannot check (further behind, or forged)
-  is not followed, and the player is told once: "This phone missed changes of
-  host it cannot check. Reload the page to rejoin the party." (onError,
-  reason `behind`). Without this, a phone went its own way in silence.
+  follows. A newer crown it cannot follow back far enough is not followed, and
+  the player is told once: "This phone missed changes of host it cannot
+  check. Reload the page to rejoin the party." (onError, reason `behind`).
+  Without this, a phone went its own way in silence. Only a well-formed chain
+  cut short (`_proven` says "far"), and signed by members we seat, prompts. A
+  junk or forged record is refused quietly, or any member could make
+  everyone reload.
 
   **A crown won by the candidate's own vote alone** (it is half the humans
   and the tie-break heir) is attested by nobody else. It is taken only by a
   member that sees the vacancy too: not the holder said to have left, and
   not while we still hold a live link to it. Otherwise it is held back
-  (`unseen`) and checked again when that link closes.
+  (`unseen`) and checked again when that link goes, closed or dropped with
+  its seat. The rule holds at every depth of a proof, not only at its top.
 
   Without this, "a higher term wins" let any member crown itself by signing a
   record. From the holder already known, only a newer record (`rev`, which
   rises with the clock across a reload) is taken, so a replayed old record
   cannot roll the party back.
-- **A member seated on someone else's word is `pend`.** The host seats an id
-  introduced by another member (`__i`), but it does not count toward an
-  election's humans (`_voteKey`, `_successor`, `heir()`) until it speaks for
-  itself: its own `__i`, sent at once when it sees the mark, or a link to the
-  host. Unproven for 30 s, the seat is dropped. This stops *invented* seats,
-  ids nobody holds a key for. It does not stop sybils: a member that makes
-  keys and speaks for them, in tabs or by hand, has that many seats and
-  votes.
+- **A seat votes only once a link of its own proves it.** Until then it is
+  `pend`: it plays, and an election does not count it (`_voteKey`,
+  `_successor`, `heir()`, `transferHost`). There are two levels:
+  - **1: seated on another member's word** (an introduction). Unless it
+    speaks for itself within 30 s, the seat is dropped, so a replayed
+    introduction seats no ghost.
+  - **2: it spoke for itself, but through a relay.** Its `__i` came in carried
+    by a member: a key exists, not a second device. A member once made three
+    keys "speak for themselves" through it and won a quorum with their votes
+    (re-review, 2026-11-19).
+
+  Only a hello-verified link clears the mark:
+  - the host's own link to it opens;
+  - its `__i` reaches the host over that link;
+  - the host commits a record while holding such a link (a crown changing
+    hands keeps the old marks).
+
+  `by` names the member whose word or relay it came on. That member's
+  `__alive` does not settle a suspicion about it. **Inherent:** a member that
+  runs real extra tabs, each with its own hello-verified links, has that many
+  votes. Only a real-world identity could stop that.
   Introductions are broadcasts now. A member used to re-address an `__i` to
   the host it knew, and that would break the signature.
 - The newcomer's first record is the host's own signed envelope, handed on
@@ -1453,6 +1477,26 @@ the icon for exactly this reason. `test-pwa` now parses the file.
   - **A malicious voter** can acknowledge two candidates for one key. The
     election's safety assumes it does not (see the threat model under "When
     the host goes").
+  - **A relay can crown itself for those behind it** (re-review, 2026-11-19).
+    In a relay layout (Host–Cy–Ana, no Host–Ana link) with two humans left,
+    Cy is half and maybe the tie-break heir. Cy can write a crown change for
+    Ana while the host is alive: Ana has no link to the host, so she cannot
+    see it alive, exactly as when it is really gone. This is inherent to
+    letting a lone survivor win; the host itself, and anyone linked to it,
+    refuse.
+  - **A newcomer with no party id yet** is captured by a record from another
+    party, handed on by the member it linked to. It has nothing to check the
+    `pa` against.
+  - **The key's Web Lock under the back/forward cache**: Chrome keeps such a
+    page out of the cache or releases its lock. Safari and Firefox are not
+    tested (VERIFY): a cached page that kept its lock would make the restored
+    tab, or a new one naming that key, mint a fresh key.
+  - **A relay-only player never votes.** Without a hello-verified link to the
+    host (the NAT lab's two symmetric peers, relayed by a third), a seat
+    stays `pend` 2: it plays, but no election counts it.
+  - **Records grow with elections.** A certificate carries the record it was
+    won from, nested up to three deep. Measured on a 6-member party: about
+    2.5 KB after one election, 3.7 KB after two, 4.8 KB after three.
   - **The old side is not always told.** When a new client joins an *old*
     party, it leaves with a goodbye rather than evict the old host from its
     own party: the old side sees a member leave, not "reload". A code join
@@ -1460,9 +1504,11 @@ the icon for exactly this reason. `test-pwa` now parses the file.
     says "Nobody in that party answered" after 30 s.
   - A host whose crown came by election and who reloads takes its proof
     back only from the stayer's copy of its own record (`_keepProof`).
-  - Members more than three crowns behind, or whose records of the vacancy's
-    term are all newer than the one a certificate was won from, cannot check
-    it. They are told to reload (reason `behind`) rather than left split.
+  - Members more than three crowns behind, or whose latest record of the
+    vacancy's term has humans the certificate's record lacks, cannot check
+    it. Those whose chain is cut short, signed by members they seat, are told
+    to reload (reason `behind`) rather than left split; a junk record is
+    refused quietly.
   - **A crown won by the candidate's own vote** (two humans left, or two and
     the tie-break) is unattested. It is refused by the holder said to have
     left and by anyone still linked to it, so a member cannot crown itself

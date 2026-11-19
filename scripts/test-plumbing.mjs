@@ -1525,15 +1525,25 @@ const idsDescending = async (n) => {
 }
 
 {
-	// A newer record we cannot check is said, not followed in silence.
-	const [h, a, b] = await party(["Host", "Ana", "Bo"], fullMesh(3));
+	// A newer crown whose chain reaches back further than we can follow
+	// (five hand-overs while Eve slept; proofs keep three) is said, not
+	// followed in silence — and only that: a junk record is not (re-review).
+	const [h, a, b, c, d, e] = await party(["Host", "Ana", "Bo", "Cy", "Dee", "Eve"], fullMesh(6));
 	const said = [];
-	b.onError = (msg, info) => said.push(info?.reason);
-	a._send({ __p: { ...structuredClone(a.party), host: a.selfId, term: 7, rev: Date.now() + 9 }, f: a.selfId, t: null }, null);
-	a._send({ __p: { ...structuredClone(a.party), host: a.selfId, term: 8, rev: Date.now() + 10 }, f: a.selfId, t: null }, null);
-	await sleep(60);
-	check("a newer crown that cannot be checked: not followed, and said once (reload to rejoin)", b.hostId() === h.selfId && said.join() === "behind", said.join());
-	for (const r of [h, a, b]) r.leave();
+	e.onError = (msg, info) => said.push(info?.reason);
+	e.__frozen = true;
+	let holder = h;
+	for (const next of [a, b, c, d, a]) {
+		holder.transferHost(next.selfId);
+		await sleep(60);
+		holder = next;
+	}
+	e.__frozen = false;
+	holder.setGame(null);
+	holder.setName("Ana!");
+	await sleep(100);
+	check("a newer crown that cannot be checked back far enough: not followed, and said once (reload to rejoin)", e.hostId() === h.selfId && holder.party.term === 5 && said.join() === "behind", `${said.join()} term ${holder.party.term} ${e.refusals.slice(-2)}`);
+	for (const r of [h, a, b, c, d, e]) r.leave();
 }
 
 {

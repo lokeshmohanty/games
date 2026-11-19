@@ -77,6 +77,20 @@ holds each proof of concept):
 - **An unattested crown** (the candidate's vote alone) is taken only by one
   who no longer sees the old holder.
 
+Re-review 2026-11-19 (9fd7e5a; test-plumbing "who said it, re-reviewed"):
+- **A key speaking for itself through a relay proves a key, not a device.**
+  A member made three keys "speak for themselves" via it and had a quorum.
+  A seat votes only once a hello-verified link of its own proves it
+  (`pend` 1: on another's word, expires; 2: spoke via a relay, plays, never
+  votes). Real extra tabs with real links are inherent.
+- **A rule checked only at the top of a proof is a rule an attacker wraps.**
+  A self-vote under hand-overs (through a made-up key and back) skipped the
+  "unseen" check that ran at depth 0. Every rule applies at every depth; a
+  hand-over goes only to a voting member; an older record never with a
+  smaller roster than the latest held.
+- **A prompt any member can trigger is a nuisance tool.** "Reload to rejoin"
+  only for a well-formed chain cut short ("far"), signed by seated members.
+
 Costs: see docs/index.md "Who said it" (Node and throttled Chromium).
 
 Related: [[split-party]], [[addressed-is-not-private]], [[bots-as-members]],
