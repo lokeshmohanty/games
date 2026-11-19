@@ -412,7 +412,13 @@ canvas.addEventListener("click", (e) => {
 	arcade.act({ cell: i, n: view.moves });
 });
 
-addEventListener("resize", resize);
+// The grid fits the room left under the turn line and the chips, which are
+// filled in after the first resize: with eight players their rows took
+// another 50px, and the grid ran 20px off a 354x696 phone. So the grid
+// follows #wrap's own size, not just the window's.
+// (scripts/test-neon-fission.mjs runs this file in node, with no ResizeObserver.)
+if (typeof ResizeObserver === "function") new ResizeObserver(() => resize()).observe(wrapEl);
+addEventListener("resize", resize); // a new devicePixelRatio, at the same size
 arcade.on("theme.set", () => paint());
 arcade.on("view", ({ state }) => {
 	const first = !view;
