@@ -63,13 +63,16 @@ export default function App() {
 		// link) is this party, not another: shown, never the leave question
 		// (as party.js's hashchange handler has it).
 		const code = next.hash.match(/[#&]c=(\d{6})/)?.[1];
-		if (code && code === p.code && !q.has("fresh") && !q.has("dev") && !/[#&](i|a)=/.test(next.hash) && !(q.has("game") && q.get("game") !== p.game)) {
+		const live = p.live ?? (p.room && !p.room.closed);
+		// Only while it is live: an ended party's code is a new join (a full
+		// load, below), or nothing would run and JOIN WITH A CODE would wait
+		// on JOINING… for ever (review, 2026-11-19).
+		if (live && code && code === p.code && !q.has("fresh") && !q.has("dev") && !/[#&](i|a)=/.test(next.hash) && !(q.has("game") && q.get("game") !== p.game)) {
 			navigate("./?party");
 			return false;
 		}
 		const wantsNew = q.has("fresh") || q.has("dev") || /[#&](i|c|a)=/.test(next.hash) || (q.has("game") && q.get("game") !== p.game);
 		if (!wantsNew) return true; // BACK TO GAME, ./?party: the same party
-		const live = p.room && !p.room.closed;
 		if (!live) return void location.assign(next.href), false;
 		A.leaveParty?.("Leave this party for another?").then((go: boolean) => go && location.assign(next.href));
 		return false;

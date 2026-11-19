@@ -83,7 +83,7 @@ function JoinCode(props: { opener: HTMLElement | null; gone: () => void }) {
 		const party = (window as any).__party;
 		// A live party: leaving it is the router's question (src/App.tsx),
 		// then a fresh page; this dialog has done its part.
-		if (party?.room && !party.room.closed) {
+		if (party?.live ?? (party?.room && !party.room.closed)) {
 			dialog.close();
 			navigate(`./?party#c=${code}`);
 			return;
