@@ -217,8 +217,9 @@ contribute, contributors; collections is new (no old page: the nav links
   jumps when it's drawn. This replaced a bar of buttons above the tabs that
   crowded a phone (2026-11-15).
 - **Room for the pill:** a live party's BACK TO GAME pill gets room at the
-  bottom from one rule in lib/styles.css. The party's own top buttons
-  (`.top-actions`) hide on every other view.
+  bottom from one rule in lib/styles.css. The party's own top band
+  (`.top-band`: ← Games, ?, feedback, favourite, PARTY) hides on every
+  other view.
 - **Query parameters** ride alongside `page=` (`?page=profile&u=…`). A view
   that rewrites them uses `history.replaceState`, keeping `page`.
 

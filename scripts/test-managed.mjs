@@ -36,7 +36,7 @@ import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { catalogue, checkTrace } from "./protocol-check.mjs";
-import { PORT_OFFSET, gameFrame, readyToClick, serve, spawnServer } from "./serve.mjs";
+import { PORT_OFFSET, gameFrame, phoneFloors, readyToClick, serve, spawnServer } from "./serve.mjs";
 import { loadPlaywright } from "./playwright.mjs";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
@@ -478,6 +478,18 @@ try {
 		nsRows,
 	);
 	check("…open, the card stays on the screen and clear of the chrome", fits(k8d), [k8d?.box, k8d?.under]);
+	// The phone's floors on the end card and the band over it (Lokesh's
+	// phone, 2026-11-15: DETAILS was 32px, "you" and the captions 11.5px),
+	// at 390x844 and his 354x696, DETAILS open (every line on show).
+	for (const [w, h] of [
+		[390, 844],
+		[354, 696],
+	]) {
+		await solo.setViewportSize({ width: w, height: h });
+		const floors = await phoneFloors(solo, ".managed-over, .top-band");
+		check(`${w}x${h}: on the end card every button is 44px and every line 12px (DETAILS, PLAY AGAIN, "you", the captions)`, floors.measured.taps >= 3 && floors.measured.text >= 20 && !floors.taps.length && !floors.text.length, floors);
+	}
+	await solo.setViewportSize({ width: 390, height: 844 });
 	for (const [theme, mode] of [["paper", "light"], ["paper", "dark"], ["neon", "dark"]]) {
 		await solo.evaluate((t) => window.NeonArcade.theme.set(t), { theme, mode });
 		await new Promise((r) => setTimeout(r, 150));

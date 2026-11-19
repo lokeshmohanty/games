@@ -27,3 +27,27 @@ export function loadPlaywright() {
 	}
 	return createRequire(import.meta.url)(DIR);
 }
+
+/**
+ * Playwright's own Firefox, for the checks only Firefox fails (a phone's
+ * larger text, which Firefox applies as text zoom; a frame's theme), or
+ * null when it cannot start here. CI installs no Firefox (it uses the
+ * runner's Chrome), so those checks say they were skipped; NEON_FIREFOX=1
+ * makes a missing Firefox a failure instead. On NixOS its libraries come
+ * from scripts/firefox-libs.sh (docs/development.md "Firefox").
+ *
+ * `textScale` (a percentage) is the phone's system font size: Firefox
+ * scales every font by it and nothing else, as Firefox for Android does.
+ */
+export async function launchFirefox(pw, { textScale = 100 } = {}) {
+	try {
+		return await pw.firefox.launch({
+			firefoxUserPrefs: textScale === 100 ? {} : { "browser.display.os-zoom-behavior": 2, "ui.textScaleFactor": textScale },
+		});
+	} catch (err) {
+		const why = String(err?.message ?? err).split("\n").find((l) => l.trim()) ?? "";
+		if (process.env.NEON_FIREFOX) throw new Error(`Firefox is required (NEON_FIREFOX) and did not start: ${why}`);
+		console.log(`  skip Firefox: it did not start here (${why.slice(0, 120)}); NixOS: docs/development.md "Firefox"`);
+		return null;
+	}
+}
