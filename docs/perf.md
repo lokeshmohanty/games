@@ -407,7 +407,12 @@ trace). It is a full-width five-ply alpha-beta search, run in one go inside
 
 **Connect 4's board was blurry:** its canvas had a 1x backing store. It is
 now `cell x 7 x dpr` by `cell x 6 x dpr` with DPR capped at 3 (as Neon
-Fission's), drawn through `setTransform(dpr)`; hit-testing stays in CSS px.
+Fission's), drawn through `setTransform(dpr)`; hit-testing stays in CSS px, inside
+the board's 3px border. `resize()` alone sizes it: a CSS `max-height: 70vh`
+left on it squeezed only its height on windows 587-685px tall (553x455 at
+1280x650, review 2026-11-19), so the 95vw and 70vh limits moved into its
+sums, and test-bots holds the 7 : 6 shape at 1280x650, 1366x768, 390x844
+and 354x696.
 On the OnePlus that is 987 x 846 backing pixels (47px cells), redrawn only
 on a move or a hover. Neon Survival already scaled to DPR, capped at 2 (its
 fill is its whole cost, Phase 1 above), and Neon Fission at 3; Neon Bid and
@@ -417,7 +422,11 @@ stays 1), so test-bots tells the frame its ratio and resizes it.
 
 **Neon Fission's grid ran off a 354x696 phone with 5-8 players** (20px),
 found by the new size checks: it was sized before the chips under the turn
-line were filled in. It now follows its box (`ResizeObserver` on `#wrap`).
+line were filled in. It is sized after them now, when a match begins and
+when the window changes. Not on a chip's reflow mid-game: following
+`#wrap` (a ResizeObserver, the first fix) shrank the grid under a finger
+when a row of chips wrapped (review 2026-11-19), so a chip's count is two
+digits wide whatever it holds and the chips keep their rows.
 There the 8 x 12 grid gets 40px cells, and 44 does not fit either way: 8
 columns of 44 are 352 of the 354px (the board edge to edge), and 12 rows of
 44 plus the turn line and two rows of chips are more than 696px. 390x844

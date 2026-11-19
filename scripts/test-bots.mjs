@@ -106,6 +106,7 @@ async function phoneSizes(p, F, label) {
 	for (const [w, h] of [[390, 844], [354, 696]]) {
 		await p.setViewportSize({ width: w, height: h });
 		await F.waitForFunction((w) => innerWidth <= w, w, { timeout: TIMEOUT });
+		await F.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)))); // after the game's own resize
 		const floors = await phoneFloors(F, "body");
 		const doc = await F.evaluate(() => document.documentElement.scrollWidth);
 		check(`${label} at ${w}x${h}: text at least 12px, taps at least 44px, no sideways scroll`, !floors.text.length && !floors.taps.length && floors.measured.text > 0 && doc <= w, JSON.stringify({ ...floors, doc }));
@@ -1265,10 +1266,38 @@ try {
 	});
 	check("connect 4's board is drawn at the device's pixel ratio, capped at 3 (3.5 here)",
 		sharp.dpr === 3 && sharp.w === sharp.cssW * 3 && sharp.h === sharp.cssH * 3 && sharp.cssW === sharp.cell * 7, JSON.stringify(sharp));
-	await drop(0);
+	// Its shape at any window: 7 : 6, the backing store 3x what shows. A CSS
+	// max-height on the board once squeezed only its height on windows
+	// 587-685px tall (553x455 at 1280x650; review 2026-11-19).
+	for (const [w, h] of [[1280, 650], [1366, 768], [390, 844], [354, 696]]) {
+		await page.setViewportSize({ width: w, height: h });
+		await c4.waitForFunction(([w, h]) => innerWidth === w && innerHeight === h, [w, h], { timeout: TIMEOUT });
+		const box = await c4.evaluate(async () => {
+			// The window's resize event runs before the next frame's callbacks.
+			await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+			const b = document.getElementById("board");
+			return { cssW: b.clientWidth, cssH: b.clientHeight, w: b.width, h: b.height, bottom: Math.round(b.getBoundingClientRect().bottom) };
+		});
+		check(`${w}x${h}: connect 4's board keeps its 7 : 6 shape, its backing store 3x what shows, on screen`,
+			box.cssW * 6 === box.cssH * 7 && box.w === box.cssW * 3 && box.h === box.cssH * 3 && box.bottom <= h, JSON.stringify(box));
+	}
+	await page.setViewportSize({ width: 390, height: 844 });
+	await c4.waitForFunction(() => innerWidth === 390, null, { timeout: TIMEOUT });
+	await readyToClick(page);
+	// A tap 1px inside column 7's left edge plays column 7: taps are read in
+	// CSS px inside the 3px border. Read across the border box, as before
+	// (a319c7f), the same tap played column 6.
+	{
+		const box = await c4.locator("#board").boundingBox();
+		const { cell, inset } = await c4.evaluate(() => ({ cell: window.__game.handle.debug().px.cell, inset: document.getElementById("board").clientLeft }));
+		const x = inset + 6 * cell + 1; // from the board's outer left edge
+		const before = Math.floor(x / (box.width / 7));
+		check("(the tap point is one the old reading put in column 6)", before === 5, JSON.stringify({ x, cell, inset, width: box.width, before }));
+		await page.mouse.click(box.x + x, box.y + box.height / 2);
+	}
 	check("the bot answers with no network at all", await botReplies(0));
 	const landed = (await debug(page)).board[5];
-	check("…and our disc landed in the column tapped (hit-testing in CSS px)", landed[0] === 1, JSON.stringify(landed));
+	check("…and a tap just inside column 7's edge dropped our disc in column 7 (hit-testing in CSS px, inside the border)", landed[6] === 1, JSON.stringify(landed));
 
 	// The last move is ringed (connect4.js draw): the bot's disc, once it has
 	// fallen. Our own is checked after PLAY AGAIN, under reduced motion.
@@ -1421,7 +1450,9 @@ try {
 		for (const [w, h] of [[390, 844], [354, 696]]) {
 			await p.setViewportSize({ width: w, height: h });
 			await F.waitForFunction((w) => innerWidth === w, w, { timeout: TIMEOUT });
-			const fit = await F.evaluate(() => {
+			const fit = await F.evaluate(async () => {
+				// The window's resize event runs before the next frame's callbacks.
+				await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
 				const b = document.getElementById("board").getBoundingClientRect();
 				return { cell: window.__game.handle.debug().px.cell, left: b.left, right: b.right, bottom: b.bottom, doc: document.documentElement.scrollWidth };
 			});
@@ -1429,6 +1460,34 @@ try {
 			const floors = await phoneFloors(F, "body");
 			check(`${w}x${h}: connect 4's text at least 12px, its taps 44px`, !floors.text.length && !floors.taps.length && floors.measured.text > 0, JSON.stringify(floors));
 		}
+		// A bot call the game does not answer in 5 s (lib/sdk-managed.js
+		// CALL_TIMEOUT_MS) is asked again, once (review 2026-11-19: nothing
+		// asked again, and the game stalled on the bot's turn). Here the first
+		// search runs 6.5 s; its late answer must not become a second move.
+		await p.goto(url("?game=connect4&fresh=1&mode=bots"));
+		await p.waitForFunction(() => window.__game?.handle, null, { timeout: TIMEOUT });
+		const F2 = await gameScope(p, TIMEOUT);
+		await F2.waitForFunction(() => window.__game.handle.debug().started && window.__game.handle.debug().yellow && window.__game.handle.debug().match === 1, null, { timeout: TIMEOUT });
+		await F2.evaluate(() => {
+			const real = columnFor;
+			let slow = true;
+			columnFor = function* (board, me) {
+				if (slow) {
+					slow = false;
+					for (const until = performance.now() + 6500; performance.now() < until; ) yield;
+				}
+				return yield* real(board, me);
+			};
+		});
+		await F2.evaluate(() => arcade.act({ col: 3 }));
+		const retried = await F2.waitForFunction(() => {
+			const s = window.__game.handle.debug();
+			return s.board.flat().filter(Boolean).length === 2 && s.turn === 1;
+		}, null, { timeout: 15_000 }).then(() => true, () => false);
+		await sleep(2500); // past the slow search's own answer
+		const discs = await F2.evaluate(() => window.__game.handle.debug().board.flat().filter(Boolean).length);
+		check("a bot call that timed out is asked again, and the bot moves", retried, `discs ${discs}`);
+		check("…once: the late answer is dropped, not played as a second move", discs === 2, `discs ${discs}`);
 		await ctx.close();
 	}
 
@@ -1876,6 +1935,26 @@ try {
 				check(`${where}: eight players' 8 × 12 grid on screen, cells at least ${least}px`, g.cols === 8 && g.rows === 12 && g.cell >= least && g.left >= 0 && g.right <= w && g.bottom <= h && g.doc <= w, JSON.stringify(g));
 				const floors = await phoneFloors(LF, "body");
 				check(`${where}: neon fission's text at least 12px with eight players`, !floors.text.length && !floors.taps.length, JSON.stringify(floors));
+				// Mid-game the grid holds its size (review 2026-11-19: it followed
+				// #wrap, and a chip row wrapping shrank it under a finger). A count
+				// going 9 → 10 leaves every chip as wide; and a row more of chips
+				// (one added by hand here) does not resize the grid.
+				const steady = await LF.evaluate(async () => {
+					const frame = () => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+					const counts = [...document.querySelectorAll("#seats .chip .n")];
+					const widths = (t) => counts.map((n) => ((n.textContent = t), n.closest(".chip").getBoundingClientRect().width));
+					const one = widths("9");
+					const ten = widths("10");
+					const cell = window.__game.handle.debug().cell;
+					const seats = document.getElementById("seats");
+					const extra = seats.firstElementChild.cloneNode(true);
+					seats.append(extra, extra.cloneNode(true), extra.cloneNode(true));
+					await frame();
+					const after = window.__game.handle.debug().cell;
+					return { one, ten, cell, after };
+				});
+				check(`${where}: a chip is as wide at 10 as at 9, and the grid keeps its size when the chips reflow`,
+					JSON.stringify(steady.one) === JSON.stringify(steady.ten) && steady.after === steady.cell, JSON.stringify(steady));
 			}
 			await lctx.close();
 		}
@@ -2007,6 +2086,23 @@ try {
 		await sleep(300);
 		check("…then the finger still down steers on from where the ship is", near(await ship(), { x: s3.x - 20 * k, y: s3.y + 20 * k }), JSON.stringify({ s3, now: await ship() }));
 		await fire("touchend", [[2, 180, 320]], []);
+		// Steering never locks (review 2026-11-19). A finger already down when
+		// the run started (its touchstart came while no ship flew) steers on
+		// its first move...
+		const s4 = await ship();
+		await fire("touchmove", [[5, 100, 300]], [[5, 100, 300]]);
+		await fire("touchmove", [[5, 125, 300]], [[5, 125, 300]]);
+		await sleep(300);
+		check("a finger already down when the run began steers from its next move", near(await ship(), { x: s4.x + 25 * k, y: s4.y }), JSON.stringify({ s4, now: await ship() }));
+		await fire("touchend", [[5, 125, 300]], []);
+		// ...and a steering finger whose touchend was lost does not hold the ship.
+		const s5 = await ship();
+		await fire("touchstart", [[7, 100, 300]], [[7, 100, 300]]);
+		await fire("touchstart", [[8, 150, 350]], [[8, 150, 350]]); // 7 is gone, its touchend never came
+		await fire("touchmove", [[8, 130, 350]], [[8, 130, 350]]);
+		await sleep(300);
+		check("…and after a lost touchend the next finger down steers", near(await ship(), { x: s5.x - 20 * k, y: s5.y }), JSON.stringify({ s5, now: await ship() }));
+		await fire("touchend", [[8, 130, 350]], []);
 		const floors = await phoneFloors(F, "body");
 		check("354x696: neon survival's text at least 12px", !floors.text.length && !floors.taps.length && floors.measured.text > 0, JSON.stringify(floors));
 		await ctx.close();
