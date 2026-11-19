@@ -59,6 +59,14 @@ export default function App() {
 		const p = party();
 		if (!p || viewOf(next) !== "party") return true;
 		const q = next.searchParams;
+		// The code of the party already here (JOIN WITH A CODE, a code
+		// link) is this party, not another: shown, never the leave question
+		// (as party.js's hashchange handler has it).
+		const code = next.hash.match(/[#&]c=(\d{6})/)?.[1];
+		if (code && code === p.code && !q.has("fresh") && !q.has("dev") && !/[#&](i|a)=/.test(next.hash) && !(q.has("game") && q.get("game") !== p.game)) {
+			navigate("./?party");
+			return false;
+		}
 		const wantsNew = q.has("fresh") || q.has("dev") || /[#&](i|c|a)=/.test(next.hash) || (q.has("game") && q.get("game") !== p.game);
 		if (!wantsNew) return true; // BACK TO GAME, ./?party: the same party
 		const live = p.room && !p.room.closed;

@@ -12,7 +12,8 @@
 // wrong or expired code, a full party, no network — the reason shows under
 // the field and the next code is tried in place (the party's joinCode), with
 // no page load. Escape, CANCEL, ✕ or a tap outside close it; after a refused
-// code that also leaves the party screen for where the dialog was opened.
+// code that also leaves the party screen for where the dialog was opened —
+// but not while a code is still joining: the party screen says so.
 // It lives on document.body, not in a view: the portal goes as the party
 // shows.
 import { createSignal, onCleanup, onMount } from "solid-js";
@@ -49,6 +50,7 @@ function JoinCode(props: { opener: HTMLElement | null; gone: () => void }) {
 	const [busy, setBusy] = createSignal<string | null>(null);
 	// The last answer was a refusal: closing goes back where we came from.
 	let refused = false;
+	let pressedOutside = false;
 
 	const say = (text: string) => {
 		setError(text);
@@ -77,6 +79,7 @@ function JoinCode(props: { opener: HTMLElement | null; gone: () => void }) {
 		if (code.length !== 6) return say("A party code is six digits.");
 		setError("");
 		setBusy(code);
+		refused = false; // this code's answer decides, not the last one's
 		const party = (window as any).__party;
 		// A live party: leaving it is the router's question (src/App.tsx),
 		// then a fresh page; this dialog has done its part.
@@ -86,9 +89,13 @@ function JoinCode(props: { opener: HTMLElement | null; gone: () => void }) {
 			return;
 		}
 		// A party that refused a code (even one CANCEL left for the portal):
-		// its screen, and the next code in place.
-		if (party?.joinCode && document.body.dataset.view !== "party") navigate("./?party");
-		if (party?.joinCode?.(code)) return;
+		// its screen, and the next code in place — one history entry, and
+		// only once the party has said it will take the code.
+		if (party?.canJoinCode?.(code)) {
+			if (document.body.dataset.view !== "party") navigate("./?party");
+			party.joinCode(code);
+			return;
+		}
 		navigate(`./?party#c=${code}`);
 	};
 
@@ -99,8 +106,11 @@ function JoinCode(props: { opener: HTMLElement | null; gone: () => void }) {
 	});
 	onCleanup(() => document.removeEventListener("neon:code-join", onAnswer));
 
+	// Closed while a join is still meeting the party: the party screen
+	// behind says so and has its own way out; leaving it would let the join
+	// finish out of sight.
 	const closed = () => {
-		const back = refused && location.pathname + location.search + location.hash !== from;
+		const back = refused && !busy() && location.pathname + location.search + location.hash !== from;
 		props.gone();
 		if (back) navigate(from);
 		else if (props.opener?.isConnected) props.opener.focus();
@@ -112,7 +122,10 @@ function JoinCode(props: { opener: HTMLElement | null; gone: () => void }) {
 			class="neon-sheet join-code"
 			aria-labelledby="join-code-title"
 			onClose={closed}
-			onClick={(e) => e.target === dialog && dialog.close()}
+			// A tap outside closes it — only one that also began outside: a
+			// press in the field released past the edge is not one.
+			onPointerDown={(e) => (pressedOutside = e.target === dialog)}
+			onClick={(e) => e.target === dialog && pressedOutside && dialog.close()}
 		>
 			<div class="neon-sheet-head">
 				<h2 id="join-code-title">Join a party</h2>
