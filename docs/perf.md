@@ -373,3 +373,53 @@ Main (bf2a4ac) and this branch alternately, fixed harness, 4 rounds of 2:
 A full `just perf` run of each: bots cold to frame 1993 → 1221 ms, FCP 820 →
 800 ms; portal cold FCP 456 → 452 ms; leaderboard cold FCP 1192 → 1028 ms.
                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    
+### Phone pass: the games on a real Android phone (branch phone-games, 2026-11-19)
+
+Found on Lokesh's OnePlus (354x696 CSS px, DPR 3.5, 90 Hz) on 2026-11-15.
+
+**Connect 4's bot held the frame for 63-174 ms a move** (the phone's own
+trace). It is a full-width five-ply alpha-beta search, run in one go inside
+`bot()`.
+- **Kept:** the search and its answer. On 1,800 positions from 60 random
+  games the sliced bot picks the same column as the old one every time
+  (a node script comparing both files' functions).
+- **Changed:** the search is a generator that yields when its 8 ms slice is
+  spent (the clock read every 64 positions), continued on the next
+  macrotask through a MessageChannel (no setTimeout 4 ms clamp). `bot()`
+  returns a promise of the move, which the runtime awaits
+  (docs/sdk-v2.md "Bots"). A Web Worker would also be allowed (the frame's
+  CSP has `worker-src blob:`), but it would need the search as a string, a
+  fallback, and validate-game warns on `new Worker`; slicing keeps the rules
+  in one plain file.
+- **Measured** at 390x844, DPR 3, the page and the game's frame each at 4x
+  CPU (`Emulation.setCPUThrottlingRate` on both CDP targets), ten moves,
+  a PerformanceObserver for `longtask` in the frame:
+
+| | long tasks during the bot's moves | longest | moves with one |
+|---|---|---|---|
+| before | 92, 102, 133, 121, 133, 63 ms | 133 ms | 6 of 10 |
+| after | none | – (longest gap between two heartbeat messages: 36 ms) | 0 of 10 |
+
+  The bot's answer arrives in about the same time: wall time from our move
+  to its reply was 727-1047 ms before and 715-1181 ms after, most of it the
+  platform's 0.6-1.1 s pause. Node runs the sliced search about 5% slower
+  in all. test-bots asserts no long task over 50 ms in six bot moves at 4x.
+
+**Connect 4's board was blurry:** its canvas had a 1x backing store. It is
+now `cell x 7 x dpr` by `cell x 6 x dpr` with DPR capped at 3 (as Neon
+Fission's), drawn through `setTransform(dpr)`; hit-testing stays in CSS px.
+On the OnePlus that is 987 x 846 backing pixels (47px cells), redrawn only
+on a move or a hover. Neon Survival already scaled to DPR, capped at 2 (its
+fill is its whole cost, Phase 1 above), and Neon Fission at 3; Neon Bid and
+Undercover have no canvas. Note for tests: Playwright's `deviceScaleFactor`
+does not reach a sandboxed frame in its own process (its devicePixelRatio
+stays 1), so test-bots tells the frame its ratio and resizes it.
+
+**Neon Fission's grid ran off a 354x696 phone with 5-8 players** (20px),
+found by the new size checks: it was sized before the chips under the turn
+line were filled in. It now follows its box (`ResizeObserver` on `#wrap`).
+There the 8 x 12 grid gets 40px cells, and 44 does not fit either way: 8
+columns of 44 are 352 of the 354px (the board edge to edge), and 12 rows of
+44 plus the turn line and two rows of chips are more than 696px. 390x844
+keeps 44. **Open:** a bigger grid there needs a smaller header (chips
+without names?) or edge-to-edge cells; Lokesh's call.
