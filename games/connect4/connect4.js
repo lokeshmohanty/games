@@ -53,11 +53,21 @@ function winLine(board, row, col, player) {
 	return null;
 }
 
-// The bot: plain minimax with alpha-beta over a 7x6 board, small enough that
-// a full-width search to five plies finishes well inside a frame. Five sees
-// a double threat being built two moves out, which is where Connect 4 is
-// won, while stopping short of a solved game's deadening perfection.
+// The bot: plain minimax with alpha-beta over a 7x6 board, a full-width
+// search to five plies. Five sees a double threat being built two moves out,
+// which is where Connect 4 is won, while stopping short of a solved game's
+// deadening perfection.
+//
+// It does not fit in a frame on a phone: in one go it held the frame for
+// 63-174 ms a move on a OnePlus (2026-11-15), 90-135 ms at 4x CPU here. So
+// the same search runs in slices (`sliced`): a generator that yields every
+// SLICE_MS, continued on the next macrotask, and `bot()` returns a promise
+// of its move, which the runtime awaits (docs/sdk-v2.md "Managed state").
+// The search and its answer are unchanged; only when it runs is.
 const BOT_DEPTH = 5;
+const SLICE_MS = 8; // the longest stretch the search keeps the frame
+let sliceEnd = Infinity; // when the running slice should yield
+let nodes = 0; // positions searched; the clock is read every 64th
 // Centre-out: alpha-beta prunes far more when the likely-best move comes first.
 const BOT_ORDER = [3, 2, 4, 1, 5, 0, 6];
 // Every 4-in-a-row line, computed once: the evaluation walks these.
@@ -95,8 +105,13 @@ function evaluate(board, me) {
 	return score;
 }
 
-/** Minimax with alpha-beta, scored from `me`'s side; `board` is restored in place. */
-function search(board, depth, alpha, beta, turn, me) {
+/**
+ * Minimax with alpha-beta, scored from `me`'s side; `board` is restored in
+ * place. A generator: it pauses (yield) when the slice is spent, and returns
+ * the value.
+ */
+function* search(board, depth, alpha, beta, turn, me) {
+	if ((++nodes & 63) === 0 && performance.now() >= sliceEnd) yield;
 	const cols = BOT_ORDER.filter((c) => board[0][c] === 0);
 	if (!cols.length) return 0;
 	const maximising = turn === me;
@@ -109,7 +124,7 @@ function search(board, depth, alpha, beta, turn, me) {
 		// postponed rather than walked into.
 		if (checkWin(board, r, c, turn)) value = maximising ? 10000 + depth : -10000 - depth;
 		else if (depth === 0) value = evaluate(board, me);
-		else value = search(board, depth - 1, alpha, beta, turn === RED ? YELLOW : RED, me);
+		else value = yield* search(board, depth - 1, alpha, beta, turn === RED ? YELLOW : RED, me);
 		board[r][c] = 0;
 		if (maximising) {
 			best = Math.max(best, value);
@@ -123,8 +138,8 @@ function search(board, depth, alpha, beta, turn, me) {
 	return best;
 }
 
-/** The column the side `me` plays. Never a full column. */
-function chooseColumn(board0, me) {
+/** The column the side `me` plays. Never a full column. A generator, as `search`. */
+function* columnFor(board0, me) {
 	const board = board0.map((row) => [...row]);
 	const cols = BOT_ORDER.filter((c) => board[0][c] === 0);
 	let bestCol = cols[0];
@@ -132,7 +147,7 @@ function chooseColumn(board0, me) {
 	for (const c of cols) {
 		const r = dropRowIn(board, c);
 		board[r][c] = me;
-		const value = checkWin(board, r, c, me) ? Infinity : search(board, BOT_DEPTH - 1, -Infinity, Infinity, me === RED ? YELLOW : RED, me);
+		const value = checkWin(board, r, c, me) ? Infinity : yield* search(board, BOT_DEPTH - 1, -Infinity, Infinity, me === RED ? YELLOW : RED, me);
 		board[r][c] = 0;
 		if (value > bestValue) {
 			bestValue = value;
@@ -141,6 +156,36 @@ function chooseColumn(board0, me) {
 	}
 	return bestCol;
 }
+
+/**
+ * Run generator `gen` in slices of SLICE_MS, each its own macrotask (a
+ * MessageChannel message: no setTimeout's 4 ms clamp), so the frame can draw
+ * and take taps between them. Resolves to what it returns.
+ */
+function sliced(gen) {
+	return new Promise((done, fail) => {
+		const ch = new MessageChannel();
+		const step = () => {
+			sliceEnd = performance.now() + SLICE_MS;
+			try {
+				const r = gen.next();
+				if (!r.done) return ch.port2.postMessage(0);
+				ch.port1.close();
+				done(r.value);
+			} catch (err) {
+				ch.port1.close();
+				fail(err);
+			} finally {
+				sliceEnd = Infinity;
+			}
+		};
+		ch.port1.onmessage = step;
+		step();
+	});
+}
+
+/** The column the side `me` plays, without holding the frame: a promise. */
+const chooseColumn = (board, me) => sliced(columnFor(board, me));
 
 let s = null; // { match, board, turn, winner, started, red, yellow, moves, line, last }
 const colourOf = (id) => (id === s.red ? RED : id === s.yellow ? YELLOW : 0);
@@ -170,7 +215,9 @@ arcade.managed({
 	},
 	view: ({ seat }) => ({ ...s, board: s.board.map((r) => [...r]), you: seat ? colourOf(seat) : 0 }),
 	turn: () => (s.winner === null && s.red && s.yellow ? [idOf(s.turn)] : []),
-	bot: () => ({ col: chooseColumn(s.board, s.turn) }),
+	// A promise: the runtime awaits it, and the platform's queue holds every
+	// other rules call until it settles, so `s` cannot change under it.
+	bot: async () => ({ col: await chooseColumn(s.board, s.turn) }),
 	result() {
 		if (s.winner === null) return null;
 		const places = (...slots) => slots.map((x) => x.filter(Boolean)).filter((x) => x.length);
@@ -209,7 +256,7 @@ style.textContent = `
 	#hud .you-yellow { color: var(--p2); text-shadow: 0 0 8px var(--glow); }
 	#hud .you-spec { color: var(--muted); }
 	#moved { font-size: clamp(0.8rem, 2.6vw, 1rem); color: var(--muted); min-height: 1.4em; text-align: center; }
-	#board { border: 3px solid var(--rule); border-radius: 12px;
+	#board { box-sizing: content-box; border: 3px solid var(--rule); border-radius: 12px;
 		box-shadow: 0 0 30px var(--glow); max-width: 95vw; max-height: 70vh; }
 `;
 document.head.append(style);
@@ -237,12 +284,24 @@ let raf = 0;
 /** "rgba(r, g, b, a)" with its alpha replaced. */
 const alpha = (rgba, a) => rgba.replace(/,\s*[\d.]+\)$/, `, ${a})`);
 
+// The board is cell x 7 by cell x 6 CSS px; its backing store holds dpr times
+// that a side, so a phone's screen draws it sharp (at 1x it was blurry on a
+// DPR-3.5 OnePlus, 2026-11-15). DPR is capped at 3, as Neon Fission's: past
+// that the fill grows and the eye cannot tell. Drawing and hit-testing stay in
+// CSS px; only the transform knows about dpr.
+const DPR_MAX = 3;
+let cell = 20; // CSS px per cell
+let dpr = 1; // backing pixels per CSS px
 function resize() {
 	const maxW = Math.min(window.innerWidth - 24, 560);
 	const maxH = window.innerHeight - 176; // the HUD, the move line under the board, the gaps
-	const cell = Math.max(20, Math.floor(Math.min(maxW / COLS, maxH / ROWS)));
-	canvas.width = cell * COLS;
-	canvas.height = cell * ROWS;
+	cell = Math.max(20, Math.floor(Math.min(maxW / COLS, maxH / ROWS)));
+	dpr = Math.min(window.devicePixelRatio || 1, DPR_MAX);
+	canvas.style.width = `${cell * COLS}px`;
+	canvas.style.height = `${cell * ROWS}px`;
+	canvas.width = Math.round(cell * COLS * dpr);
+	canvas.height = Math.round(cell * ROWS * dpr);
+	c2d.setTransform(dpr, 0, 0, dpr, 0, 0);
 	draw();
 }
 
@@ -253,16 +312,17 @@ function draw() {
 	if (!t || !view) return;
 	const { tokens, players } = t;
 	const glows = !/,\s*0\)$/.test(tokens.glow ?? ", 0)");
-	const cell = canvas.width / COLS;
+	const W = cell * COLS;
+	const H = cell * ROWS;
 	// Where the falling disc is: p (0..1) of its fall, then q (0..1) of the settle.
 	const at = drop ? performance.now() - drop.t0 : 0;
 	if (drop && at >= drop.fall + SETTLE_MS) drop = null;
 	const falling = drop && at < drop.fall;
 	c2d.fillStyle = tokens.surface2;
-	c2d.fillRect(0, 0, canvas.width, canvas.height);
+	c2d.fillRect(0, 0, W, H);
 	if (hoverCol >= 0 && hoverCol < COLS && myTurn()) {
 		c2d.fillStyle = alpha(tokens.accent, 0.12);
-		c2d.fillRect(hoverCol * cell, 0, cell, canvas.height);
+		c2d.fillRect(hoverCol * cell, 0, cell, H);
 	}
 	for (let r = 0; r < ROWS; r++) {
 		for (let c = 0; c < COLS; c++) {
@@ -274,7 +334,7 @@ function draw() {
 				c2d.fill();
 			} else {
 				const colour = players[v === RED ? 0 : 1];
-				c2d.shadowBlur = glows ? 15 : 0;
+				c2d.shadowBlur = glows ? 15 * dpr : 0; // backing px: shadowBlur ignores the transform
 				c2d.shadowColor = colour;
 				c2d.fillStyle = colour;
 				c2d.fill();
@@ -299,7 +359,7 @@ function draw() {
 		return again();
 	}
 	marked = [row, col];
-	c2d.shadowBlur = glows ? 8 : 0;
+	c2d.shadowBlur = glows ? 8 * dpr : 0;
 	c2d.shadowColor = tokens.accent;
 	c2d.lineWidth = Math.max(2, cell * 0.06);
 	c2d.strokeStyle = tokens.accent;
@@ -343,9 +403,10 @@ function updateHud() {
 	hudEl.replaceChildren(tag, document.createTextNode(msg));
 }
 
+// In CSS px, inside the board's border.
 const colAt = (clientX) => {
 	const rect = canvas.getBoundingClientRect();
-	return Math.floor((clientX - rect.left) / (rect.width / COLS));
+	return Math.floor((clientX - rect.left - canvas.clientLeft) / ((canvas.clientWidth || rect.width) / COLS));
 };
 function play(clientX) {
 	const col = colAt(clientX);
@@ -392,6 +453,7 @@ arcade.init.then(resize);
 /**
  * The board as every phone sees it, for the tests: { board, turn, winner,
  * started, red, yellow, match, moves, last, you }, with `marked` (the cell
- * ringed as the last move, [row, col] or null) and `drops` (falls shown).
+ * ringed as the last move, [row, col] or null), `drops` (falls shown) and
+ * `px` (the canvas: CSS cell, backing pixels per CSS px, backing size).
  */
-arcade.debug = () => ({ ...(view ?? { started: false, board: [] }), marked, drops });
+arcade.debug = () => ({ ...(view ?? { started: false, board: [] }), marked, drops, px: { cell, dpr, w: canvas.width, h: canvas.height } });

@@ -150,6 +150,16 @@ How it runs:
   `rejected { reason }`.
 - **Bots.** After every change the host asks `turn()`. A bot on turn moves
   after a 0.6–1.1 s pause, through `bot({ seat })` and then `apply`.
+  - **A bot that thinks long** may return a promise of its action (the
+    runtime awaits every rule; 2026-11-19). The platform's queue holds every
+    other rules call until it settles, so the state cannot change under the
+    search, and a call has 5 s (`CALL_TIMEOUT_MS` in lib/sdk-managed.js).
+    Search in slices that yield to the event loop rather than in one go: a
+    task over 50 ms freezes the frame, and on a phone the shell with it.
+    Connect 4 is the example (`sliced`: a generator search continued over
+    MessageChannel messages, docs/perf.md "Phone pass"). A ticking game's
+    `bot()` runs every tick and should stay quick. The adapters' `dispatch`
+    is synchronous, so a compiled game's bot answers in one call.
 - **People on the host's phone** (2026-11-17). A game with `"sameDevice":
   true` in game.json may get a bot seat with `local: true` in `init`: the
   one person at SINGLE PLAYER's quick table made it a PERSON, someone beside
