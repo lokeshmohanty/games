@@ -85,7 +85,10 @@ it used to take two on a phone, the first only showing the card's two
 buttons). The buttons, SINGLE PLAYER and MULTI-PLAYER, show on hover with a
 mouse, on keyboard focus, and after a long press on a touch screen; a tap
 off them closes them. A sideways swipe of a row is not a tap (a click after
-the pointer moved 10px, or after the row scrolled, is dropped). Its layout is asserted rather than
+the pointer moved 10px, or after the row scrolled, is dropped; a click with
+no pointer behind it, from the keyboard or assistive tech, always counts).
+The card's title is its button, named by the game: Enter and Space open it.
+A tap outside the open ☰ menu only closes the menu. Its layout is asserted rather than
 eyeballed, in `test-pwa.mjs` and `test-portal.mjs` "My Games · All Games"
 (390x844, Lokesh's phone at 354x696, and 320x640); what is in each section,
 in `test-portal.mjs`.
@@ -162,13 +165,18 @@ fixed 2026-11-19, branch `phone-shell`)**, asserted with computed sizes
   button, Escape / CANCEL / ✕ / a tap outside to close. It stays open while
   the party joins behind it (lib/party.js `neon:code-join`): a wrong or
   expired code, a full party or no network is said under the field, and the
-  next code is tried in place (the party's `joinCode`), with no page load.
+  next code is tried in place (the party's `joinCode`, once its
+  `canJoinCode` says yes: one history entry), with no page load. CANCEL
+  while a join is still meeting the party leaves you on the party screen,
+  which says so; a join that ends while another view shows leaves that
+  view's address alone. The code of the party you are already in shows that
+  party, never "Leave this party for another?" (src/App.tsx's guard).
 - **A card took two taps** — one opens the game now (above).
 - **Firefox with the phone's text larger** (Firefox for Android applies the
   system font size as text zoom, px included): the in-game top buttons ran
   into ← Games and the portal's tabs ran under ☰. The game's top band is one
   row (`.top-band`) and ← Games becomes its arrow alone when its word does
-  not fit; the portal's tabs scroll sideways inside their column, the
+  not fit (the word clipped, not hidden, so the link is still named "Games"); the portal's tabs scroll sideways inside their column, the
   sub-tabs wrap. Held at 130% and 200%, at both sizes (test-party,
   test-portal, in Playwright's Firefox).
 - **The game's frame stayed light under a dark page** — in Chrome too.
@@ -183,7 +191,12 @@ fixed 2026-11-19, branch `phone-shell`)**, asserted with computed sizes
 
 Not covered by that pass: the leaderboard view still scrolls sideways at
 200% text, and it and Contributors keep a few labels under 12px
-(9.6–11.5px); iOS remains unverified.
+(9.6–11.5px); iOS remains unverified. **UNSURE:** the long press that shows
+a card's two buttons on a touch screen is the browser's `contextmenu`,
+tested only as that event: unverified on a real Android phone, and Safari
+on iOS fires none, so there it shows nothing. Lokesh's call (2026-11-18)
+stands either way: one tap opens the game's page, which offers the same
+choices.
 
 **Nine games have to fit a phone.** They did not: a `minmax(300px, 1fr)` column
 at 80% width is a single column on a 390px screen, and a 200px image plus a

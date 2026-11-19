@@ -191,6 +191,14 @@ try {
 		check(`${at}: JOIN WITH A CODE opens an in-page dialog (modal, on screen), the field focused, a number keypad (inputmode numeric, one-time-code)`, look.modal && look.focus && look.inputmode === "numeric" && look.auto === "one-time-code" && look.inside && /six-digit/.test(look.label), look);
 		const floors = await phoneFloors(jp, "dialog.join-code");
 		check(`${at}: …every button 44px, every line 12px`, floors.measured.taps >= 4 && !floors.taps.length && !floors.text.length, floors);
+		// A press begun in the field and let go past the dialog's edge is not
+		// a tap outside (review, 2026-11-19: it closed the dialog).
+		const fb = await field.boundingBox();
+		await jp.mouse.move(fb.x + fb.width / 2, fb.y + fb.height / 2);
+		await jp.mouse.down();
+		await jp.mouse.move(4, 4, { steps: 4 });
+		await jp.mouse.up();
+		check(`${at}: …a press in the field let go outside it leaves it open`, (await dlg.count()) === 1);
 		await jp.keyboard.press("Escape");
 		const esc = await settled(() => jp.evaluate(() => ({ open: !!document.querySelector("dialog.join-code"), back: document.activeElement === document.querySelector(".join-code-btn") })), (x) => !x.open, 3000);
 		check(`${at}: Escape closes it, focus back on JOIN WITH A CODE`, !esc.open && esc.back && (await view()) === "portal", esc);
@@ -266,6 +274,110 @@ try {
 		check("…opened again there, a live code joins with the party on screen, in the same page", !again.open && again.members === 2 && again.view === "party" && again.same, again);
 		check("no native dialog at all (prompt, alert)", native === 0, native);
 		await kc.close();
+
+		/** A page on the mock room server whose joins take `ms` longer, as on a slow phone. */
+		const slowPhone = async (ms) => {
+			const sc = await browser.newContext({ viewport: { width: w, height: h }, hasTouch: true, isMobile: true });
+			await sc.route("**/api/stats/summary", (r) => r.abort());
+			const sp = await sc.newPage();
+			sp.on("pageerror", (e) => check(`no page error (${e.message})`, false));
+			await sp.goto(site.url("index.html?mockroom=1"));
+			await sp.locator(".join-code-btn").waitFor({ timeout: TIMEOUT });
+			await sp.evaluate((ms) => {
+				window.__samePage = true;
+				const real = NeonArcade.joinRoom;
+				NeonArcade.joinRoom = (...a) => new Promise((r) => setTimeout(r, ms)).then(() => real(...a));
+			}, ms);
+			return { sc, sp };
+		};
+		const hostHere = (pg) =>
+			pg.evaluate(async () => {
+				const made = await NeonArcade.hostRoom({ name: "Host" });
+				localStorage.removeItem("neon.room"); // the host's seat is not ours
+				return made.code;
+			});
+		const state = (pg) => pg.evaluate(() => ({ dialog: !!document.querySelector("dialog.join-code"), members: window.__party?.room?.getMembers?.().length ?? 0, view: document.body.dataset.view, same: !!window.__samePage, search: location.search }));
+
+		// A refused code, then a live one, then CANCEL while it is still
+		// JOINING… (review, 2026-11-19): the refusal before must not send
+		// us back to the portal, with the join finishing out of sight.
+		{
+			const { sc, sp } = await slowPhone(2500);
+			await sp.locator(".join-code-btn").tap();
+			await sp.locator("#join-code-field").fill("654321");
+			await sp.keyboard.press("Enter");
+			await sp.waitForFunction(() => !!document.querySelector(".join-code-error")?.textContent, null, { timeout: TIMEOUT });
+			const live = await hostHere(sp);
+			await sp.locator("#join-code-field").fill(live);
+			await sp.keyboard.press("Enter");
+			await sp.locator("dialog.join-code button", { hasText: "JOINING" }).waitFor({ timeout: TIMEOUT });
+			await sp.locator("dialog.join-code button", { hasText: "CANCEL" }).tap();
+			await sp.waitForTimeout(300);
+			const during = await state(sp);
+			const after = await settled(() => state(sp), (x) => x.members === 2, TIMEOUT);
+			check("a refused code, a live one, CANCEL while JOINING…: the party screen stays and shows the join", !during.dialog && during.view === "party" && after.view === "party" && after.members === 2 && after.same && !after.search.includes("page="), { during, after });
+			await sc.close();
+		}
+		// Back to the portal while a code join is still meeting the party:
+		// joined, the portal's address stays the portal's (clearHash only
+		// on the party's own address).
+		{
+			const { sc, sp } = await slowPhone(2500);
+			const live = await hostHere(sp);
+			await sp.evaluate((c) => NeonArcade.navigate(`./?party#c=${c}`), live);
+			await sp.waitForFunction(() => document.body.dataset.view === "party", null, { timeout: TIMEOUT });
+			await sp.evaluate(() => history.back());
+			await sp.waitForFunction(() => document.body.dataset.view === "portal", null, { timeout: TIMEOUT });
+			const after = await settled(() => state(sp), (x) => x.members === 2, TIMEOUT);
+			await sp.waitForTimeout(200);
+			const url = new URL(sp.url());
+			check("Back during a code join: joined, and the portal's address is not rewritten into a party's", after.members === 2 && !url.searchParams.has("party") && url.searchParams.get("tab") === "all", { after, url: url.href });
+			await sc.close();
+		}
+		// The party will not take the code in place: one history entry, the
+		// code's own (review, 2026-11-19: ./?party was pushed first, so Back
+		// from the new page landed on a party, not the portal).
+		{
+			const { sc, sp } = await slowPhone(0);
+			await sp.locator(".join-code-btn").tap();
+			await sp.locator("#join-code-field").fill("654321");
+			await sp.keyboard.press("Enter");
+			await sp.waitForFunction(() => !!document.querySelector(".join-code-error")?.textContent, null, { timeout: TIMEOUT });
+			await sp.locator("dialog.join-code button", { hasText: "CANCEL" }).tap();
+			await sp.waitForFunction(() => document.body.dataset.view === "portal", null, { timeout: TIMEOUT });
+			await sp.evaluate(() => {
+				window.__party.canJoinCode = () => false;
+				window.__party.joinCode = () => false;
+			});
+			await sp.locator(".join-code-btn").tap();
+			await sp.locator("#join-code-field").fill("111111");
+			await Promise.all([sp.waitForEvent("load", { timeout: TIMEOUT }), sp.keyboard.press("Enter")]);
+			await sp.waitForFunction(() => document.body.dataset.view === "party", null, { timeout: TIMEOUT });
+			await sp.goBack({ waitUntil: "load" }).catch(() => {});
+			const back = await settled(() => sp.evaluate(() => document.body?.dataset.view), (v) => !!v, TIMEOUT);
+			check("…a code the party will not take in place: one entry, so Back is the portal", back === "portal", { back, url: sp.url() });
+			await sc.close();
+		}
+		// The code of the party you are in (review, 2026-11-19: it asked
+		// "Leave this party for another?"): shown, never asked.
+		{
+			const sc = await browser.newContext({ viewport: { width: w, height: h }, hasTouch: true, isMobile: true });
+			await sc.route("**/api/stats/summary", (r) => r.abort());
+			const sp = await sc.newPage();
+			await sp.goto(site.url("?party&mockroom=1"));
+			const digits = await sp.locator(".party-code-digits").textContent({ timeout: TIMEOUT });
+			const mine = digits.replace(/\D/g, "");
+			const me = await sp.evaluate(() => ((window.__samePage = true), window.__party.room.selfId));
+			await sp.locator("a.portal-link").click();
+			await sp.waitForFunction(() => document.body.dataset.view === "portal", null, { timeout: TIMEOUT });
+			await sp.locator(".join-code-btn").tap();
+			await sp.locator("#join-code-field").fill(mine);
+			await sp.keyboard.press("Enter");
+			await sp.waitForTimeout(800);
+			const after = await sp.evaluate(() => ({ asked: !!document.querySelector("dialog.neon-ask[open]"), view: document.body.dataset.view, same: !!window.__samePage, id: window.__party?.room?.selfId }));
+			check("the code of the party you are in: back to it, not asked to leave it", /^\d{6}$/.test(mine) && !after.asked && after.view === "party" && after.same && after.id === me, { mine, ...after, me });
+			await sc.close();
+		}
 	}
 	await p.goto(site.url("index.html"));
 	await p.waitForSelector(".game-card:visible");
@@ -323,7 +435,7 @@ try {
 	check("a mouse hovering shows them", await settled(visible, Boolean, 3000)); // an opacity transition
 	await p.mouse.move(1, 1);
 	await p.keyboard.press("Tab");
-	await c4card.focus();
+	await c4card.locator(".card-open").focus({ timeout: 5000 }).catch(() => {});
 	check("…and so does keyboard focus", await settled(visible, Boolean, 3000));
 	await c4card.locator(".card-play", { hasText: "SINGLE PLAYER" }).click();
 	await p.waitForSelector(".game-frame", { timeout: TIMEOUT });
@@ -418,7 +530,7 @@ try {
 			const from = r.scrollLeft;
 			r.scrollLeft = from + r.children[1].offsetLeft - r.children[0].offsetLeft; // a snap point: the row really moves
 			const moved = r.scrollLeft - from;
-			c.dispatchEvent(new MouseEvent("click", { ...opt, clientX: at.left + 22 }));
+			c.dispatchEvent(new MouseEvent("click", { ...opt, detail: 1, clientX: at.left + 22 }) /* a tap's click: detail 1 */);
 			c.dispatchEvent(new PointerEvent("pointerup", opt));
 			return { moved, view: document.body.dataset.view };
 		});
@@ -443,10 +555,51 @@ try {
 	check("a mouse click on a card, off its buttons, opens the game's party screen", quickStart(p.url(), "connect4"), p.url());
 	await p.goto(site.url(ALL));
 	await p.waitForSelector(".game-card:visible");
-	await p.locator('[data-section="popular"] .game-card[data-game="connect4"]').focus();
+	// The card's title is its button, named by the game (review,
+	// 2026-11-19: the card was a div with a tabindex and no role or name,
+	// and Space did nothing).
+	const named = p.locator('[data-section="popular"] .game-card[data-game="connect4"]').getByRole("button", { name: "Connect 4", exact: true });
+	check("a card's title is a button named by its game", (await named.count()) === 1);
+	await named.focus({ timeout: 5000 }).catch(() => {});
 	await p.keyboard.press("Enter");
 	await p.waitForFunction(() => document.body.dataset.view === "party", null, { timeout: TIMEOUT }).catch(() => {});
-	check("…and so does Enter on a card reached by keyboard", quickStart(p.url(), "connect4"), p.url());
+	check("…Enter on it opens the game's party screen", quickStart(p.url(), "connect4"), p.url());
+	await p.goto(site.url(ALL));
+	await p.waitForSelector(".game-card:visible");
+	await named.focus({ timeout: 5000 }).catch(() => {});
+	await p.keyboard.press(" ");
+	await p.waitForFunction(() => document.body.dataset.view === "party", null, { timeout: TIMEOUT }).catch(() => {});
+	check("…and so does Space", quickStart(p.url(), "connect4"), p.url());
+	// A click with no pointer behind it (element.click(), assistive tech)
+	// always counts, whatever a pointer did before; a pointercancel (a
+	// scroll took the gesture) forgets the press.
+	for (const [what, mode] of [
+		["element.click() after a stray press elsewhere on the card", "click"],
+		["a click after a press a scroll cancelled", "cancelled"],
+	]) {
+		await p.goto(site.url(ALL));
+		await p.waitForSelector(".game-card:visible");
+		await p.evaluate((mode) => {
+			const c = document.querySelector('[data-section="popular"] .game-card[data-game="connect4"]');
+			c.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, clientX: 300, clientY: 300 }));
+			if (mode === "click") return c.click();
+			c.dispatchEvent(new PointerEvent("pointercancel", { bubbles: true }));
+			c.dispatchEvent(new MouseEvent("click", { bubbles: true, detail: 1, clientX: 12, clientY: 12 }));
+		}, mode);
+		await p.waitForFunction(() => document.body.dataset.view === "party", null, { timeout: 5000 }).catch(() => {});
+		check(`…${what} opens the game`, quickStart(p.url(), "connect4"), p.url());
+	}
+	// A press held on a row is let go wherever it ends: a mouse released
+	// outside the row (the flag stuck, and the row never redrew again).
+	await p.goto(site.url(ALL));
+	await p.waitForSelector(".game-card:visible");
+	const prow = p.locator('[data-section="popular"] .section-row');
+	const pb = await prow.boundingBox();
+	await p.mouse.move(pb.x + 30, pb.y + 30);
+	await p.mouse.down();
+	await p.mouse.move(pb.x + 30, Math.max(2, pb.y - 120), { steps: 4 });
+	await p.mouse.up();
+	check("a press on a row released outside it lets the row go", (await prow.evaluate((r) => r.dataset.pressed ?? null)) === null);
 	// A slow phone: the play counts land after a card was long-pressed open. The
 	// row is not replaced under the finger (it closed the card, or slid
 	// another game beneath it); it is redrawn once the card closes, where
@@ -541,6 +694,26 @@ try {
 	check("a tap outside closes the menu", await p.evaluate(() => document.querySelector(".site-menu-list")?.hidden === true));
 	await p.waitForTimeout(300);
 	check("…and does nothing else: the game card under it stays shut", (await p.evaluate(() => document.body.dataset.view)) === "portal", p.url());
+	await p.locator("[data-nav] .site-menu-btn").click();
+	await p.locator("[data-nav] .site-tab", { hasText: "Leaderboards" }).click();
+	await p.waitForTimeout(300);
+	check("…nor a link it lands on (Leaderboards)", (await p.evaluate(() => document.body.dataset.view)) === "portal" && new URL(p.url()).searchParams.get("page") !== "leaderboard", p.url());
+	await p.goto(site.url(ALL));
+	await p.locator("[data-nav] .site-menu-list").waitFor({ state: "attached", timeout: TIMEOUT });
+	await p.waitForSelector(".game-card:visible");
+	await p.locator("[data-nav] .site-menu-btn").click();
+	// A press outside that turned into a scroll (pointercancel): no click
+	// comes, so the next real tap is not eaten.
+	await p.evaluate(() => {
+		const c = document.querySelector('[data-section="popular"] .game-card[data-game="connect4"]');
+		c.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, clientX: 50, clientY: 600 }));
+		c.dispatchEvent(new PointerEvent("pointercancel", { bubbles: true }));
+	});
+	await p.locator('[data-section="popular"] .game-card[data-game="connect4"]').click({ position: { x: 6, y: 6 } });
+	await p.waitForFunction(() => document.body.dataset.view === "party", null, { timeout: 5000 }).catch(() => {});
+	check("…and a press outside that became a scroll leaves the next tap alone (it opens the game)", quickStart(p.url(), "connect4"), p.url());
+	await p.goto(site.url("index.html"));
+	await p.locator("[data-nav] .site-menu-list").waitFor({ state: "attached", timeout: TIMEOUT });
 	await p.locator(".site-tab", { hasText: "Community" }).click();
 	await p.locator(".site-subtab.is-on").waitFor({ timeout: TIMEOUT });
 	check("Community opens on Collections", (await p.locator(".site-subtab.is-on").textContent()) === "Collections" && new URL(p.url()).searchParams.get("page") === "collections");
@@ -553,6 +726,9 @@ try {
 	// the tabs ran under ☰ and the page scrolled sideways (Lokesh's phone,
 	// 2026-11-15). The tabs scroll inside their own column now, the lit one
 	// in view; the sub-tabs wrap; nothing on the bar overlaps.
+	// Its own try: a Firefox that fails (NEON_FIREFOX=1 and none here) is
+	// one loud failure, never every portal check after it skipped.
+	try {
 	for (const scale of [130, 200]) {
 		const ff = await launchFirefox(pw, { textScale: scale });
 		if (!ff) break;
@@ -605,6 +781,9 @@ try {
 			await fc.close();
 		}
 		await ff.close();
+	}
+	} catch (err) {
+		check(`the Firefox lane: ${err.message.split("\n")[0]}`, false);
 	}
 
 console.log("\nportal: My Games · All Games");
@@ -720,7 +899,7 @@ console.log("\nportal: My Games · All Games");
 
 		// Stars come from inside a game (Lokesh, 2026-11-16: "Only inside
 		// games"), not from the cards; each lands in My Games at once.
-		check("no star on any card: a game is starred only from inside it", (await pg.locator(".game-card button, .game-card [aria-pressed]").count()) === 0 && !(await pg.locator(".game-card").allTextContents()).some((t) => /[☆★]/.test(t)));
+		check("no star on any card: a game is starred only from inside it", (await pg.locator(".game-card button:not(.card-open), .game-card [aria-pressed]").count()) === 0 && !(await pg.locator(".game-card").allTextContents()).some((t) => /[☆★]/.test(t)));
 		const favs = () => pg.locator('[data-section="favs"] .game-card').evaluateAll((cs) => cs.map((c) => c.dataset.game).join());
 		await pg.evaluate(() => NeonArcade.stats.toggleFav("connect4")); // as the game's ★ does
 		check("…a star from a game leaves you where you are", tabOf(pg) === "all");

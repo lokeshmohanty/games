@@ -98,7 +98,9 @@ try {
 	// Paper following a dark system (the default) gave the frame Paper
 	// light under a dark page: sdk/v2/runtime.js wrote the choice, "system",
 	// into data-mode, which no theme block matches (his phone, 2026-11-15).
-	const firefox = await launchFirefox(pw);
+	// A Firefox that fails (NEON_FIREFOX=1 and none here) is one loud
+	// failure, and the Chrome lane and the checks after it still run.
+	const firefox = await launchFirefox(pw).catch((err) => (check(`the Firefox lane: ${err.message.split("\n")[0]}`, false), null));
 	for (const [name, b] of [["Chrome", browser], ["Firefox", firefox]]) {
 		if (!b) continue;
 		console.log(`\ntheme: a game's frame wears the page's theme, every theme (${name})`);

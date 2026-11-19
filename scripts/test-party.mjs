@@ -1170,7 +1170,7 @@ try {
 				over,
 				inside: btns.every((b) => b.left >= 0 && b.right <= innerWidth && b.top >= 0 && b.bottom <= 52),
 				big: btns.every((b) => b.w >= 44 && b.h >= 44),
-				word: !!word && getComputedStyle(word).visibility !== "hidden",
+				word: !!word && getComputedStyle(word).visibility !== "hidden" && getComputedStyle(word).clipPath === "none",
 				sideways: document.documentElement.scrollWidth > innerWidth,
 			};
 		});
@@ -1192,12 +1192,22 @@ try {
 		check(`${w}x${h}: the band is ← Games, ?, feedback, favourite, PARTY in one row, each 44px, inside the top 52px`, t.btns.length === 5 && t.big && t.inside && !t.over && t.word && !t.sideways, JSON.stringify(t));
 		const f = await phoneFloors(pg, ".top-band");
 		check(`${w}x${h}: …its text 12px or more`, f.measured.text >= 2 && !f.text.length && !f.taps.length, JSON.stringify(f));
+		// Squeezed to its arrow, ← Games is still named "Games" (review,
+		// 2026-11-19: the word was visibility: hidden, the arrow aria-hidden).
+		await pg.evaluate(() => document.querySelector(".top-band .portal-link").classList.add("is-tight"));
+		const named = await pg.locator(".top-band").getByRole("link", { name: "Games", exact: true }).count();
+		const tight = await band(pg);
+		check(`${w}x${h}: …the arrow alone is still the link named "Games"`, named === 1 && !tight.word && tight.btns[0].w === 44, JSON.stringify({ named, first: tight.btns[0] }));
+		await pg.evaluate(() => document.querySelector(".top-band .portal-link").classList.remove("is-tight"));
 		await pg.locator(".party-pill").click();
 		await pg.locator(".party-peek").waitFor({ timeout: TIMEOUT });
 		const peek = await phoneFloors(pg, ".party-peek, .top-band");
 		check(`${w}x${h}: the party pulled up over the game: every button 44px, every line 12px (TEAM A, BOT, REMOVE…)`, peek.measured.taps >= 6 && !peek.taps.length && !peek.text.length, JSON.stringify(peek));
 		await c.close();
 	}
+	// Its own try: a Firefox that fails (NEON_FIREFOX=1 and none here) is
+	// one loud failure.
+	try {
 	for (const scale of [130, 200]) {
 		const ff = await launchFirefox(pwAll, { textScale: scale });
 		if (!ff) break;
@@ -1208,10 +1218,16 @@ try {
 			const { c, pg } = await inGame(ff, w, h);
 			const t = await settled(() => band(pg), (x) => !x.over && x.inside, 3000);
 			check(`Firefox, text at ${scale}%, ${w}x${h}: the band holds (no overlap, each 44px, inside the top 52px, no sideways scroll)`, t.btns.length === 5 && t.big && t.inside && !t.over && !t.sideways, JSON.stringify(t));
-			if (scale === 200) check(`…← Games gives up its word for the arrow, 44px`, !t.word && t.btns[0].w === 44, JSON.stringify(t.btns[0]));
+			if (scale === 200) {
+				const named = await pg.locator(".top-band").getByRole("link", { name: "Games", exact: true }).count();
+				check(`…← Games gives up its word for the arrow, 44px, still named "Games"`, !t.word && t.btns[0].w === 44 && named === 1, JSON.stringify({ first: t.btns[0], named }));
+			}
 			await c.close();
 		}
 		await ff.close();
+	}
+	} catch (err) {
+		check(`the Firefox lane: ${err.message.split("\n")[0]}`, false);
 	}
 } catch (err) {
 	console.log(`\n  FAIL unexpected: ${err.message}`);
