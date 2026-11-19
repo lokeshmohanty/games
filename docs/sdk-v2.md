@@ -48,7 +48,8 @@ game folder/
 1. The shell builds the frame (lib/bridge.js `buildFrameDoc`). It inlines
    `sdk/v2/runtime.js`, the arcade's `lib/theme.css` and `lib/styles.css`,
    then the game's page with its scripts and stylesheets. `<html>` carries
-   `data-theme`, `data-mode` and `data-runtime`. This is two steps
+   `data-theme`, `data-mode` (what shows: `light` or `dark`, never the
+   player's `system`, which no theme block matches) and `data-runtime`. This is two steps
    (2026-11-15): `buildFrameTemplate` does everything that is the same for
    every player (the game's page, scripts and stylesheets inlined, the CSP,
    slots for the runtime's files, the fonts as `neon-font:` marks), and

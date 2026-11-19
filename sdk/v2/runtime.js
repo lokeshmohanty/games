@@ -53,11 +53,15 @@
 		else outbox.push([m, transfer]);
 	};
 
+	// `data-mode` is what shows (light or dark), as on the page: lib/theme.css
+	// has a block for each. `theme.mode` is what the player picked, and
+	// "system" (Paper's default) matched no block, so the frame fell back to
+	// Paper light under a dark page (Lokesh's phone, 2026-11-15).
 	const applyTheme = (theme) => {
 		if (!theme) return;
 		arcade.theme = theme;
 		document.documentElement.dataset.theme = theme.name;
-		document.documentElement.dataset.mode = theme.mode;
+		document.documentElement.dataset.mode = theme.dark ? "dark" : "light";
 	};
 
 	const emit = (m) => {
