@@ -1943,5 +1943,71 @@ const nid = () => `rr${++nidSeq}`;
 	for (const r of [h, a, n]) r.leave();
 }
 
+
+// ---------------------------------------------------------------------------
+console.log("\nwho said it, round 3: a lone vote against a crown held");
+
+for (const how of ["handover", "election"]) {
+	// F: P founds, Cy joins second (lowest id), H third. H holds the crown
+	// at term 1 — handed over by P, or won in P's vacancy with Cy's own vote
+	// — and P has gone. Cy then sends a self-vote on P's last record (Cy
+	// alone is half and the tie-break): term 1 too, and Cy's id is lower.
+	const ids = await idsDescending(3); // high, mid, low
+	const [p, c, h] = await party(["P", "Cy", "H"], fullMesh(3), { ids: [ids[0], ids[2], ids[1]], heirWaitMs: 400, lostRetryMs: [] });
+	const pRec = stripEnv(wire.filter((w) => w.from === p.selfId && w.env.__p && w.env.__p.host === p.selfId).at(-1).env);
+	if (how === "handover") {
+		p.transferHost(h.selfId);
+		await sleep(150);
+		p.leave();
+		await sleep(400);
+	} else {
+		c._stand = () => {}; // Cy, named first, does not stand: H is named next, and Cy grants it
+		p.leave();
+		await sleep(2500);
+		delete c._stand;
+	}
+	const setup = h.isHost() && c.hostId() === h.selfId && h.party.term === 1 && (how === "handover" || h.proof?.cp?.acks?.length === 1);
+	const pid = c.party.pid;
+	const key = NeonArcade._codec.voteKeyOf(pRec.__p.members, pRec.__p.term ?? 0, p.selfId);
+	const R = await signAs(c.identity, { __p: { ...structuredClone(c.party), host: c.selfId, term: 1, rev: Date.now() + 999 }, f: c.selfId, t: null, id: nid(), cp: { v: "vote", key, rec: pRec, acks: [] } }, pid);
+	c.links.get(h.selfId).send({ ...R, h: 0, m: null });
+	await sleep(200);
+	check(`F (${how}): a lone self-vote on the departed holder's record does not take a crown held at that term`, setup && h.isHost() && h.hostId() === h.selfId, `setup=${setup} h sees ${h.hostId() === c.selfId ? "Cy" : h.hostId() === h.selfId ? "H" : h.hostId()} ${h.refusals.slice(-2)}`);
+	for (const r of [p, c, h]) r.leave();
+}
+
+{
+	// …nor wins on the lower id where it landed first: a member that took
+	// Cy's lone vote still yields to H's attested crown at the same term.
+	// Vi watches: a seat that does not vote (pend: it has no link to P, so
+	// nothing proves it), so the humans are Cy and H, and Cy alone is half
+	// and the tie-break.
+	const ids = await idsDescending(4); // high … low
+	const [p, c, h, v] = await party(["P", "Cy", "H", "Vi"], fullMesh(4).filter(([i, j]) => !(i === 0 && j === 3)), { ids: [ids[0], ids[3], ids[1], ids[2]], heirWaitMs: 60_000, lostRetryMs: [] });
+	const pid = p.party.pid;
+	p.party.members.find((m) => m.id === v.selfId).pend = 2;
+	p._commitParty();
+	await sleep(40);
+	const pRec = stripEnv(wire.filter((w) => w.from === p.selfId && w.env.__p && w.env.__p.host === p.selfId).at(-1).env);
+	p.__mute = true;
+	p.detach();
+	for (const r of [c, h, v]) {
+		const l = r.links.get(p.selfId);
+		if (l) r._linkClosed(l);
+	}
+	await sleep(20);
+	const key = NeonArcade._codec.voteKeyOf(pRec.__p.members, 0, p.selfId);
+	const lone = await signAs(c.identity, { __p: { ...structuredClone(c.party), host: c.selfId, term: 1, rev: Date.now() + 1 }, f: c.selfId, t: null, id: nid(), cp: { v: "vote", key, rec: pRec, acks: [] } }, pid);
+	const viAck = stripEnv(await signAs(v.identity, { __ka: key, r: 1, n: h.selfId, f: v.selfId, t: null, id: nid() }, pid));
+	const cAck = stripEnv(await signAs(c.identity, { __ka: key, r: 1, n: h.selfId, f: c.selfId, t: null, id: nid() }, pid));
+	const attested = await signAs(h.identity, { __p: { ...structuredClone(h.party), host: h.selfId, term: 1, rev: Date.now() + 2 }, f: h.selfId, t: null, id: nid(), cp: { v: "vote", key, rec: pRec, acks: [viAck, cAck] } }, pid);
+	c.links.get(v.selfId).send({ ...lone, h: 0, m: null });
+	await sleep(60);
+	h.links.get(v.selfId).send({ ...attested, h: 0, m: null });
+	await sleep(60);
+	check("an attested crown outranks a lone vote at the same term, whatever the ids", v.hostId() === h.selfId, `vi sees ${v.hostId() === c.selfId ? "Cy" : v.hostId() === h.selfId ? "H" : v.hostId()} ${v.refusals.slice(-2)}`);
+	for (const r of [c, h, v]) r.leave();
+}
+
 console.log(failures ? `\n${failures} failing\n` : "\nall passing\n");
 process.exit(failures ? 1 : 0);
