@@ -26,7 +26,7 @@ globalThis.window = globalThis;
 globalThis.location = { href: "https://example.test/?party", hash: "", pathname: "/", search: "?party" };
 globalThis.history = { replaceState() {} };
 
-for (const file of ["../lib/net.js", "../lib/secrets.js", "../lib/rounds.js"]) {
+for (const file of ["../lib/net.js", "../lib/secrets.js", "../lib/rounds.js", "../lib/bridge.js"]) {
 	new Function(readFileSync(new URL(file, import.meta.url), "utf8"))();
 }
 const { NeonArcade } = globalThis;
@@ -2007,6 +2007,35 @@ for (const how of ["handover", "election"]) {
 	await sleep(60);
 	check("an attested crown outranks a lone vote at the same term, whatever the ids", v.hostId() === h.selfId, `vi sees ${v.hostId() === c.selfId ? "Cy" : v.hostId() === h.selfId ? "H" : v.hostId()} ${v.refusals.slice(-2)}`);
 	for (const r of [c, h, v]) r.leave();
+}
+
+
+{
+	// A web app's address is the host's (lib/bridge.js, Lokesh 2026-11-20:
+	// host-only). Ana browses privately as a guest, then the crown passes to
+	// her: the party must follow her address, not keep the last host's.
+	const [h, a, b] = await party(["Host", "Ana", "Bo"], fullMesh(3));
+	const at = new Map();
+	const opts = new Map();
+	const realMount = NeonArcade.mountFrameV2;
+	NeonArcade.mountFrameV2 = (ctx, game, o) => {
+		at.set(ctx.room, o.at());
+		opts.set(ctx.room, o);
+		return { unmount() {}, onRoster() {}, onPeerJoin() {}, onPeerLeave() {} };
+	};
+	const apps = [h, a, b].map((room) => NeonArcade.mountApp({ room }, { id: "web", name: "Web", app: { web: "web/" } }));
+	await sleep(40);
+	opts.get(a).address("/private", true);
+	await sleep(40);
+	const kept = at.get(h) === "/" && at.get(b) === "/";
+	h.transferHost(a.selfId);
+	await sleep(80);
+	for (const app of apps) app.onRoster(); // as the party shell does on each record
+	await sleep(80);
+	check("p$addr: a guest's private address stays its own; once it holds the crown, the party follows it", kept && at.get(h) === "/private" && at.get(b) === "/private", JSON.stringify({ kept, h: at.get(h), b: at.get(b) }));
+	for (const app of apps) app.unmount();
+	NeonArcade.mountFrameV2 = realMount;
+	for (const r of [h, a, b]) r.leave();
 }
 
 console.log(failures ? `\n${failures} failing\n` : "\nall passing\n");

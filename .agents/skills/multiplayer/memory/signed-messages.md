@@ -91,6 +91,13 @@ Re-review 2026-11-19 (9fd7e5a; test-plumbing "who said it, re-reviewed"):
 - **A prompt any member can trigger is a nuisance tool.** "Reload to rejoin"
   only for a well-formed chain cut short ("far"), signed by seated members.
 
+Round 3 (2026-11-20; "who said it, round 3"): **a lone vote must never
+displace a crown already held at that term.** Once a departed host had
+really gone, Cy's self-vote on its last record passed every "do you still see
+the vacated holder" check and won the term on the lower id. A lone vote is
+refused against an anchor at that term or a hand-over by the holder it calls
+vacated, and an attested crown outranks a lone one at one term.
+
 Costs: see docs/index.md "Who said it" (Node and throttled Chromium).
 
 Related: [[split-party]], [[addressed-is-not-private]], [[bots-as-members]],

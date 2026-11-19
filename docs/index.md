@@ -475,6 +475,14 @@ verified even on its sender's own link, because it is kept as proof.
   (`unseen`) and checked again when that link goes, closed or dropped with
   its seat. The rule holds at every depth of a proof, not only at its top.
 
+  Such a lone vote also never displaces a crown we hold at that term, nor
+  one handed on by the holder it calls vacated (that holder handed over; it
+  left no vacancy). Once a departed host had really gone, a lone vote on its
+  last record took the term from the live holder on the lower id (round 3,
+  2026-11-20). Where two crowns meet at one term, one that others attested
+  outranks one won alone, whatever the ids. Only between two attested
+  crowns, or two lone ones, does the lower id still decide.
+
   Without this, "a higher term wins" let any member crown itself by signing a
   record. From the holder already known, only a newer record (`rev`, which
   rises with the clock across a reload) is taken, so a replayed old record
@@ -498,8 +506,10 @@ verified even on its sender's own link, because it is kept as proof.
 
   `by` names the member whose word or relay it came on. That member's
   `__alive` does not settle a suspicion about it. **Inherent:** a member that
-  runs real extra tabs, each with its own hello-verified links, has that many
-  votes. Only a real-world identity could stop that.
+  runs real extra peers has that many votes, each with its own key and
+  hello-verified links. Extra tabs work, and so do extra in-page rooms over
+  real WebRTC links. A vote costs a real peer connection, not a real device.
+  Only a real-world identity could stop that.
   Introductions are broadcasts now. A member used to re-address an `__i` to
   the host it knew, and that would break the signature.
 - The newcomer's first record is the host's own signed envelope, handed on
@@ -515,7 +525,8 @@ verified even on its sender's own link, because it is kept as proof.
   guest cannot act as another seat or a bot. lib/bridge.js takes a web app's
   `p$httpr` only from the member it asked, and `p$addr` (the app's address)
   only from the host (Lokesh, 2026-11-20: "host-only"; a guest's navigation
-  moves its own screen only).
+  moves its own screen only). A phone the crown passes to says its address
+  at once (the bridge's `onRoster`), so the party follows the new host's.
 
 **Old clients.** A peer that talks before saying hello is a build from
 before signing (an ordered channel, and a current client always says hello
@@ -1491,6 +1502,10 @@ the icon for exactly this reason. `test-pwa` now parses the file.
     page out of the cache or releases its lock. Safari and Firefox are not
     tested (VERIFY): a cached page that kept its lock would make the restored
     tab, or a new one naming that key, mint a fresh key.
+  - **Extra votes cost real peer connections, not real devices.** Any member
+    can seat extra voters by opening extra rooms in its own page (or extra
+    tabs), each with its own key and real WebRTC links to the host. Nothing
+    here can tell those from other people's phones.
   - **A relay-only player never votes.** Without a hello-verified link to the
     host (the NAT lab's two symmetric peers, relayed by a third), a seat
     stays `pend` 2: it plays, but no election counts it.
