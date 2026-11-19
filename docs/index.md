@@ -513,9 +513,9 @@ verified even on its sender's own link, because it is kept as proof.
   is taken on that member's word.
 - Games: a managed game's `v:m$act`/`v:m$in` now carry a proven seat; a
   guest cannot act as another seat or a bot. lib/bridge.js takes a web app's
-  `p$httpr` only from the member it asked. (`p$addr` is a broadcast any
-  member may send by design, docs/platform.md; its sender is now at least
-  real.)
+  `p$httpr` only from the member it asked, and `p$addr` (the app's address)
+  only from the host (Lokesh, 2026-11-20: "host-only"; a guest's navigation
+  moves its own screen only).
 
 **Old clients.** A peer that talks before saying hello is a build from
 before signing (an ordered channel, and a current client always says hello
