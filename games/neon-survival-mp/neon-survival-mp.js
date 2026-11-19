@@ -658,15 +658,18 @@ addEventListener("mousemove", (e) => {
 // down; another finger does nothing, and when the steering one lifts, a
 // finger still down takes over from where it is, so the ship never jumps.
 // The ship stays wholly inside the arena; dragging on past an edge holds it
-// there, and it comes back as soon as the finger turns.
+// there, and it comes back as soon as the finger turns. Steering never locks
+// (review 2026-11-19): a finger already down when a run starts takes the ship
+// on its first move, and a steering finger whose touchend never came (gone
+// from `touches`) is replaced by the next one down.
 let finger = null; // { id, x, y }: the steering touch, where it was last seen (CSS px)
 const fingerFrom = (t) => ({ id: t.identifier, x: t.clientX, y: t.clientY });
+const isDown = (e, id) => [...e.touches].some((t) => t.identifier === id);
 addEventListener(
 	"touchstart",
 	(e) => {
-		if (!aliveCount()) return;
-		e.preventDefault();
-		if (!finger) finger = fingerFrom(e.changedTouches[0]);
+		if (!finger || !isDown(e, finger.id)) finger = fingerFrom(e.changedTouches[0]);
+		if (aliveCount()) e.preventDefault();
 	},
 	{ passive: false },
 );
@@ -675,8 +678,11 @@ addEventListener(
 	(e) => {
 		if (!aliveCount()) return;
 		e.preventDefault();
-		const t = finger && [...e.touches].find((t) => t.identifier === finger.id);
-		if (!t) return;
+		if (!finger || !isDown(e, finger.id)) {
+			finger = fingerFrom(e.changedTouches[0]);
+			return;
+		}
+		const t = [...e.touches].find((t) => t.identifier === finger.id);
 		const rect = canvas.getBoundingClientRect();
 		const k = W / (rect.width || W); // world units per CSS px
 		const me = mine();
