@@ -64,14 +64,16 @@ body {
   color: var(--accent);
   border-color: var(--accent);
 }
-/* Still measured (party.js fitBack), never shown. */
+/* The word: not shown, but still measured (party.js fitBack) and still the
+   link's name for assistive tech (clipped, never visibility: hidden). */
 .portal-link.is-tight {
   width: 44px;
   padding: 0;
 }
 .portal-link.is-tight .label {
   position: absolute;
-  visibility: hidden;
+  clip-path: inset(50%);
+  pointer-events: none;
 }
 
 /* Buttons */
