@@ -161,6 +161,11 @@ How it runs:
     MessageChannel messages, docs/perf.md "Phone pass"). A ticking game's
     `bot()` runs every tick and should stay quick. The adapters' `dispatch`
     is synchronous, so a compiled game's bot answers in one call.
+  - **A `bot` call the game does not answer in 5 s** is asked once more
+    after another pause, through the same queue (`BOT_RETRIES`; before
+    2026-11-19 the game stalled on the bot's turn). The first call's late
+    answer is dropped. The queue itself moves on after a timeout, so the
+    retry can reach the frame while the first call is still running there.
 - **People on the host's phone** (2026-11-17). A game with `"sameDevice":
   true` in game.json may get a bot seat with `local: true` in `init`: the
   one person at SINGLE PLAYER's quick table made it a PERSON, someone beside
