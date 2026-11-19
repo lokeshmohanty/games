@@ -257,7 +257,7 @@ style.textContent = `
 	#hud .you-spec { color: var(--muted); }
 	#moved { font-size: clamp(0.8rem, 2.6vw, 1rem); color: var(--muted); min-height: 1.4em; text-align: center; }
 	#board { box-sizing: content-box; border: 3px solid var(--rule); border-radius: 12px;
-		box-shadow: 0 0 30px var(--glow); max-width: 95vw; max-height: 70vh; }
+		box-shadow: 0 0 30px var(--glow); }
 `;
 document.head.append(style);
 const hudEl = document.getElementById("hud");
@@ -292,9 +292,12 @@ const alpha = (rgba, a) => rgba.replace(/,\s*[\d.]+\)$/, `, ${a})`);
 const DPR_MAX = 3;
 let cell = 20; // CSS px per cell
 let dpr = 1; // backing pixels per CSS px
+// The size is set here and only here: a CSS max-width/max-height on #board
+// squeezed one axis of it (at 1280x650, 70vh made it 553x455, discs 4% wide,
+// review 2026-11-19), so its old limits (95vw, 70vh) are in these sums.
 function resize() {
-	const maxW = Math.min(window.innerWidth - 24, 560);
-	const maxH = window.innerHeight - 176; // the HUD, the move line under the board, the gaps
+	const maxW = Math.min(window.innerWidth - 24, window.innerWidth * 0.95, 560);
+	const maxH = Math.min(window.innerHeight - 176, window.innerHeight * 0.7); // 176: the HUD, the move line under the board, the gaps
 	cell = Math.max(20, Math.floor(Math.min(maxW / COLS, maxH / ROWS)));
 	dpr = Math.min(window.devicePixelRatio || 1, DPR_MAX);
 	canvas.style.width = `${cell * COLS}px`;
