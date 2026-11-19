@@ -350,8 +350,12 @@ arcade.managed({
 
 const style = document.createElement("style");
 style.textContent = `
+	/* A finger drags the ship from anywhere on the screen, so the browser
+	   claims no gesture anywhere (not just over the canvas): a pan or pinch it
+	   took would stop the touchmoves the drag runs on. */
+	html, body { touch-action: none; }
 	#game { position: absolute; inset: 0; display: flex; flex-direction: column;
-		align-items: center; justify-content: center; }
+		align-items: center; justify-content: center; touch-action: none; }
 	#ui { position: absolute;
 		/* Clears the fixed "all games" pill in the top-left corner. */
 		top: 58px; left: 12px; right: 12px; display: flex; justify-content: space-between;
@@ -473,6 +477,9 @@ function onState(v, t) {
 	if (!cur || cur.v.m !== v.m) {
 		particles = [];
 		prev = null;
+		// A new run puts every ship somewhere new: a drag starts from there,
+		// not from where this player steered last run.
+		pointer = null;
 	} else {
 		// Sparks are this phone's own: a gem gone was collected, a ship gone dark was hit.
 		const kept = new Set();
@@ -619,32 +626,75 @@ function send() {
 	lastSend = performance.now();
 	if (pointer) arcade.input({ x: r1(pointer.x), y: r1(pointer.y) });
 }
-function handleInput(clientX, clientY) {
+/**
+ * Steer this player's ship to world point (x, y), kept `inset` units inside
+ * the arena. The host takes it as where the ship is (tick), so a guest's
+ * phone works out the point itself, whatever the gesture, and sends that.
+ */
+function aim(x, y, inset = 0) {
 	const me = mine();
 	// Seated and flying (or seated mid-run and about to be).
 	if (!cur?.v.you || (me && !me[2])) return;
-	const rect = canvas.getBoundingClientRect();
-	// CSS pixels to world units.
-	pointer = {
-		x: clamp(((clientX - rect.left) * W) / (rect.width || W), 0, W),
-		y: clamp(((clientY - rect.top) * H) / (rect.height || H), 0, H),
-	};
+	pointer = { x: clamp(x, inset, W - inset), y: clamp(y, inset, H - inset) };
 	const wait = SEND_MS - (performance.now() - lastSend);
 	if (wait <= 0) send();
 	else if (!sendTimer) sendTimer = setTimeout(send, wait);
 }
+/** CSS pixels on the screen to world units. */
+function toWorld(clientX, clientY) {
+	const rect = canvas.getBoundingClientRect();
+	return { x: ((clientX - rect.left) * W) / (rect.width || W), y: ((clientY - rect.top) * H) / (rect.height || H) };
+}
 
-addEventListener("mousemove", (e) => handleInput(e.clientX, e.clientY));
-for (const type of ["touchstart", "touchmove"]) {
-	addEventListener(
-		type,
-		(e) => {
-			if (!aliveCount()) return;
-			handleInput(e.touches[0].clientX, e.touches[0].clientY);
-			e.preventDefault();
-		},
-		{ passive: false },
-	);
+// A mouse points: the ship goes where the pointer is.
+addEventListener("mousemove", (e) => {
+	const p = toWorld(e.clientX, e.clientY);
+	aim(p.x, p.y);
+});
+
+// A finger drags, anywhere on the screen (Lokesh, 2026-11-18): the ship
+// moves by as much as the finger does, so it is never under the thumb
+// (pointing put it there, hidden, on a phone). One finger steers, the first
+// down; another finger does nothing, and when the steering one lifts, a
+// finger still down takes over from where it is, so the ship never jumps.
+// The ship stays wholly inside the arena; dragging on past an edge holds it
+// there, and it comes back as soon as the finger turns.
+let finger = null; // { id, x, y }: the steering touch, where it was last seen (CSS px)
+const fingerFrom = (t) => ({ id: t.identifier, x: t.clientX, y: t.clientY });
+addEventListener(
+	"touchstart",
+	(e) => {
+		if (!aliveCount()) return;
+		e.preventDefault();
+		if (!finger) finger = fingerFrom(e.changedTouches[0]);
+	},
+	{ passive: false },
+);
+addEventListener(
+	"touchmove",
+	(e) => {
+		if (!aliveCount()) return;
+		e.preventDefault();
+		const t = finger && [...e.touches].find((t) => t.identifier === finger.id);
+		if (!t) return;
+		const rect = canvas.getBoundingClientRect();
+		const k = W / (rect.width || W); // world units per CSS px
+		const me = mine();
+		// From where this phone draws its ship: the point it last sent, else
+		// the host's; seated mid-run with no ship yet, it arrives under the finger.
+		const from = pointer ?? (me ? { x: me[0], y: me[1] } : toWorld(finger.x, finger.y));
+		const dx = (t.clientX - finger.x) * k;
+		const dy = (t.clientY - finger.y) * k;
+		finger = fingerFrom(t);
+		aim(from.x + dx, from.y + dy, PLAYER_SIZE / 2);
+	},
+	{ passive: false },
+);
+for (const type of ["touchend", "touchcancel"]) {
+	addEventListener(type, (e) => {
+		if (!finger || ![...e.changedTouches].some((t) => t.identifier === finger.id)) return;
+		finger = e.touches.length ? fingerFrom(e.touches[0]) : null;
+	});
 }
 addEventListener("resize", fit);
 
