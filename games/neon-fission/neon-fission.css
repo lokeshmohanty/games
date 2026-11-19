@@ -63,7 +63,9 @@ html, body { margin: 0; height: 100%; overflow: hidden; background: var(--bg); c
 	background: var(--surface);
 }
 .chip .name { max-width: 7.5ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.chip .n { font-family: var(--font-mono); color: var(--ink); }
+/* Two digits wide whatever it holds (a grid has at most 96 cells): a count
+   going 9 → 10 does not widen the chip and wrap a row mid-game. */
+.chip .n { font-family: var(--font-mono); color: var(--ink); flex: none; width: 2ch; min-width: 2ch; text-align: right; }
 .chip.is-turn { border-color: var(--seat); color: var(--ink); box-shadow: 0 0 0 1px var(--seat); }
 .chip.is-out { opacity: 0.45; text-decoration: line-through; }
 
