@@ -1776,5 +1776,162 @@ console.log("\nwho said it, reviewed: certificates, replays, strangers");
 	for (const r of [host, ana]) r.leave();
 }
 
+
+// ---------------------------------------------------------------------------
+console.log("\nwho said it, re-reviewed: invented voters, chains, nuisances");
+// The re-review's attacks (2026-11-19), each as the check that it fails.
+const signAs = async (identity, env, pid) => {
+	env.pa = pid;
+	env.k = identity.pub;
+	env.s = await identity.sign(NeonArcade._codec.signedText(env));
+	return env;
+};
+const stripEnv = ({ h, m, fw, ...e }) => structuredClone(e);
+let nidSeq = 0;
+const nid = () => `rr${++nidSeq}`;
+
+{
+	// E: Cy seats three keys she made — each "speaking for itself", relayed
+	// by her — then crowns herself with their acknowledgements: 4 of 7.
+	const [h, a, b, c] = await party(["Host", "Ana", "Bo", "Cy"], fullMesh(4), { heirWaitMs: 60_000, lostRetryMs: [] });
+	const pid = h.party.pid;
+	const sy = [];
+	for (let i = 0; i < 3; i++) {
+		const Y = await NeonArcade.identity({ fresh: true });
+		sy.push(Y);
+		const env = await signAs(Y, { __i: { id: Y.id, name: `Friend${i}` }, f: Y.id, t: null, id: nid(), h: 2 }, pid);
+		c.links.get(h.selfId).send({ ...env, m: null });
+	}
+	await sleep(150);
+	const voting = sy.filter((Y) => h.party.members.some((m) => m.id === Y.id && !m.pend)).length;
+	check("E: a key that speaks for itself only through a relay is seated, but never votes (pend)", voting === 0, `${voting} of 3 voting`);
+	const rec = stripEnv(c.hostEnv);
+	const T = rec.__p.term ?? 0;
+	const key = NeonArcade._codec.voteKeyOf(rec.__p.members, T, h.selfId);
+	const acks = [];
+	for (const Y of sy) acks.push(stripEnv(await signAs(Y, { __ka: key, r: 1, n: c.selfId, f: Y.id, t: null, id: nid() }, pid)));
+	const R = await signAs(c.identity, { __p: { ...structuredClone(c.party), host: c.selfId, term: T + 1, rev: Date.now() }, f: c.selfId, t: null, id: nid(), cp: { v: "vote", key, rec, acks } }, pid);
+	for (const r of [h, a, b]) c.links.get(r.selfId).send({ ...R, h: 0, m: null });
+	await sleep(150);
+	check("E: …so a member's invented voters crown nobody (host alive)", [h, a, b].every((r) => r.hostId() === h.selfId), [h, a, b].map((r) => r.hostId() === h.selfId).join());
+	// A real newcomer whose own link to the host opens is a voter at once.
+	const n = await bare({ name: "Newt" }, false);
+	connect(h, n);
+	h._linkOpened(h.links.get(n.selfId));
+	await sleep(40);
+	check("…while a newcomer proven by its own link to the host votes", h.party.members.some((m) => m.id === n.selfId && !m.pend));
+	for (const r of [h, a, b, c, n]) r.leave();
+}
+
+{
+	// A: a self-vote (the candidate alone), wrapped in hand-overs through a
+	// key Cy made and back, so the self-vote sits below the top.
+	const [h, c, a] = await party(["Host", "Cy", "Ana"], fullMesh(3), { heirWaitMs: 60_000, lostRetryMs: [] });
+	const pid = h.party.pid;
+	const rec = stripEnv(c.hostEnv);
+	const T = rec.__p.term ?? 0;
+	const key = NeonArcade._codec.voteKeyOf(rec.__p.members, T, h.selfId);
+	const vote = { v: "vote", key, rec, acks: [] };
+	const Y = await NeonArcade.identity({ fresh: true });
+	const base = structuredClone(c.party);
+	const R2 = await signAs(c.identity, { __p: { ...base, host: Y.id, term: T + 2, rev: Date.now() }, f: c.selfId, t: null, id: nid(), cp: vote }, pid);
+	const R3 = await signAs(Y, { __p: { ...base, host: c.selfId, term: T + 3, rev: Date.now() + 1 }, f: Y.id, t: null, id: nid(), cp: { v: "hand", env: stripEnv(R2) } }, pid);
+	const R4 = await signAs(c.identity, { __p: { ...base, host: c.selfId, term: T + 3, rev: Date.now() + 2 }, f: c.selfId, t: null, id: nid(), cp: { v: "hand", env: stripEnv(R3) } }, pid);
+	for (const r of [h, a]) c.links.get(r.selfId).send({ ...R4, h: 0, m: null });
+	await sleep(150);
+	check("A: a self-vote wrapped in hand-overs crowns nobody (host alive, full mesh)", h.hostId() === h.selfId && a.hostId() === h.selfId, `h=${h.hostId() === c.selfId} a=${a.hostId() === c.selfId}`);
+	// The same self-vote handed to a member of the record: still a self-vote below.
+	const R5 = await signAs(c.identity, { __p: { ...base, host: a.selfId, term: T + 2, rev: Date.now() + 3 }, f: c.selfId, t: null, id: nid(), cp: vote }, pid);
+	c.links.get(h.selfId).send({ ...R5, h: 0, m: null });
+	await sleep(80);
+	check("…nor when the hand-over is to a real member", h.hostId() === h.selfId, `${h.hostId() === a.selfId ? "Ana" : h.hostId()}`);
+	for (const r of [h, c, a]) r.leave();
+}
+
+{
+	// An older revision we held, its roster smaller than the latest: a
+	// quorum of it is easier. Never accepted.
+	const [h, a, b, c, d] = await party(["Host", "Ana", "Bo", "Cy", "Dee"], fullMesh(5), { heirWaitMs: 60_000, lostRetryMs: [] });
+	const pid = h.party.pid;
+	h.removeMember(b.selfId);
+	await sleep(60);
+	const small = stripEnv(wire.filter((w) => w.from === h.selfId && w.env.__p).at(-1).env); // Host, Ana, Cy, Dee
+	h._addMember(b.selfId, "Bo");
+	h._commitParty(); // Bo back: Host, Ana, Bo, Cy, Dee
+	await sleep(60);
+	const key = NeonArcade._codec.voteKeyOf(small.__p.members, 0, h.selfId);
+	const [lo, hi] = a.selfId < c.selfId ? [a, c] : [c, a];
+	const voter = hi;
+	const ack = stripEnv(await signAs(voter.identity, { __ka: key, r: 1, n: lo.selfId, f: voter.selfId, t: null, id: nid() }, pid));
+	const R = await signAs(lo.identity, { __p: { ...structuredClone(d.party), host: lo.selfId, term: 1, rev: Date.now() }, f: lo.selfId, t: null, id: nid(), cp: { v: "vote", key, rec: small, acks: [ack] } }, pid);
+	lo.links.get(d.selfId).send({ ...R, h: 0, m: null });
+	await sleep(80);
+	check("a certificate from an older, smaller roster than the latest we hold is refused", d.hostId() === h.selfId, `${d.hostId() === lo.selfId ? "crowned" : d.hostId()} ${d.refusals.slice(-1)}`);
+	for (const r of [h, a, b, c, d]) r.leave();
+}
+
+{
+	// B: a member's junk record at a higher term must not tell everyone to reload.
+	const [h, c, a] = await party(["Host", "Cy", "Ana"], fullMesh(3));
+	const errs = [];
+	for (const r of [h, a]) r.onError = (m, i) => errs.push(i?.reason);
+	c._send({ __p: { ...structuredClone(c.party), host: c.selfId, term: 9 }, f: c.selfId, t: null }, null);
+	await sleep(80);
+	check("B: a junk newer record is refused without telling anyone to reload", !errs.includes("behind") && h.hostId() === h.selfId, JSON.stringify(errs));
+	for (const r of [h, c, a]) r.leave();
+}
+
+{
+	// D: the host dies silently; Bo learns it by its own link, after Ana's
+	// crown (her own vote and the tie-break) reached him.
+	const [h, a, b] = await party(["Host", "Ana", "Bo"], fullMesh(3), { heirWaitMs: 400, lostRetryMs: [] });
+	h.__mute = true;
+	h.__deaf = true;
+	a._linkClosed(a.links.get(h.selfId));
+	await sleep(200);
+	b._linkClosed(b.links.get(h.selfId));
+	const t0 = Date.now();
+	while (Date.now() - t0 < 20000 && !(b.hostId() === a.selfId && a.isHost())) await sleep(100);
+	check("D: Bo follows Ana once he concludes the host gone", b.hostId() === a.selfId && !b.lost, `${b.hostId() === a.selfId} lost=${b.lost}`);
+	for (const r of [h, a, b]) r.leave();
+}
+
+{
+	// A crown held back while we still saw the old host is checked again
+	// when that link goes by any path — here the old host's seat dropped.
+	const [h, a, b] = await party(["Host", "Ana", "Bo"], fullMesh(3), { heirWaitMs: 60_000, lostRetryMs: [] });
+	const pid = h.party.pid;
+	const rec = stripEnv(a.hostEnv);
+	const key = NeonArcade._codec.voteKeyOf(rec.__p.members, 0, h.selfId);
+	const first = [a, b].sort((x, y) => x.party.members.find((m) => m.id === x.selfId).joined - y.party.members.find((m) => m.id === y.selfId).joined)[0];
+	const R = await signAs(first.identity, { __p: { ...structuredClone(first.party), host: first.selfId, term: 1, rev: Date.now() }, f: first.selfId, t: null, id: nid(), cp: { v: "vote", key, rec, acks: [] } }, pid);
+	const other = first === a ? b : a;
+	first.links.get(other.selfId).send({ ...R, h: 0, m: null });
+	await sleep(60);
+	const held = other.hostId() === h.selfId && !!other.unseen;
+	other._dropMember(h.selfId, "dropped");
+	await sleep(60);
+	check("a held-back crown is checked again when the old host's link goes with its seat", held && other.hostId() === first.selfId, `held=${held} now=${other.hostId() === first.selfId}`);
+	for (const r of [h, a, b]) r.leave();
+}
+
+{
+	// A member's game message that beats the record seating it is held a
+	// moment, and delivered once the record does.
+	const [h, a] = await party(["Host", "Ana"], fullMesh(2));
+	const n = await bare({ name: "Newt" }, false);
+	connect(a, n);
+	const got = [];
+	a.makeAction("move").onMessage = (d, { peerId }) => got.push([d, peerId]);
+	n.links.get(a.selfId).send({ a: "move", d: "first", f: n.selfId, t: null, id: nid(), h: 2, m: null });
+	await sleep(30);
+	const before = got.length;
+	h._addMember(n.selfId, "Newt");
+	h._commitParty();
+	await sleep(40);
+	check("a new member's first move, ahead of the record that seats it, is not lost", before === 0 && got.some(([d, p]) => d === "first" && p === n.selfId), `${before} ${JSON.stringify(got)}`);
+	for (const r of [h, a, n]) r.leave();
+}
+
 console.log(failures ? `\n${failures} failing\n` : "\nall passing\n");
 process.exit(failures ? 1 : 0);
