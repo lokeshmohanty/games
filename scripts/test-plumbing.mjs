@@ -63,6 +63,8 @@ function linkPair(a, b, { hello = false } = {}) {
 	const end = (self, other, peer, [local, remote]) => ({
 		peerId: other.selfId,
 		owner: hello ? null : other.selfId,
+		// As if made from an invite naming the far side (net.js link.named).
+		named: true,
 		fingerprints: () => ({ local, remote }),
 		closed: false,
 		chunks: new Map(),
@@ -410,18 +412,18 @@ const bare = async (opts, host = true) => {
 }
 
 {
-	// Two crown holders at one term, neither proven to the other. Before
-	// signed messages the lower id took both — and a member signing a record
-	// that names itself could do just that (2026-11-18). Now a crown moves
-	// only on proof (an election's, a hand-over's: net.js _proven), so each
-	// keeps its own.
+	// Two crown holders at one term: two parties' founders. Before signed
+	// messages the lower id took both — and a member signing a record that
+	// names itself could do just that (2026-11-18). Now each party has its
+	// own id (`pid`), nothing signed for one counts in the other, and a
+	// crown moves only on proof (net.js _proven): each keeps its own.
 	const a = await bare({ name: "A" });
 	const b = await bare({ name: "B" });
 	connect(a, b);
 	a._commitParty();
 	b._commitParty();
 	await sleep(40);
-	check("an unproven second crown at our term is not taken", a.isHost() && b.isHost() && a.refusals.includes("crown unproven") && b.refusals.includes("crown unproven"), `${a.hostId() === a.selfId} ${b.hostId() === b.selfId}`);
+	check("another party's crown at our term is not taken", a.isHost() && b.isHost() && a.refusals.includes("another party") && b.refusals.includes("another party"), `${a.hostId() === a.selfId} ${b.hostId() === b.selfId} ${a.refusals}`);
 	a.leave();
 	b.leave();
 }
@@ -1461,38 +1463,98 @@ const idsDescending = async (n) => {
 }
 
 {
-	// Election certificates, built by hand from members' real signatures.
-	// Dee checks each crown at term 1 against the record of term 0 she holds.
+	// Election certificates, built by hand from members' real signatures and
+	// the host's real records. Dee checks each crown at term 1 against the
+	// records of term 0 she took: the key is rebuilt from the record a
+	// certificate carries (`rec`), never taken from it.
 	const [h, a, b, c, d] = await party(["Host", "Ana", "Bo", "Cy", "Dee"], fullMesh(5), { heirWaitMs: 60_000, lostRetryMs: [] });
-	const humans = (...rs) => rs.map((r) => r.selfId).sort().join(",");
-	const ack = async (voter, key, cand) => {
-		const env = { __ka: key, r: 1, n: cand.selfId, f: voter.selfId, t: null, id: `ka${++rawSeq}` };
-		return voter._sign(env);
+	const { voteKeyOf, signedText } = NeonArcade._codec;
+	const recOf = () => {
+		const { h: _h, m: _m, ...env } = structuredClone(wire.filter((w) => w.from === h.selfId && w.env.__p).at(-1).env);
+		return env;
 	};
-	const crownBy = async (cand, key, voters) => {
+	const ack = async (voter, key, cand) => voter._sign({ __ka: key, r: 1, n: cand.selfId, f: voter.selfId, t: null, id: `ka${++rawSeq}` });
+	const crownBy = async (cand, rec, voters, key = voteKeyOf(rec.__p.members, 0, h.selfId)) => {
 		const acks = await Promise.all(voters.map((v) => ack(v, key, cand)));
-		const env = { __p: { ...structuredClone(d.party), host: cand.selfId, term: 1, rev: Date.now() + rawSeq }, f: cand.selfId, t: null, id: `cp${++rawSeq}`, cp: { v: "vote", key, acks } };
+		const env = { __p: { ...structuredClone(d.party), host: cand.selfId, term: 1, rev: Date.now() + ++rawSeq }, f: cand.selfId, t: null, id: `cp${++rawSeq}`, cp: { v: "vote", key, rec, acks } };
 		await cand._sign(env);
 		cand.links.get(d.selfId).send(env);
 		await sleep(40);
 	};
-	// Made-up voters: ids nobody in Dee's record holds a key for.
+	const rec1 = recOf(); // Host, Ana, Bo, Cy, Dee
+	// Made-up voters: a key naming ids nobody in the record holds.
 	const strangers = await Promise.all([1, 2, 3].map(() => NeonArcade.identity({ fresh: true })));
 	const fake = `${h.selfId}|0|${c.selfId}|${[c.selfId, ...strangers.map((x) => x.id)].sort().join(",")}`;
-	const sRooms = strangers.map((identity) => ({ selfId: identity.id, _sign: async (env) => ({ ...env, k: identity.pub, s: await identity.sign(NeonArcade._codec.signedText(env)) }) }));
-	await crownBy(c, fake, sRooms);
-	check("an election certificate counting ids outside our record is refused", d.hostId() === h.selfId, d.refusals.slice(-2).join());
-	// Two elections at term 0 with different keys (a record that reached
-	// one side only), each with a real quorum of its own.
-	const [lo, hi] = a.selfId < b.selfId ? [a, b] : [b, a];
-	const kHi = `${h.selfId}|0|${hi.selfId}|${humans(hi, c, d)}`;
-	const kLo = `${h.selfId}|0|${lo.selfId}|${humans(lo, c)}`;
-	await crownBy(hi, kHi, [c, d]);
+	const sRooms = strangers.map((identity) => ({ selfId: identity.id, _sign: async (env) => ({ ...env, pa: d.party.pid, k: identity.pub, s: await identity.sign(signedText({ ...env, pa: d.party.pid })) }) }));
+	await crownBy(c, rec1, sRooms, fake);
+	check("an election certificate whose key is not its record's is refused (made-up voters)", d.hostId() === h.selfId, d.refusals.slice(-2).join());
+	// The host drops Bo: a second record of term 0. Two elections, one from
+	// each record (a record that reached one side of a split only), each with
+	// a real quorum of its own.
+	h.removeMember(b.selfId);
+	await sleep(60);
+	const rec2 = recOf(); // Host, Ana, Cy, Dee
+	const [lo, hi] = a.selfId < c.selfId ? [a, c] : [c, a];
+	await crownBy(hi, rec2, [d]); // two of {Ana, Cy, Dee}
 	const first = d.hostId() === hi.selfId && d.party.term === 1;
-	await crownBy(lo, kLo, [c]);
+	await crownBy(lo, rec1, lo === a ? [b] : [b, d]); // a quorum of {Ana, Bo, Cy, Dee}
 	check("a crown at term 1 is taken on its certificate", first, d.hostId());
-	check("…and a second certified crown at that term is still checked (against term 0): the lower id wins", d.hostId() === lo.selfId, `${d.hostId() === hi.selfId ? "hi" : d.hostId() === lo.selfId ? "lo" : d.hostId()} ${d.refusals.slice(-2).join()}`);
+	check("…and a second certified crown at that term is still checked (against term 0's records): the lower id wins", d.hostId() === lo.selfId, `${d.hostId() === hi.selfId ? "hi" : d.hostId() === lo.selfId ? "lo" : d.hostId()} ${d.refusals.slice(-2).join()}`);
 	for (const r of [h, a, b, c, d]) r.leave();
+}
+
+{
+	// A phone asleep through two changes of host takes the third holder's
+	// record: its certificate carries the record it was won from, and that
+	// record its own, back to the record the phone holds.
+	const [h, a, b, c, d, e] = await party(["Host", "Ana", "Bo", "Cy", "Dee", "Eve"], fullMesh(6), E);
+	e.__frozen = true;
+	h.leave();
+	await sleep(1500);
+	const one = crowns([a, b, c, d]);
+	const second = [a, b, c, d].find((r) => r.isHost());
+	second?.leave();
+	await sleep(1500);
+	const rest = [a, b, c, d].filter((r) => r !== second);
+	const third = rest.find((r) => r.isHost());
+	e.__frozen = false;
+	third?.setGame(null);
+	await sleep(150);
+	check("two crowns behind: a phone checks the chain back to its record and follows", !!third && third.party.term === 2 && e.hostId() === third.selfId && e.party.term === 2, `${one} → ${crowns(rest)}; eve sees term ${e.party.term} ${e.refusals.slice(-2).join()}`);
+	for (const r of [...rest, e]) r.leave();
+}
+
+{
+	// A newer record we cannot check is said, not followed in silence.
+	const [h, a, b] = await party(["Host", "Ana", "Bo"], fullMesh(3));
+	const said = [];
+	b.onError = (msg, info) => said.push(info?.reason);
+	a._send({ __p: { ...structuredClone(a.party), host: a.selfId, term: 7, rev: Date.now() + 9 }, f: a.selfId, t: null }, null);
+	a._send({ __p: { ...structuredClone(a.party), host: a.selfId, term: 8, rev: Date.now() + 10 }, f: a.selfId, t: null }, null);
+	await sleep(60);
+	check("a newer crown that cannot be checked: not followed, and said once (reload to rejoin)", b.hostId() === h.selfId && said.join() === "behind", said.join());
+	for (const r of [h, a, b]) r.leave();
+}
+
+{
+	// A fresh page trusts its first record — but one its deliverer wrote
+	// about itself only from the member its invite named.
+	const [h, mal] = await party(["Host", "Mal"], fullMesh(2));
+	const g = await bare({ name: "New" }, false);
+	const [toG, toMal] = linkPair(mal, g);
+	toMal.named = false; // a link the newcomer did not ask for
+	mal.links.set(g.selfId, toG);
+	g.links.set(mal.selfId, toMal);
+	mal._send({ __p: { ...structuredClone(mal.party), host: mal.selfId, term: 99, rev: Date.now() + 11 }, f: mal.selfId, t: g.selfId }, null);
+	await sleep(40);
+	check("a first record its deliverer wrote about itself, on a link nobody named: refused", g.hostId() === null && g.refusals.includes("a first record its deliverer wrote"), `${g.hostId()} ${g.refusals}`);
+	const [toG2, toH] = linkPair(h, g);
+	h.links.set(g.selfId, toG2);
+	g.links.set(h.selfId, toH);
+	h._commitParty();
+	await sleep(40);
+	check("…while the named member's own is taken", g.hostId() === h.selfId);
+	for (const r of [h, mal, g]) r.leave();
 }
 
 {

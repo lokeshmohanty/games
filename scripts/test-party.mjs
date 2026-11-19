@@ -1226,6 +1226,21 @@ try {
 		const other = await r2.evaluate(async () => (await NeonArcade.identity()).id);
 		check("a reload keeps the tab's id", before === after && /^[0-9a-z]{16}$/.test(before), `${before} / ${after}`);
 		check("…and a new tab of the same browser is another", other !== before, other);
+		// window.open and "duplicate tab" copy sessionStorage, key name and
+		// all: the key's Web Lock (held by r1) says it is not this tab's.
+		const [popup] = await Promise.all([sctx.waitForEvent("page"), r1.evaluate(() => void window.open(location.href))]);
+		await popup.waitForLoadState();
+		const copied = await popup.evaluate(() => sessionStorage.getItem("neon.key"));
+		const opened = await popup.evaluate(async () => (await NeonArcade.identity()).id);
+		check("a window.open'd tab (sessionStorage copied) is another player", copied === before && opened !== before && /^[0-9a-z]{16}$/.test(opened), `${copied === before} ${opened}`);
+		const dup = await sctx.newPage();
+		await dup.goto(SITE.url(""));
+		await dup.evaluate((id) => sessionStorage.setItem("neon.key", id), before);
+		await dup.reload();
+		const duplicated = await dup.evaluate(async () => (await NeonArcade.identity()).id);
+		check("…and so is a duplicated tab naming the same key", duplicated !== before && duplicated !== opened, duplicated);
+		const back = await r1.evaluate(async () => (await NeonArcade.identity()).id);
+		check("…while the first tab keeps its own", back === before, back);
 		await sctx.close();
 	}
 } catch (err) {

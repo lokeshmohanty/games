@@ -53,6 +53,30 @@ Traps found (each cost a debugging cycle):
   rejoin: a seat is reconnected only with its key. Draw keys until one sorts
   where you need it.
 
+Review 2026-11-19 (rejected 9cf8207; test-plumbing "who said it, reviewed"
+holds each proof of concept):
+- **Never take a certificate's word for its own key.** A member wrote
+  `gone|0|self|self` and was its own quorum. The key is rebuilt from the
+  vacated holder's signed record carried in the certificate (`rec`), which
+  must be one we hold or newer, or proven itself (that is also how a phone
+  two crowns behind catches up: the chain nests). Voters and checkers share
+  `voteKeyOf`.
+- **A signature without a party id replays across parties.** An old party's
+  `__x` closed a new one the same tab founded; a certificate won elsewhere
+  crowned its holder in a stranger's party. Every signed message carries
+  `pa` = the record's `pid`.
+- **The `seen` window is no defence**: 512 ids roll over in seconds at
+  30 Hz. Bind freshness to state: `__k`/`__gone` name the seat's `joined`,
+  `__x` the term, records `rev`, `pend` seats expire. Key `seen` by sender
+  and id, or a member pre-empts another's message by its id.
+- **A key anybody can make is not a member**: game traffic only from the
+  record's members. `pend` stops invented seats, not sybils with real keys.
+- **sessionStorage is copied** by duplicate-tab and window.open: hold a Web
+  Lock per key for the page's life; a reload waits briefly for its
+  predecessor to let go.
+- **An unattested crown** (the candidate's vote alone) is taken only by one
+  who no longer sees the old holder.
+
 Costs: see docs/index.md "Who said it" (Node and throttled Chromium).
 
 Related: [[split-party]], [[addressed-is-not-private]], [[bots-as-members]],
