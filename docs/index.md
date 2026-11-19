@@ -483,8 +483,9 @@ verified even on its sender's own link, because it is kept as proof.
   reloaded mid-vote must not grant twice. Established members ignore `fw`
   copies. **A first record is trusted**, since a fresh page has nothing to check it
   against. One that its deliverer wrote about itself (`{ host: <deliverer> }`)
-  is taken only over the link the invite or the room server's offer named
-  (`link.named`). Any other first record, the host's handed on by a member,
+  is taken only over a link to the member the newcomer meant to reach
+  (`link.named`): the inviter whose invite it answered, or the member the
+  room server named, whichever side offered. Any other first record, the host's handed on by a member,
   is taken on that member's word.
 - Games: a managed game's `v:m$act`/`v:m$in` now carry a proven seat; a
   guest cannot act as another seat or a bot. lib/bridge.js takes a web app's

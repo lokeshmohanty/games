@@ -1200,8 +1200,8 @@ try {
 		await heirPage.evaluate(() => window.__party.room.setName("Heir"));
 		const named = await Promise.all(rest.map((p) => p.waitForFunction((id) => window.__party.room.getMember(id)?.name === "Heir", proof.self, { timeout: TIMEOUT }).then(() => true, () => false)));
 		check("…and the new host's records are taken on that proof", named.every(Boolean));
-		const refusedAfter = await Promise.all(rest.map((p) => p.evaluate(() => window.__party.room.refused)));
-		check("…with nothing refused along the way", refusedAfter.every((n) => n === 0), refusedAfter.join());
+		const refusedAfter = await Promise.all(rest.map((p) => p.evaluate(() => window.__party.room.refusals)));
+		check("…with nothing refused along the way", refusedAfter.every((r) => r.length === 0), JSON.stringify(refusedAfter));
 
 		// A reply from a build before signed messages (a 10-character id):
 		// refused at once, and the screen says why.
