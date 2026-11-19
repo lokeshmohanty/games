@@ -360,7 +360,10 @@ Moved here from lib/README.md on 2026-11-15; net.js is the code.
   its owner is back.
 - **Big messages.** Anything over ~12 KB is chunked and reassembled, and sends
   pause when the channel's buffer fills, so per-frame broadcasts cannot grow it
-  without bound.
+  without bound. A part is `{ __c: <chunk id>, i, n, p }` and is told by that
+  whole shape (`fromWire`, at most 1024 parts), never by `__c` alone: the
+  election's request is `{ __c: <vote key>, … }`, and until 2026-11-18 every one
+  sent over a real link was taken for a part and dropped.
 - **STUN is the only outside contact** (`stun.cloudflare.com`,
   `stun.l.google.com`), used to discover each peer's public IP:port; it never
   sees game data. Pass `iceServers` to `createHost`/`createGuest` to override,
