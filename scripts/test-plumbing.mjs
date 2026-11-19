@@ -1581,5 +1581,138 @@ const idsDescending = async (n) => {
 	g.leave();
 }
 
+
+// ---------------------------------------------------------------------------
+console.log("\nwho said it, reviewed: certificates, replays, strangers");
+// The reviewer's proofs of concept (2026-11-19), each as the check that the
+// hole is closed.
+
+{
+	// POC1: Cy writes its own certificate — a vote key naming only itself —
+	// while the host is alive. Nobody may take it.
+	const [h, a, b, c, d] = await party(["Host", "Ana", "Bo", "Cy", "Dee"], fullMesh(5), { heirWaitMs: 60_000, lostRetryMs: [] });
+	const key = `${h.selfId}|0|${c.selfId}|${c.selfId}`;
+	const rec = structuredClone(wire.filter((w) => w.from === h.selfId && w.env.__p).at(-1).env);
+	c._send({ __p: { ...structuredClone(c.party), host: c.selfId, term: 1, rev: Date.now() + 5 }, f: c.selfId, t: null, cp: { v: "vote", key, acks: [] } }, null);
+	c._send({ __p: { ...structuredClone(c.party), host: c.selfId, term: 1, rev: Date.now() + 6 }, f: c.selfId, t: null, cp: { v: "vote", key, rec, acks: [] } }, null);
+	await sleep(80);
+	check("POC1: a member's self-written certificate crowns nobody (host alive)", [h, a, b, d].every((r) => r.hostId() === h.selfId), [h, a, b, d].map((r) => r.hostId() === h.selfId).join());
+	for (const r of [h, a, b, c, d]) r.leave();
+}
+
+{
+	// POC2: the host's old __k, replayed once Bo is back in the party (and
+	// the seen window has long rolled over), must not evict Bo again.
+	const [host, ana, bo] = await party(["Host", "Ana", "Bo"], fullMesh(3));
+	host.removeMember(bo.selfId);
+	await sleep(60);
+	const kick = structuredClone(wire.filter((w) => w.from === host.selfId && w.env.__k).at(-1).env);
+	await sleep(5);
+	const bo2 = await bare({ name: "Bo", identity: bo.identity }, false);
+	connect(host, bo2);
+	connect(ana, bo2);
+	host._addMember(bo2.selfId, "Bo");
+	host._commitParty();
+	await sleep(60);
+	for (const r of [host, ana, bo2]) {
+		r.seen.clear();
+		r.seenQueue.length = 0;
+	}
+	ana.links.get(bo2.selfId).send(kick);
+	await sleep(60);
+	check("POC2: an old __k replayed after Bo rejoined does not evict Bo", bo2.closed === false && !!ana.getMember(bo2.selfId), `closed=${bo2.closed}`);
+	for (const r of [host, ana, bo2]) r.leave();
+}
+
+{
+	// The same for a member's own old goodbye, replayed once it is back.
+	const [host, ana, bo] = await party(["Host", "Ana", "Bo"], fullMesh(3));
+	bo.leave();
+	await sleep(40);
+	const bye = structuredClone(wire.filter((w) => w.from === bo.selfId && w.env.__gone).at(-1).env);
+	await sleep(5);
+	const bo3 = await bare({ name: "Bo", identity: bo.identity }, false);
+	connect(host, bo3);
+	connect(ana, bo3);
+	host._addMember(bo3.selfId, "Bo");
+	host._commitParty();
+	await sleep(60);
+	for (const r of [host, ana]) {
+		r.seen.clear();
+		r.seenQueue.length = 0;
+	}
+	ana.links.get(host.selfId).send(bye);
+	await sleep(60);
+	check("POC2: nor does a member's own old goodbye, replayed once it is back", !!host.getMember(bo3.selfId), "dropped");
+	for (const r of [host, ana, bo3]) r.leave();
+}
+
+{
+	// POC3: a host's __x from an earlier party, replayed into a new party the
+	// same tab founded, must not close it.
+	const hid = await NeonArcade.identity({ fresh: true });
+	const [host, ana, bo] = await party(["Host", "Ana", "Bo"], fullMesh(3), { ids: [hid] });
+	host._send({ __x: 1, f: host.selfId, t: null }, null);
+	await sleep(60);
+	const x = structuredClone(wire.filter((w) => w.from === host.selfId && w.env.__x).at(-1).env);
+	for (const r of [host, ana, bo]) r.leave();
+	await sleep(20);
+	const [host2, ana2, cy2] = await party(["Host", "Ana", "Cy"], fullMesh(3), { ids: [hid, ana.identity] });
+	ana2.links.get(cy2.selfId).send(x);
+	ana2.links.get(host2.selfId).send(x);
+	await sleep(60);
+	check("POC3: an old party's __x does not close a new party", !cy2.closed && !host2.closed, `cy=${cy2.closed} host=${host2.closed}`);
+	for (const r of [host2, ana2, cy2]) r.leave();
+}
+
+{
+	// POC4: a real election certificate from one party, replayed into
+	// another party the same tabs are in, must not crown its holder there.
+	const [h, a, b, c] = await party(["Host", "Ana", "Bo", "Cy"], fullMesh(4), { heirWaitMs: 300, lostRetryMs: [] });
+	h.leave();
+	await sleep(2500);
+	const nh = [a, b, c].find((r) => r.isHost());
+	const rec = nh && structuredClone(wire.filter((w) => w.from === nh.selfId && w.env.__p && w.env.cp?.v === "vote").at(-1)?.env);
+	for (const r of [a, b, c]) r.leave();
+	await sleep(20);
+	const F = await NeonArcade.identity({ fresh: true });
+	const rooms = await party(["F", "Ana", "Bo", "Cy"], fullMesh(4), { ids: [F, a.identity, b.identity, c.identity] });
+	const mal = rooms.find((r) => r.selfId !== nh?.selfId && r.selfId !== F.id);
+	if (rec) for (const r of rooms) if (r !== mal) mal.links.get(r.selfId).send(structuredClone(rec));
+	await sleep(100);
+	check("POC4: a certificate from another party crowns nobody here", !!rec && rooms.every((r) => r.hostId() === F.id), `${!!rec} ${rooms.map((r) => r.hostId() === F.id).join()}`);
+	for (const r of rooms) r.leave();
+}
+
+{
+	// POC5: a member sends its own message under the id the host's will
+	// carry; the host's must still be heard.
+	const [host, ana, bo] = await party(["Host", "Ana", "Bo"], fullMesh(3));
+	const got = [];
+	bo.makeAction("chat").onMessage = (d, { peerId }) => got.push([d, peerId]);
+	ana.links.get(bo.selfId).send({ a: "chat", d: "ana junk", f: ana.selfId, t: null, id: "victimid", h: 2, m: null });
+	await sleep(20);
+	host.links.get(bo.selfId).send({ a: "chat", d: "host real", f: host.selfId, t: null, id: "victimid", h: 2, m: null });
+	await sleep(30);
+	check("POC5: a member cannot pre-empt another's message by its id", got.some(([d]) => d === "host real"), JSON.stringify(got));
+	for (const r of [host, ana, bo]) r.leave();
+}
+
+{
+	// POC6: a signed message from an id that is not in the party, carried
+	// in by a member, must not reach the game.
+	const [host, ana] = await party(["Host", "Ana"], fullMesh(2));
+	const st = await NeonArcade.identity({ fresh: true });
+	const got = [];
+	host.makeAction("chat").onMessage = (d, { peerId }) => got.push(peerId);
+	const env = { a: "chat", d: "hi", f: st.id, t: host.selfId, id: "syb1", h: 2, p: host.party.pid };
+	env.k = st.pub;
+	env.s = await st.sign(NeonArcade._codec.signedText(env));
+	ana.links.get(host.selfId).send(env);
+	await sleep(40);
+	check("POC6: a stranger's signed game message is refused", !got.includes(st.id), got.join());
+	for (const r of [host, ana]) r.leave();
+}
+
 console.log(failures ? `\n${failures} failing\n` : "\nall passing\n");
 process.exit(failures ? 1 : 0);
