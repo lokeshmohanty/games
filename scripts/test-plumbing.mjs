@@ -2038,5 +2038,140 @@ for (const how of ["handover", "election"]) {
 	for (const r of [h, a, b]) r.leave();
 }
 
+
+// ---------------------------------------------------------------------------
+console.log("\nwho said it, round 4: a crown the electorate can still see");
+// Lokesh, 2026-11-20, "Refuse it": a phone never accepts that a host has
+// left while it is that host or still holds a live link to it — for every
+// vote certificate, as an honest voter refuses to grant.
+
+for (const tab of [false, true]) {
+	// G3: P is the live host of P, Cy, D, H (full mesh). Cy sends a certificate
+	// on P's latest record with D's real ack — D a second member, or Cy's own
+	// extra room — and P and H used to follow Cy.
+	const ids = await idsDescending(4);
+	const [p, c, d, h] = await party(["P", "Cy", tab ? "Cy-tab" : "D", "H"], fullMesh(4), { ids: [ids[0], ids[3], ids[2], ids[1]], heirWaitMs: 60_000, lostRetryMs: [] });
+	const pRec = stripEnv(wire.filter((w) => w.from === p.selfId && w.env.__p && w.env.__p.host === p.selfId).at(-1).env);
+	const pid = c.party.pid;
+	const key = NeonArcade._codec.voteKeyOf(pRec.__p.members, 0, p.selfId);
+	const dAck = stripEnv(await signAs(d.identity, { __ka: key, r: 1, n: c.selfId, f: d.selfId, t: null, id: nid() }, pid));
+	const R = await signAs(c.identity, { __p: { ...structuredClone(c.party), host: c.selfId, term: 1, rev: Date.now() + 999 }, f: c.selfId, t: null, id: nid(), cp: { v: "vote", key, rec: pRec, acks: [dAck] } }, pid);
+	for (const r of [p, h]) c.links.get(r.selfId).send({ ...R, h: 0, m: null });
+	await sleep(150);
+	check(`G3 (${tab ? "one member and an extra room" : "two members"}): an attested certificate does not depose a host its electorate still sees`, p.isHost() && h.hostId() === p.selfId, `p host=${p.isHost()} h sees ${h.hostId() === c.selfId ? "Cy" : "P"}`);
+	check("…and the old host's side is a party, not a hang: P hosts, H follows it, the record held back for later", !p.lost && !h.lost && !!h.unseen && h.party.term === 0, `lost=${p.lost},${h.lost} unseen=${!!h.unseen} term=${h.party.term}`);
+	for (const r of [p, c, d, h]) r.leave();
+}
+
+{
+	// …while an honest election — the host really gone, its links closing
+	// a little apart (a member still linked vouches for it meanwhile) —
+	// still converges, and quickly.
+	const [h, a, b, c] = await party(["Host", "Ana", "Bo", "Cy"], fullMesh(4), { heirWaitMs: 1000, lostRetryMs: [] });
+	h.__mute = true;
+	h.__deaf = true;
+	for (const r of [a, b]) r._linkClosed(r.links.get(h.selfId));
+	await sleep(1200);
+	c._linkClosed(c.links.get(h.selfId));
+	const t0 = Date.now();
+	while (Date.now() - t0 < 15000 && !(crowns([a, b, c]) === "Ana" && [b, c].every((r) => r.hostId() === a.selfId))) await sleep(100);
+	const ms = Date.now() - t0;
+	check("an honest election converges, links closing a little apart (in seconds)", crowns([a, b, c]) === "Ana" && [b, c].every((r) => r.hostId() === a.selfId) && ms < 8000, `${crowns([a, b, c]) || "none"} after ${ms} ms`);
+	for (const r of [h, a, b, c]) r.leave();
+}
+
+for (const n of [4, 5]) {
+	// G / G2: P hands the crown to H and leaves; Cy and D (with Cy the
+	// tie-break heir) write an election on P's record for the same term.
+	const ids = await idsDescending(n);
+	const names = n === 4 ? ["P", "Cy", "D", "H"] : ["P", "Cy", "D", "E", "H"];
+	const order = n === 4 ? [ids[0], ids[3], ids[2], ids[1]] : [ids[0], ids[4], ids[3], ids[2], ids[1]];
+	const rooms = await party(names, fullMesh(n), { ids: order, heirWaitMs: 60_000, lostRetryMs: [] });
+	const [p, c, d] = rooms;
+	const h = rooms.at(-1);
+	const pRec = stripEnv(wire.filter((w) => w.from === p.selfId && w.env.__p && w.env.__p.host === p.selfId).at(-1).env);
+	p.transferHost(h.selfId);
+	await sleep(150);
+	p.leave();
+	await sleep(200);
+	const pid = c.party.pid;
+	const key = NeonArcade._codec.voteKeyOf(pRec.__p.members, 0, p.selfId);
+	const dAck = stripEnv(await signAs(d.identity, { __ka: key, r: 1, n: c.selfId, f: d.selfId, t: null, id: nid() }, pid));
+	const R = await signAs(c.identity, { __p: { ...structuredClone(c.party), host: c.selfId, term: 1, rev: Date.now() + 999 }, f: c.selfId, t: null, id: nid(), cp: { v: "vote", key, rec: pRec, acks: [dAck] } }, pid);
+	for (const r of rooms.slice(3)) c.links.get(r.selfId).send({ ...R, h: 0, m: null });
+	await sleep(150);
+	check(`G${n === 5 ? "2" : ""}: an election on a holder's record at the term it handed over at is refused (${n - 1} humans)`, rooms.slice(3).every((r) => r.hostId() === h.selfId), rooms.slice(3).map((r) => (r.hostId() === h.selfId ? "H" : "Cy")).join());
+	for (const r of rooms.slice(1)) r.leave();
+}
+
+{
+	// The honest race: P hands the crown to H and crashes; Vi missed the
+	// hand-over, and took X's election for the same term first. When H's
+	// record reaches Vi, the hand-over wins, whatever the ids.
+	const ids = await idsDescending(5);
+	// P highest; X below H, so the lower id would keep X.
+	const [p, h, x, a, v] = await party(["P", "H", "X", "Ana", "Vi"], fullMesh(5), { ids: [ids[0], ids[2], ids[4], ids[1], ids[3]], heirWaitMs: 60_000, lostRetryMs: [] });
+	const pRec = stripEnv(wire.filter((w) => w.from === p.selfId && w.env.__p && w.env.__p.host === p.selfId).at(-1).env);
+	v.__deaf = true;
+	p.transferHost(h.selfId);
+	await sleep(150);
+	const hRec = structuredClone(wire.filter((w) => w.from === h.selfId && w.env.__p && w.env.__p.host === h.selfId && w.env.__p.term === 1).at(-1)?.env);
+	p.detach();
+	v.__deaf = false;
+	v._linkClosed(v.links.get(p.selfId));
+	const pid = v.party.pid;
+	const key = NeonArcade._codec.voteKeyOf(pRec.__p.members, 0, p.selfId);
+	const acks = [];
+	for (const voter of [a, v]) acks.push(stripEnv(await signAs(voter.identity, { __ka: key, r: 1, n: x.selfId, f: voter.selfId, t: null, id: nid() }, pid)));
+	const X = await signAs(x.identity, { __p: { ...structuredClone(pRec.__p), host: x.selfId, term: 1, rev: Date.now() + 5 }, f: x.selfId, t: null, id: nid(), cp: { v: "vote", key, rec: pRec, acks } }, pid);
+	x.links.get(v.selfId).send({ ...X, h: 0, m: null });
+	await sleep(80);
+	const tookX = v.hostId() === x.selfId;
+	h.links.get(v.selfId).send({ ...hRec, h: 0, m: null });
+	await sleep(80);
+	check("a crown that came by hand-over outranks an elected one at the same term (the honest race converges on it)", !!hRec && tookX && v.hostId() === h.selfId, `hRec=${!!hRec} tookX=${tookX} vi sees ${v.hostId() === h.selfId ? "H" : v.hostId() === x.selfId ? "X" : v.hostId()}`);
+	for (const r of [h, x, a, v]) r.leave();
+}
+
+{
+	// G4: Cy's extra seat joins, is seated, and leaves; a certificate on an
+	// older record of P's (still held, and a superset) counts its ack. Only
+	// acks from humans of the latest record we hold count now. H's link to P
+	// is gone, so this is about the count, not about seeing P.
+	const ids = await idsDescending(5);
+	const [p, c, x, h, s] = await party(["P", "Cy", "X", "H", "Cy-tab"], fullMesh(5), { ids: [ids[0], ids[4], ids[2], ids[1], ids[3]], heirWaitMs: 60_000, lostRetryMs: [] });
+	const withTab = stripEnv(wire.filter((w) => w.from === p.selfId && w.env.__p && w.env.__p.host === p.selfId && w.env.__p.members.some((m) => m.id === s.selfId)).at(-1).env);
+	s.leave();
+	await sleep(100);
+	const gone = !h.party.members.some((m) => m.id === s.selfId);
+	h._linkClosed(h.links.get(p.selfId));
+	const pid = c.party.pid;
+	const key = NeonArcade._codec.voteKeyOf(withTab.__p.members, 0, p.selfId);
+	const sAck = stripEnv(await signAs(s.identity, { __ka: key, r: 1, n: c.selfId, f: s.selfId, t: null, id: nid() }, pid));
+	const R = await signAs(c.identity, { __p: { ...structuredClone(c.party), host: c.selfId, term: 1, rev: Date.now() + 999 }, f: c.selfId, t: null, id: nid(), cp: { v: "vote", key, rec: withTab, acks: [sAck] } }, pid);
+	c.links.get(h.selfId).send({ ...R, h: 0, m: null });
+	await sleep(100);
+	check("G4: on an older record, a departed seat's ack is not counted", gone && h.hostId() === p.selfId, `gone=${gone} h sees ${h.hostId() === c.selfId ? "Cy" : "P"} ${h.refusals.slice(-1)}`);
+	for (const r of [p, c, x, h]) r.leave();
+}
+
+{
+	// A newcomer's first record that was won by its holder's vote alone is
+	// known as such (no acks in its certificate).
+	const [h, c] = await party(["Host", "Cy"], fullMesh(2));
+	const g = await bare({ name: "New" }, false);
+	const [toG, toC] = linkPair(c, g);
+	c.links.set(g.selfId, toG);
+	g.links.set(c.selfId, toC);
+	const pid = c.party.pid;
+	const key = `${h.selfId}|0|${c.selfId}|${c.selfId}`;
+	const rec = stripEnv(c.hostEnv);
+	const R = await signAs(c.identity, { __p: { ...structuredClone(c.party), host: c.selfId, term: 1, rev: Date.now() + 9 }, f: c.selfId, t: g.selfId, id: nid(), cp: { v: "vote", key, rec, acks: [] } }, pid);
+	toG.send({ ...R, h: 0, m: null });
+	await sleep(40);
+	check("a newcomer's first-record crown with no acks is known to be lone", g.hostId() === c.selfId && g.crownKind === "alone", `${g.hostId() === c.selfId} ${g.crownKind}`);
+	for (const r of [h, c, g]) r.leave();
+}
+
 console.log(failures ? `\n${failures} failing\n` : "\nall passing\n");
 process.exit(failures ? 1 : 0);
