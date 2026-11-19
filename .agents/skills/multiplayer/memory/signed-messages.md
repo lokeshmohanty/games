@@ -98,6 +98,18 @@ the vacated holder" check and won the term on the lower id. A lone vote is
 refused against an anchor at that term or a hand-over by the holder it calls
 vacated, and an attested crown outranks a lone one at one term.
 
+**Lokesh (2026-11-20), round 4: "Refuse it".** A phone never accepts that a
+host has left while it is that host or still holds a live link to it — for
+every election certificate, at every depth — as an honest voter refuses to
+grant. *Why:* a crown counts keys with real links, and one member can add a
+key cheaply (an extra tab or in-page room); two keys deposed a live host
+in a full mesh. Accepted cost: a real partial split with the host alive
+stays two working parties until the broken links are noticed. Also: no
+election at a term its holder handed over at (`handovers`); at one term a
+hand-over outranks an election, and that a lone vote; on an older record,
+only acks from humans still in the latest count. What remains, by design:
+real keys win a real vacancy, never a host its electorate can see.
+
 Costs: see docs/index.md "Who said it" (Node and throttled Chromium).
 
 Related: [[split-party]], [[addressed-is-not-private]], [[bots-as-members]],

@@ -1481,6 +1481,9 @@ const idsDescending = async (n) => {
 		cand.links.get(d.selfId).send(env);
 		await sleep(40);
 	};
+	// Dee no longer sees the host (Lokesh, 2026-11-20: a phone never takes an
+	// election on a holder it still sees).
+	d._linkClosed(d.links.get(h.selfId));
 	const rec1 = recOf(); // Host, Ana, Bo, Cy, Dee
 	// Made-up voters: a key naming ids nobody in the record holds.
 	const strangers = await Promise.all([1, 2, 3].map(() => NeonArcade.identity({ fresh: true })));
@@ -1497,7 +1500,9 @@ const idsDescending = async (n) => {
 	const [lo, hi] = a.selfId < c.selfId ? [a, c] : [c, a];
 	await crownBy(hi, rec2, [d]); // two of {Ana, Cy, Dee}
 	const first = d.hostId() === hi.selfId && d.party.term === 1;
-	await crownBy(lo, rec1, lo === a ? [b] : [b, d]); // a quorum of {Ana, Bo, Cy, Dee}
+	// A quorum of {Ana, Bo, Cy, Dee} from humans still in the latest record
+	// (Bo, dropped since, would not count: round 4).
+	await crownBy(lo, rec1, lo === a ? [d] : [d, a]);
 	check("a crown at term 1 is taken on its certificate", first, d.hostId());
 	check("…and a second certified crown at that term is still checked (against term 0's records): the lower id wins", d.hostId() === lo.selfId, `${d.hostId() === hi.selfId ? "hi" : d.hostId() === lo.selfId ? "lo" : d.hostId()} ${d.refusals.slice(-2).join()}`);
 	for (const r of [h, a, b, c, d]) r.leave();
@@ -1518,6 +1523,8 @@ const idsDescending = async (n) => {
 	const rest = [a, b, c, d].filter((r) => r !== second);
 	const third = rest.find((r) => r.isHost());
 	e.__frozen = false;
+	// Asleep, its links to the two who left have died meanwhile.
+	for (const gone of [h, second]) if (gone && e.links.has(gone.selfId)) e._linkClosed(e.links.get(gone.selfId));
 	third?.setGame(null);
 	await sleep(150);
 	check("two crowns behind: a phone checks the chain back to its record and follows", !!third && third.party.term === 2 && e.hostId() === third.selfId && e.party.term === 2, `${one} → ${crowns(rest)}; eve sees term ${e.party.term} ${e.refusals.slice(-2).join()}`);

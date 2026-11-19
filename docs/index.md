@@ -468,20 +468,45 @@ verified even on its sender's own link, because it is kept as proof.
   junk or forged record is refused quietly, or any member could make
   everyone reload.
 
-  **A crown won by the candidate's own vote alone** (it is half the humans
-  and the tie-break heir) is attested by nobody else. It is taken only by a
-  member that sees the vacancy too: not the holder said to have left, and
-  not while we still hold a live link to it. Otherwise it is held back
-  (`unseen`) and checked again when that link goes, closed or dropped with
-  its seat. The rule holds at every depth of a proof, not only at its top.
+  **A phone never accepts that a holder has left while it is that holder,
+  or still holds a live link to it** (Lokesh, 2026-11-20: "Refuse it").
+  This applies to every election certificate, at every depth of a proof,
+  exactly as an honest voter refuses to grant. Such a certificate is held
+  back (`unseen`) and checked again when that link goes, closed or dropped
+  with its seat. Before this, two members, or one member with an extra room
+  in its page, signed a quorum and deposed a host its whole electorate could
+  still see (round 4).
+  - **The accepted cost.** In a real partial split with the host alive, the
+    host's side and the elected side stay two parties until their broken
+    links are noticed. The host's side is a working party meanwhile: its host
+    hosts and its members follow it, not a hang.
+  - **An honest election is not slowed by it.** A member still linked to a
+    host that really died vouches for it until its own link closes, which
+    already held the vacancy back. When the link closes, the held crown is
+    taken.
 
-  Such a lone vote also never displaces a crown we hold at that term, nor
-  one handed on by the holder it calls vacated (that holder handed over; it
-  left no vacancy). Once a departed host had really gone, a lone vote on its
-  last record took the term from the live holder on the lower id (round 3,
-  2026-11-20). Where two crowns meet at one term, one that others attested
-  outranks one won alone, whatever the ids. Only between two attested
-  crowns, or two lone ones, does the lower id still decide.
+  **A holder that handed the crown over left no vacancy.** No election on its
+  record counts for the term it handed over at (`handovers`, learnt from the
+  hand-over record and from any proof carrying it).
+
+  **Where two crowns meet at one term**, how each came decides it, whatever
+  the ids: a hand-over outranks an election others attested, and that
+  outranks one won by the candidate's vote alone. So the honest race — a
+  hand-over, a crash, and an election on the far side — settles on the
+  hand-over. Only between two crowns that came the same way does the lower id
+  decide. A crown won by its holder's vote alone (half the humans, and the
+  tie-break heir) also never displaces a crown we hold at that term (round 3).
+
+  **On an older record of the vacated holder's** than the latest we hold (one
+  of the last 8, and a superset of the latest's humans), only acks from
+  humans still in the latest count. The older record's humans stay the
+  denominator, so the quorum only gets stricter. A seat that joined, was
+  counted, and left had voted on.
+
+  **What remains.** A quorum of real keys can still win a real vacancy. It
+  cannot depose a host its electorate can still see. A member with extra real
+  connections, in tabs or in-page rooms each with its own key and links, has
+  extra votes in a genuine vacancy.
 
   Without this, "a higher term wins" let any member crown itself by signing a
   record. From the holder already known, only a newer record (`rev`, which
@@ -850,11 +875,14 @@ sender ([Who said it](#who-said-it-signed-party-messages)). A relay can drop a
 grant, a commit, an acknowledgement or a release, never write one. A crown
 won by election is shown with every record its holder publishes, as the
 quorum of signed acknowledgements, so a member cannot crown itself with a
-higher term. What remains is a malicious *voter*: one that acknowledges two
-candidates for one key can help make two certificates. The quorum
-intersection assumes each member acknowledges at most one, which an honest
-client does (`committed`). Ids a member makes up never count (`pend`); keys
-a member really holds, in tabs it really runs, are members.
+higher term. No phone takes an election on a holder it still sees, or is
+(Lokesh, 2026-11-20). What remains:
+- **A malicious *voter***: one that acknowledges two candidates for one key
+  can help make two certificates. The quorum intersection assumes each
+  member acknowledges at most one, which an honest client does (`committed`).
+- **Real keys are votes.** Ids a member makes up never count (`pend`), but
+  keys a member really holds, with real links, are members — in tabs it
+  really runs, or rooms in its own page. In a genuine vacancy they vote.
 
 A narrowing, which took election messages only over the sender's own link,
 was dropped: it lost them on a half-dead link (and before signing it never
@@ -1524,12 +1552,20 @@ the icon for exactly this reason. `test-pwa` now parses the file.
     it. Those whose chain is cut short, signed by members they seat, are told
     to reload (reason `behind`) rather than left split; a junk record is
     refused quietly.
-  - **A crown won by the candidate's own vote** (two humans left, or two and
-    the tie-break) is unattested. It is refused by the holder said to have
-    left and by anyone still linked to it, so a member cannot crown itself
-    over a live host in a full mesh. A member with no link to that host takes
-    it, as it would a real one. Where the host *was* alive (a partition), the
-    two sides do not converge on their own until the link closes.
+  - **No election deposes a host its electorate still sees** (Lokesh,
+    2026-11-20). The holder said to have left, and anyone still linked to it,
+    refuse every election certificate on it, attested or not. A member with
+    no link to that host takes the certificate, as it would a real one: in a
+    relay layout, those behind the relay (A2, above). Before this rule, an
+    attested certificate from two colluding members, or from one member with
+    an extra room, deposed a live host even in a full mesh.
+  - **The cost of that rule.** Where the host *was* alive (a partition), the
+    host's side and the elected side stay two parties until the broken links
+    are noticed. Each is a working party meanwhile.
+  - **Extra connections are extra votes in a real vacancy.** A quorum of
+    real keys can win a genuine vacancy. A member with extra real
+    connections has that many votes there, though it cannot depose a host
+    its electorate can see.
   - Tested over the fake transport (every class) and real links (test-party's
     four-tab election, test-nat's relayed scenario). No hostile client has
     been run against a real party.
