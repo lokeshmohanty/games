@@ -358,6 +358,43 @@ try {
 			check("…a code the party will not take in place: one entry, so Back is the portal", back === "portal", { back, url: sp.url() });
 			await sc.close();
 		}
+		// The code of a party that has ended for you (removed by its host),
+		// typed with that party still mounted (re-review, 2026-11-19: the
+		// guard took it for the party you are in, no join ran, and the
+		// dialog waited on JOINING… for ever). A dead room server for the
+		// fresh page the join loads, not the deployed one.
+		{
+			const sc = await browser.newContext({ viewport: { width: w, height: h }, hasTouch: true, isMobile: true });
+			await sc.addInitScript(() => localStorage.setItem("neon.rs", "http://127.0.0.1:9"));
+			await sc.route("**/api/stats/summary", (r) => r.abort());
+			const sp = await sc.newPage();
+			await sp.goto(site.url("index.html?mockroom=1"));
+			await sp.locator(".join-code-btn").waitFor({ timeout: TIMEOUT });
+			const x = await sp.evaluate(async () => {
+				const made = await NeonArcade.hostRoom({ name: "Host" });
+				window.__hostMade = made;
+				localStorage.removeItem("neon.room");
+				return made.code;
+			});
+			await sp.locator(".join-code-btn").tap();
+			await sp.locator("#join-code-field").fill(x);
+			await sp.keyboard.press("Enter");
+			const joined = await settled(() => state(sp), (s) => s.members === 2 && !s.dialog, TIMEOUT);
+			await sp.evaluate(() => window.__hostMade.room.removeMember(window.__party.room.selfId));
+			const removed = await sp
+				.waitForFunction(() => /You were removed from the party/.test(document.querySelector("#party .lobby-sub")?.textContent ?? ""), null, { timeout: TIMEOUT })
+				.then(() => true, () => false);
+			await sp.locator("a.portal-link").click();
+			await sp.waitForFunction(() => document.body.dataset.view === "portal", null, { timeout: TIMEOUT });
+			await sp.locator(".join-code-btn").tap();
+			await sp.locator("#join-code-field").fill(x);
+			await sp.keyboard.press("Enter");
+			const stuck = () => sp.evaluate(() => !!document.querySelector("dialog.join-code button[type=submit]:disabled")).catch(() => false);
+			await sp.waitForTimeout(6000);
+			const after = { stuck: await stuck(), url: sp.url(), view: await sp.evaluate(() => document.body.dataset.view).catch(() => null), asked: await sp.locator("dialog.neon-ask[open]").count().catch(() => 0) };
+			check("an ended party's code (you were removed), typed again: a join runs, and the dialog is never left on JOINING…", joined.members === 2 && removed && !after.stuck && !after.asked && after.view === "party", { joined, removed, ...after });
+			await sc.close();
+		}
 		// The code of the party you are in (review, 2026-11-19: it asked
 		// "Leave this party for another?"): shown, never asked.
 		{
@@ -712,6 +749,16 @@ try {
 	await p.locator('[data-section="popular"] .game-card[data-game="connect4"]').click({ position: { x: 6, y: 6 } });
 	await p.waitForFunction(() => document.body.dataset.view === "party", null, { timeout: 5000 }).catch(() => {});
 	check("…and a press outside that became a scroll leaves the next tap alone (it opens the game)", quickStart(p.url(), "connect4"), p.url());
+	// A right-click outside sends no click: it closes the menu and the
+	// next real click is not eaten (re-review, 2026-11-19).
+	await p.goto(site.url(ALL));
+	await p.locator("[data-nav] .site-menu-list").waitFor({ state: "attached", timeout: TIMEOUT });
+	await p.waitForSelector(".game-card:visible");
+	await p.locator("[data-nav] .site-menu-btn").click();
+	await p.mouse.click(30, 700, { button: "right" });
+	await p.locator('[data-section="popular"] .game-card[data-game="connect4"]').click({ position: { x: 6, y: 6 } });
+	await p.waitForFunction(() => document.body.dataset.view === "party", null, { timeout: 5000 }).catch(() => {});
+	check("…a right-click outside closes it and leaves the next click alone (it opens the game)", (await p.evaluate(() => document.querySelector(".site-menu-list")?.hidden !== false)) && quickStart(p.url(), "connect4"), p.url());
 	await p.goto(site.url("index.html"));
 	await p.locator("[data-nav] .site-menu-list").waitFor({ state: "attached", timeout: TIMEOUT });
 	await p.locator(".site-tab", { hasText: "Community" }).click();

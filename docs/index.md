@@ -170,7 +170,9 @@ fixed 2026-11-19, branch `phone-shell`)**, asserted with computed sizes
   while a join is still meeting the party leaves you on the party screen,
   which says so; a join that ends while another view shows leaves that
   view's address alone. The code of the party you are already in shows that
-  party, never "Leave this party for another?" (src/App.tsx's guard).
+  party, never "Leave this party for another?" (src/App.tsx's guard) —
+  while it is live: the code of one that ended for you (removed, closed) is
+  a new join, so the dialog always gets its answer.
 - **A card took two taps** — one opens the game now (above).
 - **Firefox with the phone's text larger** (Firefox for Android applies the
   system font size as text zoom, px included): the in-game top buttons ran
