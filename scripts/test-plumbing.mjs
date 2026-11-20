@@ -2180,5 +2180,115 @@ for (const n of [4, 5]) {
 	for (const r of [h, c, g]) r.leave();
 }
 
+
+// ---------------------------------------------------------------------------
+console.log("\nwho said it, round 5: seeing a holder is not the same as its key being here");
+
+for (const size of [4, 6]) {
+	// K: P vanishes (a reload; its key lives on), Ana is elected, live and
+	// attested. P then signs, offline, a hand-over at term 1 to the last seat
+	// of its record (a colluder, or P's own extra room), who republishes it.
+	const names = ["P", "Ana", "Bo", "Cy", "Dee", "Eve"].slice(0, size);
+	const rooms = await party(names, fullMesh(size), { heirWaitMs: 300, lostRetryMs: [] });
+	const p = rooms[0];
+	const x = rooms.at(-1);
+	const rest = rooms.slice(1, -1);
+	const pid = p.party.pid;
+	p.__frozen = true;
+	p.detach();
+	for (const r of [x, ...rest]) {
+		const l = r.links.get(p.selfId);
+		if (l) r._linkClosed(l);
+	}
+	await sleep(DEPARTURE + 1500);
+	const elected = [x, ...rest].find((r) => r.isHost());
+	const setup = !!elected && elected !== x && elected.party.term === 1;
+	const handEnv = await signAs(p.identity, { __p: { ...structuredClone(x.party), host: x.selfId, term: 1, rev: Date.now() + 5 }, f: p.selfId, t: null, id: nid() }, pid);
+	const R = await signAs(x.identity, { __p: { ...structuredClone(x.party), host: x.selfId, term: 1, rev: Date.now() + 9 }, f: x.selfId, t: null, id: nid(), cp: { v: "hand", env: stripEnv(handEnv) } }, pid);
+	for (const r of rest) x.links.get(r.selfId)?.send({ ...R, h: 0, m: null });
+	await sleep(300);
+	check(`K (${size}): a vanished host's offline hand-over does not take back a crown elected on its vacancy`, setup && rest.every((r) => r.hostId() === elected.selfId), `setup=${setup} ${rest.map((r) => (r.hostId() === x.selfId ? "X" : "ok")).join()}`);
+	for (const r of rooms) r.leave();
+}
+
+for (const variant of ["linked first", "linked first, then a hand-over"]) {
+	// R: the host reloads (same id) and the party elects Ana while Mo sleeps.
+	// Mo wakes, its old link to the host dead, and the reloaded host's new
+	// link opens to Mo before the new crown's record reaches it.
+	const [h, a, b, m] = await party(["Host", "Ana", "Bo", "Mo"], fullMesh(4), { heirWaitMs: 300, lostRetryMs: [] });
+	m.__frozen = true;
+	const h2 = await bare({ name: "Host", identity: h.identity, heirWaitMs: 300 }, false);
+	h.detach();
+	for (const r of [a, b]) {
+		const l = r.links.get(h.selfId);
+		if (l) r._linkClosed(l);
+	}
+	await sleep(DEPARTURE + 1500);
+	const newHost = [a, b].find((r) => r.isHost());
+	if (newHost) {
+		const [x, y] = linkPair(newHost, h2);
+		x.introducedName = "Host";
+		y.introducedName = newHost.self().name;
+		newHost._linkOpened(x);
+		h2._linkOpened(y);
+	}
+	await sleep(300);
+	if (variant.includes("hand-over") && newHost) {
+		newHost.transferHost((newHost === a ? b : a).selfId);
+		await sleep(300);
+	}
+	const holder = [a, b].find((r) => r.isHost());
+	m.__frozen = false;
+	const l = m.links.get(h.selfId);
+	if (l) m._linkClosed(l);
+	const [x, y] = linkPair(h2, m);
+	x.introducedName = "Mo";
+	y.introducedName = "Host";
+	h2._linkOpened(x);
+	m._linkOpened(y);
+	await sleep(100);
+	holder?._commitParty();
+	await sleep(1500);
+	holder?._commitParty();
+	await sleep(300);
+	check(`R (${variant}): a phone linked anew to the reloaded old host still follows the crown`, !!holder && m.hostId() === holder.selfId, `Mo sees ${m.hostId() === h.selfId ? "the old host" : m.hostId()} unseen=${!!m.unseen}`);
+	for (const r of [h2, a, b, m]) r.leave();
+}
+
+{
+	// S: a true partition {P, Dee} | {Ana, Bo, Cy} with P alive; the big side
+	// elects. When it heals, the party must become one again.
+	const rooms = await party(["P", "Ana", "Bo", "Cy", "Dee"], fullMesh(5), { heirWaitMs: 300, lostRetryMs: [] });
+	const [p, a, b, c, d] = rooms;
+	const big = [a, b, c];
+	const small = [p, d];
+	for (const x of big) {
+		for (const y of small) {
+			const l = x.links.get(y.selfId);
+			if (l) x._linkClosed(l);
+			const k = y.links.get(x.selfId);
+			if (k) y._linkClosed(k);
+		}
+	}
+	await sleep(DEPARTURE * 2 + 2500);
+	const during = `${hosts(big)}|${hosts(small)}`;
+	for (const x of big) {
+		for (const y of small) {
+			const [l1, l2] = linkPair(x, y);
+			l1.introducedName = y.self().name;
+			l2.introducedName = x.self().name;
+			x._linkOpened(l1);
+			y._linkOpened(l2);
+		}
+	}
+	await sleep(300);
+	for (const r of rooms) if (r.isHost()) r._commitParty();
+	await sleep(1500);
+	for (const r of rooms) if (r.isHost()) r._commitParty();
+	await sleep(300);
+	check("S: a healed partition becomes one party: the old host steps down and follows the elected one, and so do its members", during === "Ana|P" && hosts(rooms) === "Ana" && [p, d].every((r) => r.hostId() === a.selfId), `during ${during}; after ${hosts(rooms)}`);
+	for (const r of rooms) r.leave();
+}
+
 console.log(failures ? `\n${failures} failing\n` : "\nall passing\n");
 process.exit(failures ? 1 : 0);
