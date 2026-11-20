@@ -176,30 +176,105 @@ export async function passTable(page, timeout = 30_000) {
  * (never from the stylesheet). Returns what falls short — `{ taps, text }`,
  * each entry `[class, text, …sizes]` — and how many of each were measured.
  * A hidden or see-through (opacity 0) element is not on screen.
+ *
+ * Options, for a whole game frame (scripts/test-taps.mjs):
+ *
+ *   - `hit: true` — the targets as a thumb meets them. Also the outermost
+ *     element that says `cursor: pointer` (a `<div onclick>` swatch is a
+ *     target too); not one that is disabled, inert or covered (what is under
+ *     its centre is not it: under an overlay, it is not a target now). Each
+ *     is measured twice: its box, and its **hit area** — how far a tap from
+ *     its centre still lands on it (elementFromPoint, a pixel at a time, to
+ *     40px past the box), which counts padding or a ::before that widens it
+ *     and anything on top that narrows it. A tap entry is then
+ *     `[class, text, w, h, hitW, hitH]`, and one off the screen or starting
+ *     under `band` (the shell's top band, 52px) falls short too, with `why`.
+ *   - `exempt: [{ sel, tap?, text?, why }]` — inside `sel`, that floor
+ *     instead. What was held to one is listed in `allowed` (`[sel, why]`),
+ *     so an exemption is a reason someone can read, not a hole.
  */
-export function phoneFloors(page, roots) {
-	return page.evaluate((roots) => {
-		const shown = (n) => {
-			if (!n.getClientRects().length) return false;
-			for (let e = n; e; e = e.parentElement) {
-				const s = getComputedStyle(e);
-				if (s.visibility === "hidden" || s.opacity === "0") return false;
+export function phoneFloors(page, roots, { hit = false, exempt = [], band = 0 } = {}) {
+	return page.evaluate(
+		([roots, hit, exempt, band]) => {
+			const shown = (n) => {
+				if (!n.getClientRects().length) return false;
+				for (let e = n; e; e = e.parentElement) {
+					const s = getComputedStyle(e);
+					if (s.visibility === "hidden" || s.opacity === "0") return false;
+				}
+				return true;
+			};
+			const allowed = new Map();
+			const floor = (n, kind, base) => {
+				const e = exempt.find((x) => x[kind] != null && n.closest(x.sel));
+				if (!e) return base;
+				allowed.set(e.sel, e.why);
+				return e[kind];
+			};
+			const all = [...document.querySelectorAll(roots)].flatMap((r) => [r, ...r.querySelectorAll("*")]).filter(shown);
+			const what = (n) => [String(n.className || n.tagName).slice(0, 40), n.textContent.trim().slice(0, 24)];
+			const texts = all.filter((n) => [...n.childNodes].some((c) => c.nodeType === 3 && c.textContent.trim()));
+			const SEL = "a[href], button, input:not([type=hidden]), select, textarea, summary, [role=button]";
+			const text = () => texts.map((n) => [...what(n), parseFloat(getComputedStyle(n).fontSize), floor(n, "text", 12)]).filter((x) => x[2] < x[3] - 0.05).map((x) => x.slice(0, 3));
+			let taps = all.filter((n) => n.matches(SEL));
+			if (!hit) {
+				return {
+					measured: { taps: taps.length, text: texts.length },
+					text: text(),
+					taps: taps
+						.map((n) => {
+							const r = n.getBoundingClientRect();
+							const min = floor(n, "tap", 44);
+							return [...what(n), Math.round(r.width), Math.round(r.height), min];
+						})
+						.filter((x) => x[2] < x[4] || x[3] < x[4])
+						.map((x) => x.slice(0, 4)),
+					allowed: [...allowed],
+				};
 			}
-			return true;
-		};
-		const all = [...document.querySelectorAll(roots)].flatMap((r) => [r, ...r.querySelectorAll("*")]).filter(shown);
-		const what = (n) => [String(n.className || n.tagName).slice(0, 40), n.textContent.trim().slice(0, 24)];
-		const texts = all.filter((n) => [...n.childNodes].some((c) => c.nodeType === 3 && c.textContent.trim()));
-		const taps = all.filter((n) => n.matches("a[href], button, input:not([type=hidden]), select, textarea, summary, [role=button]"));
-		return {
-			measured: { taps: taps.length, text: texts.length },
-			text: texts.map((n) => [...what(n), parseFloat(getComputedStyle(n).fontSize)]).filter((x) => x[2] < 12),
-			taps: taps
-				.map((n) => {
-					const r = n.getBoundingClientRect();
-					return [...what(n), Math.round(r.width), Math.round(r.height)];
-				})
-				.filter((x) => x[2] < 44 || x[3] < 44),
-		};
-	}, roots);
+			// `cursor` is inherited: only the outermost element that says pointer,
+			// and a target inside another (a span in a button) is the outer one's.
+			const pointer = all.filter((n) => getComputedStyle(n).cursor === "pointer" && !(n.parentElement && getComputedStyle(n.parentElement).cursor === "pointer"));
+			const found = [...new Set([...taps, ...pointer])];
+			taps = found.filter((n) => !found.some((o) => o !== n && o.contains(n)) && !n.disabled && n.getAttribute("aria-disabled") !== "true" && !n.closest("[inert]"));
+			const vw = innerWidth;
+			const vh = innerHeight;
+			const short = [];
+			let measured = 0;
+			for (const n of taps) {
+				const r = n.getBoundingClientRect();
+				const cx = r.left + r.width / 2;
+				const cy = r.top + r.height / 2;
+				const on = (x, y) => {
+					if (x < 0 || y < 0 || x >= vw || y >= vh) return false;
+					const at = document.elementFromPoint(x, y);
+					return !!at && (at === n || n.contains(at));
+				};
+				const off = r.left < -0.5 || r.top < -0.5 || r.right > vw + 0.5 || r.bottom > vh + 0.5;
+				if (!off && !on(cx, cy)) continue; // covered: not a target now
+				measured++;
+				const run = (dx, dy, max) => {
+					let k = 0;
+					while (k < max && on(cx + dx * (k + 1), cy + dy * (k + 1))) k++;
+					return k;
+				};
+				const hitW = run(-1, 0, r.width / 2 + 40) + run(1, 0, r.width / 2 + 40) + 1;
+				const hitH = run(0, -1, r.height / 2 + 40) + run(0, 1, r.height / 2 + 40) + 1;
+				const min = floor(n, "tap", 44);
+				const why = [
+					Math.min(r.width, r.height) < min - 0.5 || Math.min(hitW, hitH) < min - 0.5 ? `under ${min}px` : null,
+					off ? "off the screen" : null,
+					r.top < band - 0.5 ? "under the top band" : null,
+				].filter(Boolean);
+				if (why.length) short.push([...what(n), Math.round(r.width * 10) / 10, Math.round(r.height * 10) / 10, hitW, hitH, why.join(", ")]);
+			}
+			return {
+				measured: { taps: measured, text: texts.length },
+				text: text(),
+				taps: short,
+				allowed: [...allowed],
+			};
+		},
+		[roots, hit, exempt, band],
+	);
 }

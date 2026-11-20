@@ -190,6 +190,17 @@ fixed 2026-11-19, branch `phone-shell`)**, asserted with computed sizes
   the end card's DETAILS 32px and its "you" and captions 11.5px, the party's
   TEAM and REMOVE buttons 32px and its tags 10.4px. All 44px and 12px now
   (test-party, test-managed).
+- **Inside the six community games** (lokeshmohanty/web-games, branch
+  `tap-targets`, 2026-11-20): Draw & Guess's pens and brush sizes were 28px
+  `<div>`s (44px buttons now), CLEAR 28px, the guess field and SEND 38px;
+  labels, ship buttons, racer names, seat names, scores and the bid's
+  caption were 9.9–11.5px; Battleship's end put NEW GAME off a 354x696
+  screen. `just test-taps` (CI shard 5) plays every phase of each at
+  390x844 and 354x696 and measures the whole frame with `phoneFloors(…,
+  { hit: true })`: box and hit area, `cursor: pointer` elements included.
+  Two boards cannot reach 44px on a 354px phone and are exempt with their
+  reason, printed every run: Sudoku's cells are 36px (select, then a 48px
+  pad), its pencil notes 11px; Battleship's squares 39.6px (44px at 390).
 
 Not covered by that pass: the leaderboard view still scrolls sideways at
 200% text, and it and Contributors keep a few labels under 12px
