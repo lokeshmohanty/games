@@ -12,8 +12,10 @@
 //                                    from them for DECLINE_COOLDOWN_MS) or withdraw
 //   POST/DELETE /api/friends/<id>/block   block (ends everything, they cannot ask) / unblock
 //   POST/DELETE /api/friends/<id>/mute    mute a friend's invites / unmute
-//   POST   /api/friends/<id>/invite  { code } → { invited: true }: pushed to their
-//                                    open pages and kept for INVITE_TTL_MS
+//   POST   /api/friends/<id>/invite  { code, game? } → { invited: true }: pushed to
+//                                    their open pages and kept for INVITE_TTL_MS;
+//                                    with no page open, a notification to each
+//                                    device that turned them on (push.js)
 //   GET    /api/invites              { invites: [{ from: {id,name}, code, at }] }
 //   DELETE /api/invites/<sender>     JOIN or NOT NOW: forget that invite
 //   POST   /api/me/friend-code       a new friend code; the old one dies
@@ -46,7 +48,8 @@
 //                                          deletes it
 //   DELETE /api/groups/<id>/bans/<acct>    the owner lets someone back
 
-import { HttpError, body, now, randomId } from "./http.js";
+import { HttpError, body, now, randomId, testing } from "./http.js";
+import { pushInvite } from "./push.js";
 
 const all = async (stmt) => (await stmt.all()).results ?? [];
 export const FRIENDS_MAX = 200;
@@ -325,9 +328,14 @@ export async function recentPlayers(env, me) {
  * open pages, and kept for INVITE_TTL_MS for when they next open the arcade.
  * The answer is the same whether any page of theirs got it — a friend who
  * appears offline must not be given away by a count.
+ *
+ * With no page of theirs open, it goes to their devices as a notification
+ * (Web Push, push.js; opt-in per device). Both deliveries run after the
+ * answer (ctx.waitUntil), so neither its words nor its timing say which.
+ * `game`: the name of the game the party is on, for the notification's body.
  */
-export async function invite(env, me, other, request) {
-	const { code } = await body(request);
+export async function invite(env, me, other, request, { ctx = null } = {}) {
+	const { code, game: gameName } = await body(request);
 	if (!/^\d{6}$/.test(String(code ?? ""))) throw new HttpError(400, "an invite carries the party's six-digit code");
 	if (!(await areFriends(env, me.id, other))) throw new HttpError(403, "you can only invite friends");
 	const t = now();
@@ -346,7 +354,14 @@ export async function invite(env, me, other, request) {
 			"INSERT INTO invites (recipient, sender, code, at) VALUES (?, ?, ?, ?) ON CONFLICT (recipient, sender) DO UPDATE SET code = excluded.code, at = excluded.at",
 		).bind(other, me.id, String(code), t),
 	]);
-	await push(env, other, { t: "invite", from: { id: me.id, name: me.name }, code: String(code), at: t });
+	const msg = { t: "invite", from: { id: me.id, name: me.name }, code: String(code), at: t };
+	const game = typeof gameName === "string" ? cleanName(gameName).slice(0, 40) : "";
+	const loopback = testing(env, request);
+	const deliver = async () => {
+		if (!(await push(env, other, msg))) await pushInvite(env, other, { ...msg, ...(game ? { game } : {}) }, { ttlMs: inviteTtl(env), loopback });
+	};
+	if (ctx?.waitUntil) ctx.waitUntil(deliver());
+	else await deliver();
 	return { invited: true };
 }
 

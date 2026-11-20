@@ -14,6 +14,7 @@ import { leaderboard } from "./lb.js";
 import { matchesOf, played, ratingsOf, report, startMatch, summary, sweep, withdrawStart } from "./match.js";
 import { deleteMe, exportMe, getFavs, getMe, link, patchMe, putFavs, signOut, unlink } from "./me.js";
 import { publicProfile, withBoards } from "./people.js";
+import { pushKey, subscribe, unsubscribe } from "./push.js";
 import { ageRun, startRun } from "./runs.js";
 import { runSnapshot } from "./snapshot.js";
 import {
@@ -45,9 +46,10 @@ const WRITE = new Set(["POST", "PUT", "PATCH", "DELETE"]);
 
 /**
  * `gate()` resolves true when this address may write now (worker/index.js
- * charges its IpGate); false answers 429.
+ * charges its IpGate); false answers 429. `ctx`: the request's context, for
+ * work after the answer (ctx.waitUntil); without it that work is awaited.
  */
-export async function api(request, env, { gate = async () => true } = {}) {
+export async function api(request, env, { gate = async () => true, ctx = null } = {}) {
 	const url = new URL(request.url);
 	const path = url.pathname;
 	const method = request.method;
@@ -115,6 +117,11 @@ export async function api(request, env, { gate = async () => true } = {}) {
 			return send({ matches: await matchesOf(env, m.id), ratings: withBoards(await ratingsOf(env, m.id)), botWins: await botWinsOf(env, m.id) });
 		}
 		if (a === "me" && b === "friend-code" && method === "POST") return send(await rotateFriendCode(env, await me()));
+		if (a === "push" && !b) {
+			if (method === "GET") return open(pushKey(env), "public, max-age=300");
+			if (method === "POST") return send(await subscribe(env, await me(), request));
+			if (method === "DELETE") return send(await unsubscribe(env, await me(), request));
+		}
 		if (a === "invites") {
 			if (!b && method === "GET") return send(await listInvites(env, await me()));
 			if (b && method === "DELETE") return send(await dismissInvite(env, await me(), b));
@@ -133,7 +140,7 @@ export async function api(request, env, { gate = async () => true } = {}) {
 			if (method === "POST") return send(await addFriend(env, await me(), b));
 			if (method === "DELETE") return send(await removeFriend(env, await me(), b));
 		}
-		if (a === "friends" && b && c === "invite" && method === "POST") return send(await invite(env, await me(), b, request));
+		if (a === "friends" && b && c === "invite" && method === "POST") return send(await invite(env, await me(), b, request, { ctx }));
 		if (a === "friends" && b && c === "block") {
 			if (method === "POST") return send(await block(env, await me(), b));
 			if (method === "DELETE") return send(await unblock(env, await me(), b));
