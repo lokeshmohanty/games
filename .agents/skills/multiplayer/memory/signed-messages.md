@@ -122,6 +122,14 @@ host plus one extra key took an elected crown back with a later hand-over
 (K). Cost: the honest race (MAKE HOST, crash before it spreads, election on
 the far side) splits.
 
+Round 6: **heal evidence must be something an attacker cannot produce
+while staying reachable.** A closed-and-reopened link is not: a member
+closes its own connection at will, and bouncing links let G3 back in (B6).
+The S rule now needs each voter concluded gone by us (`_confirmGone`: no
+link, nobody vouching, past the grace) and linked again since the vacated
+record. And K's mirror counts only crowns taken (`elected`), never a commit
+that went nowhere.
+
 Costs: see docs/index.md "Who said it" (Node and throttled Chromium).
 
 Related: [[split-party]], [[addressed-is-not-private]], [[bots-as-members]],

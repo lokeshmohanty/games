@@ -490,17 +490,27 @@ verified even on its sender's own link, because it is kept as proof.
   - **We no longer see the holder:** our link to it closed, or it re-formed
     after a drop.
   - **The election shows a healed partition.** We are the holder, or still
-    see it, but the candidate and every voter are members whose links to us
-    dropped and came back since we took the record the election was won from.
-    A G3 attacker that keeps its links up cannot show that (round 5, S). The
-    old host then steps down and follows the elected one, and so do the
-    members linked to it.
+    see it, but the candidate and every voter are members we ourselves
+    concluded gone and now link to again, both after we took the record the
+    election was won from. "Concluded gone" (`_confirmGone`) means no link,
+    and nobody vouching for them, for the whole departure grace (2.5 s). A
+    member that closes and re-dials its own links never shows that: within
+    the grace it is back before we conclude, and one link at a time the
+    others vouch for it. Bounced links once posed as a healed partition and
+    let G3 back in (round 6, B6). Only a quorum genuinely cut off from the
+    host's side for longer than the grace qualifies (round 5, S). The old host
+    then steps down and follows the elected one, and so do the members
+    linked to it.
 
   What this costs and does not cost:
   - **The cost is bounded.** In a real partial split with the host alive,
     the host's side and the elected side are two working parties until the
     partition heals, or the links that broke are noticed and closed. The
     host's side is not a hang: its host hosts and its members follow it.
+    One limit: if the host's side commits more than 64 records during the
+    partition (`REVS_KEPT`), the record the election was won from is no
+    longer held. The heal then fails, and the two parties stay apart until
+    someone reloads.
   - **An honest election is not slowed by it.** A member still linked to a
     host that really died vouches for it until its own link closes, which
     already held the vacancy back. When the link closes, the held crown is
@@ -512,9 +522,10 @@ verified even on its sender's own link, because it is kept as proof.
     left no vacancy, so no election on its record counts for the term it
     handed over at (`handovers`, learnt from the hand-over record and from any
     proof carrying it);
-  - **a hand-over after an election:** a holder whose vacancy we took (or
-    voted in) an election for may not hand that term on afterwards
-    (`elected`). A host that vanished (a reload: its key lives on) once
+  - **a hand-over after an election:** a holder whose vacancy we took an
+    election crown for may not hand that term on afterwards (`elected`). Only
+    a crown taken counts: a commit that never crowned, the holder staying,
+    must not refuse its later MAKE HOST for good (round 6). A host that vanished (a reload: its key lives on) once
     signed a hand-over later, to its own extra key, and took an elected, live
     crown back (round 5, K).
 
@@ -1603,8 +1614,10 @@ the icon for exactly this reason. `test-pwa` now parses the file.
   - **The cost of that rule.** Where the host *was* alive (a partition), the
     host's side and the elected side are two working parties until the
     partition heals. At that point the old host and its members take the
-    election: its candidate and voters all relinked to them since. They also
-    take it if their links to the host are noticed and close first.
+    election: they concluded its candidate and voters gone, past the
+    departure grace, and now link to them again. They also take it if their
+    links to the host are noticed and close first. Past 64 records on the
+    host's side during the partition, the heal fails until someone reloads.
   - **The honest race splits** (round 5, K's cost): a hand-over and an
     election on one vacancy exclude each other, and each phone keeps
     whichever it learnt first.
