@@ -23,6 +23,7 @@ groups with their own leaderboards, and feedback on games.
 | Solo runs: issued runs and their seeds, the per-game limits, Sudoku's check | the room server + D1 `runs` | `worker/api/runs.js`, `worker/api/sudoku.js`, `worker/migrations/0003_runs.sql` |
 | Wins against bots: their runs, the per-game minimums, the boards | the room server + D1 `runs` (`vs` 'bots'), `bot_wins` | `worker/api/bots.js`, `worker/migrations/0004_bot_wins.sql` |
 | Presence and pushed invites | Durable Object `UserLive`, one per account | `worker/api/live.js` |
+| Invites as notifications (Web Push): devices, encryption, VAPID; the offer card and the profile switch; the notification and its tap | the room server + D1 `push_subs`; the page; the service worker | `worker/api/push.js`, `worker/api/webpush.js`, `worker/migrations/0006_push.sql`; `lib/push.js`; `sw.js` |
 | Feedback | GitHub Discussions, posted by the arcade's GitHub App | `worker/api/feedback.js` |
 | Public hourly snapshot | GitHub branch `stats` | `worker/api/snapshot.js` |
 
@@ -466,6 +467,7 @@ CPU, and are not in these:
 | Export | ~0.75 ms per 1000 matches | `EXPORT_PAGE` = 2000 matches a page, `?page=`, `matchesNext`; the profile's EXPORT gathers every page |
 | Room server relay (hub) | a 1 MiB message (the WebSocket limit) parsed and relayed to one member: ~3 ms; rooms hold ≤ 8 | — |
 | Sign-in, sessions, vault | HMAC and AES-GCM on short strings: well under 1 ms | — |
+| An invite to a friend with no page open, sent as notifications (Web Push) | per device ~0.6 ms warm, ~0.7 jitless (encryption; the JWT cached per push service); a fresh process's first push ~3.7 ms more | `PUSH_DEVICES_MAX` = 5 devices an account ("Party invites by notification") |
 | A win against bots (`POST /api/match/report`), a run start, a Light Cycles solo report, a 100-row board against bots | D1 faked as instant, 2000 calls each: avg 0.03 / 0.03 / 0.11 / 0.005 ms, max 1.9 ms (warm); avg 0.07 / 0.08 / 0.20 / 0.02 ms, max 0.5 ms (jitless); the first call on a fresh process ~1 ms | 4 D1 statements for a win; the board is one indexed query (`bot_wins_board`) plus two for `me` |
 
 **Until the Sudoku pin moves.** The arcade serves the pinned Sudoku
@@ -683,6 +685,107 @@ group's boards, and the owner's controls.
 **Profile QR** (D17): SVG, one path of whole modules with
 `shape-rendering: crispEdges`, sharp at any pixel density.
 
+## Party invites by notification (Web Push)
+
+*Branch `web-push`, 2026-11-18. Lokesh's decisions of 2026-11-15 and
+2026-11-18. Contract: `worker/api/push.js`; crypto: `worker/api/webpush.js`;
+page: `lib/push.js`; the notification: `sw.js`; migration 0006.*
+
+**Scope: opt-in, per device, party invites only.** No friend requests, no
+reminders, no marketing; widening it needs asking Lokesh again. The only
+outside contact it adds is the browser vendors' push services (Google FCM
+for Chrome, Edge on Android, Samsung Internet, Opera and Brave; Mozilla
+autopush for Firefox; Apple for Safari, on iOS only from the Home Screen;
+Microsoft WNS for Edge on Windows). They see that a message of a fixed size
+went to a device, and when — not who sent it or what it says.
+
+**The offer.** The first time a signed-in player has a friend, a small card
+joins the notices at the bottom of the screen, once per device: "Get party
+invites when the arcade is closed?" TURN ON / NOT NOW. Either answer is
+final on that device (localStorage `neon.push.offer`); the card is not shown
+where the browser has no Push API, where notifications are blocked, or while
+the server has no VAPID key. The browser's permission is asked only on the
+TURN ON tap. The profile's **Notifications** section has the same setting as
+a per-device switch, always ("Party invites on this device when the arcade
+is closed"); it says why when it cannot be turned on (no Push API — on
+iPhone, add the arcade to the Home Screen first; blocked in the browser;
+not set up on the server).
+
+**Who gets one.** An invite (`POST /api/friends/<id>/invite`) goes, after
+every existing check — friends only (a block ends the friendship, so a
+blocked sender is refused with the same 403 as before), a mute drops it
+quietly, the 20 s / 20 friends / 10 waiting limits — to the friend's open
+pages through `UserLive`, as before. Only when **no page of theirs holds the
+live socket** is it sent to their devices instead. Both deliveries run after
+the sender is answered (`ctx.waitUntil`): the answer is `{ invited: true }`,
+the same bytes and headers, whether a page got it, a notification, or
+nothing (D16). The invite still waits in D1 for 10 minutes as before.
+
+**What it says.** "Asha invited you to a party", with the game's title as
+the body ("Connect 4") — the game in play, else the one the party picked
+(`partyBlock`'s `picked`, lib/party.js) — or "Tap to see the invite." with
+none. One notification per friend (`tag invite:<sender>`; a newer one
+replaces it). A push whose payload cannot be read still shows "A friend
+invited you to a party" (Chrome requires a notification for every push to a
+`userVisibleOnly` subscription). **Tapping it** focuses an open arcade page,
+which fetches the waiting invites and shows that one (JOIN / NOT NOW, the
+existing card), or opens the arcade at `./?invite=<sender>`, which does the
+same as it loads and then drops `invite=` from the address. If the invite
+has gone (10 minutes, or answered elsewhere), the page says "That invite
+has expired."
+
+**Delivery.** Each message is encrypted for the one browser (RFC 8291,
+`aes128gcm`: a fresh ECDH key pair per message, HKDF, AES-128-GCM, one
+record padded to 512 bytes so a name's length does not show) and signed
+with the arcade's VAPID key (RFC 8292, ES256; the JWT is cached per push
+service origin for 12 h less an hour, per isolate). Headers: `TTL` = the
+invite's 10 minutes, `Urgency: high`, `Topic: inv<sender>` (an undelivered
+invite from the same friend is replaced). WebCrypto only — no library, no
+CDN, no push SaaS. A **404 or 410** from the push service deletes the
+device's row; other refusals are logged.
+
+**SSRF.** The Worker fetches a URL a browser handed the page. Only
+`https://` with no port or credentials on `fcm.googleapis.com`,
+`updates.push.services.mozilla.com`, `*.push.apple.com` or
+`*.notify.windows.com` is accepted (`PUSH_HOSTS`, verified 2026-11-18) —
+when subscribing (400 otherwise) and again before each send (a row whose
+endpoint no longer passes is deleted). Redirects are not followed. Under
+`AUTH_TEST=1` on a loopback host, `http://127.0.0.1` / `localhost` is also
+accepted, for the tests' fake push service.
+
+**Devices.** One D1 row per endpoint (`push_subs`), keyed to the account
+signed in there: the same browser signed in as someone else moves the row
+to them. At most **5 devices** an account (`PUSH_DEVICES_MAX`, bounded by
+CPU, below): a sixth evicts the one refreshed longest ago, and a page with
+the setting on refreshes its row once a day (or when the browser rotated the
+subscription), so a device in use keeps its place. **TURN OFF** deletes the
+row, then unsubscribes the browser (offline, the row stays until the push
+service answers 410). **Signing out** does the same first, so a shared
+phone stops getting that account's invites; deleting the account deletes
+every row. The **export** lists each device as its push service's host and
+two dates (`pushDevices`), **not** the endpoint or the keys: an endpoint
+with its keys lets anyone send to that device, and an export is a file
+people keep and pass around.
+
+**CPU** (`node scripts/push-cpu.mjs`, `--jitless` for a cold isolate;
+measured 2026-11-18 on Node 24): encrypting one payload avg 0.53 ms, p99
+1.4 (warm) / 0.68, p99 1.6 (jitless); signing a new JWT 0.10–0.13 ms; a
+cached JWT 0.005 ms; process CPU per push (encrypt + cached JWT, all
+threads) 0.58 ms warm, 0.73 jitless; the first push on a fresh process
+~2.6 ms (encrypt) + ~1.1 ms (key import + JWT). So an invite to a friend
+with 5 devices on a cold isolate is ~4 + 5 × 0.7 ≈ 7.5 ms worst case, inside
+the free plan's 10 ms; the usual case (one or two devices, warm) is ~1 ms.
+Not measured on Cloudflare itself (`wrangler tail` shows real CPU after a
+deploy) — **VERIFY** there once.
+
+**What it does not do.** The tap cannot join a party by itself: it shows
+the invite, and JOIN is still the player's. iOS needs the arcade on the
+Home Screen (Safari's rule). A browser on a push service not in the list
+gets "cannot" on its switch. Changing the VAPID key pair turns every
+device off until its page subscribes again on its next visit; delete the
+old rows then (`DELETE FROM push_subs`), since push services answer 403,
+not 410, to a key that no longer matches.
+
 ## The API
 
 Everything under the room server, `https://neon-arcade-room.lokeshmohanty.workers.dev`
@@ -704,8 +807,10 @@ address per 5-minute window (IpGate `api`).
 | `GET /api/lb/<game>?scope=global\|friends\|group:<id>` | global: anyone (`&me=1`: signed in) | signed in, also `me`: your row and rank even past the top 100, or `rank: null` with `need` (more games) or `hidden`; null with no ranked game. Global without `me=1` is the one cached publicly. Also `levels`, `unit` and `botsBoard` (the game has a board against bots) when they apply |
 | `GET /api/lb/<game>?vs=bots&scope=…` | as above | the board of wins against bots: `kind: "bots"`, rows `{ rank, id, name, avatar, wins, first, at }`, `perDay`; `me` as above. No offline copy (not in the snapshot) |
 | `GET /api/u/<id or friend code>` | anyone | public profile; hidden: a name to befriend, or all of it for a signed-in friend; by code: charged against guessing |
-| `GET /api/friends`, `GET /api/friends/recent`, `POST/DELETE /api/friends/<id or code>`, `POST/DELETE /api/friends/<id>/block`, `…/mute`, `POST /api/friends/<id>/invite` | signed in | invite → `{ invited: true }` |
+| `GET /api/friends`, `GET /api/friends/recent`, `POST/DELETE /api/friends/<id or code>`, `POST/DELETE /api/friends/<id>/block`, `…/mute`, `POST /api/friends/<id>/invite` | signed in | invite `{ code, game? }` → `{ invited: true }`, always the same; `game` is the title for a notification's body (≤ 40 characters) |
 | `GET /api/invites`, `DELETE /api/invites/<sender>` | signed in | invites waiting (10 minutes) |
+| `GET /api/push` | anyone | `{ key }`: the VAPID public key to subscribe with, or null while the server has none |
+| `POST /api/push` `{ endpoint, keys: { p256dh, auth } }`, `DELETE /api/push` `{ endpoint }` | signed in | this device gets this account's party invites as notifications (`{ on: true }`; push-service hosts only, 400 otherwise; at most 5 devices, the least recently refreshed goes) / no longer (`{ on: false }`) |
 | `POST /api/me/friend-code` | signed in | a new friend code; the old one dies |
 | `GET/POST /api/groups`, `POST /api/groups/join`, `GET/PATCH/DELETE /api/groups/<id>`, `POST /api/groups/<id>/code`, `POST /api/groups/<id>/owner`, `DELETE /api/groups/<id>/members/<acct>`, `DELETE /api/groups/<id>/bans/<acct>` | signed in | |
 | `GET /api/feedback/<game>` / `POST` | read: anyone; post: GitHub connected, 5 a day | posted as the player |
@@ -727,6 +832,7 @@ or loopback; public reads are open.
 | Favourites, friends, groups, presence | D1 | no (friends see each other online unless "appear offline") |
 | Friend code | D1 `accounts.friend_code` | to whoever you give it; rotatable |
 | Blocks, declines (7 days), mutes, group bans, waiting invites (10 minutes), when a request was last pushed | D1 `friends`, `mutes`, `group_bans`, `invites`, `request_pushes` | no; in the export (your own rows; never a block of someone else's on you; group bans of you and by you; when your requests were pushed); deleted with the account |
+| Devices getting party invites as notifications: the push service's endpoint, the browser's public key and auth secret, created, last refreshed | D1 `push_subs` (0006), at most 5 an account | no; in the export as push service host and the two dates only (no endpoint, no keys); deleted on TURN OFF, sign-out, a 404/410 from the push service, and with the account |
 | Ranked matches and ratings | D1 | on boards and public profiles, unless hidden |
 | Reports not yet settled, "I am seated" starts, outcomes waiting to be read | D1 `reports` (15 min; starts 1 h after their last beat) | no; in the export (`reports`); deleted with the account |
 | Solo runs and runs against bots: id, game, seed, start, used, counted, daily, `vs` | D1 `runs`, kept 4 days | no; deleted with the account |
@@ -798,6 +904,43 @@ table lacks a game refuses that game's play counts and results (a review,
 2026-11-16: Bubble Rush was missing from this branch's table). After a pin
 PR that adds a game or changes one, the submission check warns; regenerate
 with `just games-table` and commit before deploying.
+
+## Deploying invites by notification (branch `web-push`, 2026-11-18)
+
+Once, by Lokesh, after the merge. Until steps 2–3 are done the new Worker
+answers `GET /api/push` with `{ key: null }`, so no page offers anything and
+invites behave exactly as before; nothing breaks while it waits. From the
+repo root:
+
+1. **The key pair**, with Node's own WebCrypto (nothing to install):
+   `node scripts/vapid-keys.mjs > .env.vapid-public 2> .env.vapid-private`.
+   Both files match `.env.*`, which `.gitignore` covers
+   (`git check-ignore -v .env.vapid-private` says so). Never commit them;
+   run `git status` before staging anything, never `git add -A`.
+2. **The secrets** (no newline is written, and the Worker trims anyway):
+   `cd worker && wrangler secret put VAPID_PUBLIC_KEY < ../.env.vapid-public`
+   and `wrangler secret put VAPID_PRIVATE_KEY < ../.env.vapid-private`.
+   The public key is not secret — it is served at `GET /api/push` — but as a
+   secret it needs no edit to `wrangler.toml`. Optionally
+   `wrangler secret put VAPID_SUBJECT` with a `mailto:` or `https:` contact
+   for the push services (default `https://github.com/lokeshmohanty/games`).
+   Then keep `.env.vapid-private` somewhere safe off the repo, or delete it:
+   a lost key only means making a new pair (every device turns off until its
+   page subscribes again; see "What it does not do").
+3. **The migration**, then the Worker (it reads `push_subs` on every invite
+   to an offline friend and on account deletion, so migrate first), from
+   `worker/`: `wrangler d1 migrations list arcade --remote` (0006 pending),
+   `wrangler d1 migrations apply arcade --remote`, then from the root
+   `just deploy-worker` (never a bare `wrangler deploy`).
+4. **The site** (Pages, from CI as usual). Site and Worker may go in either
+   order: a page from before never asks `/api/push`, and an older Worker
+   answers it 404, which the page treats as "not available".
+5. **Check**, on a phone with Chrome or Firefox: sign in, have a friend; the
+   card asks once; TURN ON; close the arcade; the friend invites from a
+   party — "<name> invited you to a party" with the game's title arrives;
+   tapping it opens the invite with JOIN. `wrangler tail` meanwhile shows the
+   invite request's CPU (expected ≲ 2 ms with one device). The profile's
+   switch turns it off.
 
 ## Deploying the ratings and integrity changes (branch `social-ratings`, 2026-11-16)
 
@@ -879,6 +1022,11 @@ deploy**, from `worker/`, once the branch is merged:
    `/api/u/<that code>` answers; an invite to a friend with no page open
    appears when they next open the arcade.
 
+`worker/migrations/0006_push.sql` (branch `web-push`, 2026-11-18) adds
+`push_subs` (one row per device that turned invites by notification on) and
+its index. Additive; **migrate first, then deploy** — "Deploying invites by
+notification" above.
+
 ## Testing
 
 - `just test-stats` — lib/stats.js in Node.
@@ -956,3 +1104,33 @@ deploy**, from `worker/`, once the branch is merged:
   rule: scripts/fetch-community.mjs `checkout()` uses `../<repo>` only if it
   has the commit, so a clone under another name is named explicitly).
 - `test-bots` checks a result reaches the device's stats and the portal.
+- `just test-push` (2026-11-18; in `test-wrangler`) — invites by
+  notification. With no server: the fake push service decrypts RFC 8291's
+  own example message (so it checks the Worker rather than repeating it),
+  and the endpoint allowlist (push services accepted; http, look-alike
+  hosts, ports, credentials, metadata and private addresses refused;
+  loopback only in tests). Under `wrangler dev`, sending to a fake push
+  service (`scripts/push-fake.mjs`) that verifies every VAPID JWT and
+  decrypts every payload with the subscription's private key: subscribe
+  (signed in only), refused hosts and bad keys, a real host accepted,
+  unsubscribe, the device cap (`PUSH_DEVICES_MAX` 3 there) evicting the
+  least recently refreshed, someone else cannot delete a device, an
+  endpoint moving accounts; an invite to a friend with a page open is not
+  pushed, without one it is (payload, TTL, Urgency, Topic, 512-byte
+  padding), the sender's answer byte-identical across page / notification /
+  neither / muted, the JWT reused per origin, a missing game, the 20 s
+  limit, muted and blocked send nothing, a 410 and a 404 delete their rows;
+  the export (hosts and dates, no endpoints or keys) and account deletion.
+  In Chromium at 390×844 and 354×696 (`phoneFloors`, in view, no sideways
+  scroll): no offer before a friend; the offer after one; NOT NOW never
+  again; the profile switch on (subscribed with `userVisibleOnly` and the
+  server's key), off (row gone, unsubscribed), on; TURN ON from the card;
+  INVITE on the party screen with Connect 4 picked reaches the device;
+  `ServiceWorker.deliverPushMessage` → the notification's title, body and
+  tag; an unreadable payload still notifies; the tap with no page open
+  opens `./?invite=<sender>` (openWindow recorded: CDP cannot click a
+  notification, so the tap is a `NotificationEvent` with the real
+  notification), which shows the invite with JOIN for the party's code; the
+  tap with a page open shows it there; an expired one says so; signing out
+  removes the device. Chromium cannot subscribe to FCM here, so the page's
+  `PushManager` is stubbed with a subscription on the fake service.

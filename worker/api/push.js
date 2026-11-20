@@ -31,7 +31,7 @@ const devicesMax = (env) => Number(env.PUSH_DEVICES_MAX ?? PUSH_DEVICES_MAX);
 const B64URL = /^[A-Za-z0-9_-]+$/;
 
 export function pushKey(env) {
-	return { key: vapidReady(env) ? env.VAPID_PUBLIC_KEY : null };
+	return { key: vapidReady(env) ? env.VAPID_PUBLIC_KEY.trim() : null };
 }
 
 export async function subscribe(env, me, request) {

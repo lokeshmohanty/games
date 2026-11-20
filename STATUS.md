@@ -31,7 +31,13 @@ before SINGLE PLAYER, last-move markers, and the flaky-test fixes
 **Queued (approved by Lokesh, not started):**
 - **Signed party messages** — `f`, `__i`, `pk`, election and `__p` are
   unsigned; close that before any game relies on `seal.*`.
-- **Web Push** — opt-in, invites only (memory `no-third-party-services`).
+- **Web Push** — built on branch `web-push` (2026-11-18..20, pushed, not
+  merged or deployed): opt-in per device, party invites only. Deploy needs
+  Lokesh's one-time steps (VAPID keys as secrets, migration 0006, then the
+  Worker): docs/accounts.md "Deploying invites by notification". Unproven
+  until then: real FCM/autopush/Apple delivery and a real notification tap
+  (`.agents/skills/pwa/memory/push-testing.md`), and the Worker's CPU on
+  Cloudflare itself (`wrangler tail`).
 - **Worker** — edge caching of leaderboard GETs; free-plan usage limits;
   D1 backups; worker deploy from CI (Lokesh adds `CLOUDFLARE_API_TOKEN`);
   join-failure counting.

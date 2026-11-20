@@ -130,11 +130,11 @@ async function signingKey(pub, d) {
  * The JWT is cached per origin for its lifetime (less a margin).
  */
 export async function vapidAuth(env, aud, t = Date.now()) {
-	const pub = env.VAPID_PUBLIC_KEY;
+	const pub = env.VAPID_PUBLIC_KEY.trim();
 	const k = `${aud} ${pub}`;
 	const hit = jwts.get(k);
 	if (hit && hit.exp - JWT_REUSE_MARGIN_MS > t) return `vapid t=${hit.token}, k=${pub}`;
-	const key = await signingKey(pub, env.VAPID_PRIVATE_KEY);
+	const key = await signingKey(pub, env.VAPID_PRIVATE_KEY.trim());
 	const exp = Math.floor(t / 1000) + VAPID_JWT_S;
 	const part = (o) => b64url(enc.encode(JSON.stringify(o)));
 	const unsigned = `${part({ typ: "JWT", alg: "ES256" })}.${part({ aud, exp, sub: env.VAPID_SUBJECT || "https://github.com/lokeshmohanty/games" })}`;
@@ -146,7 +146,7 @@ export async function vapidAuth(env, aud, t = Date.now()) {
 	return `vapid t=${token}, k=${pub}`;
 }
 
-export const vapidReady = (env) => !!(env.VAPID_PUBLIC_KEY && env.VAPID_PRIVATE_KEY);
+export const vapidReady = (env) => !!(env.VAPID_PUBLIC_KEY?.trim() && env.VAPID_PRIVATE_KEY?.trim());
 
 /**
  * Send one message to one subscription { endpoint, p256dh, auth }.
