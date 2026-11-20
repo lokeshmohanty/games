@@ -37,9 +37,14 @@ html, body { margin: 0; height: 100%; overflow: hidden; background: var(--bg); c
 	box-sizing: border-box;
 	max-width: 100%;
 	text-align: center;
+	/* One line, always: the grid is sized once a match starts (neon-fission.js
+	   resize), so a long name must not wrap the line mid-game and push the
+	   grid off a phone (review, 2026-11-20). */
+	white-space: nowrap;
 }
 #turn .dot { flex: none; }
-#turn .sub { font-family: var(--font-body); font-weight: 400; color: var(--ink-2); }
+#turn .label { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+#turn .sub { flex: none; font-family: var(--font-body); font-weight: 400; color: var(--ink-2); }
 
 .dot {
 	display: inline-block;

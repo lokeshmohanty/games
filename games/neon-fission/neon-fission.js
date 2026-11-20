@@ -366,6 +366,7 @@ function hud() {
 	const dot = document.createElement("span");
 	dot.className = "dot";
 	const label = document.createElement("span");
+	label.className = "label";
 	label.textContent = text;
 	const parts = [dot, label];
 	if (sub) {
