@@ -308,10 +308,17 @@ test-accounts:
 test-social:
     node scripts/test-social.mjs
 
+# Party invites as notifications (Web Push): the API under wrangler dev
+# sending to a fake push service that decrypts and checks VAPID, then the
+# offer card, the profile switch and the service worker in Chromium at
+# 390x844 and 354x696. Needs wrangler.
+test-push:
+    node scripts/test-push.mjs
+
 # Not part of `test`, but CI runs them, in a shard of their own.
 
-# The suites that need wrangler: test-worker, test-accounts, test-social.
-test-wrangler: test-worker test-accounts test-social
+# The suites that need wrangler: test-worker, test-accounts, test-social, test-push.
+test-wrangler: test-worker test-accounts test-social test-push
 
 # No colour named outside lib/theme.css (pages, styles, SDK, games). Pass
 # other repos to check too: `just check-colours ../web-games`.
