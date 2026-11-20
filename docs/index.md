@@ -469,44 +469,83 @@ verified even on its sender's own link, because it is kept as proof.
   everyone reload.
 
   **A phone never accepts that a holder has left while it is that holder,
-  or still holds a live link to it** (Lokesh, 2026-11-20: "Refuse it").
-  This applies to every election certificate, at every depth of a proof,
-  exactly as an honest voter refuses to grant. Such a certificate is held
-  back (`unseen`) and checked again when that link goes, closed or dropped
-  with its seat. Before this, two members, or one member with an extra room
-  in its page, signed a quorum and deposed a host its whole electorate could
-  still see (round 4).
-  - **The accepted cost.** In a real partial split with the host alive, the
-    host's side and the elected side stay two parties until their broken
-    links are noticed. The host's side is a working party meanwhile: its host
-    hosts and its members follow it, not a hang.
+  or still sees it** (Lokesh, 2026-11-20: "Refuse it"). This applies to
+  every election certificate, at every depth of a proof, exactly as an
+  honest voter refuses to grant. Before this, two members, or one member
+  with an extra room in its page, signed a quorum and deposed a host its
+  whole electorate could still see (round 4).
+
+  **"Sees" means a link to it that never dropped** (`_sees`). A link that
+  opened after ours had closed, or while its seat was held for a reconnect,
+  is that key here again, not that holder still hosting. It counts as seeing
+  only once that holder speaks as host again. Without this, a phone that
+  relinked to a reloaded old host before the new crown's record reached it
+  held that crown back for good (round 5, R). This gives up the protection
+  only for a phone whose own link to the host dropped and re-formed, which an
+  attacker cannot schedule.
+
+  **A refused certificate is held back** (`unseen`) and looked at again
+  whenever a link opens, closes or goes with its seat. It is taken when one
+  of these holds:
+  - **We no longer see the holder:** our link to it closed, or it re-formed
+    after a drop.
+  - **The election shows a healed partition.** We are the holder, or still
+    see it, but the candidate and every voter are members whose links to us
+    dropped and came back since we took the record the election was won from.
+    A G3 attacker that keeps its links up cannot show that (round 5, S). The
+    old host then steps down and follows the elected one, and so do the
+    members linked to it.
+
+  What this costs and does not cost:
+  - **The cost is bounded.** In a real partial split with the host alive,
+    the host's side and the elected side are two working parties until the
+    partition heals, or the links that broke are noticed and closed. The
+    host's side is not a hang: its host hosts and its members follow it.
   - **An honest election is not slowed by it.** A member still linked to a
     host that really died vouches for it until its own link closes, which
     already held the vacancy back. When the link closes, the held crown is
     taken.
 
-  **A holder that handed the crown over left no vacancy.** No election on its
-  record counts for the term it handed over at (`handovers`, learnt from the
-  hand-over record and from any proof carrying it).
+  **A hand-over and an election on the same vacancy exclude each other.**
+  Whichever a phone learns second, it refuses:
+  - **an election after a hand-over:** a holder that handed the crown over
+    left no vacancy, so no election on its record counts for the term it
+    handed over at (`handovers`, learnt from the hand-over record and from any
+    proof carrying it);
+  - **a hand-over after an election:** a holder whose vacancy we took (or
+    voted in) an election for may not hand that term on afterwards
+    (`elected`). A host that vanished (a reload: its key lives on) once
+    signed a hand-over later, to its own extra key, and took an elected, live
+    crown back (round 5, K).
 
-  **Where two crowns meet at one term**, how each came decides it, whatever
-  the ids: a hand-over outranks an election others attested, and that
-  outranks one won by the candidate's vote alone. So the honest race — a
-  hand-over, a crash, and an election on the far side — settles on the
-  hand-over. Only between two crowns that came the same way does the lower id
-  decide. A crown won by its holder's vote alone (half the humans, and the
-  tie-break heir) also never displaces a crown we hold at that term (round 3).
+  The cost (accepted, round 5): the honest race now splits instead of
+  healing. MAKE HOST, then the old host crashes before the hand-over has
+  spread, while the far side elects: each phone keeps whichever crown it
+  learnt first. It is rare.
+
+  **Where two crowns meet at one term** otherwise, how each came decides it,
+  whatever the ids: a hand-over outranks an election others attested, and
+  that outranks one won by the candidate's vote alone. Only between two
+  crowns that came the same way does the lower id decide. A crown won by its
+  holder's vote alone (half the humans, and the tie-break heir) also never
+  displaces a crown we hold at that term (round 3).
 
   **On an older record of the vacated holder's** than the latest we hold (one
-  of the last 8, and a superset of the latest's humans), only acks from
+  of the last 64, and a superset of the latest's humans), only acks from
   humans still in the latest count. The older record's humans stay the
   denominator, so the quorum only gets stricter. A seat that joined, was
   counted, and left had voted on.
 
   **What remains.** A quorum of real keys can still win a real vacancy. It
-  cannot depose a host its electorate can still see. A member with extra real
-  connections, in tabs or in-page rooms each with its own key and links, has
-  extra votes in a genuine vacancy.
+  cannot depose a host its electorate can still see over links that never
+  dropped. Two exceptions:
+  - a phone whose own link to the host dropped and re-formed no longer
+    counts as seeing it;
+  - a healed partition's election is taken by design.
+
+  A vanished host cannot take back, by a later hand-over, a crown elected on
+  its vacancy. A member with extra real connections (tabs or in-page rooms,
+  each with its own key and links) has extra votes in a genuine vacancy.
 
   Without this, "a higher term wins" let any member crown itself by signing a
   record. From the holder already known, only a newer record (`rev`, which
@@ -1553,15 +1592,22 @@ the icon for exactly this reason. `test-pwa` now parses the file.
     to reload (reason `behind`) rather than left split; a junk record is
     refused quietly.
   - **No election deposes a host its electorate still sees** (Lokesh,
-    2026-11-20). The holder said to have left, and anyone still linked to it,
-    refuse every election certificate on it, attested or not. A member with
-    no link to that host takes the certificate, as it would a real one: in a
-    relay layout, those behind the relay (A2, above). Before this rule, an
-    attested certificate from two colluding members, or from one member with
-    an extra room, deposed a live host even in a full mesh.
+    2026-11-20). The holder said to have left, and anyone who still sees it
+    (a link that never dropped), refuse every election certificate on it,
+    attested or not. A member that does not see that host takes the
+    certificate, as it would a real one: in a relay layout, those behind the
+    relay (A2, above), and a phone whose own link to the host dropped and
+    re-formed. Before this rule, an attested certificate from two colluding
+    members, or from one member with an extra room, deposed a live host even
+    in a full mesh.
   - **The cost of that rule.** Where the host *was* alive (a partition), the
-    host's side and the elected side stay two parties until the broken links
-    are noticed. Each is a working party meanwhile.
+    host's side and the elected side are two working parties until the
+    partition heals. At that point the old host and its members take the
+    election: its candidate and voters all relinked to them since. They also
+    take it if their links to the host are noticed and close first.
+  - **The honest race splits** (round 5, K's cost): a hand-over and an
+    election on one vacancy exclude each other, and each phone keeps
+    whichever it learnt first.
   - **Extra connections are extra votes in a real vacancy.** A quorum of
     real keys can win a genuine vacancy. A member with extra real
     connections has that many votes there, though it cannot depose a host

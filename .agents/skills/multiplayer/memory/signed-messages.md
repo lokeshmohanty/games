@@ -110,6 +110,18 @@ hand-over outranks an election, and that a lone vote; on an older record,
 only acks from humans still in the latest count. What remains, by design:
 real keys win a real vacancy, never a host its electorate can see.
 
+Round 5 (2026-11-20): **seeing a holder is not the same as its key being
+here.** "Still linked to it" means a link that never dropped (`_sees`):
+a phone that relinked to a reloaded old host held the new crown back for
+good (R). A healed partition must merge: the old host, and those linked to
+it, take an election whose candidate and voters all dropped and regained
+their links to them since the vacated record (S); a host commits a lot, so
+64 revisions are kept. And **a hand-over and an election on one vacancy
+exclude each other** — whichever is learnt second is refused — or a vanished
+host plus one extra key took an elected crown back with a later hand-over
+(K). Cost: the honest race (MAKE HOST, crash before it spreads, election on
+the far side) splits.
+
 Costs: see docs/index.md "Who said it" (Node and throttled Chromium).
 
 Related: [[split-party]], [[addressed-is-not-private]], [[bots-as-members]],

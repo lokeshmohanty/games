@@ -2113,8 +2113,12 @@ for (const n of [4, 5]) {
 
 {
 	// The honest race: P hands the crown to H and crashes; Vi missed the
-	// hand-over, and took X's election for the same term first. When H's
-	// record reaches Vi, the hand-over wins, whatever the ids.
+	// hand-over, and took X's election for the same term first. Since round 5
+	// (K) a verifier refuses whichever of the two it learns second — a
+	// hand-over by a holder whose vacancy it took an election for, or an
+	// election at a term that holder handed over at — so this race splits
+	// rather than heals (the accepted cost; MAKE HOST then a crash before the
+	// hand-over spreads is rare).
 	const ids = await idsDescending(5);
 	// P highest; X below H, so the lower id would keep X.
 	const [p, h, x, a, v] = await party(["P", "H", "X", "Ana", "Vi"], fullMesh(5), { ids: [ids[0], ids[2], ids[4], ids[1], ids[3]], heirWaitMs: 60_000, lostRetryMs: [] });
@@ -2136,7 +2140,7 @@ for (const n of [4, 5]) {
 	const tookX = v.hostId() === x.selfId;
 	h.links.get(v.selfId).send({ ...hRec, h: 0, m: null });
 	await sleep(80);
-	check("a crown that came by hand-over outranks an elected one at the same term (the honest race converges on it)", !!hRec && tookX && v.hostId() === h.selfId, `hRec=${!!hRec} tookX=${tookX} vi sees ${v.hostId() === h.selfId ? "H" : v.hostId() === x.selfId ? "X" : v.hostId()}`);
+	check("the honest race: a phone that took the election first refuses the hand-over learnt second (K's cost: a split)", !!hRec && tookX && v.hostId() === x.selfId && v.refusals.includes("crown unproven"), `hRec=${!!hRec} tookX=${tookX} vi sees ${v.hostId() === h.selfId ? "H" : v.hostId() === x.selfId ? "X" : v.hostId()} ${v.refusals.slice(-1)}`);
 	for (const r of [h, x, a, v]) r.leave();
 }
 
@@ -2281,6 +2285,9 @@ for (const variant of ["linked first", "linked first, then a hand-over"]) {
 			y._linkOpened(l2);
 		}
 	}
+	// The old host commits on, as a host does (each link that opens, marks):
+	// many records after the one the election was won from.
+	for (let i = 0; i < 12; i++) p._commitParty();
 	await sleep(300);
 	for (const r of rooms) if (r.isHost()) r._commitParty();
 	await sleep(1500);
