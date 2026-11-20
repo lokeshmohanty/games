@@ -179,23 +179,29 @@ export async function passTable(page, timeout = 30_000) {
  *
  * Options, for a whole game frame (scripts/test-taps.mjs):
  *
- *   - `hit: true` — the targets as a thumb meets them. Also the outermost
- *     element that says `cursor: pointer` (a `<div onclick>` swatch is a
- *     target too); not one that is disabled, inert or covered (what is under
- *     its centre is not it: under an overlay, it is not a target now). Each
- *     is measured twice: its box, and its **hit area** — how far a tap from
- *     its centre still lands on it (elementFromPoint, a pixel at a time, to
- *     40px past the box), which counts padding or a ::before that widens it
- *     and anything on top that narrows it. A tap entry is then
- *     `[class, text, w, h, hitW, hitH]`, and one off the screen or starting
- *     under `band` (the shell's top band, 52px) falls short too, with `why`.
- *   - `exempt: [{ sel, tap?, text?, why }]` — inside `sel`, that floor
- *     instead. What was held to one is listed in `allowed` (`[sel, why]`),
- *     so an exemption is a reason someone can read, not a hole.
+ *   - `hit: true` — the targets as a thumb meets them. Every enabled real
+ *     control (a button, a link, a field…, also one inside another), plus
+ *     the outermost element that only says `cursor: pointer` (a
+ *     `<div onclick>` swatch), unless it sits inside a control or another
+ *     such element, whose tap it is. Disabled or inert ones are left out
+ *     first. Each is measured twice: its box, and its **hit area** — how far
+ *     a tap from its centre still lands on it (elementFromPoint, a pixel at
+ *     a time, to 40px past the box), which counts padding or a ::before that
+ *     widens it and anything on top that narrows it. A tap entry is then
+ *     `[class, text, w, h, hitW, hitH, why]`: under the floor, off the
+ *     screen, starting under `band` (the shell's top band, 52px), or
+ *     **covered** (what is under its centre is something else) — unless it
+ *     is inside `under`, a selector for what a step covers on purpose (a
+ *     game's end overlay over its board); those are counted in `covered`.
+ *   - `exempt: [{ sel, tap?, text?, upTo?, why }]` — inside `sel`, on a
+ *     window at most `upTo` px wide (any, without it), that floor instead.
+ *     One that let an element through which the usual floor would not is
+ *     listed in `allowed` (`[sel, why]`), so an exemption is a reason
+ *     someone can read, not a hole.
  */
-export function phoneFloors(page, roots, { hit = false, exempt = [], band = 0 } = {}) {
+export function phoneFloors(page, roots, { hit = false, exempt = [], band = 0, under = null } = {}) {
 	return page.evaluate(
-		([roots, hit, exempt, band]) => {
+		([roots, hit, exempt, band, under]) => {
 			const shown = (n) => {
 				if (!n.getClientRects().length) return false;
 				for (let e = n; e; e = e.parentElement) {
@@ -205,42 +211,52 @@ export function phoneFloors(page, roots, { hit = false, exempt = [], band = 0 } 
 				return true;
 			};
 			const allowed = new Map();
-			const floor = (n, kind, base) => {
-				const e = exempt.find((x) => x[kind] != null && n.closest(x.sel));
-				if (!e) return base;
-				allowed.set(e.sel, e.why);
+			/** The floor `n` is held to; `short(floor)` says whether it falls under one. */
+			const floor = (n, kind, base, short) => {
+				const e = exempt.find((x) => x[kind] != null && innerWidth <= (x.upTo ?? Infinity) && n.closest(x.sel));
+				if (!e || !short(base)) return base;
+				if (!short(e[kind])) allowed.set(e.why, e.sel); // by reason: one selector may have a floor per width
 				return e[kind];
 			};
 			const all = [...document.querySelectorAll(roots)].flatMap((r) => [r, ...r.querySelectorAll("*")]).filter(shown);
 			const what = (n) => [String(n.className || n.tagName).slice(0, 40), n.textContent.trim().slice(0, 24)];
 			const texts = all.filter((n) => [...n.childNodes].some((c) => c.nodeType === 3 && c.textContent.trim()));
 			const SEL = "a[href], button, input:not([type=hidden]), select, textarea, summary, [role=button]";
-			const text = () => texts.map((n) => [...what(n), parseFloat(getComputedStyle(n).fontSize), floor(n, "text", 12)]).filter((x) => x[2] < x[3] - 0.05).map((x) => x.slice(0, 3));
-			let taps = all.filter((n) => n.matches(SEL));
+			const text = () =>
+				texts
+					.map((n) => {
+						const px = parseFloat(getComputedStyle(n).fontSize);
+						return [...what(n), px, floor(n, "text", 12, (f) => px < f)];
+					})
+					.filter((x) => x[2] < x[3])
+					.map((x) => x.slice(0, 3));
+			const controls = all.filter((n) => n.matches(SEL));
 			if (!hit) {
 				return {
-					measured: { taps: taps.length, text: texts.length },
+					measured: { taps: controls.length, text: texts.length },
 					text: text(),
-					taps: taps
+					taps: controls
 						.map((n) => {
 							const r = n.getBoundingClientRect();
-							const min = floor(n, "tap", 44);
-							return [...what(n), Math.round(r.width), Math.round(r.height), min];
+							const [w, h] = [Math.round(r.width), Math.round(r.height)];
+							return [...what(n), w, h, floor(n, "tap", 44, (f) => w < f || h < f)];
 						})
 						.filter((x) => x[2] < x[4] || x[3] < x[4])
 						.map((x) => x.slice(0, 4)),
-					allowed: [...allowed],
+					allowed: [...allowed].map(([why, sel]) => [sel, why]),
 				};
 			}
-			// `cursor` is inherited: only the outermost element that says pointer,
-			// and a target inside another (a span in a button) is the outer one's.
-			const pointer = all.filter((n) => getComputedStyle(n).cursor === "pointer" && !(n.parentElement && getComputedStyle(n.parentElement).cursor === "pointer"));
-			const found = [...new Set([...taps, ...pointer])];
-			taps = found.filter((n) => !found.some((o) => o !== n && o.contains(n)) && !n.disabled && n.getAttribute("aria-disabled") !== "true" && !n.closest("[inert]"));
+			const live = (n) => !n.disabled && n.getAttribute("aria-disabled") !== "true" && !n.closest("[inert]");
+			// `cursor` is inherited: only the outermost element that says pointer.
+			const pointer = all.filter((n) => !n.matches(SEL) && getComputedStyle(n).cursor === "pointer" && !(n.parentElement && getComputedStyle(n.parentElement).cursor === "pointer"));
+			// A pointer-only element inside a control (live or not) or another one is that one's tap.
+			const own = pointer.filter((n) => !controls.some((c) => c.contains(n)) && !pointer.some((o) => o !== n && o.contains(n)));
+			const taps = [...controls, ...own].filter(live);
 			const vw = innerWidth;
 			const vh = innerHeight;
 			const short = [];
 			let measured = 0;
+			let covered = 0;
 			for (const n of taps) {
 				const r = n.getBoundingClientRect();
 				const cx = r.left + r.width / 2;
@@ -251,7 +267,15 @@ export function phoneFloors(page, roots, { hit = false, exempt = [], band = 0 } 
 					return !!at && (at === n || n.contains(at));
 				};
 				const off = r.left < -0.5 || r.top < -0.5 || r.right > vw + 0.5 || r.bottom > vh + 0.5;
-				if (!off && !on(cx, cy)) continue; // covered: not a target now
+				if (!off && !on(cx, cy)) {
+					if (under && n.closest(under)) {
+						covered++; // under an overlay, on purpose: not a target now
+						continue;
+					}
+					const top = document.elementFromPoint(cx, cy);
+					short.push([...what(n), Math.round(r.width * 10) / 10, Math.round(r.height * 10) / 10, 0, 0, `covered by ${top ? String(top.className || top.tagName).slice(0, 40) : "nothing"}`]);
+					continue;
+				}
 				measured++;
 				const run = (dx, dy, max) => {
 					let k = 0;
@@ -260,7 +284,7 @@ export function phoneFloors(page, roots, { hit = false, exempt = [], band = 0 } 
 				};
 				const hitW = run(-1, 0, r.width / 2 + 40) + run(1, 0, r.width / 2 + 40) + 1;
 				const hitH = run(0, -1, r.height / 2 + 40) + run(0, 1, r.height / 2 + 40) + 1;
-				const min = floor(n, "tap", 44);
+				const min = floor(n, "tap", 44, (f) => Math.min(r.width, r.height) < f - 0.5 || Math.min(hitW, hitH) < f - 0.5);
 				const why = [
 					Math.min(r.width, r.height) < min - 0.5 || Math.min(hitW, hitH) < min - 0.5 ? `under ${min}px` : null,
 					off ? "off the screen" : null,
@@ -270,12 +294,13 @@ export function phoneFloors(page, roots, { hit = false, exempt = [], band = 0 } 
 			}
 			return {
 				measured: { taps: measured, text: texts.length },
+				covered,
 				text: text(),
 				taps: short,
-				allowed: [...allowed],
+				allowed: [...allowed].map(([why, sel]) => [sel, why]),
 			};
 		},
-		[roots, hit, exempt, band],
+		[roots, hit, exempt, band, under],
 	);
 }
 
@@ -307,8 +332,8 @@ export async function phoneSizes(p, F, label, check, { timeout = 30_000, min = 0
 		const more = extra ? await extra(w, h) : null;
 		const ok = !f.text.length && !f.taps.length && f.measured.text > 0 && f.measured.taps >= min && doc <= w && !more;
 		check(`${label} at ${w}x${h}: text at least 12px, taps at least 44px${floors.hit ? " (box and hit area)" : ""}, no sideways scroll`, ok, JSON.stringify({ ...f, doc, ...(more ? { more } : {}) }));
-		for (const [sel, why] of f.allowed ?? []) allowed.set(sel, why);
+		for (const [sel, why] of f.allowed ?? []) allowed.set(why, sel);
 	}
 	await p.setViewportSize({ width: 390, height: 844 });
-	return allowed;
+	return [...allowed].map(([why, sel]) => [sel, why]);
 }

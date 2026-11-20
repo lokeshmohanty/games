@@ -3,7 +3,7 @@
  * test-taps.mjs — inside the community games, every tap target clears 44px
  * and every text 12px, on two phones, in every phase a player sees.
  *
- *   node scripts/test-taps.mjs [game…]    (NEON_TAPS_VERBOSE=1: counts on passing lines too;
+ *   node scripts/test-taps.mjs [floors|game…] (NEON_TAPS_VERBOSE=1: counts on passing lines too;
  *                                          NEON_TAPS_SHOTS=dir: a screenshot of every step)
  *
  * A real-device pass on Lokesh's Android phone (2026-11-18: 354x696 CSS px at
@@ -25,7 +25,7 @@
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { homedir } from "node:os";
-import { gameScope, phoneSizes, readyToClick, serve, settled } from "./serve.mjs";
+import { gameScope, phoneFloors, phoneSizes, readyToClick, serve, settled } from "./serve.mjs";
 import { loadPlaywright } from "./playwright.mjs";
 
 const TIMEOUT = 30_000;
@@ -41,23 +41,27 @@ const check = (label, ok, detail = "") => {
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 /**
- * What a game may hold below the floors, and why. Matched by selector inside
- * the game's frame; every one is printed once per run.
+ * What a game may hold below the floors, on how narrow a window (`upTo`),
+ * and why. Matched by selector inside the game's frame; one that let an
+ * element through is printed once per run.
  */
 const EXEMPT = {
 	sudoku: [
 		{
 			sel: ".su-cell",
 			tap: 35,
-			why: "a 9 x 9 board on a 354px phone: 9 cells of 44px need 396px, so a cell is 36px there (35px for the last row, 40px at 390). A tap only selects it — highlighting its row, column, box and digit, so a miss shows and costs a second tap — and the digit goes in from the pad, keys 48px tall",
+			upTo: 374,
+			why: "a 9 x 9 board: 9 cells of 44px need 396px, so on a 354px phone a cell is 36px (35px for the last row). A tap only selects it — highlighting its row, column, box and digit, so a miss shows and costs a second tap — and the digit goes in from the pad, keys 48px tall",
 		},
-		{ sel: ".su-notes", text: 11, why: "pencil notes are a 3 x 3 grid inside one cell: a third of a 36px cell holds an 11px digit (12px at 390); the digits placed are 21px" },
+		{ sel: ".su-cell", tap: 39, upTo: 419, why: "the same board on a 390px phone: 40px cells (39px for the last row); 44px takes a 420px window" },
+		{ sel: ".su-notes", text: 11, upTo: 374, why: "pencil notes are a 3 x 3 grid inside one cell: a third of a 36px cell holds an 11px digit (12px from 390); the digits placed are 21px" },
 	],
 	battleship: [
 		{
 			sel: ".bs-grid",
 			tap: 39,
-			why: "8 squares of 44px need 374px with the board's gaps: on a 354px phone a square is 39.6px (44px at 390). The 2px between squares is the board, not a neighbour, so a tap a little wide does nothing rather than firing at the next square",
+			upTo: 389,
+			why: "8 squares of 44px need 374px of board: under 390px wide a square is 39.6px (354x696) or 40.4px (360x640); 44px from 390. The 2px between squares is the board, not a neighbour, so a tap a little wide does nothing rather than firing at the next square",
 		},
 	],
 	"liars-dice": [],
@@ -157,16 +161,21 @@ function canvasText(F, ms = 600) {
 
 /**
  * Hold the frame to the floors at both phone sizes (serve.mjs phoneSizes).
- * `min`: the fewest targets for this to be the step meant. `canvas`: canvas
- * text too. `fit: [sel, n]`: the n elements matching sel all on screen, below
- * the band. `extra(w, h)`: anything else, as phoneSizes'.
+ * `min`: the fewest live targets for this to be the step meant (0 only where
+ * the frame has none: a canvas field, the shell's end card). `under`: what
+ * this step covers on purpose (an end overlay over the board); any other
+ * covered target fails. `canvas`: canvas text too. `fit: [sel, n]`: the n
+ * elements matching sel all on screen, below the band. `extra(w, h)`:
+ * anything else, as phoneSizes'.
  */
-async function audit(page, F, game, step, { canvas = false, min = 1, fit = null, extra = null } = {}) {
+async function audit(page, F, game, step, { canvas = false, min, under = null, fit = null, extra = null } = {}) {
+	if (min == null) throw new Error(`${game} · ${step}: say how many targets it has (min)`);
 	const allowed = await phoneSizes(page, F, `${game} · ${step}`, check, {
 		timeout: TIMEOUT,
 		hit: true,
 		exempt: EXEMPT[game] ?? [],
 		band: BAND,
+		under,
 		min,
 		extra: async (w, h) => {
 			if (SHOTS) await page.screenshot({ path: join(SHOTS, `${game}-${w}x${h}-${step.replace(/\W+/g, "-")}.png`) });
@@ -218,14 +227,27 @@ const GAMES = {
 			}
 		});
 		await until(G, () => window.__game.handle.debug().phase === "over");
-		await audit(page, G, "sudoku", "solved", { min: 0 });
+		// The end: the frame's overlay over the board (the shell's end card has PLAY AGAIN).
+		await audit(page, G, "sudoku", "solved", { min: 0, under: ".su-grid, .su-pad" });
 	},
 
 	/** Placing the fleet, firing, the reveal. */
 	async battleship(page) {
 		const G = await solo(page, "battleship", 2);
 		await until(G, () => window.__game.handle.debug().phase === "place");
-		await audit(page, G, "battleship", "placing the fleet", { min: 64, fit: [".bs-grid, .bs-ships, .bs-actions", 3] });
+		await audit(page, G, "battleship", "placing the fleet", { min: 71, fit: [".bs-grid, .bs-ships, .bs-actions", 3] });
+		// A shorter phone, 360x640: the ship rack and the buttons one row each,
+		// so the squares keep the 40.4px they had (two rows took them to 34px).
+		await page.setViewportSize({ width: 360, height: 640 });
+		await G.waitForFunction(() => innerWidth === 360 && innerHeight === 640, null, { timeout: TIMEOUT });
+		await G.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
+		const short = await G.evaluate(() => ({
+			square: Math.round(document.querySelector('[data-board="mine"] .bs-cell').getBoundingClientRect().width * 10) / 10,
+			rows: ["bs-ships", "bs-actions"].map((c) => new Set([...document.querySelectorAll(`.${c} > button`)].map((b) => Math.round(b.getBoundingClientRect().top))).size),
+		}));
+		const shortFit = await onScreen(G, ".bs-grid, .bs-ships, .bs-actions");
+		check("battleship · placing the fleet at 360x640: squares at least 40.4px, the rack and the buttons one row each, all on screen", short.square >= 40.4 && short.rows.join() === "1,1" && shortFit.ok && shortFit.n === 3, { ...short, ...shortFit });
+		await page.setViewportSize({ width: 390, height: 844 });
 		await G.locator("button", { hasText: "DOWN" }).or(G.locator("button", { hasText: "ACROSS" })).first().click();
 		await G.locator("button", { hasText: "COMMIT FLEET" }).click();
 		await until(G, () => window.__game.handle.debug().phase === "fire");
@@ -257,7 +279,7 @@ const GAMES = {
 			const b = [...document.querySelectorAll(".ld-actions button")].find((b) => b.textContent.startsWith("BID"));
 			return b && !b.disabled;
 		});
-		await audit(page, G, "liars-dice", "bidding", { min: 8 });
+		await audit(page, G, "liars-dice", "bidding", { min: 8 }); // five faces, − and +, BID
 		let seenCall = false;
 		const end = Date.now() + 240_000;
 		for (let bids = 0; Date.now() < end; await sleep(200)) {
@@ -265,7 +287,7 @@ const GAMES = {
 			if (d.over) break;
 			if (d.lastCall && !seenCall) {
 				seenCall = true;
-				await audit(page, G, "liars-dice", "a call: every cup opened", { min: 0 });
+				await audit(page, G, "liars-dice", "a call: every cup opened", { min: 0 }); // nothing to press while the cups are up
 			}
 			if (d.phase === "bid" && !d.lastCall) seenCall = false;
 			// Two bids, then LIAR: a call every round, so a game ends.
@@ -287,6 +309,7 @@ const GAMES = {
 	async "light-cycles"(page) {
 		const G = await solo(page, "light-cycles", 2);
 		await until(G, () => window.__game.handle.debug().riders.length === 2);
+		// No controls in the frame: each half of the arena is a steering zone, 150px+ wide.
 		await audit(page, G, "light-cycles", "the countdown", { min: 0, canvas: true });
 		await until(G, () => window.__game.handle.debug().racing);
 		await audit(page, G, "light-cycles", "racing", { min: 0, canvas: true });
@@ -344,7 +367,7 @@ const GAMES = {
 			// The drawer's board, tools and chat all on screen, the board a real size.
 			const boardH = () => F.evaluate(() => Math.round(document.getElementById("board").getBoundingClientRect().height));
 			await audit(pg, F, "draw-guess", `${drawer ? "drawing" : "guessing"} (${who})`, {
-				min: drawer ? 10 : 1,
+				min: drawer ? 10 : 12, // six pens, three brushes, CLEAR; the guesser's field and SEND too
 				fit: ["#board, #tools, #chat-area", 3],
 				extra: async () => ((await boardH()) >= 180 ? null : { boardH: await boardH() }),
 			});
@@ -357,16 +380,18 @@ const GAMES = {
 			if (d.phase === "gameover") break;
 			if (d.phase === "reveal" && !revealed) {
 				revealed = true;
-				for (const [pg, F, who] of both) await audit(pg, F, "draw-guess", `the reveal (${who})`, { min: 0 });
+				for (const [pg, F, who] of both) await audit(pg, F, "draw-guess", `the reveal (${who})`, { min: 10 });
 			}
 			if (d.phase === "drawing") {
 				const self = await H.evaluate(() => window.arcade.party.self);
 				const [pg, F] = d.drawerId === self ? [guest, U] : [host, H];
 				await pg.bringToFront();
+				// The round may end between the look and the tap (the right guess
+				// just went in): then the field is disabled, and the next look sees it.
 				const input = F.locator("#chat-input");
 				if (await input.isEnabled()) {
-					await input.fill(d.word);
-					await F.locator("#chat-send").click();
+					await input.fill(d.word, { timeout: 2000 }).catch(() => {});
+					await F.locator("#chat-send").click({ timeout: 2000 }).catch(() => {});
 				}
 			}
 			await sleep(300);
@@ -374,14 +399,54 @@ const GAMES = {
 		await settled(() => debug(U), (d) => d.phase === "gameover");
 		for (const [pg, F, who] of both) {
 			await readyToClick(pg);
-			await audit(pg, F, "draw-guess", `game over (${who})`, { min: who === "guest" ? 1 : 0 });
+			// The scores' overlay over the board; the guest's HOST A NEW GAME on it.
+			await audit(pg, F, "draw-guess", `game over (${who})`, { min: who === "guest" ? 1 : 0, under: "#tools, #chat-area" });
 		}
 		await guest.close();
 	},
 };
 
+/**
+ * phoneFloors itself, on pages made to trip it: each case is a way the
+ * measure once let something through (review of 2026-11-20).
+ */
+async function floorsItself() {
+	console.log("\ntaps: phoneFloors measures what a thumb meets");
+	const ctx = await browser.newContext({ viewport: { width: 354, height: 696 } });
+	const pg = await ctx.newPage();
+	const at = async (html, opts, w = 354) => {
+		await pg.setViewportSize({ width: w, height: 696 });
+		await pg.setContent(`<!doctype html><body style="margin:0;padding-top:80px">${html}<p>words</p></body>`);
+		return phoneFloors(pg, "body", { hit: true, band: 52, ...opts });
+	};
+	const names = (f) => f.taps.map((t) => `${t[0]}:${t[6]}`).join(" | ");
+	let f = await at(`<div style="cursor:pointer;padding:20px"><button style="width:20px;height:20px">x</button></div>`);
+	check("a small button inside a cursor:pointer block is still measured (not folded into it)", /^BUTTON:under 44px$/.test(names(f)), f);
+	f = await at(`<button disabled style="cursor:pointer;padding:10px"><a href="#" style="display:inline-block;width:10px;height:10px">a</a></button>`);
+	check("an enabled link inside a disabled pointer button is measured", /^A:under 44px$/.test(names(f)), f);
+	f = await at(`<div style="cursor:pointer;width:60px;height:60px"><span style="cursor:pointer;display:block;width:10px;height:10px"></span></div>`);
+	check("…but a pointer-only element inside another is that one's tap", !f.taps.length && f.measured.taps === 1, f);
+	const overlay = `<div class="board"><button style="width:60px;height:60px">x</button></div><div style="position:fixed;inset:0"></div>`;
+	f = await at(overlay);
+	check("a target under an overlay falls short (covered)", /^BUTTON:covered by DIV$/.test(names(f)), f);
+	f = await at(overlay, { under: ".board" });
+	check("…unless the step covers it on purpose (under), and then it is counted", !f.taps.length && f.covered === 1, f);
+	f = await at(`<p style="font-size:11.96px">tiny</p>`);
+	const g = await phoneFloors(pg, "body");
+	check("11.96px text is under 12px, in both modes", f.text.length === 1 && g.text.length === 1, { hit: f.text, plain: g.text });
+	const ex = [{ sel: ".grid", tap: 28, upTo: 374, why: "narrow only" }];
+	f = await at(`<div class="grid"><button style="width:30px;height:30px">x</button></div>`, { exempt: ex });
+	check("an exemption holds on a window up to its width, and says so", !f.taps.length && f.allowed.length === 1, f);
+	f = await at(`<div class="grid"><button style="width:30px;height:30px">x</button></div>`, { exempt: ex }, 390);
+	check("…and not on a wider one", f.taps.length === 1 && !f.allowed.length, f);
+	f = await at(`<div class="grid"><button style="width:50px;height:50px">x</button></div>`, { exempt: ex });
+	check("…and is not listed when the element met the floor anyway", !f.taps.length && !f.allowed.length, f);
+	await ctx.close();
+}
+
 const only = process.argv.slice(2);
 try {
+	if (!only.length || only.includes("floors")) await floorsItself();
 	for (const [id, run] of Object.entries(GAMES)) {
 		if (only.length && !only.includes(id)) continue;
 		console.log(`\ntaps: ${id}`);
