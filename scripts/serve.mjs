@@ -168,3 +168,38 @@ export async function passTable(page, timeout = 30_000) {
 	if (which === "table") await page.locator(".quick-table .quick-go button").click({ timeout });
 	return which === "table";
 }
+
+/**
+ * A phone's two floors (docs/index.md "Real-device findings"): every tap
+ * target at least 44x44 CSS px and every line of text at least 12px, read
+ * from the computed sizes of what is on screen under the `roots` selectors
+ * (never from the stylesheet). Returns what falls short — `{ taps, text }`,
+ * each entry `[class, text, …sizes]` — and how many of each were measured.
+ * A hidden or see-through (opacity 0) element is not on screen.
+ */
+export function phoneFloors(page, roots) {
+	return page.evaluate((roots) => {
+		const shown = (n) => {
+			if (!n.getClientRects().length) return false;
+			for (let e = n; e; e = e.parentElement) {
+				const s = getComputedStyle(e);
+				if (s.visibility === "hidden" || s.opacity === "0") return false;
+			}
+			return true;
+		};
+		const all = [...document.querySelectorAll(roots)].flatMap((r) => [r, ...r.querySelectorAll("*")]).filter(shown);
+		const what = (n) => [String(n.className || n.tagName).slice(0, 40), n.textContent.trim().slice(0, 24)];
+		const texts = all.filter((n) => [...n.childNodes].some((c) => c.nodeType === 3 && c.textContent.trim()));
+		const taps = all.filter((n) => n.matches("a[href], button, input:not([type=hidden]), select, textarea, summary, [role=button]"));
+		return {
+			measured: { taps: taps.length, text: texts.length },
+			text: texts.map((n) => [...what(n), parseFloat(getComputedStyle(n).fontSize)]).filter((x) => x[2] < 12),
+			taps: taps
+				.map((n) => {
+					const r = n.getBoundingClientRect();
+					return [...what(n), Math.round(r.width), Math.round(r.height)];
+				})
+				.filter((x) => x[2] < 44 || x[3] < 44),
+		};
+	}, roots);
+}

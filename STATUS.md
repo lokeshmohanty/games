@@ -40,10 +40,12 @@ Lokesh's review before merge; the open residuals are in Honest gaps.
   D1 backups; worker deploy from CI (Lokesh adds `CLOUDFLARE_API_TOKEN`);
   join-failure counting.
 - **Settings** (sound/vibration) and an accessibility pass.
-- **Phone fixes** from the Android pass: JOIN WITH A CODE uses a native
-  prompt; Connect 4's canvas is blurry (DPR); Firefox top bar and frame
-  theme; Neon Fission toasts pile up; Neon Survival's thumb offset; Connect 4
-  bot long task; tap targets and text sizes. iOS remains unverified.
+- **Phone fixes** from the Android pass. The shell's are done on branch
+  `phone-shell` (2026-11-19, not merged; docs/index.md "The second Android
+  pass"): JOIN WITH A CODE's dialog, one-tap cards, Firefox top bars and
+  frame theme, tap targets and text sizes. Left, in the games: Connect 4's
+  canvas is blurry (DPR); Neon Fission toasts pile up; Neon Survival's thumb
+  offset; Connect 4 bot long task. iOS remains unverified.
 
 **Bubble Rush asks every round** (Lokesh, 2026-11-18): no default mode; the
 host picks FREE-FOR-ALL or TEAMS before START (web-games `ask-mode`, its pin

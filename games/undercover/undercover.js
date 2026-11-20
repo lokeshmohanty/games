@@ -275,7 +275,7 @@ function mountUndercover(init) {
 			border: 2px solid var(--border); border-radius: 8px; color: var(--danger);
 			font-size: 1.1rem; cursor: pointer; }
 		.uc-opts { display: flex; flex-wrap: wrap; gap: 10px; justify-content: center;
-			align-items: center; font-size: 0.74rem; color: var(--muted); }
+			align-items: center; font-size: 0.75rem; color: var(--muted); }
 		.uc-step { display: flex; gap: 6px; align-items: center; }
 		.uc-step button { min-width: 44px; min-height: 44px; background: var(--panel);
 			border: 2px solid var(--border); border-radius: 8px; color: var(--accent);
@@ -284,7 +284,7 @@ function mountUndercover(init) {
 			font-size: 1.1rem; }
 		.uc-toggle { min-height: 44px; padding: 8px 14px; background: var(--panel);
 			border: 2px solid var(--border); border-radius: 8px; color: var(--muted);
-			font-size: 0.74rem; letter-spacing: 0.08em; cursor: pointer; }
+			font-size: 0.75rem; letter-spacing: 0.08em; cursor: pointer; }
 		.uc-toggle.on { border-color: var(--accent); color: var(--accent); }
 		.uc-big { font-size: clamp(1.6rem, 8vw, 2.4rem); text-align: center; color: var(--ink);
 			line-height: 1.15; }
@@ -304,7 +304,7 @@ function mountUndercover(init) {
 		.uc-row.pick { cursor: pointer; }
 		.uc-row.now { border-color: var(--accent); color: var(--accent); }
 		.uc-row.gone { opacity: 0.4; text-decoration: line-through; }
-		.uc-row small { color: var(--muted); font-size: 0.7rem; letter-spacing: 0.08em; }
+		.uc-row small { color: var(--muted); font-size: 0.75rem; letter-spacing: 0.08em; }
 		.uc-actions { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; }
 		.uc-actions .neon-btn { min-height: 46px; }
 		.uc-cats { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; }

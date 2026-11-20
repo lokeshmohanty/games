@@ -37,9 +37,14 @@ html, body { margin: 0; height: 100%; overflow: hidden; background: var(--bg); c
 	box-sizing: border-box;
 	max-width: 100%;
 	text-align: center;
+	/* One line, always: the grid is sized once a match starts (neon-fission.js
+	   resize), so a long name must not wrap the line mid-game and push the
+	   grid off a phone (review, 2026-11-20). */
+	white-space: nowrap;
 }
 #turn .dot { flex: none; }
-#turn .sub { font-family: var(--font-body); font-weight: 400; color: var(--ink-2); }
+#turn .label { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+#turn .sub { flex: none; font-family: var(--font-body); font-weight: 400; color: var(--ink-2); }
 
 .dot {
 	display: inline-block;
@@ -63,7 +68,9 @@ html, body { margin: 0; height: 100%; overflow: hidden; background: var(--bg); c
 	background: var(--surface);
 }
 .chip .name { max-width: 7.5ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.chip .n { font-family: var(--font-mono); color: var(--ink); }
+/* Two digits wide whatever it holds (a grid has at most 96 cells): a count
+   going 9 → 10 does not widen the chip and wrap a row mid-game. */
+.chip .n { font-family: var(--font-mono); color: var(--ink); flex: none; width: 2ch; min-width: 2ch; text-align: right; }
 .chip.is-turn { border-color: var(--seat); color: var(--ink); box-shadow: 0 0 0 1px var(--seat); }
 .chip.is-out { opacity: 0.45; text-decoration: line-through; }
 

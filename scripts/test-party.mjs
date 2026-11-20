@@ -15,8 +15,8 @@
 import { existsSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { serve, gameFrame, readyToClick, settled } from "./serve.mjs";
-import { loadPlaywright } from "./playwright.mjs";
+import { serve, gameFrame, phoneFloors, readyToClick, settled } from "./serve.mjs";
+import { launchFirefox, loadPlaywright } from "./playwright.mjs";
 
 const SITE = await serve(8733);
 const PARTY = SITE.url("?party");
@@ -124,7 +124,8 @@ async function waitForMembers(page, n, who) {
 	}
 }
 
-const { chromium } = loadPlaywright();
+const pwAll = loadPlaywright();
+const { chromium } = pwAll;
 
 const browser = await chromium.launch({
 	executablePath: chromePath(),
@@ -1242,6 +1243,86 @@ try {
 		const back = await r1.evaluate(async () => (await NeonArcade.identity()).id);
 		check("…while the first tab keeps its own", back === before, back);
 		await sctx.close();
+	}
+
+	console.log("\nparty: the top band and the party over a game, on a phone");
+	// Lokesh's phone (354x696, 2026-11-15) and 390x844: every button of the
+	// shell's own chrome over a game 44px, every line 12px; and the band
+	// (← Games at the left, ?, feedback, favourite, PARTY at the right) one
+	// row that never overlaps itself, also with Firefox's larger text (130%,
+	// 200%: Firefox for Android applies the system font size as text zoom).
+	/** The band's buttons: boxes, overlaps, ← Games whole or the arrow alone. */
+	const band = (page) =>
+		page.evaluate(() => {
+			const btns = [...document.querySelectorAll(".top-band .portal-link, .top-band .top-actions > :not([hidden])")].map((n) => {
+				const r = n.getBoundingClientRect();
+				return { what: n.className, left: r.left, right: r.right, top: r.top, bottom: r.bottom, w: Math.round(r.width), h: Math.round(r.height) };
+			});
+			const over = btns.some((a, i) => btns.some((b, j) => i < j && a.left < b.right - 0.5 && b.left < a.right - 0.5 && a.top < b.bottom && b.top < a.bottom));
+			const word = document.querySelector(".top-band .portal-link .label");
+			return {
+				btns,
+				over,
+				inside: btns.every((b) => b.left >= 0 && b.right <= innerWidth && b.top >= 0 && b.bottom <= 52),
+				big: btns.every((b) => b.w >= 44 && b.h >= 44),
+				word: !!word && getComputedStyle(word).visibility !== "hidden" && getComputedStyle(word).clipPath === "none",
+				sideways: document.documentElement.scrollWidth > innerWidth,
+			};
+		});
+	const inGame = async (b, w, h, opts = {}) => {
+		const c = await b.newContext({ viewport: { width: w, height: h }, hasTouch: true, ...opts });
+		await c.addInitScript(() => localStorage.setItem("neon.rs", "http://127.0.0.1:9"));
+		const pg = await c.newPage();
+		await pg.goto(SITE.url("?game=connect4&fresh=1&mode=bots&start=1"));
+		await gameFrame(pg, TIMEOUT);
+		await pg.locator(".party-pill:not([hidden])").waitFor({ timeout: TIMEOUT });
+		return { c, pg };
+	};
+	for (const [w, h] of [
+		[390, 844],
+		[354, 696],
+	]) {
+		const { c, pg } = await inGame(browser, w, h, { isMobile: true });
+		const t = await band(pg);
+		check(`${w}x${h}: the band is ← Games, ?, feedback, favourite, PARTY in one row, each 44px, inside the top 52px`, t.btns.length === 5 && t.big && t.inside && !t.over && t.word && !t.sideways, JSON.stringify(t));
+		const f = await phoneFloors(pg, ".top-band");
+		check(`${w}x${h}: …its text 12px or more`, f.measured.text >= 2 && !f.text.length && !f.taps.length, JSON.stringify(f));
+		// Squeezed to its arrow, ← Games is still named "Games" (review,
+		// 2026-11-19: the word was visibility: hidden, the arrow aria-hidden).
+		await pg.evaluate(() => document.querySelector(".top-band .portal-link").classList.add("is-tight"));
+		const named = await pg.locator(".top-band").getByRole("link", { name: "Games", exact: true }).count();
+		const tight = await band(pg);
+		check(`${w}x${h}: …the arrow alone is still the link named "Games"`, named === 1 && !tight.word && tight.btns[0].w === 44, JSON.stringify({ named, first: tight.btns[0] }));
+		await pg.evaluate(() => document.querySelector(".top-band .portal-link").classList.remove("is-tight"));
+		await pg.locator(".party-pill").click();
+		await pg.locator(".party-peek").waitFor({ timeout: TIMEOUT });
+		const peek = await phoneFloors(pg, ".party-peek, .top-band");
+		check(`${w}x${h}: the party pulled up over the game: every button 44px, every line 12px (TEAM A, BOT, REMOVE…)`, peek.measured.taps >= 6 && !peek.taps.length && !peek.text.length, JSON.stringify(peek));
+		await c.close();
+	}
+	// Its own try: a Firefox that fails (NEON_FIREFOX=1 and none here) is
+	// one loud failure.
+	try {
+	for (const scale of [130, 200]) {
+		const ff = await launchFirefox(pwAll, { textScale: scale });
+		if (!ff) break;
+		for (const [w, h] of [
+			[390, 844],
+			[354, 696],
+		]) {
+			const { c, pg } = await inGame(ff, w, h);
+			const t = await settled(() => band(pg), (x) => !x.over && x.inside, 3000);
+			check(`Firefox, text at ${scale}%, ${w}x${h}: the band holds (no overlap, each 44px, inside the top 52px, no sideways scroll)`, t.btns.length === 5 && t.big && t.inside && !t.over && !t.sideways, JSON.stringify(t));
+			if (scale === 200) {
+				const named = await pg.locator(".top-band").getByRole("link", { name: "Games", exact: true }).count();
+				check(`…← Games gives up its word for the arrow, 44px, still named "Games"`, !t.word && t.btns[0].w === 44 && named === 1, JSON.stringify({ first: t.btns[0], named }));
+			}
+			await c.close();
+		}
+		await ff.close();
+	}
+	} catch (err) {
+		check(`the Firefox lane: ${err.message.split("\n")[0]}`, false);
 	}
 } catch (err) {
 	console.log(`\n  FAIL unexpected: ${err.message}`);

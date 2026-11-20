@@ -84,12 +84,13 @@ function layout(page) {
 	});
 }
 
-/** The party's top buttons: inside the phone, clear of each other and of the site's own links. */
+/** The party's top band (← Games, ?, feedback, favourite, PARTY): inside the phone, clear of each other and of the site's own links. */
 function topBar(page) {
 	return page.evaluate(() => {
-		const btns = [...document.querySelectorAll(".top-actions > :not([hidden])")].map((b) => b.getBoundingClientRect());
+		// The band (lib/party.js .top-band): ← Games and the top-right buttons, one row.
+		const btns = [...document.querySelectorAll(".top-band .portal-link, .top-actions > :not([hidden])")].map((b) => b.getBoundingClientRect());
 		const over = (a, b) => a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom;
-		const others = [...document.querySelectorAll("body > *:not(.top-actions) a, body > *:not(.top-actions) button")]
+		const others = [...document.querySelectorAll("body > *:not(.top-band) a, body > *:not(.top-band) button")]
 			.filter((n) => {
 				const s = getComputedStyle(n);
 				const b = n.getBoundingClientRect();
