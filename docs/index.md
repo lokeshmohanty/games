@@ -500,7 +500,10 @@ verified even on its sender's own link, because it is kept as proof.
     let G3 back in (round 6, B6). Only a quorum genuinely cut off from the
     host's side for longer than the grace qualifies (round 5, S). The old host
     then steps down and follows the elected one, and so do the members
-    linked to it.
+    linked to it. A colluding quorum can stage this on purpose: drop every
+    link to the host's side for longer than the grace, then come back
+    crowned. From the host's side that is a real partition, and players see
+    those seats drop or show as reconnecting meanwhile (round 7).
 
   What this costs and does not cost:
   - **The cost is bounded.** In a real partial split with the host alive,
