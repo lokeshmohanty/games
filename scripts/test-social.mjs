@@ -89,11 +89,12 @@ try {
 	check("the portal names you", (await ana.p.locator(".site-menu .acct-me").textContent({ timeout: TIMEOUT })).includes("Ana Lima"));
 	check("…and still fits the phone", await noSideScroll(ana.p));
 	// Starred and given feedback only from inside a game (Lokesh: "Only
-	// inside games", 2026-11-14 and 2026-11-16). A card has no button at all,
-	// so any star or feedback control would be one; nor a ☆ or ★ in its text.
+	// inside games", 2026-11-14 and 2026-11-16). A card's only button is its
+	// title (.card-open, which opens the game), so any other control would be
+	// a star or feedback one; nor a ☆ or ★ in its text.
 	const cardControls = await ana.p.evaluate(() => ({
 		cards: document.querySelectorAll(".game-card").length,
-		controls: document.querySelectorAll(".game-card :is(button, [aria-pressed], .fav, .fb, .card-fav, .top-fav)").length,
+		controls: document.querySelectorAll(".game-card :is(button:not(.card-open), [aria-pressed], .fav, .fb, .card-fav, .top-fav)").length,
 		stars: [...document.querySelectorAll(".game-card")].filter((c) => /[☆★]/.test(c.textContent)).length,
 	}));
 	check("…with no star or feedback on the cards", cardControls.cards > 0 && cardControls.controls === 0 && cardControls.stars === 0, cardControls);

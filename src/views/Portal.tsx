@@ -14,6 +14,7 @@
 // this page.
 import { createEffect, on, onCleanup, onMount } from "solid-js";
 import "../../lib/portal.js";
+import { openJoinCode } from "../JoinCode";
 import { currentUrl, navigate, portalTab, viewOf } from "../router";
 import "./portal.css";
 
@@ -22,16 +23,12 @@ const A = (window as any).NeonArcade;
 /**
  * Join a party by its six-digit code. Lives on the portal because the code
  * is the one piece of party plumbing a newcomer meets before they have a
- * party open. The prompt is deliberately plain: it works inside the PWA
- * shell. Six digits to ./?party#c=, which joins it.
+ * party open. An in-page dialog (src/JoinCode.tsx), never prompt(): a
+ * number keypad, and a wrong code said in place.
  */
 function joinWithCode(event: MouseEvent) {
 	event.stopPropagation();
-	const raw = prompt("Enter the 6-digit party code");
-	if (raw == null) return; // cancelled
-	const code = raw.replace(/\D/g, "").slice(0, 6);
-	if (code.length !== 6) return alert("That is not a six-digit party code.");
-	navigate("./?party#c=" + code);
+	openJoinCode(event.currentTarget as HTMLElement);
 }
 
 export default function Portal() {

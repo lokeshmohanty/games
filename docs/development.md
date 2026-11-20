@@ -85,6 +85,19 @@ To run beside another test run, set `NEON_DIST=dist-<name>` and
 `NEON_PORT_OFFSET=<n>`. A separate build folder and separate ports keep two
 runs apart.
 
+**Firefox.** A few checks are Firefox's (test-theme, test-party,
+test-portal): a phone's larger text, which Firefox for Android applies as
+text zoom (emulated with the prefs `browser.display.os-zoom-behavior=2`
+and `ui.textScaleFactor`), and the frame's theme. They use Playwright's own
+Firefox (`scripts/playwright.mjs` `launchFirefox`) when it starts, and say
+"skip Firefox" when it does not; `NEON_FIREFOX=1` makes that a failure. CI
+installs no Firefox. On NixOS it needs its libraries from Nix:
+
+```sh
+node_modules/.bin/playwright install firefox   # once
+LD_LIBRARY_PATH=$(scripts/firefox-libs.sh) NEON_FIREFOX=1 just test-portal
+```
+
 ### CI runs the suites in parallel
 
 `.github/workflows/test.yml` runs on every push except main's, and on pull

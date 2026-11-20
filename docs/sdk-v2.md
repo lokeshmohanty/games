@@ -48,7 +48,8 @@ game folder/
 1. The shell builds the frame (lib/bridge.js `buildFrameDoc`). It inlines
    `sdk/v2/runtime.js`, the arcade's `lib/theme.css` and `lib/styles.css`,
    then the game's page with its scripts and stylesheets. `<html>` carries
-   `data-theme`, `data-mode` and `data-runtime`. This is two steps
+   `data-theme`, `data-mode` (what shows: `light` or `dark`, never the
+   player's `system`, which no theme block matches) and `data-runtime`. This is two steps
    (2026-11-15): `buildFrameTemplate` does everything that is the same for
    every player (the game's page, scripts and stylesheets inlined, the CSP,
    slots for the runtime's files, the fonts as `neon-font:` marks), and
@@ -150,6 +151,21 @@ How it runs:
   `rejected { reason }`.
 - **Bots.** After every change the host asks `turn()`. A bot on turn moves
   after a 0.6–1.1 s pause, through `bot({ seat })` and then `apply`.
+  - **A bot that thinks long** may return a promise of its action (the
+    runtime awaits every rule; 2026-11-19). The platform's queue holds every
+    other rules call until it settles, so the state cannot change under the
+    search, and a call has 5 s (`CALL_TIMEOUT_MS` in lib/sdk-managed.js).
+    Search in slices that yield to the event loop rather than in one go: a
+    task over 50 ms freezes the frame, and on a phone the shell with it.
+    Connect 4 is the example (`sliced`: a generator search continued over
+    MessageChannel messages, docs/perf.md "Phone pass"). A ticking game's
+    `bot()` runs every tick and should stay quick. The adapters' `dispatch`
+    is synchronous, so a compiled game's bot answers in one call.
+  - **A `bot` call the game does not answer in 5 s** is asked once more
+    after another pause, through the same queue (`BOT_RETRIES`; before
+    2026-11-19 the game stalled on the bot's turn). The first call's late
+    answer is dropped. The queue itself moves on after a timeout, so the
+    retry can reach the frame while the first call is still running there.
 - **People on the host's phone** (2026-11-17). A game with `"sameDevice":
   true` in game.json may get a bot seat with `local: true` in `init`: the
   one person at SINGLE PLAYER's quick table made it a PERSON, someone beside

@@ -366,6 +366,7 @@ function hud() {
 	const dot = document.createElement("span");
 	dot.className = "dot";
 	const label = document.createElement("span");
+	label.className = "label";
 	label.textContent = text;
 	const parts = [dot, label];
 	if (sub) {
@@ -412,6 +413,12 @@ canvas.addEventListener("click", (e) => {
 	arcade.act({ cell: i, n: view.moves });
 });
 
+// The grid is sized when the window changes and when a match begins — after
+// the turn line and the chips are filled in: sized before them, eight
+// players' chips took another 50px and the grid ran 20px off a 354x696
+// phone. Not on a chip's reflow mid-game (review 2026-11-19: watching #wrap
+// shrank the grid under a finger); a chip's count is two digits wide
+// whatever it holds (neon-fission.css), so the chips keep their rows.
 addEventListener("resize", resize);
 arcade.on("theme.set", () => paint());
 arcade.on("view", ({ state }) => {
@@ -420,7 +427,6 @@ arcade.on("view", ({ state }) => {
 	const fresh = view && state.match !== view.match;
 	view = state;
 	if (fresh) shownMove = -1;
-	if (reshaped) resize();
 	const last = state.last;
 	if (last && last.n !== shownMove) {
 		// A phone that (re)joins mid-game draws the board as it is.
@@ -436,7 +442,8 @@ arcade.on("view", ({ state }) => {
 	// The turn line and chips wait for a winning chain to play out, so they
 	// do not announce the winner over it (finish() draws them).
 	if (!anim?.final) hud();
-	paint();
+	if (reshaped || fresh) resize(); // paints
+	else paint();
 	// Nothing to replay: this view is shown (else finish() says so).
 	if (!anim) arcade.idle?.();
 });
