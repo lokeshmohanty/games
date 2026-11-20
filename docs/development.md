@@ -116,7 +116,7 @@ job's `site` artifact, not a second build.
 | shard 2 | test-room, test-party, test-scan, test-theme | `just test-shard 2` | 218 s | 317 s |
 | shard 3 | test-pwa, test-devkit, test-managed, test-portal, test-protocol, test-webapp, test-rules-screen, test-conformance | `just test-shard 3` | 191 s | 257 s |
 | shard 4 | test-wrangler (wrangler dev with a throwaway local D1, so no secret) | `just test-shard 4` | 285 s | 340 s |
-| shard 5 | test-taps (the community games, every phase, at two phone sizes; added 2026-11-20, timed then) | `just test-shard 5` | 323 s | not yet run |
+| shard 5 | test-taps (the community games, every phase, at two phone sizes; added 2026-11-20, timed then) | `just test-shard 5` | 234 s | not yet run |
 
 The local times are the suites' own, one after another on Lokesh's machine.
 The runner times are whole jobs, setup included. A serial `just test` takes

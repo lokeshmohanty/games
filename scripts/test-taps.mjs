@@ -10,12 +10,13 @@
  * DPR 3.5) found tap targets under 44px and text under 12px inside games —
  * which no suite caught, because each checked the few controls it knew of.
  * This plays each of lokeshmohanty/web-games' six games (registry pin, or
- * NEON_PIN_OVERRIDE) through its setup, play and end, at 390x844 and at that
- * phone's 354x696, and at each step measures the whole game frame with
- * scripts/serve.mjs `phoneFloors` (`hit: true`): every visible, enabled,
- * uncovered target — its box and its hit area — and every text, plus text
- * drawn on a canvas (`canvasText` here). Also: no sideways scroll, and no
- * target under the shell's top band (52px).
+ * NEON_PIN_OVERRIDE) through its setup, play and end, and at each step holds
+ * the whole game frame to scripts/serve.mjs `phoneSizes` — at 390x844 and at
+ * that phone's 354x696 — with `phoneFloors`' `hit: true`: every visible,
+ * enabled, uncovered target, its box and its hit area, and every text; plus
+ * text drawn on a canvas (`canvasText` here) and, where a screen could run
+ * off the phone, its parts on screen. No sideways scroll, and no target under
+ * the shell's top band (52px).
  *
  * Exemptions are listed per game with the reason, and printed: a Sudoku cell
  * is a ninth of a 330px board on that phone, and the reason it is still
@@ -24,17 +25,13 @@
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { homedir } from "node:os";
-import { gameScope, phoneFloors, readyToClick, serve, settled } from "./serve.mjs";
+import { gameScope, phoneSizes, readyToClick, serve, settled } from "./serve.mjs";
 import { loadPlaywright } from "./playwright.mjs";
 
 const TIMEOUT = 30_000;
 const VERBOSE = !!process.env.NEON_TAPS_VERBOSE;
 const SHOTS = process.env.NEON_TAPS_SHOTS;
 const BAND = 52; // the shell's top band over a game frame (portal link, game buttons)
-const PHONES = [
-	{ w: 390, h: 844, dpr: 3 },
-	{ w: 354, h: 696, dpr: 3.5 }, // the Android phone of the 2026-11-18 pass
-];
 
 let failures = 0;
 const check = (label, ok, detail = "") => {
@@ -80,9 +77,9 @@ const { chromium } = loadPlaywright();
 const site = await serve(8749);
 const browser = await chromium.launch({ executablePath: chrome, args: ["--no-sandbox", "--autoplay-policy=no-user-gesture-required"] });
 
-/** A touch phone of that size that never reaches the deployed room server. */
-async function phone({ w, h, dpr }) {
-	const ctx = await browser.newContext({ viewport: { width: w, height: h }, isMobile: true, hasTouch: true, deviceScaleFactor: dpr });
+/** A touch phone (DPR 3.5, as the one of the pass) that never reaches the deployed room server; phoneSizes sizes it. */
+async function phone() {
+	const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, deviceScaleFactor: 3.5 });
 	await ctx.addInitScript(() => {
 		try {
 			localStorage.setItem("neon.rs", "http://127.0.0.1:9");
@@ -120,15 +117,14 @@ async function solo(page, id, players) {
 }
 
 const debug = (G) => G.evaluate(() => window.__game.handle.debug());
-/** Every element matching `sel` is on screen and below the band: [top, bottom] of the lot, and whether. */
-async function onScreen(G, sel) {
-	const r = await G.evaluate(([sel, band]) => {
+/** The elements matching `sel`, on show: how many, and whether all are on screen below the band. */
+function onScreen(G, sel) {
+	return G.evaluate(([sel, band]) => {
 		const boxes = [...document.querySelectorAll(sel)].filter((n) => n.getClientRects().length).map((n) => n.getBoundingClientRect());
 		const top = Math.min(...boxes.map((b) => b.top));
 		const bottom = Math.max(...boxes.map((b) => b.bottom));
 		return { n: boxes.length, top: Math.round(top), bottom: Math.round(bottom), h: innerHeight, ok: boxes.length > 0 && top >= band && bottom <= innerHeight };
 	}, [sel, BAND]);
-	return r;
 }
 const until = (G, fn, arg, timeout = TIMEOUT) => G.waitForFunction(fn, arg, { timeout });
 
@@ -159,19 +155,34 @@ function canvasText(F, ms = 600) {
 	}, ms);
 }
 
-/** Measure the frame now and check it: the line names the game, the step and the phone. */
-async function audit(F, game, step, phone, { canvas = false, min = 1 } = {}) {
-	await F.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
-	const f = await phoneFloors(F, "body", { hit: true, exempt: EXEMPT[game] ?? [], band: BAND });
-	const drawn = canvas ? (await canvasText(F)).filter(([, px]) => px < 12) : [];
-	const doc = await F.evaluate(() => document.documentElement.scrollWidth);
-	const bad = { taps: f.taps, text: f.text, ...(drawn.length ? { canvas: drawn } : {}), ...(doc > phone.w ? { doc } : {}) };
-	if (f.measured.taps < min) bad.missed = `${f.measured.taps} targets, expected at least ${min}`;
-	const ok = !f.taps.length && !f.text.length && !drawn.length && doc <= phone.w && f.measured.taps >= min;
-	check(`${game} · ${step} · ${phone.w}x${phone.h}: taps 44px (box and hit), text 12px, no sideways scroll, clear of the band`, ok, ok ? `${f.measured.taps} targets, ${f.measured.text} texts` : bad);
-	for (const [sel, why] of f.allowed) exemptions.add(`${game} ${sel}: ${why}`);
-	if (SHOTS) await F.page().screenshot({ path: join(SHOTS, `${game}-${phone.w}x${phone.h}-${step.replace(/\W+/g, "-")}.png`) });
-	return f;
+/**
+ * Hold the frame to the floors at both phone sizes (serve.mjs phoneSizes).
+ * `min`: the fewest targets for this to be the step meant. `canvas`: canvas
+ * text too. `fit: [sel, n]`: the n elements matching sel all on screen, below
+ * the band. `extra(w, h)`: anything else, as phoneSizes'.
+ */
+async function audit(page, F, game, step, { canvas = false, min = 1, fit = null, extra = null } = {}) {
+	const allowed = await phoneSizes(page, F, `${game} · ${step}`, check, {
+		timeout: TIMEOUT,
+		hit: true,
+		exempt: EXEMPT[game] ?? [],
+		band: BAND,
+		min,
+		extra: async (w, h) => {
+			if (SHOTS) await page.screenshot({ path: join(SHOTS, `${game}-${w}x${h}-${step.replace(/\W+/g, "-")}.png`) });
+			const out = {};
+			const drawn = canvas ? (await canvasText(F)).filter(([, px]) => px < 12) : [];
+			if (drawn.length) out.canvas = drawn;
+			if (fit) {
+				const on = await onScreen(F, fit[0]);
+				if (!on.ok || on.n !== fit[1]) out.fit = { sel: fit[0], want: fit[1], ...on };
+			}
+			const more = extra ? await extra(w, h) : null;
+			if (more) out.more = more;
+			return Object.keys(out).length ? out : null;
+		},
+	});
+	for (const [sel, why] of allowed) exemptions.add(`${game} ${sel}: ${why}`);
 }
 const exemptions = new Set();
 
@@ -179,21 +190,21 @@ const exemptions = new Set();
 
 const GAMES = {
 	/** Pick a puzzle, the grid and pad (with notes, racing a bot), solved. */
-	async sudoku(page, p) {
+	async sudoku(page) {
 		const G = await solo(page, "sudoku", 2);
 		await until(G, () => window.__game.handle.debug().phase === "pick");
-		await audit(G, "sudoku", "pick a puzzle", p, { min: 6 });
+		await audit(page, G, "sudoku", "pick a puzzle", { min: 6 });
 		await G.locator("button", { hasText: "NEW PUZZLE" }).click();
 		await until(G, () => {
 			const d = window.__game.handle.debug();
 			return d.phase === "play" && d.selected >= 0;
 		});
-		await audit(G, "sudoku", "the race", p, { min: 81 });
+		await audit(page, G, "sudoku", "the race", { min: 81 });
 		// Pencil notes in the selected cell.
 		await G.locator(".su-pad button", { hasText: "NOTES" }).click();
 		for (const d of ["1", "5", "9"]) await G.locator(".su-pad button", { hasText: new RegExp(`^${d}$`) }).click();
 		await until(G, () => !!document.querySelector(".su-notes"));
-		await audit(G, "sudoku", "pencil notes", p, { min: 81 });
+		await audit(page, G, "sudoku", "pencil notes", { min: 81 });
 		await G.locator(".su-pad button", { hasText: "NOTES" }).click();
 		// Solve it, cell by cell, as a thumb would: the cell, then its digit.
 		await G.evaluate(() => {
@@ -207,22 +218,18 @@ const GAMES = {
 			}
 		});
 		await until(G, () => window.__game.handle.debug().phase === "over");
-		await audit(G, "sudoku", "solved", p, { min: 0 });
+		await audit(page, G, "sudoku", "solved", { min: 0 });
 	},
 
 	/** Placing the fleet, firing, the reveal. */
-	async battleship(page, p) {
+	async battleship(page) {
 		const G = await solo(page, "battleship", 2);
 		await until(G, () => window.__game.handle.debug().phase === "place");
-		await audit(G, "battleship", "placing the fleet", p, { min: 64 });
-		const fitPlace = await onScreen(G, ".bs-grid, .bs-ships, .bs-actions");
-		check(`battleship · placing the fleet · ${p.w}x${p.h}: the board, the ships and the buttons on screen`, fitPlace.ok && fitPlace.n === 3, fitPlace);
+		await audit(page, G, "battleship", "placing the fleet", { min: 64, fit: [".bs-grid, .bs-ships, .bs-actions", 3] });
 		await G.locator("button", { hasText: "DOWN" }).or(G.locator("button", { hasText: "ACROSS" })).first().click();
 		await G.locator("button", { hasText: "COMMIT FLEET" }).click();
 		await until(G, () => window.__game.handle.debug().phase === "fire");
-		await audit(G, "battleship", "firing", p, { min: 64 });
-		let fit = await onScreen(G, ".bs-grid");
-		check(`battleship · firing · ${p.w}x${p.h}: both boards on screen, below the band`, fit.ok && fit.n === 2, fit);
+		await audit(page, G, "battleship", "firing", { min: 64, fit: [".bs-grid", 2] });
 		for (let last = { n: -1, at: Date.now() }; ; await sleep(130)) {
 			const d = await debug(G);
 			if (d.over) break;
@@ -240,19 +247,17 @@ const GAMES = {
 			const d = window.__game.handle.debug();
 			return d.over && Object.keys(d.audits).length === 2;
 		});
-		await audit(G, "battleship", "the fleets revealed", p, { min: 1 });
-		fit = await onScreen(G, ".bs-grid, .bs-actions, .bs-verdict");
-		check(`battleship · the fleets revealed · ${p.w}x${p.h}: both boards, the verdict and NEW GAME on screen`, fit.ok && fit.n === 4, fit);
+		await audit(page, G, "battleship", "the fleets revealed", { min: 1, fit: [".bs-grid, .bs-actions, .bs-verdict", 4] });
 	},
 
 	/** Bidding, a call (every cup opened), and the end. */
-	async "liars-dice"(page, p) {
+	async "liars-dice"(page) {
 		const G = await solo(page, "liars-dice", 2);
 		await until(G, () => {
 			const b = [...document.querySelectorAll(".ld-actions button")].find((b) => b.textContent.startsWith("BID"));
 			return b && !b.disabled;
 		});
-		await audit(G, "liars-dice", "bidding", p, { min: 8 });
+		await audit(page, G, "liars-dice", "bidding", { min: 8 });
 		let seenCall = false;
 		const end = Date.now() + 240_000;
 		for (let bids = 0; Date.now() < end; await sleep(200)) {
@@ -260,7 +265,7 @@ const GAMES = {
 			if (d.over) break;
 			if (d.lastCall && !seenCall) {
 				seenCall = true;
-				await audit(G, "liars-dice", "a call: every cup opened", p, { min: 0 });
+				await audit(page, G, "liars-dice", "a call: every cup opened", { min: 0 });
 			}
 			if (d.phase === "bid" && !d.lastCall) seenCall = false;
 			// Two bids, then LIAR: a call every round, so a game ends.
@@ -275,39 +280,39 @@ const GAMES = {
 			}, bids);
 		}
 		check("liar's dice reached its end", !!(await debug(G)).over);
-		await audit(G, "liars-dice", "the end", p, { min: 1 });
+		await audit(page, G, "liars-dice", "the end", { min: 1 });
 	},
 
 	/** The countdown, the race (steering halves, canvas), the round's end. */
-	async "light-cycles"(page, p) {
+	async "light-cycles"(page) {
 		const G = await solo(page, "light-cycles", 2);
 		await until(G, () => window.__game.handle.debug().riders.length === 2);
-		await audit(G, "light-cycles", "the countdown", p, { min: 0, canvas: true });
+		await audit(page, G, "light-cycles", "the countdown", { min: 0, canvas: true });
 		await until(G, () => window.__game.handle.debug().racing);
-		await audit(G, "light-cycles", "racing", p, { min: 0, canvas: true });
+		await audit(page, G, "light-cycles", "racing", { min: 0, canvas: true });
 		await until(G, () => window.__game.handle.debug().racing === false, null, 90_000);
-		await audit(G, "light-cycles", "the round over", p, { min: 0, canvas: true });
+		await audit(page, G, "light-cycles", "the round over", { min: 0, canvas: true });
 	},
 
 	/** The mode pick, the round (canvas), the end. */
-	async "bubble-rush"(page, p) {
+	async "bubble-rush"(page) {
 		const G = await solo(page, "bubble-rush", 2);
 		await until(G, () => window.__game.handle.debug().phase === "setup");
-		await audit(G, "bubble-rush", "picking a mode", p, { min: 2 });
+		await audit(page, G, "bubble-rush", "picking a mode", { min: 2 });
 		await G.locator('.br-setup button[data-mode="ffa"]').click();
 		await until(G, () => window.__game.handle.debug().mode === "ffa");
-		await audit(G, "bubble-rush", "a mode picked", p, { min: 3 });
+		await audit(page, G, "bubble-rush", "a mode picked", { min: 3 });
 		await G.locator(".br-setup .br-start").click();
 		await until(G, () => window.__game.handle.debug().phase !== "setup");
-		if ((await debug(G)).phase === "count") await audit(G, "bubble-rush", "the countdown", p, { min: 0, canvas: true });
+		if ((await debug(G)).phase === "count") await audit(page, G, "bubble-rush", "the countdown", { min: 0, canvas: true });
 		await until(G, () => window.__game.handle.debug().phase === "play");
-		await audit(G, "bubble-rush", "popping", p, { min: 0, canvas: true }); // the field is the target: a canvas
+		await audit(page, G, "bubble-rush", "popping", { min: 0, canvas: true }); // the field is the target: a canvas
 		await until(G, () => window.__game.handle.debug().phase === "over", null, 90_000);
-		await audit(G, "bubble-rush", "the round over", p, { min: 0, canvas: true });
+		await audit(page, G, "bubble-rush", "the round over", { min: 0, canvas: true });
 	},
 
 	/** Two people (no bots): drawing and guessing, the reveal, game over — both phones. */
-	async "draw-guess"(host, p) {
+	async "draw-guess"(host) {
 		const guest = watch(await host.context().newPage());
 		await host.goto(site.url("?game=lokeshmohanty%2Fdraw-guess&fresh=1"));
 		await host.locator("button", { hasText: "MULTI-PLAYER" }).first().click();
@@ -333,12 +338,16 @@ const GAMES = {
 		await until(H, () => window.__game.handle.debug().phase === "drawing");
 		await until(U, () => window.__game.handle.debug().phase === "drawing");
 		const drawerIsHost = (await debug(H)).drawerId === (await H.evaluate(() => window.arcade.party.self));
-		const board = await onScreen(drawerIsHost ? H : U, "#board, #tools, #chat-area");
-		const boardH = await (drawerIsHost ? H : U).evaluate(() => Math.round(document.getElementById("board").getBoundingClientRect().height));
-		check(`draw-guess · drawing · ${p.w}x${p.h}: the board (${boardH}px tall), the tools and the chat on screen`, board.ok && board.n === 3 && boardH >= 180, { ...board, boardH });
 		for (const [pg, F, who] of both) {
 			await readyToClick(pg);
-			await audit(F, "draw-guess", `${(who === "host") === drawerIsHost ? "drawing" : "guessing"} (${who})`, p, { min: (who === "host") === drawerIsHost ? 10 : 1 });
+			const drawer = (who === "host") === drawerIsHost;
+			// The drawer's board, tools and chat all on screen, the board a real size.
+			const boardH = () => F.evaluate(() => Math.round(document.getElementById("board").getBoundingClientRect().height));
+			await audit(pg, F, "draw-guess", `${drawer ? "drawing" : "guessing"} (${who})`, {
+				min: drawer ? 10 : 1,
+				fit: ["#board, #tools, #chat-area", 3],
+				extra: async () => ((await boardH()) >= 180 ? null : { boardH: await boardH() }),
+			});
 		}
 		// Every round, the guesser guesses right; the reveal once, then on to the end.
 		let revealed = false;
@@ -348,7 +357,7 @@ const GAMES = {
 			if (d.phase === "gameover") break;
 			if (d.phase === "reveal" && !revealed) {
 				revealed = true;
-				for (const [, F, who] of both) await audit(F, "draw-guess", `the reveal (${who})`, p, { min: 0 });
+				for (const [pg, F, who] of both) await audit(pg, F, "draw-guess", `the reveal (${who})`, { min: 0 });
 			}
 			if (d.phase === "drawing") {
 				const self = await H.evaluate(() => window.arcade.party.self);
@@ -365,7 +374,7 @@ const GAMES = {
 		await settled(() => debug(U), (d) => d.phase === "gameover");
 		for (const [pg, F, who] of both) {
 			await readyToClick(pg);
-			await audit(F, "draw-guess", `game over (${who})`, p, { min: who === "guest" ? 1 : 0 });
+			await audit(pg, F, "draw-guess", `game over (${who})`, { min: who === "guest" ? 1 : 0 });
 		}
 		await guest.close();
 	},
@@ -373,19 +382,17 @@ const GAMES = {
 
 const only = process.argv.slice(2);
 try {
-	for (const p of PHONES) {
-		for (const [id, run] of Object.entries(GAMES)) {
-			if (only.length && !only.includes(id)) continue;
-			console.log(`\ntaps: ${id} at ${p.w}x${p.h}`);
-			const ctx = await phone(p);
-			const page = watch(await ctx.newPage());
-			try {
-				await run(page, p);
-			} catch (err) {
-				check(`${id} at ${p.w}x${p.h} played through`, false, err.message.split("\n")[0]);
-			}
-			await ctx.close();
+	for (const [id, run] of Object.entries(GAMES)) {
+		if (only.length && !only.includes(id)) continue;
+		console.log(`\ntaps: ${id}`);
+		const ctx = await phone();
+		const page = watch(await ctx.newPage());
+		try {
+			await run(page);
+		} catch (err) {
+			check(`${id} played through`, false, err.message.split("\n")[0]);
 		}
+		await ctx.close();
 	}
 	if (exemptions.size) {
 		console.log("\ntaps: allowed below the floors, and why");

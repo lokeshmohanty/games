@@ -278,3 +278,37 @@ export function phoneFloors(page, roots, { hit = false, exempt = [], band = 0 } 
 		[roots, hit, exempt, band],
 	);
 }
+
+/** The two phones every game is held to: 390x844, and Lokesh's OnePlus at 354x696 (2026-11-15). */
+export const PHONE_SIZES = [
+	[390, 844],
+	[354, 696],
+];
+
+/**
+ * The game on screen in frame `F` of page `p` at 390x844 and at 354x696
+ * (Lokesh's OnePlus): no text under 12px, no tap under 44px (phoneFloors,
+ * from computed sizes), no sideways scroll, each size a `check(label, ok,
+ * detail)` of the caller's. The page is left at 390x844.
+ *
+ * Options: phoneFloors' (`hit`, `exempt`, `band`); `min`, the fewest targets
+ * for the screen to count as the one meant; `extra(w, h)`, more to hold at
+ * each size — what falls short, or null. Returns the exemptions used, as
+ * phoneFloors' `allowed`.
+ */
+export async function phoneSizes(p, F, label, check, { timeout = 30_000, min = 0, extra = null, ...floors } = {}) {
+	const allowed = new Map();
+	for (const [w, h] of PHONE_SIZES) {
+		await p.setViewportSize({ width: w, height: h });
+		await F.waitForFunction((w) => innerWidth <= w, w, { timeout });
+		await F.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)))); // after the game's own resize
+		const f = await phoneFloors(F, "body", floors);
+		const doc = await F.evaluate(() => document.documentElement.scrollWidth);
+		const more = extra ? await extra(w, h) : null;
+		const ok = !f.text.length && !f.taps.length && f.measured.text > 0 && f.measured.taps >= min && doc <= w && !more;
+		check(`${label} at ${w}x${h}: text at least 12px, taps at least 44px${floors.hit ? " (box and hit area)" : ""}, no sideways scroll`, ok, JSON.stringify({ ...f, doc, ...(more ? { more } : {}) }));
+		for (const [sel, why] of f.allowed ?? []) allowed.set(sel, why);
+	}
+	await p.setViewportSize({ width: 390, height: 844 });
+	return allowed;
+}
