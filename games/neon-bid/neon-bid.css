@@ -36,14 +36,14 @@
 	clip-path: polygon(50% 0, 100% 35%, 50% 100%, 0 35%); }
 /* A seat: a ring in its colour around its initial. Under a gem it says who
    won it; the empty one holds the row's height. */
-.nb-mark { box-sizing: border-box; display: inline-grid; place-items: center; min-width: 16px;
-	height: 16px; padding: 0 2px; border: 2px solid var(--seat); border-radius: 8px;
-	background: var(--panel); color: var(--ink); font: 700 9px/1 var(--font-display); }
+.nb-mark { box-sizing: border-box; display: inline-grid; place-items: center; min-width: 20px;
+	height: 20px; padding: 0 2px; border: 2px solid var(--seat); border-radius: 10px;
+	background: var(--panel); color: var(--ink); font: 700 12px/1 var(--font-display); }
 .nb-mark.none { visibility: hidden; }
 @keyframes nb-pulse { 50% { filter: drop-shadow(0 0 10px var(--gem)) brightness(1.25); } }
 
 .nb-seats { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 4px 8px;
-	width: 100%; font-size: 0.72rem; }
+	width: 100%; font-size: 0.75rem; }
 .nb-seat { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 2px 6px;
 	align-items: center; padding: 4px 6px; border: 1px solid var(--border);
 	border-radius: 6px; background: var(--panel); }
@@ -61,10 +61,10 @@
 .nb-big { width: 64px; flex: none; }
 .nb-big .nb-glow { animation: nb-pulse 1.4s ease-in-out infinite; }
 .nb-lot .txt { display: flex; flex-direction: column; gap: 2px; }
-.nb-lot .lotno { font-size: 0.7rem; letter-spacing: 0.14em; color: var(--muted); }
+.nb-lot .lotno { font-size: 0.75rem; letter-spacing: 0.14em; color: var(--muted); }
 .nb-lot .name { font-size: 1.3rem; color: var(--ink); }
 .nb-worth { font-size: 0.95rem; color: var(--accent); text-shadow: 0 0 8px var(--accent-glow); }
-.nb-worth small { display: block; font-size: 0.72rem; color: var(--muted); text-shadow: none; }
+.nb-worth small { display: block; font-size: 0.75rem; color: var(--muted); text-shadow: none; }
 
 .nb-panel { width: 100%; display: flex; flex-direction: column; align-items: center; gap: 8px; }
 .nb-wallet { font-size: 0.85rem; color: var(--muted); }
@@ -81,12 +81,12 @@
 .nb-go { min-height: 52px; min-width: 220px; font-size: 16px; }
 
 .nb-banner { font-size: 0.95rem; text-align: center; color: var(--ink); min-height: 1.3em; }
-.nb-banner small { display: block; font-size: 0.72rem; color: var(--muted); }
+.nb-banner small { display: block; font-size: 0.75rem; color: var(--muted); }
 .nb-cards { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; width: 100%;
 	perspective: 600px; }
 .nb-card { display: flex; flex-direction: column; align-items: center; gap: 1px; padding: 6px 2px;
 	border: 1px solid var(--border); border-radius: 8px; background: var(--panel);
-	font-size: 0.68rem; color: var(--muted); animation: nb-flip 0.45s ease-out both; }
+	font-size: 0.75rem; color: var(--muted); animation: nb-flip 0.45s ease-out both; }
 .nb-card .who { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .nb-card .amt { font-size: 1.35rem; color: var(--ink); font-variant-numeric: tabular-nums; }
 .nb-card.win { border-color: var(--accent); box-shadow: 0 0 12px var(--accent-glow); }
@@ -97,11 +97,11 @@
 @keyframes nb-flip { from { transform: rotateY(90deg); opacity: 0; } to { transform: none; opacity: 1; } }
 
 .nb-table { width: 100%; border-collapse: collapse; font-size: 0.78rem; }
-.nb-table th { font-weight: normal; color: var(--muted); font-size: 0.65rem; letter-spacing: 0.08em;
+.nb-table th { font-weight: normal; color: var(--muted); font-size: 0.75rem; letter-spacing: 0.08em;
 	text-align: left; padding: 2px 4px; }
 .nb-table td { padding: 5px 4px; border-top: 1px solid var(--border); font-variant-numeric: tabular-nums; }
 .nb-table td.who { max-width: 90px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .nb-table tr.win td { color: var(--accent); }
 .nb-table td.pts { font-size: 1rem; color: var(--ink); }
 .nb-table tr.win td.pts { color: var(--accent); }
-.nb-notice { font-size: 0.7rem; color: var(--warn); min-height: 1em; text-align: center; }
+.nb-notice { font-size: 0.75rem; color: var(--warn); min-height: 1em; text-align: center; }

@@ -26,6 +26,7 @@ You, Sam and one bot start a run. A new red dot arrives every second at first. Y
 Sam is hit first, then you. The bot keeps flying and catches 2 more gems before it goes down. Final scores: bot 5, you 4, Sam 3. The bot wins. Had the bot stopped at 4, you would have shared first place.
 
 ## Controls
-- On a phone, touch and drag anywhere. Your ship jumps to the spot under your finger.
+- On a phone, put a finger down anywhere and drag. Your ship moves as far as your finger does, in the same direction, so it stays in sight instead of under your thumb.
+- Only one finger steers. A second finger does nothing, and your ship stops at the edges of the arena.
 - With a mouse, just move it. Your ship follows the pointer; no click is needed.
 - There are no keyboard controls.
