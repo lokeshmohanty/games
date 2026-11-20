@@ -2297,5 +2297,72 @@ for (const variant of ["linked first", "linked first, then a hand-over"]) {
 	for (const r of rooms) r.leave();
 }
 
+
+// ---------------------------------------------------------------------------
+console.log("\nwho said it, round 6: a heal is a real cut, not a bounced link");
+
+for (const seq of [false, true]) {
+	for (const tab of [false, true]) {
+		// B6: P is the live host of P, Cy, D, H (full mesh). Cy and D (or Cy's
+		// extra room) bounce their own links to P and H — all at once and
+		// re-dialled at once, or one at a time 1.5 s apart while the rest
+		// vouch — then send an election on P's record with D's ack, as if a
+		// partition had healed.
+		const ids = await idsDescending(4);
+		const [p, c, d, h] = await party(["P", "Cy", tab ? "Cy-tab" : "D", "H"], fullMesh(4), { ids: [ids[0], ids[3], ids[2], ids[1]], heirWaitMs: 60_000, lostRetryMs: [] });
+		await sleep(100);
+		const pRec = stripEnv(wire.filter((w) => w.from === p.selfId && w.env.__p && w.env.__p.host === p.selfId).at(-1).env);
+		await sleep(20);
+		const bounce = (att, v) => {
+			const l1 = att.links.get(v.selfId);
+			const l2 = v.links.get(att.selfId);
+			if (l1) att._linkClosed(l1);
+			if (l2) v._linkClosed(l2);
+		};
+		const relink = (att, v) => {
+			const [x, y] = linkPair(att, v);
+			x.introducedName = v.self().name;
+			y.introducedName = att.self().name;
+			att._linkOpened(x);
+			v._linkOpened(y);
+		};
+		if (seq) {
+			for (const att of [c, d]) {
+				for (const v of [p, h]) {
+					bounce(att, v);
+					await sleep(1500);
+					relink(att, v);
+					await sleep(200);
+				}
+			}
+			await sleep(3000);
+		} else {
+			for (const att of [c, d]) for (const v of [p, h]) bounce(att, v);
+			await sleep(100);
+			for (const att of [c, d]) for (const v of [p, h]) relink(att, v);
+			await sleep(400);
+		}
+		const pid = c.party.pid;
+		const key = NeonArcade._codec.voteKeyOf(pRec.__p.members, 0, p.selfId);
+		const dAck = stripEnv(await signAs(d.identity, { __ka: key, r: 1, n: c.selfId, f: d.selfId, t: null, id: nid() }, pid));
+		const R = await signAs(c.identity, { __p: { ...structuredClone(c.party), host: c.selfId, term: 1, rev: Date.now() + 999 }, f: c.selfId, t: null, id: nid(), cp: { v: "vote", key, rec: pRec, acks: [dAck] } }, pid);
+		for (const r of [p, h]) c.links.get(r.selfId).send({ ...R, h: 0, m: null });
+		await sleep(300);
+		check(`B6 (${seq ? "one link at a time" : "all at once"}, ${tab ? "an extra room" : "two members"}): bounced links are no healed partition — P keeps its crown`, p.isHost() && h.hostId() === p.selfId, `p host=${p.isHost()} h sees ${h.hostId() === c.selfId ? "Cy" : "P"}`);
+		for (const r of [p, c, d, h]) r.leave();
+	}
+}
+
+{
+	// An election that reached commits but never crowned, P staying host:
+	// those who committed must still take P's later MAKE HOST.
+	const [p, a, b] = await party(["P", "Ana", "Bo"], fullMesh(3), { heirWaitMs: 60_000, lostRetryMs: [] });
+	b.committed.set(b._voteKey(p.selfId), a.selfId); // a commit for P's vacancy that went nowhere
+	p.transferHost(b.selfId);
+	await sleep(100);
+	check("a commit that never crowned does not make a voter refuse the host's later hand-over", b.isHost() && a.hostId() === b.selfId, `bo host=${b.isHost()} ${b.refusals.slice(-1)}`);
+	for (const r of [p, a, b]) r.leave();
+}
+
 console.log(failures ? `\n${failures} failing\n` : "\nall passing\n");
 process.exit(failures ? 1 : 0);
