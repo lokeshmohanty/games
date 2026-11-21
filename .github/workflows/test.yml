@@ -131,7 +131,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        shard: [1, 2, 3, 4]
+        shard: [1, 2, 3, 4, 5]
     name: shard ${{ matrix.shard }}
     env:
       # Each shard has its own runner; these mirror a local run beside others.
