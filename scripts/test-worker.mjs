@@ -315,7 +315,31 @@ async function person(tag, ip = `10.77.0.${++personIp}`) {
 		console.log(`  FAIL page error on ${tag}: ${err.message}`);
 		failures++;
 	});
+	// What the page said, for a failure's details (dump).
+	page.__tag = tag;
+	page.__log = [];
+	page.on("console", (m) => {
+		page.__log.push(`${((performance.now() / 1000) | 0)}s ${m.type()}: ${m.text().slice(0, 240)}`);
+		if (page.__log.length > 60) page.__log.shift();
+	});
 	return page;
+}
+
+/** A page's room and recent console, printed when a join fails (CI has no other window). */
+async function dump(page) {
+	const state = await page
+		.evaluate(() => {
+			const r = window.__party?.room;
+			return {
+				status: document.querySelector(".lobby-status")?.textContent ?? null,
+				sub: document.querySelector(".lobby-sub")?.textContent ?? null,
+				token: localStorage.getItem("neon.room"),
+				room: r && { self: r.selfId, host: r.hostId(), closed: r.closed, links: r.directPeers(), pending: [...r.pending.keys()], refusals: r.refusals, members: r.getMembers().map((m) => m.id) },
+			};
+		})
+		.catch((err) => String(err));
+	console.log(`    [${page.__tag}] ${JSON.stringify(state)}`);
+	for (const line of page.__log.slice(-25)) console.log(`    [${page.__tag}] ${line}`);
 }
 
 const token = (page) => page.evaluate(() => JSON.parse(localStorage.getItem("neon.room") || "null"));
@@ -484,7 +508,9 @@ try {
 	const a = await person("a");
 	const b = await person("b");
 	const ta = await host(a);
-	check("b joins a's party by code", await joinByCode(b, ta.code));
+	const bJoined = await joinByCode(b, ta.code);
+	check("b joins a's party by code", bJoined);
+	if (!bJoined) for (const pg of [a, b]) await dump(pg);
 	const tb = await token(b);
 	{
 		await muteOffers(a, true);

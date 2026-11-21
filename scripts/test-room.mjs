@@ -1903,7 +1903,19 @@ try {
 				return inbound(link, msg);
 			};
 			window.__reload(a, aToken);
-			a = await NeonArcade.joinRoom(h.code, { name: "A", reconnectGraceMs: 60_000 });
+			// A's rejoin, and on failure what every room knew (CI has no other window).
+			const createGuest = NeonArcade.createGuest;
+			let a2 = null;
+			NeonArcade.createGuest = (o) => (a2 = createGuest(o));
+			try {
+				a = await NeonArcade.joinRoom(h.code, { name: "A", reconnectGraceMs: 60_000 });
+			} catch (err) {
+				const st = (r) => r && { self: r.selfId, host: r.hostId(), links: r.directPeers(), pending: [...r.pending.keys()], refusals: r.refusals.slice(-8), unseen: !!r.unseen, members: r.getMembers().map((m) => [m.id, m.reconnecting ? "R" : ""].join("")) };
+				for (const r of [b, h]) r.room.leave();
+				return { rejoin: err.message, a2: st(a2), h: st(h.room), b: st(b.room), ids: { h: h.room.selfId, b: b.room.selfId, a: aid } };
+			} finally {
+				NeonArcade.createGuest = createGuest;
+			}
 			let gaveUp = false;
 			let linked = false;
 			const t0 = Date.now();
@@ -1917,10 +1929,12 @@ try {
 			return out;
 		}, drops);
 	const once = await lostOffer(1);
+	if (once.rejoin) console.log(`    A's rejoin failed: ${JSON.stringify(once)}`);
 	check("three members meshed, and B's first relayed offer to A was lost", once.meshed && once.dropped === 1, JSON.stringify(once));
 	check("B never held A's seat as RECONNECTING (the host's new link vouched)", !once.gaveUp, JSON.stringify(once));
 	check("B sent the same offer again on the host's __alive: linked well inside the relay expiry", once.linked && once.ms < 3000, JSON.stringify(once));
 	const all = await lostOffer("all");
+	if (all.rejoin) console.log(`    A's rejoin failed: ${JSON.stringify(all)}`);
 	check("every copy lost: the expired, unanswered offer is made afresh and links", all.dropped >= 1 && all.linked && all.ms >= 3000, JSON.stringify(all));
 
 	console.log("\nroom: a late vouch does not resurrect anybody");

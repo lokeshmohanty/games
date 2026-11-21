@@ -86,6 +86,12 @@ async function party(devBase, n) {
 	for (let i = 0; i < n; i++) {
 		const page = await context.newPage();
 		page.on("pageerror", (err) => check(`no page error on phone ${i + 1}`, false, err.message));
+		// What the page said, for a failure's details (CI has no other window).
+		page.__log = [];
+		page.on("console", (m) => {
+			page.__log.push(`${((performance.now() / 1000) | 0)}s ${m.type()}: ${m.text().slice(0, 240)}`);
+			if (page.__log.length > 60) page.__log.shift();
+		});
 		pages.push(page);
 	}
 	const withDev = (url) => {
@@ -107,7 +113,23 @@ async function party(devBase, n) {
 		await host.locator("button.neon-btn", { hasText: /^CONNECT$/ }).first().click();
 		await joiner.locator(".party-member").first().waitFor({ timeout: TIMEOUT });
 	}
-	await pages[0].locator(".party-member").nth(n - 1).waitFor({ timeout: TIMEOUT });
+	await pages[0]
+		.locator(".party-member")
+		.nth(n - 1)
+		.waitFor({ timeout: TIMEOUT })
+		.catch(async (err) => {
+			for (const [i, page] of pages.entries()) {
+				const state = await page
+					.evaluate(() => {
+						const r = window.__party?.room;
+						return { status: document.querySelector(".lobby-status")?.textContent ?? null, room: r && { self: r.selfId, host: r.hostId(), links: r.directPeers(), pending: [...r.pending.keys()], refusals: r.refusals, members: r.getMembers().map((m) => m.id) } };
+					})
+					.catch((e) => String(e));
+				console.log(`    [phone ${i + 1}] ${JSON.stringify(state)}`);
+				for (const line of page.__log.slice(-25)) console.log(`    [phone ${i + 1}] ${line}`);
+			}
+			throw err;
+		});
 	const collect = async () => {
 		for (const p of pages) if (!p.isClosed()) traced.push(...(await p.evaluate(() => window.__sdk.splice(0)).catch(() => [])));
 	};
