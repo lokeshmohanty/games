@@ -1257,7 +1257,9 @@ try {
 	// 587-685px tall (553x455 at 1280x650; review 2026-11-19).
 	for (const [w, h] of [[1280, 650], [1366, 768], [390, 844], [354, 696]]) {
 		await page.setViewportSize({ width: w, height: h });
-		await c4.waitForFunction(([w, h]) => innerWidth === w && innerHeight === h, [w, h], { timeout: TIMEOUT });
+		// The frame stops above PLAY WITH FRIENDS (the bar under a game played alone).
+		const bar = await page.evaluate(() => Math.round(document.querySelector(".friends-bar:not([hidden])")?.getBoundingClientRect().height ?? 0));
+		await c4.waitForFunction(([w, h]) => innerWidth === w && innerHeight === h, [w, h - bar], { timeout: TIMEOUT });
 		const box = await c4.evaluate(async () => {
 			// The window's resize event runs before the next frame's callbacks.
 			await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
@@ -1565,6 +1567,39 @@ try {
 		const card = await page.locator(".managed-over").first().textContent({ timeout: TIMEOUT }).catch(() => "");
 		check("the end card shows, with the bot and us ranked", /YOU|WIN/.test(card) && card.includes("DETAILS"), card);
 		await resultReached(page, "neon-fission", v.winner === 0);
+
+		// CHANGE PLAYERS on the end card (Lokesh, 2026-11-21): the quick table
+		// is no longer passed through before a game, so the next round's
+		// seats are changed from here. It sits above PLAY WITH FRIENDS (the
+		// bar under the frame), at both phone sizes.
+		for (const [w, h] of [
+			[390, 844],
+			[354, 696],
+		]) {
+			await page.setViewportSize({ width: w, height: h });
+			await page.waitForTimeout(150);
+			const end = await page.evaluate(() => {
+				const btn = [...document.querySelectorAll(".managed-over button")].find((b) => b.textContent === "CHANGE PLAYERS");
+				const bar = document.querySelector(".friends-bar");
+				const r = btn?.getBoundingClientRect();
+				return { btn: r && { top: r.top, bottom: r.bottom, h: r.height, right: r.right }, bar: bar && !bar.hidden ? bar.getBoundingClientRect().top : null, card: document.querySelector(".managed-over").getBoundingClientRect().bottom };
+			});
+			const floors = await phoneFloors(page, ".managed-over, .friends-bar", { hit: true });
+			check(`${w}x${h}: the end card offers CHANGE PLAYERS, 44px, above PLAY WITH FRIENDS (the card stops at the bar)`, !!end.btn && end.btn.h >= 44 && end.btn.right <= w && end.bar !== null && end.btn.bottom <= end.bar && end.card <= end.bar + 0.5, JSON.stringify(end));
+			check(`${w}x${h}: …every control on the end card and the bar 44px (box and hit area), none covered`, !floors.taps.length && !floors.text.length, JSON.stringify(floors));
+		}
+		await page.setViewportSize({ width: 390, height: 844 });
+		await page.locator(".managed-over button", { hasText: "CHANGE PLAYERS" }).click();
+		await page.locator(".quick-table").waitFor({ timeout: TIMEOUT }).catch(() => {});
+		const t = await page.evaluate(() => ({ game: window.__party.game, n: Number(document.querySelector(".quick-table .quick-n")?.textContent), bar: !document.querySelector(".friends-bar").hidden }));
+		check("CHANGE PLAYERS ends the game and shows its table (Players 2), the friends bar gone with the game", t.game === null && t.n === 2 && !t.bar, JSON.stringify(t));
+		await setPlayers(page, 3);
+		await page.locator(".quick-table button", { hasText: "START GAME" }).click();
+		await page.waitForFunction(() => window.__party.game === "neon-fission", null, { timeout: TIMEOUT }).catch(() => {});
+		const next = await page.evaluate(() => ({ members: window.__party.room.getMembers().length, saved: JSON.parse(localStorage.getItem("neon.table") ?? "{}")["neon-fission"]?.n }));
+		check("…START GAME plays the next round at the new table (3 players), remembered for the game", next.members === 3 && next.saved === 3, JSON.stringify(next));
+		// Back to two for the suites below, which assume a fresh table.
+		await page.evaluate(() => localStorage.removeItem("neon.table"));
 	}
 
 	console.log("\nlocal: neon fission on one phone, two people and a bot, set at the quick table");

@@ -485,15 +485,18 @@ try {
 	await p.locator('.game-card[data-game="connect4"]').first().locator(".card-play", { hasText: "MULTI-PLAYER" }).click();
 	await p.locator("button", { hasText: "INVITE A FRIEND" }).first().waitFor({ timeout: TIMEOUT });
 	check("MULTI-PLAYER lands on the friends view (invite, and the code when there is a server)", (await p.locator(".party-choice").count()) === 0);
-	// One tap (or click) on a card opens the game's party screen, its quick
-	// start (Lokesh, 2026-11-18: on a phone the first tap only showed the
-	// buttons). The buttons stay a mouse's on hover; a phone long-presses.
+	// One tap (or click) on a card starts the game against bots (Lokesh,
+	// 2026-11-21; on 2026-11-18 it became one tap: on a phone the first tap
+	// only showed the buttons). The buttons stay a mouse's on hover; a phone
+	// long-presses.
 	/** A long press on a touch screen: the browser's contextmenu. */
 	const longPress = (loc) => loc.dispatchEvent("contextmenu");
-	// (party.js drops `fresh` from the address once the party is up.)
-	const quickStart = (u, id) => {
-		const q = new URL(u).searchParams;
-		return q.get("game") === id && !q.has("mode") && !q.has("start");
+	// (party.js drops `fresh`, `mode` and `start` from the address once the
+	// party is up.) The game is running, against bots.
+	const quickStart = async (pg, id) => {
+		await pg.waitForFunction((id) => window.__party?.game === id, id, { timeout: TIMEOUT }).catch(() => {});
+		const q = new URL(pg.url()).searchParams;
+		return q.get("game") === id && !q.has("mode") && !q.has("start") && (await pg.evaluate((id) => window.__party?.game === id && window.__party.room.getMembers().some((m) => m.id.startsWith("bot_")), id));
 	};
 	for (const [w, h] of [
 		[390, 844],
@@ -513,9 +516,8 @@ try {
 		await tcard.locator("h3").tap();
 		await tp.waitForFunction(() => document.body.dataset.view === "party", null, { timeout: TIMEOUT }).catch(() => {});
 		const went = { url: tp.url(), same: await tp.evaluate(() => !!window.__samePage) };
-		check(`${at}: one tap on a card opens that game's party screen (./?game=connect4&fresh=1), in the page`, quickStart(went.url, "connect4") && went.same, went);
-		await tp.locator(".party-choice, .quick-table, button:has-text('INVITE A FRIEND')").first().waitFor({ timeout: TIMEOUT }).catch(() => {});
-		check(`${at}: …its quick start, not a game already running`, await tp.evaluate(() => !document.querySelector(".game-frame")));
+		check(`${at}: one tap on a card runs that game against bots (./?game=connect4&fresh=1&mode=bots&start=1), in the page`, (await quickStart(tp, "connect4")) && went.same, went);
+		check(`${at}: …no quick start screen first`, await tp.evaluate(() => !document.querySelector(".party-choice, .quick-table") && !!document.querySelector(".game-frame")));
 		await tp.goto(site.url(ALL));
 		await tp.waitForSelector(".game-card:visible");
 		const isOpen = () => tcard.evaluate((c) => c.classList.contains("is-open"));
@@ -589,7 +591,7 @@ try {
 	check("a mouse drag across a card opens nothing", (await p.evaluate(() => document.body.dataset.view)) === "portal", p.url());
 	await mcard.click({ position: { x: 6, y: 6 } });
 	await p.waitForFunction(() => document.body.dataset.view === "party", null, { timeout: TIMEOUT }).catch(() => {});
-	check("a mouse click on a card, off its buttons, opens the game's party screen", quickStart(p.url(), "connect4"), p.url());
+	check("a mouse click on a card, off its buttons, starts the game against bots", await quickStart(p, "connect4"), p.url());
 	await p.goto(site.url(ALL));
 	await p.waitForSelector(".game-card:visible");
 	// The card's title is its button, named by the game (review,
@@ -600,13 +602,13 @@ try {
 	await named.focus({ timeout: 5000 }).catch(() => {});
 	await p.keyboard.press("Enter");
 	await p.waitForFunction(() => document.body.dataset.view === "party", null, { timeout: TIMEOUT }).catch(() => {});
-	check("…Enter on it opens the game's party screen", quickStart(p.url(), "connect4"), p.url());
+	check("…Enter on it starts the game against bots", await quickStart(p, "connect4"), p.url());
 	await p.goto(site.url(ALL));
 	await p.waitForSelector(".game-card:visible");
 	await named.focus({ timeout: 5000 }).catch(() => {});
 	await p.keyboard.press(" ");
 	await p.waitForFunction(() => document.body.dataset.view === "party", null, { timeout: TIMEOUT }).catch(() => {});
-	check("…and so does Space", quickStart(p.url(), "connect4"), p.url());
+	check("…and so does Space", await quickStart(p, "connect4"), p.url());
 	// A click with no pointer behind it (element.click(), assistive tech)
 	// always counts, whatever a pointer did before; a pointercancel (a
 	// scroll took the gesture) forgets the press.
@@ -624,7 +626,7 @@ try {
 			c.dispatchEvent(new MouseEvent("click", { bubbles: true, detail: 1, clientX: 12, clientY: 12 }));
 		}, mode);
 		await p.waitForFunction(() => document.body.dataset.view === "party", null, { timeout: 5000 }).catch(() => {});
-		check(`…${what} opens the game`, quickStart(p.url(), "connect4"), p.url());
+		check(`…${what} opens the game`, await quickStart(p, "connect4"), p.url());
 	}
 	// A press held on a row is let go wherever it ends: a mouse released
 	// outside the row (the flag stuck, and the row never redrew again).
@@ -724,7 +726,7 @@ try {
 		await p.keyboard.press("Escape");
 		check(`${page}: Esc closes it, focus back on ☰`, await p.evaluate(() => document.querySelector(".site-menu-list").hidden && document.activeElement === document.querySelector(".site-menu-btn")));
 	}
-	await p.goto(site.url("index.html"));
+	await p.goto(site.url(ALL));
 	await p.locator("[data-nav] .site-menu-list").waitFor({ state: "attached", timeout: TIMEOUT }); // not the static first frame's ☰
 	await p.locator("[data-nav] .site-menu-btn").click();
 	await p.mouse.click(200, 600);
@@ -748,7 +750,7 @@ try {
 	});
 	await p.locator('[data-section="popular"] .game-card[data-game="connect4"]').click({ position: { x: 6, y: 6 } });
 	await p.waitForFunction(() => document.body.dataset.view === "party", null, { timeout: 5000 }).catch(() => {});
-	check("…and a press outside that became a scroll leaves the next tap alone (it opens the game)", quickStart(p.url(), "connect4"), p.url());
+	check("…and a press outside that became a scroll leaves the next tap alone (it opens the game)", await quickStart(p, "connect4"), p.url());
 	// A right-click outside sends no click: it closes the menu and the
 	// next real click is not eaten (re-review, 2026-11-19).
 	await p.goto(site.url(ALL));
@@ -758,7 +760,7 @@ try {
 	await p.mouse.click(30, 700, { button: "right" });
 	await p.locator('[data-section="popular"] .game-card[data-game="connect4"]').click({ position: { x: 6, y: 6 } });
 	await p.waitForFunction(() => document.body.dataset.view === "party", null, { timeout: 5000 }).catch(() => {});
-	check("…a right-click outside closes it and leaves the next click alone (it opens the game)", (await p.evaluate(() => document.querySelector(".site-menu-list")?.hidden !== false)) && quickStart(p.url(), "connect4"), p.url());
+	check("…a right-click outside closes it and leaves the next click alone (it opens the game)", (await p.evaluate(() => document.querySelector(".site-menu-list")?.hidden !== false)) && await quickStart(p, "connect4"), p.url());
 	await p.goto(site.url("index.html"));
 	await p.locator("[data-nav] .site-menu-list").waitFor({ state: "attached", timeout: TIMEOUT });
 	await p.locator(".site-tab", { hasText: "Community" }).click();
@@ -1101,6 +1103,8 @@ console.log("\nportal: My Games · All Games");
 					rowWhole: inRow.filter((b) => b.left >= 0 && b.right <= innerWidth).length,
 					rowPeeks: inRow.some((b) => b.left < innerWidth && b.right > innerWidth),
 					rowEdges: [Math.round(r(row).left), Math.round(r(row).right)],
+					rowCount: inRow.length,
+					cols: new Set(inRow.map((b) => Math.round(b.left))).size,
 					card: Math.round(inRow[0].left),
 					metaLines: Math.round(r(meta).height / parseFloat(getComputedStyle(meta).fontSize)),
 					recent,
@@ -1115,13 +1119,15 @@ console.log("\nportal: My Games · All Games");
 			check(`${at}: every tap target 44px tall (START A PARTY, JOIN WITH A CODE, sub-tabs, chips, PLAY SOMETHING…)`, L.targets.length >= 8 && L.targets.every((x) => x.h >= 44), L.targets.filter((x) => x.h < 44));
 			check(`${at}: every line on a card 12px or more`, L.text.length > 0 && L.text.every((x) => x.size >= 12), L.text.filter((x) => x.size < 12));
 			check(`${at}: …and the meta line still on one line`, L.metaLines <= 1, L.metaLines);
-			check(`${at}: a row is two whole cards and the edge of the next, scrolling to the screen's edges`, L.rowWhole === 2 && L.rowPeeks && L.rowEdges[0] === 0 && L.rowEdges[1] === L.vw, L);
+			if (t === "all") check(`${at}: a row is two whole cards and the edge of the next, scrolling to the screen's edges`, L.rowWhole === 2 && L.rowPeeks && L.rowEdges[0] === 0 && L.rowEdges[1] === L.vw, L);
+			// My Games is a grid going down (Lokesh, 2026-11-21): two columns, every card whole.
+			else check(`${at}: ★ Favourites is a grid of two columns, every card whole, none past the edge`, L.cols === 2 && L.rowWhole === L.rowCount && !L.rowPeeks, L);
 			check(`${at}: the cards line up with their heading`, Math.abs(L.card - L.title) <= 1, { card: L.card, title: L.title });
 			if (t === "all") check(`${at}: the search lines up with the cards`, Math.abs(L.search - L.card) <= 1, { search: L.search, card: L.card });
 			if (t === "mine") {
 				const R = L.recent;
 				check(`${at}: Recently played lines up with the cards and its heading`, !!R && Math.abs(R.chip - L.card) <= 1 && Math.abs(R.heading - L.card) <= 1, { R, card: L.card });
-				check(`${at}: …scrolls to the screen's edges, its last chip all the way in view`, !!R && R.left === 0 && R.right === L.vw && (!R.scrolls || R.end <= L.vw), R);
+				check(`${at}: …wraps instead of scrolling sideways, its last chip all the way in view`, !!R && !R.scrolls && R.end <= L.vw && R.right <= L.vw, R);
 				check(`${at}: PLAY SOMETHING for a returning player too, in Recently played's heading, 44px and on screen`, L.quick.length === 1 && L.quick[0].where === "recent" && L.quick[0].h >= 44 && L.quick[0].left >= 0 && L.quick[0].right <= L.vw && !!L.quick[0].game, L.quick);
 				check(`${at}: …with no scrollbar, like the card rows`, !!R && R.bar === "none" && R.barH === 0, R);
 			}
@@ -1348,7 +1354,7 @@ console.log("\nportal: My Games · All Games");
 		const url = r.url();
 		if (!url.startsWith("blob:") && /\.(webm|mp4)$/.test(new URL(url).pathname)) clipRequests[new URL(url).pathname] = (clipRequests[new URL(url).pathname] ?? 0) + 1;
 	});
-	await cp.goto(site.url("index.html"));
+	await cp.goto(site.url(ALL));
 	await cp.waitForSelector(".game-card:visible");
 	await cp.evaluate(() => NeonArcade.catalogs);
 	// A clip plays (not paused) from play(), before its fetch and decode
@@ -1382,6 +1388,198 @@ console.log("\nportal: My Games · All Games");
 	check("…and a game in several sections plays one shared copy in all of them", shared.length > 0 && shared.every(([, , srcs]) => srcs === 1), shared);
 	await cp.close();
 
+	// ------------------------------------------------- one tap, against bots
+	//
+	// Lokesh, 2026-11-21: "when a user clicks on a game, directly take to the
+	// single-player game page (it has a button at bottom to rather play with
+	// friends)". A tap is the remembered table at once (?mode=bots&start=1),
+	// with no room server; PLAY WITH FRIENDS, a bar under the frame (never over
+	// it), ends that game and opens the party lobby for it.
+	console.log("\nportal: one tap on a game starts it against bots");
+	for (const [w, h] of PHONE_SIZES) {
+		const at = `${w}x${h}`;
+		const oc = await browser.newContext({ viewport: { width: w, height: h }, hasTouch: true, isMobile: true });
+		// PLAY WITH FRIENDS asks the room server for a code: an unreachable
+		// loopback one, never production (test-bots newContext).
+		await oc.addInitScript(() => {
+			try {
+				localStorage.setItem("neon.rs", "http://127.0.0.1:9");
+			} catch {} // a game's sandboxed frame has no storage
+		});
+		await oc.route("**/api/stats/summary", (r) => r.abort());
+		await oc.route("**/summary.json", (r) => r.abort());
+		const op = await oc.newPage();
+		op.on("pageerror", (e) => check(`${at}: no page error (${e.message})`, false));
+		// No room server answers: a bots game must not wait on one.
+		const pings = [];
+		op.on("request", (r) => /\/ping(?:$|\?)/.test(r.url()) && pings.push(r.url()));
+		await op.goto(site.url(ALL));
+		await op.waitForSelector(".game-card:visible");
+		await op.evaluate(() => NeonArcade.catalogs);
+		await op.evaluate(() => (window.__samePage = true));
+		const fcard = op.locator('[data-section="party"] .game-card[data-game="neon-fission"]');
+		const tapped = Date.now();
+		await fcard.locator("h3").tap();
+		const running = await op.waitForFunction(() => window.__party?.game === "neon-fission" && document.querySelector(".game-frame"), null, { timeout: TIMEOUT }).then(() => Date.now() - tapped, () => null);
+		const ran = await op.evaluate(() => ({
+			same: !!window.__samePage,
+			bots: window.__party.room.getMembers().filter((m) => m.id.startsWith("bot_")).length,
+			table: !!document.querySelector(".quick-table, .party-choice"),
+			code: !!document.querySelector(".party-code-digits"),
+			search: location.search,
+		}));
+		check(`${at}: one tap on a card runs that game against bots, in the page (${running} ms), with no table or choice drawn first`, running !== null && ran.same && ran.bots >= 1 && !ran.table, { running, ...ran });
+		check(`${at}: …no party wait: the room server not asked, no party code`, !pings.length && !ran.code, { pings, code: ran.code });
+		check(`${at}: …and the address forgets fresh, mode and start, for a reload`, !/fresh=|mode=|start=/.test(ran.search), ran.search);
+		// PLAY WITH FRIENDS: the shell's bar at the bottom, and the frame stops above it.
+		const bar = await op.evaluate(() => {
+			const b = document.querySelector(".friends-bar");
+			const btn = b.querySelector("button").getBoundingClientRect();
+			const f = document.querySelector(".game-frame").getBoundingClientRect();
+			return { shown: !b.hidden && b.getClientRects().length > 0, top: b.getBoundingClientRect().top, bottom: b.getBoundingClientRect().bottom, btn: { h: btn.height, w: btn.width, left: btn.left, right: btn.right }, frameBottom: f.bottom, doc: document.documentElement.scrollWidth, text: b.textContent.trim() };
+		});
+		check(`${at}: PLAY WITH FRIENDS shows at the bottom, 44px tall, inside the screen`, bar.shown && bar.text === "PLAY WITH FRIENDS" && bar.btn.h >= 44 && bar.btn.left >= 0 && bar.btn.right <= w && Math.round(bar.bottom) === h && bar.doc <= w, bar);
+		check(`${at}: …with room kept for it: the game's frame ends where the bar begins`, bar.frameBottom <= bar.top + 0.5, bar);
+		const barFloors = await phoneFloors(op, ".friends-bar");
+		check(`${at}: …taps 44px and text 12px`, !barFloors.taps.length && !barFloors.text.length && barFloors.measured.taps === 1, barFloors);
+		await op.locator(".friends-btn").tap();
+		await op.waitForFunction(() => !window.__party.game && document.querySelector(".party-quick"), null, { timeout: TIMEOUT }).catch(() => {});
+		const lobby = await op.evaluate(() => ({
+			game: window.__party.game,
+			title: document.querySelector(".lobby-title")?.textContent,
+			invite: [...document.querySelectorAll("#party button")].some((b) => b.textContent === "INVITE A FRIEND" && b.getClientRects().length),
+			start: [...document.querySelectorAll(".party-quick button")].some((b) => b.textContent === "START GAME"),
+			addBot: [...document.querySelectorAll(".party-quick button")].some((b) => b.textContent === "ADD BOT"),
+			says: document.querySelector(".party-quick .party-bots-count")?.textContent,
+			members: window.__party.room.getMembers().length,
+			bar: !document.querySelector(".friends-bar").hidden,
+			reserved: "friendsBar" in document.body.dataset,
+		}));
+		check(`${at}: PLAY WITH FRIENDS ends the bots game and opens the lobby for it (its name, INVITE A FRIEND, START GAME)`, lobby.game === null && lobby.title === "NEON FISSION" && lobby.invite && lobby.start, lobby);
+		check(`${at}: …the bar gone with the game, and its room given back`, !lobby.bar && !lobby.reserved, lobby);
+		check(`${at}: …the lobby keeps the table that was playing (its bots), and says who is at it`, lobby.addBot && lobby.members >= 2 && lobby.says === `${lobby.members} players: You and ${lobby.members - 1} bot${lobby.members === 2 ? "" : "s"}`, lobby);
+		// The seats from the lobby: ADD BOT seats one more, and the table is remembered for the game.
+		await op.locator(".party-quick button", { hasText: "ADD BOT" }).tap();
+		const more = await settled(() => op.evaluate(() => ({ members: window.__party.room.getMembers().length, says: document.querySelector(".party-quick .party-bots-count")?.textContent, saved: JSON.parse(localStorage.getItem("neon.table") ?? "{}")["neon-fission"]?.n })), (x) => x.members === lobby.members + 1);
+		check(`${at}: the lobby's ADD BOT seats one more, and the table is remembered for Neon Fission`, more.members === lobby.members + 1 && more.says?.startsWith(`${more.members} players`) && more.saved === more.members, more);
+		const lobbyFloors = await phoneFloors(op, "#party .party-quick");
+		check(`${at}: …the lobby's seats: taps 44px, text 12px, no sideways scroll`, !lobbyFloors.taps.length && !lobbyFloors.text.length && (await op.evaluate(() => document.documentElement.scrollWidth)) <= w, lobbyFloors);
+		// The next tap on the card starts that remembered table.
+		await op.goto(site.url(ALL));
+		await op.waitForSelector(".game-card:visible");
+		await op.locator('[data-section="party"] .game-card[data-game="neon-fission"] h3').tap();
+		await op.waitForFunction(() => window.__party?.game === "neon-fission", null, { timeout: TIMEOUT }).catch(() => {});
+		const again = await op.evaluate(() => window.__party?.room?.getMembers().length ?? 0);
+		check(`${at}: …and the next tap on the card plays that table at once (${more.members} players)`, again === more.members, again);
+		// A people-only game has no bots: its lobby with friends, straight away.
+		await op.goto(site.url(ALL));
+		await op.waitForSelector(".game-card:visible");
+		await op.locator('.game-card[data-game="lokeshmohanty/draw-guess"] h3').first().tap();
+		await op.locator("button", { hasText: "INVITE A FRIEND" }).first().waitFor({ timeout: TIMEOUT }).catch(() => {});
+		const dg = await op.evaluate(() => ({ game: window.__party?.game, choice: !!document.querySelector(".party-choice"), invite: [...document.querySelectorAll("#party button")].some((b) => b.textContent === "INVITE A FRIEND") }));
+		check(`${at}: a people-only game (Draw & Guess) opens straight on its lobby with friends, no choice first`, dg.game === null && !dg.choice && dg.invite, dg);
+		// A one-device game starts at once, with no friends bar (one phone, passed round).
+		await op.goto(site.url(ALL));
+		await op.waitForSelector(".game-card:visible");
+		await op.locator('.game-card[data-game="undercover"] h3').first().tap();
+		await op.waitForFunction(() => window.__party?.game === "undercover", null, { timeout: TIMEOUT }).catch(() => {});
+		const uc = await op.evaluate(() => ({ game: window.__party?.game, bar: !document.querySelector(".friends-bar")?.hidden }));
+		check(`${at}: a one-device game (Undercover) starts at once, and offers no PLAY WITH FRIENDS`, uc.game === "undercover" && !uc.bar, uc);
+		await oc.close();
+	}
+	{
+		// Recently played and the card's SINGLE PLAYER take the same one tap.
+		await p.goto(site.url(ALL));
+		await p.waitForSelector(".game-card:visible");
+		const links = await p.evaluate(() => {
+			const g = NeonArcade.CATALOG.find((x) => x.id === "connect4");
+			return { tap: NeonArcade.portal.tapLink(g), solo: document.querySelector('.game-card[data-game="connect4"] .card-play.is-bots')?.getAttribute("href") };
+		});
+		const q = new URLSearchParams(links.tap.slice(2));
+		check("a card's SINGLE PLAYER is the same one-tap address (mode=bots, start=1)", q.get("mode") === "bots" && q.get("start") === "1" && links.solo === links.tap, links);
+		await p.goto(site.url("index.html?page=games&tab=mine"));
+		const chip = await p.locator("[data-recent] .recent-game").first().getAttribute("href", { timeout: TIMEOUT }).catch(() => null);
+		check("…and so is a Recently played chip", !!chip && new URLSearchParams(chip.slice(2)).get("start") === "1" && new URLSearchParams(chip.slice(2)).get("mode") === "bots", chip);
+		await p.goto(site.url(ALL));
+		await p.waitForSelector(".game-card:visible");
+	}
+
+	// ------------------------------------------------------ the grids
+	//
+	// Lokesh, 2026-11-21: My Games "vertical scrollable with multiple
+	// columns", and a genre's own page the same, from All Games.
+	console.log("\nportal: My Games and a genre's page are grids");
+	for (const [w, h] of PHONE_SIZES) {
+		const at = `${w}x${h}`;
+		const gc = await browser.newContext({ viewport: { width: w, height: h }, hasTouch: true, isMobile: true });
+		await gc.addInitScript(() => {
+			try {
+				localStorage.setItem("neon.favs", JSON.stringify(["connect4", "neon-bid", "neon-fission", "undercover", "lokeshmohanty/sudoku"]));
+			} catch {}
+		});
+		const gp = await gc.newPage();
+		const grid = (sel) =>
+			gp.evaluate(
+				([sel, w]) => {
+					const row = document.querySelector(sel);
+					const cards = [...row.querySelectorAll(".game-card")].filter((c) => !c.hidden);
+					const rects = cards.map((c) => c.getBoundingClientRect());
+					return {
+						isGrid: row.classList.contains("is-grid"),
+						cols: new Set(rects.map((r) => Math.round(r.left))).size,
+						rows: new Set(rects.map((r) => Math.round(r.top))).size,
+						sideways: row.scrollWidth > row.clientWidth + 1 || document.documentElement.scrollWidth > w,
+						whole: rects.every((r) => r.left >= 0 && r.right <= w + 0.5 && r.width >= 44 && r.height >= 44),
+						n: cards.length,
+					};
+				},
+				[sel, w],
+			);
+		await gp.goto(site.url("index.html?page=games&tab=mine"));
+		await gp.waitForSelector('[data-section="favs"]:not([hidden]) .game-card');
+		const mine = await grid('[data-section="favs"] .section-row');
+		check(`${at}: My Games' favourites are a grid: two columns, rows going down, no sideways scroll, every card whole and at least 44px`, mine.isGrid && mine.cols === 2 && mine.rows === Math.ceil(mine.n / 2) && !mine.sideways && mine.whole, mine);
+		const mineFloors = await phoneFloors(gp, '[data-section="favs"] .section-row');
+		check(`${at}: …its text at least 12px`, !mineFloors.text.length, mineFloors.text);
+		// All Games: the rows stay rows; each genre has SEE ALL, its own page.
+		await gp.goto(site.url(ALL));
+		await gp.waitForSelector('[data-section="party"]:not([hidden]) .game-card');
+		const partyRow = await grid('[data-section="party"] .section-row');
+		check(`${at}: All Games' sections stay one row each`, !partyRow.isGrid && partyRow.rows === 1, partyRow);
+		const seeAll = gp.locator('[data-section="party"] [data-see-all]');
+		const sab = await seeAll.boundingBox();
+		check(`${at}: …each genre's heading has SEE ALL, 44px tall (Popular has PLAY SOMETHING instead)`, sab && sab.height >= 44 && sab.x + sab.width <= w && (await gp.locator('[data-section="popular"] [data-see-all]').count()) === 0, sab);
+		await seeAll.tap();
+		await gp.waitForFunction(() => new URLSearchParams(location.search).get("genre") === "party", null, { timeout: TIMEOUT }).catch(() => {});
+		const page = await gp.evaluate(() => ({
+			url: location.search,
+			shown: [...document.querySelectorAll("[data-section]:not([hidden])")].map((s) => s.dataset.section),
+			title: document.querySelector('[data-section="party"] .section-title')?.textContent,
+			back: !document.querySelector("[data-genre-back]").hidden,
+			search: document.querySelector(".search").hidden,
+			seeAll: document.querySelector('[data-section="party"] [data-see-all]').hidden,
+		}));
+		check(`${at}: SEE ALL opens the genre's page at its own address: its title, only its games, a way back, no search`, /genre=party/.test(page.url) && page.shown.join() === "party" && page.title === "Party" && page.back && page.search && page.seeAll, page);
+		const genre = await grid('[data-section="party"] .section-row');
+		const want = await gp.evaluate(() => NeonArcade.CATALOG.filter((g) => (g.categories ?? []).includes("party")).length);
+		check(`${at}: …a grid: two columns, every party game, no sideways scroll, every card whole and at least 44px`, genre.isGrid && genre.cols === 2 && genre.n === want && !genre.sideways && genre.whole, { genre, want });
+		const back = await gp.locator("[data-genre-back]").boundingBox();
+		check(`${at}: …its way back is 44px tall`, back && back.height >= 44, back);
+		await gp.reload();
+		await gp.waitForSelector('[data-section="party"]:not([hidden]) .game-card');
+		const reloaded = await gp.evaluate(() => [...document.querySelectorAll("[data-section]:not([hidden])")].map((s) => s.dataset.section).join());
+		check(`${at}: …a reload opens the same page (a real address)`, reloaded === "party", reloaded);
+		await gp.goBack();
+		await gp.waitForFunction(() => !new URLSearchParams(location.search).has("genre"), null, { timeout: TIMEOUT }).catch(() => {});
+		const after = await gp.evaluate(() => ({ url: location.search, shown: [...document.querySelectorAll("[data-section]:not([hidden])")].map((s) => s.dataset.section), back: !document.querySelector("[data-genre-back]").hidden }));
+		check(`${at}: …and Back returns to All Games, every section`, after.shown.includes("popular") && after.shown.includes("party") && after.shown.includes("strategy") && !after.back && /tab=all/.test(after.url), after);
+		await gc.close();
+	}
+	{
+		const ph = await p.evaluate(() => document.querySelector("[data-search]").placeholder);
+		check('the search box says "Search games", and advertises no filters', ph === "Search games", ph);
+	}
+
 	// ------------------------------------------------------ first visit's name
 	//
 	// Lokesh, 2026-11-21: "first time a user enters, pop up asking for his
@@ -1393,7 +1591,12 @@ console.log("\nportal: My Games · All Games");
 	for (const [w, h] of PHONE_SIZES) {
 		const at = `${w}x${h}`;
 		const nc = await browser.newContext({ viewport: { width: w, height: h }, hasTouch: true, isMobile: true });
-		await nc.addInitScript(() => localStorage.setItem("neon.namePrompt", "on"));
+		await nc.addInitScript(() => {
+			try {
+				localStorage.setItem("neon.namePrompt", "on");
+				localStorage.setItem("neon.rs", "http://127.0.0.1:9");
+			} catch {} // a game's sandboxed frame has no storage
+		});
 		const np = await nc.newPage();
 		const native = [];
 		np.on("dialog", (d) => (native.push(d.type()), d.dismiss()));
@@ -1439,8 +1642,10 @@ console.log("\nportal: My Games · All Games");
 		// A signed-in account with a display name: used, never asked.
 		const sc = await browser.newContext({ viewport: { width: 390, height: 844 } });
 		await sc.addInitScript(() => {
-			localStorage.setItem("neon.namePrompt", "on");
-			localStorage.setItem("neon.token", "test-token");
+			try {
+				localStorage.setItem("neon.namePrompt", "on");
+				localStorage.setItem("neon.token", "test-token");
+			} catch {}
 		});
 		await sc.route("**/api/me", (r) => r.fulfill({ status: 200, contentType: "application/json", headers: { "Access-Control-Allow-Origin": "*" }, body: JSON.stringify({ id: "u1", name: "Grace Hopper", identities: [] }) }));
 		await sc.route("**/api/**", (r) => (r.request().url().endsWith("/api/me") ? r.fallback() : r.fulfill({ status: 200, contentType: "application/json", headers: { "Access-Control-Allow-Origin": "*" }, body: "{}" })));

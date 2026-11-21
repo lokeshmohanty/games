@@ -232,6 +232,10 @@ try {
 	}
 	const spectatorHud = await (await gameFrame(p3, TIMEOUT)).locator("#hud").textContent();
 	check("spectator is seated as one", /SPECTATOR/.test(spectatorHud ?? ""), spectatorHud ?? "");
+	// PLAY WITH FRIENDS is for a game played alone: with real people in the
+	// party it shows on no phone, and takes no room from the frame.
+	const bars = await Promise.all([host, p2, p3].map((pg) => pg.evaluate(() => !document.querySelector(".friends-bar")?.hidden || "friendsBar" in document.body.dataset)));
+	check("with people in the party, no phone shows PLAY WITH FRIENDS", bars.every((b) => !b), JSON.stringify(bars));
 
 	console.log("\nparty: switching games without reconnecting");
 	const idsBefore = await host.evaluate(() => window.__party.room.directPeers().sort().join(","));
@@ -1192,6 +1196,11 @@ try {
 		check(`${w}x${h}: the band is ← Games, ?, feedback, favourite, PARTY in one row, each 44px, inside the top 52px`, t.btns.length === 5 && t.big && t.inside && !t.over && t.word && !t.sideways, JSON.stringify(t));
 		const f = await phoneFloors(pg, ".top-band");
 		check(`${w}x${h}: …its text 12px or more`, f.measured.text >= 2 && !f.text.length && !f.taps.length, JSON.stringify(f));
+		const fb = await pg.evaluate(() => {
+			const b = document.querySelector(".friends-bar");
+			return { shown: !!b && !b.hidden, top: b?.getBoundingClientRect().top, frame: document.querySelector(".game-frame").getBoundingClientRect().bottom };
+		});
+		check(`${w}x${h}: alone with a bot, PLAY WITH FRIENDS under the game, the frame ending above it`, fb.shown && fb.frame <= fb.top + 0.5, JSON.stringify(fb));
 		// Squeezed to its arrow, ← Games is still named "Games" (review,
 		// 2026-11-19: the word was visibility: hidden, the arrow aria-hidden).
 		await pg.evaluate(() => document.querySelector(".top-band .portal-link").classList.add("is-tight"));
