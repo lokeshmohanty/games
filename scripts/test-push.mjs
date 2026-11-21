@@ -342,8 +342,10 @@ try {
 			return !!r && r.width > 0 && r.left >= 0 && r.right <= innerWidth && r.top >= 0 && r.bottom <= innerHeight && document.documentElement.scrollWidth <= innerWidth;
 		}, sel);
 	const floors = async (p, sel, label) => {
-		const f = await phoneFloors(p, sel);
-		check(`${label}: every text ≥ 12px and every tap ≥ 44px (${f.measured.text} texts, ${f.measured.taps} taps)`, f.measured.taps > 0 && !f.text.length && !f.taps.length, f);
+		// Hit mode: each tap's box and the area that really takes the tap, on screen and not covered.
+		await p.locator(sel).first().scrollIntoViewIfNeeded();
+		const f = await phoneFloors(p, sel, { hit: true });
+		check(`${label}: every text ≥ 12px and every tap ≥ 44px, box and hit area (${f.measured.text} texts, ${f.measured.taps} taps)`, f.measured.taps > 0 && !f.text.length && !f.taps.length, f);
 	};
 
 	/** A signed-in phone whose PushManager hands out `sub` (on the fake push service). */
