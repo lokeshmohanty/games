@@ -447,6 +447,27 @@ link that closes unregistered (the relayed-offer hijack). A side never talks
 before its own hello has left, or the far side would take it for an old
 client.
 
+**A hello survives a loaded machine** (CI and a loaded laptop, 2026-11-21).
+These four fixes made joins and rejoins that hung on slow runners finish:
+- **It waits for both fingerprints.** A channel can open before the far
+  description reads back as set, and a hello signed over an empty
+  fingerprint was refused as forged. A hello now waits for the description
+  we set, and briefly for both fingerprints to show.
+- **It is said again.** The first message an answering side sends on a fresh
+  channel was seen lost while the next one arrived. A hello is now said again
+  every 700 ms until the far side answers on the link.
+- **A message that overtakes it is kept.** A signed message that arrives
+  before the hello comes from a current client whose hello went missing. It
+  is kept and taken in order once the hello is through. An *unsigned*
+  control message is still an old client, refused at once.
+- **Two links for one pair settle on the same one.** Both sides keep the
+  same link, the lower id's offer (then the DTLS fingerprints decide), rather
+  than "the last to open". With a hello to wait for, each side had kept the
+  link the other closed.
+
+A hello that never comes in `HELLO_MS` (6 s) still ends the link, saying the
+peer did not say who they are.
+
 **A message counts only if its sender is proven** (`_authentic`):
 
 - it came over the link whose owner is its sender (`f`), or

@@ -2407,5 +2407,26 @@ console.log("\ntwo links for one pair");
 	}
 }
 
+
+{
+	// The first message an answering side sends on a fresh channel was seen
+	// lost on a loaded machine — its hello — while the next arrived (CI,
+	// 2026-11-21). The hello is said again until the far side answers, and a
+	// signed message that overtakes it is kept, not taken for an old client.
+	const h = await bare({ name: "Host" });
+	const g = await bare({ name: "New" }, false);
+	const [toG, toH] = linkPair(h, g, { hello: true });
+	toG.introducedName = "New";
+	toH.introducedName = "Host";
+	const send = toH.send.bind(toH);
+	let dropped = 0;
+	toH.send = (env) => (env.__hi !== undefined && dropped++ === 0 ? undefined : send(env)); // the guest's first hello is lost
+	h._linkUp(toG);
+	g._linkUp(toH);
+	await sleep(1500);
+	check("a lost first hello: said again, and the link opens on both sides", h.links.get(g.selfId) === toG && g.links.get(h.selfId) === toH && h.getMember(g.selfId) && !h.refusals.length, `${h.links.has(g.selfId)} ${g.links.has(h.selfId)} ${h.refusals}`);
+	for (const r of [h, g]) r.leave();
+}
+
 console.log(failures ? `\n${failures} failing\n` : "\nall passing\n");
 process.exit(failures ? 1 : 0);

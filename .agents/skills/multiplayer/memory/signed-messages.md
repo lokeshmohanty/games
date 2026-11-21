@@ -136,6 +136,20 @@ kept out of Chrome's back/forward cache.** The key lock is let go on
 seat lock. And under per-tab keys a tab that joins another party keeps its
 id (only the seat is new); test-worker's "as a new member" now checks that.
 
+**Joins that hung only on slow runners (2026-11-21).** Found by reading the
+links of a failing join under real load (taskset, two CPUs, busy loops) and
+on CI (`gh workflow run test.yml --ref <branch>`, dumps on failure):
+- a channel can open before the far description reads back: wait for it
+  before signing a hello (`_fingerprints`);
+- an answering side's first message on a fresh channel can go missing: say
+  the hello again until the far side answers, and keep a signed message that
+  overtakes it (only unsigned control means an old client);
+- two links for one pair must be ranked the same on both ends (`_linkRank`);
+- the test mock's per-message timers reordered notices under Chrome's
+  nested-timeout clamp; the mock now delivers in order, as a socket does.
+Latency alone (0–800 ms per hello) reproduced only the mock's case; CPU
+starvation reproduced the rest.
+
 Costs: see docs/index.md "Who said it" (Node and throttled Chromium).
 
 Related: [[split-party]], [[addressed-is-not-private]], [[bots-as-members]],
