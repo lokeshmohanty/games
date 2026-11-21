@@ -120,7 +120,7 @@ export async function api(request, env, { gate = async () => true, ctx = null } 
 		if (a === "push" && !b) {
 			if (method === "GET") return open(pushKey(env), "public, max-age=300");
 			if (method === "POST") return send(await subscribe(env, await me(), request));
-			if (method === "DELETE") return send(await unsubscribe(env, await me(), request));
+			if (method === "DELETE") return send(await unsubscribe(env, request));
 		}
 		if (a === "invites") {
 			if (!b && method === "GET") return send(await listInvites(env, await me()));

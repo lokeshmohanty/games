@@ -6,7 +6,8 @@
 -- before deploying the Worker that does (docs/accounts.md "Migrations").
 
 -- One row per device that turned invites on: the push service's endpoint
--- (a URL on a known push service's host, worker/api/webpush.js) and the
+-- (a URL on a known push service's host, worker/api/webpush.js, stored as
+-- its canonical `new URL(...).href`, so one device is one row) and the
 -- browser's keys the payload is encrypted for. One account per endpoint: the
 -- same browser signed in as someone else moves the row to them. At most
 -- PUSH_DEVICES_MAX rows an account; the least recently refreshed go first.
@@ -17,7 +18,14 @@ CREATE TABLE push_subs (
 	account TEXT NOT NULL REFERENCES accounts (id) ON DELETE CASCADE,
 	p256dh TEXT NOT NULL,              -- the browser's P-256 public key, base64url
 	auth TEXT NOT NULL,                -- its 16-byte auth secret, base64url
+	vapid TEXT NOT NULL,               -- which VAPID public key it was made with (a fingerprint):
+	                                   -- after a key change, rows of the old key are never sent to
 	created INTEGER NOT NULL,
 	at INTEGER NOT NULL                -- last subscribed or refreshed by a page
 );
 CREATE INDEX push_subs_account ON push_subs (account, at);
+
+-- When a waiting invite last made a notification (ms), per sender and
+-- recipient: at most one per INVITE_NOTIFY_AGAIN_MS, and none for the same
+-- party code again (worker/api/social.js invite). NULL on rows from before.
+ALTER TABLE invites ADD COLUMN pushed INTEGER;

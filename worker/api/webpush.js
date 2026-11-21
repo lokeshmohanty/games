@@ -14,7 +14,7 @@
 // https with no port or credentials (pushEndpointOk) — checked when a page
 // subscribes and again before every send — and redirects are not followed.
 
-import { b64url, unb64url } from "./http.js";
+import { b64url, sha256, unb64url } from "./http.js";
 
 const enc = new TextEncoder();
 
@@ -23,7 +23,10 @@ const enc = new TextEncoder();
  * Android, Samsung Internet, Opera and Brave → Google FCM; Firefox → Mozilla
  * autopush; Safari (macOS, and iOS from the Home Screen) → Apple; Edge on
  * Windows → WNS. A host not here is refused; a browser on another service
- * gets "not available on this browser" (lib/push.js).
+ * gets "not available on this browser" (lib/push.js). The wildcards are the
+ * vendors' own allowlists (Apple's web push guide: `https://*.push.apple.com`;
+ * Microsoft's WNS firewall page: `*.notify.windows.com`; checked 2026-11-21);
+ * every name under them is theirs.
  */
 export const PUSH_HOSTS = [
 	/^fcm\.googleapis\.com$/,
@@ -32,6 +35,20 @@ export const PUSH_HOSTS = [
 	/^(?:[a-z0-9-]+\.)*notify\.windows\.com$/,
 ];
 const ENDPOINT_MAX = 1024;
+
+/**
+ * The one spelling of an endpoint (`new URL(...).href`: case, a default
+ * port, `https:host` without slashes all fold), so one device is one row
+ * and is sent to once; null if it is not a URL.
+ */
+export function canonicalEndpoint(endpoint) {
+	if (typeof endpoint !== "string") return null;
+	try {
+		return new URL(endpoint.trim()).href;
+	} catch {
+		return null;
+	}
+}
 
 /**
  * May we fetch this endpoint? `loopback`: tests only (AUTH_TEST=1 on a
@@ -147,6 +164,14 @@ export async function vapidAuth(env, aud, t = Date.now()) {
 }
 
 export const vapidReady = (env) => !!(env.VAPID_PUBLIC_KEY?.trim() && env.VAPID_PRIVATE_KEY?.trim());
+
+/** A short fingerprint of the VAPID public key, stored with each device (push_subs.vapid). */
+let print = null; // { pub, fp }
+export async function vapidFingerprint(env) {
+	const pub = env.VAPID_PUBLIC_KEY.trim();
+	if (print?.pub !== pub) print = { pub, fp: (await sha256(pub)).slice(0, 16) };
+	return print.fp;
+}
 
 /**
  * Send one message to one subscription { endpoint, p256dh, auth }.

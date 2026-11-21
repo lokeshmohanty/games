@@ -12,7 +12,7 @@
 //                                    from them for DECLINE_COOLDOWN_MS) or withdraw
 //   POST/DELETE /api/friends/<id>/block   block (ends everything, they cannot ask) / unblock
 //   POST/DELETE /api/friends/<id>/mute    mute a friend's invites / unmute
-//   POST   /api/friends/<id>/invite  { code, game? } → { invited: true }: pushed to
+//   POST   /api/friends/<id>/invite  { code, game? (an id) } → { invited: true }: pushed to
 //                                    their open pages and kept for INVITE_TTL_MS;
 //                                    with no page open, a notification to each
 //                                    device that turned them on (push.js)
@@ -48,7 +48,8 @@
 //                                          deletes it
 //   DELETE /api/groups/<id>/bans/<acct>    the owner lets someone back
 
-import { HttpError, body, now, randomId, testing } from "./http.js";
+import { GAMES, TITLES } from "./games.js";
+import { GAME_ID, HttpError, body, now, randomId, testing } from "./http.js";
 import { pushInvite } from "./push.js";
 
 const all = async (stmt) => (await stmt.all()).results ?? [];
@@ -60,8 +61,14 @@ export const DECLINE_COOLDOWN_MS = 7 * 86_400_000;
 const REQUEST_PUSH_MS = 86_400_000; // one pushed request per pair a day
 export const INVITE_TTL_MS = 10 * 60_000;
 const INVITE_AGAIN_MS = 20_000; // one invite per friend this often
+const inviteAgain = (env) => Number(env.INVITE_AGAIN_MS ?? INVITE_AGAIN_MS);
 const INVITES_PER_SENDER = 20; // friends invited per INVITE_TTL_MS
 const INVITES_PER_RECIPIENT = 10; // invites waiting for one person
+// A notification per pair at most this often, even for a new party code: a
+// friend re-inviting every 20 s must not make a closed phone buzz (review,
+// 2026-11-21). The same code again never notifies while its invite waits.
+const INVITE_NOTIFY_AGAIN_MS = 2 * 60_000;
+const notifyAgain = (env) => Number(env.INVITE_NOTIFY_AGAIN_MS ?? INVITE_NOTIFY_AGAIN_MS);
 const friendsMax = (env) => Number(env.FRIENDS_MAX ?? FRIENDS_MAX);
 const groupsMax = (env) => Number(env.GROUPS_MAX ?? GROUPS_MAX);
 const inviteTtl = (env) => Number(env.INVITE_TTL_MS ?? INVITE_TTL_MS);
@@ -329,36 +336,48 @@ export async function recentPlayers(env, me) {
  * The answer is the same whether any page of theirs got it — a friend who
  * appears offline must not be given away by a count.
  *
- * With no page of theirs open, it goes to their devices as a notification
- * (Web Push, push.js; opt-in per device). Both deliveries run after the
- * answer (ctx.waitUntil), so neither its words nor its timing say which.
- * `game`: the name of the game the party is on, for the notification's body.
+ * With no page of theirs in view (live.js `attentive`: hidden, frozen or
+ * none), it also goes to their devices as a notification (Web Push,
+ * push.js; opt-in per device) — only when it is news (below). Both
+ * deliveries run after the answer (ctx.waitUntil), so neither its words nor
+ * its timing say which. `game`: the id of the game the party is on, for the
+ * notification's body (its catalog title).
  */
 export async function invite(env, me, other, request, { ctx = null } = {}) {
-	const { code, game: gameName } = await body(request);
+	const { code, game: gameId } = await body(request);
 	if (!/^\d{6}$/.test(String(code ?? ""))) throw new HttpError(400, "an invite carries the party's six-digit code");
 	if (!(await areFriends(env, me.id, other))) throw new HttpError(403, "you can only invite friends");
 	const t = now();
 	const since = t - inviteTtl(env);
-	const last = await env.DB.prepare("SELECT at FROM invites WHERE recipient = ? AND sender = ?").bind(other, me.id).first();
-	if (last && t - last.at < INVITE_AGAIN_MS) throw new HttpError(429, "you invited them just now");
+	const last = await env.DB.prepare("SELECT at, code, pushed FROM invites WHERE recipient = ? AND sender = ?").bind(other, me.id).first();
+	if (last && t - last.at < inviteAgain(env)) throw new HttpError(429, "you invited them just now");
 	const sent = await env.DB.prepare("SELECT COUNT(*) AS n FROM invites WHERE sender = ? AND at > ?").bind(me.id, since).first();
 	if (sent.n >= INVITES_PER_SENDER) throw new HttpError(429, "that is a lot of invites; wait a few minutes");
 	// Muted by them: answered the same, and nothing is pushed or kept.
 	if (await env.DB.prepare("SELECT 1 FROM mutes WHERE account = ? AND muted = ?").bind(other, me.id).first()) return { invited: true };
 	const waiting = await env.DB.prepare("SELECT COUNT(*) AS n FROM invites WHERE recipient = ? AND sender != ? AND at > ?").bind(other, me.id, since).first();
 	if (waiting.n >= INVITES_PER_RECIPIENT) throw new HttpError(429, "they have plenty of invites waiting; try again soon");
+	// A notification only for news: no invite of theirs waiting, or a new
+	// party code — and then at most once per INVITE_NOTIFY_AGAIN_MS. A repeat
+	// still refreshes the waiting invite and reaches open pages (which show
+	// one card per sender and code).
+	const waitingNow = last && last.at > since;
+	const notify = !waitingNow || (last.code !== String(code) && t - (last.pushed ?? 0) >= notifyAgain(env));
 	await env.DB.batch([
 		env.DB.prepare("DELETE FROM invites WHERE recipient = ? AND at <= ?").bind(other, since),
 		env.DB.prepare(
-			"INSERT INTO invites (recipient, sender, code, at) VALUES (?, ?, ?, ?) ON CONFLICT (recipient, sender) DO UPDATE SET code = excluded.code, at = excluded.at",
-		).bind(other, me.id, String(code), t),
+			`INSERT INTO invites (recipient, sender, code, at, pushed) VALUES (?, ?, ?, ?, ?)
+			 ON CONFLICT (recipient, sender) DO UPDATE SET code = excluded.code, at = excluded.at, pushed = COALESCE(excluded.pushed, invites.pushed)`,
+		).bind(other, me.id, String(code), t, notify ? t : null),
 	]);
 	const msg = { t: "invite", from: { id: me.id, name: me.name }, code: String(code), at: t };
-	const game = typeof gameName === "string" ? cleanName(gameName).slice(0, 40) : "";
+	// The game by its id, shown by its catalog title (games.js TITLES): never
+	// text the sender wrote. An id the arcade does not list shows no game.
+	const game = typeof gameId === "string" && GAME_ID.test(gameId) && GAMES[gameId] ? (TITLES[gameId] ?? null) : null;
 	const loopback = testing(env, request);
 	const deliver = async () => {
-		if (!(await push(env, other, msg))) await pushInvite(env, other, { ...msg, ...(game ? { game } : {}) }, { ttlMs: inviteTtl(env), loopback });
+		const live = await push(env, other, msg);
+		if (notify && !live.attentive) await pushInvite(env, other, { ...msg, ...(game ? { game } : {}) }, { ttlMs: inviteTtl(env), loopback });
 	};
 	if (ctx?.waitUntil) ctx.waitUntil(deliver());
 	else await deliver();
@@ -383,18 +402,23 @@ export async function dismissInvite(env, me, sender) {
 	return { dismissed: true };
 }
 
-/** Send `msg` to every open page of `account`; how many got it (never told to a sender). */
+/**
+ * Send `msg` to every open page of `account`: { delivered, attentive } —
+ * how many sockets got it, and how many of those are visible pages heard
+ * from lately (live.js). Never told to a sender.
+ */
 export async function push(env, account, msg) {
-	if (!env.LIVE) return 0;
+	if (!env.LIVE) return { delivered: 0, attentive: 0 };
 	try {
 		const res = await env.LIVE.get(env.LIVE.idFromName(account)).fetch("https://live/push", {
 			method: "POST",
 			body: JSON.stringify(msg),
 		});
-		return (await res.json()).delivered ?? 0;
+		const r = await res.json();
+		return { delivered: r.delivered ?? 0, attentive: r.attentive ?? r.delivered ?? 0 };
 	} catch (err) {
 		console.error("push", err);
-		return 0;
+		return { delivered: 0, attentive: 0 };
 	}
 }
 

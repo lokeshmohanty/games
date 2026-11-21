@@ -9,6 +9,20 @@
 // Presence is written to D1 (`presence`), where friends lists read it:
 // online on the first socket, offline when the last closes; a page says what
 // it is playing with {t:"status", game} and heartbeats with {t:"ping"}.
+//
+// Attention (for invites by notification, push.js): an open socket is not an
+// open page a person is looking at. A phone's app switched away keeps its
+// socket for minutes, frozen, and a hidden tab is not seen. So each socket's
+// attachment holds when it last spoke (`seen`) and whether its page said it
+// was visible ({t:"vis", visible}, also on status and ping; lib/account.js).
+// /push answers `attentive`: the sockets of visible pages heard from within
+// ATTENTIVE_MS. An invite is sent as a notification when that is 0, though
+// every open page still gets it. A page from before `visible` (unknown)
+// counts as visible while it is fresh.
+
+// A visible page pings every 4 minutes (lib/account.js): a socket quiet for
+// longer than this is a frozen or gone page.
+export const ATTENTIVE_MS = 5 * 60_000;
 
 export class UserLive {
 	constructor(state, env) {
@@ -16,18 +30,40 @@ export class UserLive {
 		this.env = env;
 	}
 
+	/** This socket's page is visible and was heard from lately. */
+	attentive(ws, t = Date.now()) {
+		let a = null;
+		try {
+			a = ws.deserializeAttachment();
+		} catch {}
+		const fresh = t - (a?.seen ?? 0) < Number(this.env.ATTENTIVE_MS ?? ATTENTIVE_MS);
+		return fresh && a?.visible !== false;
+	}
+
+	heard(ws, visible) {
+		let a = null;
+		try {
+			a = ws.deserializeAttachment();
+		} catch {}
+		try {
+			ws.serializeAttachment({ seen: Date.now(), visible: typeof visible === "boolean" ? visible : (a?.visible ?? null) });
+		} catch {}
+	}
+
 	async fetch(request) {
 		const url = new URL(request.url);
 		if (url.pathname === "/push") {
 			const msg = await request.text();
 			let delivered = 0;
+			let attentive = 0;
 			for (const ws of this.state.getWebSockets()) {
 				try {
 					ws.send(msg);
 					delivered++;
+					if (this.attentive(ws)) attentive++;
 				} catch {}
 			}
-			return Response.json({ delivered });
+			return Response.json({ delivered, attentive });
 		}
 		if (request.headers.get("Upgrade") !== "websocket") return new Response("websocket required", { status: 426 });
 		const account = request.headers.get("X-Account");
@@ -35,6 +71,7 @@ export class UserLive {
 		const pair = new WebSocketPair();
 		const [client, server] = Object.values(pair);
 		this.state.acceptWebSocket(server, [account]);
+		server.serializeAttachment({ seen: Date.now(), visible: null });
 		await this.presence(account, 1, null);
 		return new Response(null, { status: 101, webSocket: client, headers: { "Sec-WebSocket-Protocol": "neon" } });
 	}
@@ -47,6 +84,7 @@ export class UserLive {
 		} catch {
 			return;
 		}
+		this.heard(ws, msg?.visible);
 		if (msg?.t === "status") {
 			const game = typeof msg.game === "string" && msg.game.length <= 80 ? msg.game : null;
 			await this.presence(account, 1, game);

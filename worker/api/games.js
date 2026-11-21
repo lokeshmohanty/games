@@ -52,3 +52,26 @@ export const KINDS = Object.assign(Object.create(null), {
 		"teams"
 	]
 });
+
+// Each game's title as its catalog writes it: the body of a party invite's
+// notification (worker/api/social.js invite), never text a sender wrote.
+export const TITLES = Object.assign(Object.create(null), {
+	"connect4": "Connect 4",
+	"lokeshmohanty/battleship": "Battleship",
+	"lokeshmohanty/bubble-rush": "Bubble Rush",
+	"lokeshmohanty/draw-guess": "Draw & Guess",
+	"lokeshmohanty/liars-dice": "Liar's Dice",
+	"lokeshmohanty/light-cycles": "Light Cycles",
+	"lokeshmohanty/sudoku": "Sudoku",
+	"neon-bid": "Neon Bid",
+	"neon-fission": "Neon Fission",
+	"neon-survival-mp": "Neon Survival",
+	"tic-tac-toe-c": "TIC TAC TOE (C)",
+	"tic-tac-toe-go": "TIC TAC TOE (GO)",
+	"tic-tac-toe-html": "TIC TAC TOE (HTML)",
+	"tic-tac-toe-js": "Tic Tac Toe",
+	"tic-tac-toe-python": "TIC TAC TOE (PYTHON)",
+	"tic-tac-toe-rust": "TIC TAC TOE (RUST)",
+	"tic-tac-toe-ts": "TIC TAC TOE (TS)",
+	"undercover": "Undercover",
+});
