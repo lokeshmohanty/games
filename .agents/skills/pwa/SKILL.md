@@ -14,6 +14,7 @@ one SVG by a script.
 | `manifest.webmanifest` | name, icons, `start_url`, `display`. All paths **relative**, so it works under a GitHub Pages subpath. |
 | `sw.js` | **Must stay at the repo root** — a worker's scope cannot rise above its own directory. |
 | `lib/pwa.js` | Registers the worker; fills `[data-install-slot]` with an INSTALL APP button. |
+| `lib/push.js` | Party invites as notifications (Web Push): the once-per-device offer, the profile's switch, subscribing with the server's VAPID key. The worker's `push` / `notificationclick` handlers are at the end of `sw.js`. docs/accounts.md "Party invites by notification". |
 | `assets/icon.svg` | The one drawing. Everything else is generated from it. |
 | `scripts/make-icons.mjs` | Renders the PNGs. Run after editing the SVG; the PNGs are committed. |
 
@@ -71,6 +72,15 @@ missing. Never edit `VERSION` (the repo's says `arcade-dev`). docs/spa.md.
   390x844 with assertions.
 - Do not add `controllerchange` → `location.reload()`. With `skipWaiting()` that
   is the classic infinite reload loop.
+- **Every `push` event shows a notification**, even one whose payload will
+  not parse: the subscription is `userVisibleOnly`, and Chrome penalises
+  (and eventually revokes) a worker that receives a push and shows nothing.
+  Push is for **party invites only** (Lokesh, 2026-11-15/18) — never use it
+  for anything else without asking him. `notificationclick` focuses a
+  top-level arcade page and `postMessage`s `{ t: "neon-invite", from }`
+  (lib/account.js listens), else opens `./?invite=<sender>`. The handlers
+  add nothing to the precache and do not touch VERSION's rules: the icon
+  they use is already in SHELL. Testing them: [[push-testing]].
 
 ## Memory
 
@@ -83,3 +93,6 @@ missing. Never edit `VERSION` (the repo's says `arcade-dev`). docs/spa.md.
   there anyway.
 - `memory/app-mark-direction.md` — the icon follows the Paper theme, not Neon;
   the "linked players" concept and the choices made for the 2026-11-14 redesign.
+- `memory/push-testing.md` — how test-push drives Web Push in Chromium (no
+  FCM: a stubbed PushManager; CDP deliverPushMessage; a synthetic
+  notificationclick), and what that leaves unproven.

@@ -764,7 +764,10 @@ try {
 	await ana.p.locator(".top-feedback").click({ timeout: TIMEOUT });
 	const fbOpen = await ana.p.locator("dialog.neon-sheet", { hasText: "Feedback: Connect 4" }).waitFor({ timeout: TIMEOUT }).then(() => true, () => false);
 	check("💬 opens the game's feedback sheet", fbOpen);
-	check("…which, without GitHub connected, offers CONNECT GITHUB instead of a box", (await ana.p.locator("dialog.neon-sheet button", { hasText: "CONNECT GITHUB" }).count()) === 1 && (await ana.p.locator("dialog.neon-sheet textarea").count()) === 0);
+	// The sheet fills in after it opens (it asks whether GitHub is connected):
+	// wait for its answer rather than count at once (a CI race, 2026-11-21).
+	const connect = await ana.p.locator("dialog.neon-sheet button", { hasText: "CONNECT GITHUB" }).waitFor({ timeout: TIMEOUT }).then(() => true, () => false);
+	check("…which, without GitHub connected, offers CONNECT GITHUB instead of a box", connect && (await ana.p.locator("dialog.neon-sheet button", { hasText: "CONNECT GITHUB" }).count()) === 1 && (await ana.p.locator("dialog.neon-sheet textarea").count()) === 0);
 	const sheetFits = await ana.p.evaluate(() => {
 		const r = document.querySelector("dialog.neon-sheet").getBoundingClientRect();
 		return r.left >= 16 && r.right <= innerWidth - 16;

@@ -80,7 +80,7 @@ export default {
 		ctx.waitUntil(scheduledSnapshot(env));
 	},
 
-	async fetch(request, env) {
+	async fetch(request, env, ctx) {
 		const path = new URL(request.url).pathname;
 		// The client's reachability probe, answered right here. It used to
 		// be a WebSocket `ping` to room 000000 — one object every client
@@ -97,6 +97,8 @@ export default {
 		if (path.startsWith("/api/") || path.startsWith("/auth/") || path === "/live") {
 			return api(request, env, {
 				gate: () => gateCall(env, "api", ip(request)).then((r) => r.ok !== false, () => false),
+				// Work after the answer (an invite's notifications, worker/api/push.js).
+				ctx,
 			});
 		}
 		if (path === "/room/new") return hostNew(request, env);

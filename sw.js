@@ -320,3 +320,56 @@ self.addEventListener("fetch", (event) => {
 
 	event.respondWith(isAsset(url) ? cacheFirst(request) : DEV ? networkFirst(request) : snapshot(request, event));
 });
+
+// ------------------------------------------------- party invites, pushed
+//
+// Opt-in per device (lib/push.js): an invite a friend sent while no arcade
+// page of ours was open arrives here, encrypted end to end from the room
+// server (worker/api/push.js). Every push shows a notification — Chrome
+// requires that of a subscription made with userVisibleOnly — even one whose
+// payload cannot be read. Tapping it focuses an open arcade page and has it
+// show the invite (JOIN / NOT NOW, lib/account.js), or opens one at
+// `./?invite=<sender>`, which shows the invites waiting on the server.
+
+self.addEventListener("push", (event) => {
+	let msg = {};
+	try {
+		msg = event.data?.json() ?? {};
+	} catch {}
+	const from = typeof msg.from?.id === "string" ? msg.from.id : null;
+	const name = typeof msg.from?.name === "string" && msg.from.name.trim() ? msg.from.name.trim().slice(0, 40) : "A friend";
+	const game = typeof msg.game === "string" && msg.game.trim() ? msg.game.trim().slice(0, 60) : "";
+	event.waitUntil(
+		self.registration.showNotification(`${name} invited you to a party`, {
+			body: game || "Tap to see the invite.",
+			// One notification per friend: a newer invite replaces theirs.
+			tag: `invite:${from ?? "unknown"}`,
+			renotify: true,
+			icon: "./assets/icon-192.png",
+			data: { t: "invite", from },
+		}),
+	);
+});
+
+self.addEventListener("notificationclick", (event) => {
+	event.notification.close();
+	event.waitUntil(openInvite(event.notification.data ?? {}));
+});
+
+/** Focus an arcade page and have it show the invite; open one if none is. */
+async function openInvite(data) {
+	const from = typeof data.from === "string" ? data.from : null;
+	const url = new URL(`./${from ? `?invite=${encodeURIComponent(from)}` : ""}`, self.registration.scope).href;
+	const pages = (await self.clients.matchAll({ type: "window", includeUncontrolled: true })).filter(
+		(c) => c.frameType !== "nested" && c.url.startsWith(self.registration.scope),
+	);
+	const page = pages.find((c) => c.focused) ?? pages[0];
+	if (page) {
+		page.postMessage({ t: "neon-invite", from });
+		try {
+			await page.focus();
+		} catch {}
+		return;
+	}
+	await self.clients.openWindow(url);
+}
