@@ -717,25 +717,34 @@ every existing check — friends only (a block ends the friendship, so a
 blocked sender is refused with the same 403 as before), a mute drops it
 quietly, the 20 s / 20 friends / 10 waiting limits — to the friend's open
 pages through `UserLive`, as before. It is **also** sent to their devices
-when **no page of theirs is in view** (`live.js` `attentive`): every page
-says whether it is visible as that changes (`{t:"vis", visible}`, and on
-status and ping; a phone that switches apps hides the page before freezing
-it), and a socket not heard from for 5 minutes (`ATTENTIVE_MS`; a visible
-page pings every 4) counts as a frozen page. An open socket alone is not
+when **no page of theirs is in view and in use** (`live.js` `attentive`):
+every page says whether it is visible and active as that changes
+(`{t:"vis", visible, active}`, and on status and ping; a phone that switches
+apps hides the page before freezing it; active = a tap, click or key on the
+page within 5 minutes, or a game frame holding the focus, since a game's own
+taps land in its frame), and a socket not heard from for 5 minutes
+(`ATTENTIVE_MS`; a visible page pings every 4) counts as a frozen page. The
+active flag is there so a desktop tab left on the arcade does not keep a
+phone quiet for hours (re-review, 2026-11-21). An open socket alone is not
 "open": Android and iOS keep a switched-away app's socket for minutes (the
 review of 2026-11-21 found the first version never pushed in that, the main,
 case). Chosen over a per-socket staleness timer alone because hiding is
 reported at once, while a timer would leave the first minutes after
-switching away silent. A page from before `visible` counts as visible while
-fresh. A hidden page that comes back shows the invite too; tapping the
+switching away silent. A page from before these flags counts as visible
+and active while fresh. A hidden page that comes back shows the invite too; tapping the
 notification focuses it, and the card is not shown twice.
 
 **Only news makes a notification** (review, 2026-11-21: a friend re-inviting
-every 20 s made a closed phone buzz every 20 s). A notification goes when the
-sender has no unexpired invite waiting for this friend, or the party code is
-new — and then at most once per pair every 2 minutes
-(`INVITE_NOTIFY_AGAIN_MS`, D1 `invites.pushed`). A repeat still refreshes the
-waiting invite and reaches open pages. Both deliveries run after the sender
+every 20 s made a closed phone buzz every 20 s). News is an invite whose
+code has not reached one of this friend's devices as a notification from
+this sender within the invite's 10 minutes; a new code is news too, but at
+most once per pair every 2 minutes (`INVITE_NOTIFY_AGAIN_MS`). The record is
+D1 `invite_notices` (sender, recipient, code, when), written only once a
+push service accepted the message: an invite first shown on a page in view
+still notifies when repeated after that page is gone, and NOT NOW (which
+deletes the waiting invite) does not make the next repeat news again
+(re-review, 2026-11-21: both were wrong in the first fix). A repeat still
+refreshes the waiting invite and reaches open pages. Both deliveries run after the sender
 is answered (`ctx.waitUntil`): the answer is `{ invited: true }`, the same
 bytes and headers, whether a page got it, a notification, or nothing (D16).
 The invite still waits in D1 for 10 minutes as before.
@@ -798,7 +807,10 @@ row, then unsubscribes the browser (offline, the row stays until the push
 service answers 410). **Signing out** does the same first, and so does a
 session that **ended elsewhere** (expired, or signed out on another device:
 the page's next 401), so a shared phone stops getting that account's
-invites. `DELETE /api/push` needs **no sign-in** for that reason: the
+invites. After a 401 the page says so ("Signed out, so party invites by
+notification are off on this device…") and, once signed in again, shows the
+offer card one more time (localStorage `neon.push.reoffer`): the switch was
+turned off for the player, not by them. `DELETE /api/push` needs **no sign-in** for that reason: the
 endpoint is the device's own secret, so holding it is the proof, and the
 most a stolen endpoint does there is turn one device's notifications off.
 Deleting the account deletes every row. The **export** lists each device as its push service's host and
@@ -877,7 +889,7 @@ or loopback; public reads are open.
 | Favourites, friends, groups, presence | D1 | no (friends see each other online unless "appear offline") |
 | Friend code | D1 `accounts.friend_code` | to whoever you give it; rotatable |
 | Blocks, declines (7 days), mutes, group bans, waiting invites (10 minutes), when a request was last pushed | D1 `friends`, `mutes`, `group_bans`, `invites`, `request_pushes` | no; in the export (your own rows; never a block of someone else's on you; group bans of you and by you; when your requests were pushed); deleted with the account |
-| Devices getting party invites as notifications: the push service's endpoint, the browser's public key and auth secret, which VAPID key (a fingerprint), created, last refreshed; when a waiting invite last made a notification | D1 `push_subs` (0006), at most 5 an account; `invites.pushed` | no; in the export as push service host and the two dates only (no endpoint, no keys); deleted on TURN OFF, sign-out, a 404/410 from the push service, and with the account |
+| Devices getting party invites as notifications: the push service's endpoint, the browser's public key and auth secret, which VAPID key (a fingerprint), created, last refreshed; when a waiting invite last made a notification | D1 `push_subs` (0006), at most 5 an account; `invite_notices` (sender, recipient, code, when; per pair) | no; in the export as push service host and the two dates only (no endpoint, no keys); deleted on TURN OFF, sign-out, a 404/410 from the push service, and with the account |
 | Ranked matches and ratings | D1 | on boards and public profiles, unless hidden |
 | Reports not yet settled, "I am seated" starts, outcomes waiting to be read | D1 `reports` (15 min; starts 1 h after their last beat) | no; in the export (`reports`); deleted with the account |
 | Solo runs and runs against bots: id, game, seed, start, used, counted, daily, `vs` | D1 `runs`, kept 4 days | no; deleted with the account |
@@ -948,14 +960,21 @@ games against them (`just check-games`) before deploying: a Worker whose
 table lacks a game refuses that game's play counts and results (a review,
 2026-11-16: Bubble Rush was missing from this branch's table). After a pin
 PR that adds a game or changes one, the submission check warns; regenerate
-with `just games-table` and commit before deploying.
+with `just games-table` and commit before deploying. Since 2026-11-21 it
+also refuses while the remote D1 has a migration not yet applied
+(`just check-migrations`): migrate first, then deploy.
 
 ## Deploying invites by notification (branch `web-push`, 2026-11-18)
 
-Once, by Lokesh, after the merge. Until steps 2–3 are done the new Worker
-answers `GET /api/push` with `{ key: null }`, so no page offers anything and
-invites behave exactly as before; nothing breaks while it waits. From the
-repo root:
+Once, by Lokesh, after the merge. **The migration must come before the
+Worker**: a Worker deployed without 0006 answers 500 to every party invite
+(it reads `invite_notices` after an invite to a friend not in view, and
+`push_subs`) and to every account deletion. `just deploy-worker` therefore
+refuses while `wrangler d1 migrations list arcade --remote` lists anything
+pending (`just check-migrations`, scripts/check-migrations.mjs). Between the
+migration and steps 1–2 (the keys), the new Worker answers `GET /api/push`
+with `{ key: null }`, so no page offers anything and invites behave as
+before. From the repo root:
 
 1. **The key pair**, with Node's own WebCrypto (nothing to install):
    `node scripts/vapid-keys.mjs > .env.vapid-public 2> .env.vapid-private`.
@@ -976,7 +995,8 @@ repo root:
    to an offline friend and on account deletion, so migrate first), from
    `worker/`: `wrangler d1 migrations list arcade --remote` (0006 pending),
    `wrangler d1 migrations apply arcade --remote`, then from the root
-   `just deploy-worker` (never a bare `wrangler deploy`).
+   `just deploy-worker` (never a bare `wrangler deploy`; it refuses while
+   the remote D1 still lists a pending migration).
 4. **The site** (Pages, from CI as usual). Site and Worker may go in either
    order: a page from before never asks `/api/push`, and an older Worker
    answers it 404, which the page treats as "not available".
@@ -1069,9 +1089,10 @@ deploy**, from `worker/`, once the branch is merged:
 
 `worker/migrations/0006_push.sql` (branch `web-push`, 2026-11-18) adds
 `push_subs` (one row per device that turned invites by notification on) and
-its index, and `invites.pushed` (when a waiting invite last made a
-notification). Additive; **migrate first, then deploy** — "Deploying invites by
-notification" above.
+its index, and `invite_notices` (per sender and recipient, the last invite
+that reached a device as a notification, and its code). Additive; **migrate
+first, then deploy** — `just deploy-worker` refuses otherwise ("Deploying
+invites by notification" above).
 
 ## Testing
 
@@ -1173,8 +1194,13 @@ notification" above.
   2.5 s there) get a notification as well, muted and blocked send nothing,
   a row of an older VAPID key is not sent to and is deleted, a 410 and a
   404 delete their rows; the export (hosts and dates, no endpoints or keys)
-  and account deletion. Each check added after the review of 2026-11-21
-  failed against the Worker before it.
+  and account deletion. Since the re-review: an invite first shown on a
+  page in view and in use notifies when repeated after the page closes, and
+  only once; NOT NOW then a repeat makes none; a visible but idle page does
+  not keep the device quiet. Each check added after the review and the
+  re-review of 2026-11-21 failed against the Worker before it. (`just
+  test-just` holds `deploy-worker` to `check-migrations` and checks its
+  verdicts.)
   In Chromium at 390×844 and 354×696 (`phoneFloors`, in view, no sideways
   scroll): no offer before a friend; the offer after one; NOT NOW never
   again; the profile switch on (subscribed with `userVisibleOnly` and the
@@ -1186,7 +1212,9 @@ notification" above.
   notification, so the tap is a `NotificationEvent` with the real
   notification), which shows the invite with JOIN for the party's code; the
   tap with a page open shows it there; an expired one says so; the key not
-  reachable leaves an on switch on; a hidden page (app switched away) gets
-  the invite and the device a notification; signing out, and a session
-  ended elsewhere (401), remove the device. Chromium cannot subscribe to FCM here, so the page's
+  reachable leaves an on switch on; the page reports itself in view and in
+  use, and hidden; a hidden page (app switched away) gets the invite and the
+  device a notification; signing out, and a session ended elsewhere (401),
+  remove the device — the 401 says so, and signing in again brings the offer
+  back once. Chromium cannot subscribe to FCM here, so the page's
   `PushManager` is stubbed with a subscription on the fake service.

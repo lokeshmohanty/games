@@ -316,6 +316,43 @@ try {
 		check("a device made with an older VAPID key is not sent to, and is deleted", fake.to("bo-oldkey").length === 0 && !left.some((r) => r.endpoint === old.endpoint), fake.to("bo-oldkey").length);
 	}
 
+	console.log("\npush: a repeat after a page in view, NOT NOW, an idle page (re-review, 2026-11-21)");
+	{
+		const [att, vic, ida] = [await login("Att"), await login("Vic"), await login("Ida")];
+		await befriend(att, vic);
+		await befriend(ida, vic);
+		await subscribeAs(vic, await fake.subscription("vic1"));
+		const seenPage = await listen(vic.token);
+		seenPage.send({ t: "vis", visible: true, active: true });
+		await sleep(300);
+		const first = await call("POST", `/api/friends/${vic.id}/invite`, { token: att.token, body: { code: "515151" } });
+		await sleep(1500);
+		check("Vic's arcade in view and in use: no notification for the first invite", fake.to("vic1").length === 0 && first.status === 200);
+		seenPage.close();
+		check("(Vic's arcade closed)", await offline(att, vic));
+		const repeat = await call("POST", `/api/friends/${vic.id}/invite`, { token: att.token, body: { code: "515151" } });
+		await fake.waitFor(() => fake.to("vic1").length >= 1);
+		check("the same invite repeated once the arcade is closed: now it notifies", fake.to("vic1").length === 1 && fake.to("vic1")[0].payload?.code === "515151" && answer(repeat) === answer(first), fake.to("vic1").length);
+		await sleep(1100);
+		await call("POST", `/api/friends/${vic.id}/invite`, { token: att.token, body: { code: "515151" } });
+		await sleep(1500);
+		check("…and once only: repeated again, the same code does not", fake.to("vic1").length === 1, fake.to("vic1").length);
+		const beforeNo = fake.to("vic1").length;
+		await call("DELETE", `/api/invites/${att.id}`, { token: vic.token }); // NOT NOW
+		await sleep(1100);
+		const afterNo = await call("POST", `/api/friends/${vic.id}/invite`, { token: att.token, body: { code: "515151" } });
+		await sleep(1500);
+		check("NOT NOW, then the same invite again: no new notification (NOT NOW re-arms nothing)", afterNo.status === 200 && fake.to("vic1").length === beforeNo, { before: beforeNo, after: fake.to("vic1").length });
+		check("…though it waits again for Vic's next visit", (await call("GET", "/api/invites", { token: vic.token })).body.invites?.some((i) => i.from.id === att.id && i.code === "515151"));
+		const idle = await listen(vic.token);
+		idle.send({ t: "vis", visible: true, active: false });
+		await sleep(300);
+		await call("POST", `/api/friends/${vic.id}/invite`, { token: ida.token, body: { code: "525252" } });
+		await fake.waitFor(() => fake.to("vic1").length >= 2);
+		check("a page in view but idle (a desktop tab left open) does not keep the phone quiet", fake.to("vic1").at(-1)?.payload?.code === "525252" && idle.heard.some((x) => x.t === "invite" && x.code === "525252"), { sent: fake.to("vic1").length, heard: idle.heard });
+		idle.close();
+	}
+
 	console.log("\npush: export and account deletion");
 	{
 		const ivy = await login("Ivy");
@@ -454,14 +491,18 @@ try {
 			// notification as well as to the page (review, 2026-11-21).
 			const cyn = await login(`Cyn${vw}`);
 			await befriend(cyn, bo);
+			const frames = [];
+			bo.p.on("websocket", (s) => s.url().endsWith("/live") && s.on("framesent", (f) => frames.push(String(f.payload))));
 			await bo.p.goto(page("index.html"));
 			await bo.p.locator(".site-menu .acct-me").waitFor({ state: "attached", timeout: TIMEOUT });
 			await sleep(500); // the live socket is open
+			check("the page tells the server it is in view and in use", frames.some((f) => /"t":"status"/.test(f) && /"visible":true/.test(f) && /"active":true/.test(f)), frames);
 			await bo.p.evaluate(() => {
 				Object.defineProperty(document, "visibilityState", { configurable: true, get: () => "hidden" });
 				document.dispatchEvent(new Event("visibilitychange"));
 			});
 			await sleep(300);
+			check("…and when it is hidden", frames.some((f) => /"t":"vis"/.test(f) && /"visible":false/.test(f)), frames);
 			const n0 = fake.to(`page-${vw}`).length;
 			await call("POST", `/api/friends/${bo.id}/invite`, { token: cyn.token, body: { code: "343434", game: "neon-bid" } });
 			await fake.waitFor(() => fake.to(`page-${vw}`).length > n0);
@@ -553,6 +594,15 @@ try {
 			await bo.p.evaluate(() => NeonArcade.account.api("/api/me").catch(() => {}));
 			for (const end = Date.now() + 8000; Date.now() < end; await sleep(200)) if (!(after = await rows(`account = '${bo.id}'`)).length) break;
 			check("a session that ended elsewhere (401): this device stops getting the account's invites", after.length === 0 && (await bo.p.evaluate(() => [localStorage.getItem("test.pushsub"), localStorage.getItem("neon.push")])).every((x) => x === null), after);
+			check("…and says so", await bo.p.locator(".neon-toast", { hasText: "party invites by notification are off" }).waitFor({ timeout: TIMEOUT }).then(() => true, () => false));
+			await bo.p.goto(`${B}/auth/test?name=${encodeURIComponent(bo.name)}&uid=${encodeURIComponent(bo.name)}&back=${encodeURIComponent(page("index.html"))}`);
+			const again = bo.p.locator(".neon-push-offer");
+			check("signed in again: the offer comes back, once", await again.waitFor({ timeout: TIMEOUT }).then(() => true, () => false));
+			await again.locator("button", { hasText: "NOT NOW" }).click();
+			await bo.p.reload();
+			await bo.p.locator(".site-menu .acct-me").waitFor({ state: "attached", timeout: TIMEOUT });
+			await friendsLoaded(bo.p);
+			check("…and not again after NOT NOW", (await bo.p.locator(".neon-push-offer").count()) === 0);
 		}
 		await asha.ctx.close();
 		await bo.ctx.close();
