@@ -53,7 +53,7 @@ const EXEMPT = {
 			upTo: 374,
 			why: "a 9 x 9 board: 9 cells of 44px need 396px, so on a 354px phone a cell is 36px (35px for the last row). A tap only selects it — highlighting its row, column, box and digit, so a miss shows and costs a second tap — and the digit goes in from the pad, keys 48px tall",
 		},
-		{ sel: ".su-cell", tap: 39, upTo: 419, why: "the same board on a 390px phone: 40px cells (39px for the last row); 44px takes a 420px window" },
+		{ sel: ".su-cell", tap: 39, upTo: 399, why: "the same board on a 390px phone: 40px cells (39px for the last row); from a 400px window they are 40px and more" },
 		{ sel: ".su-notes", text: 11, upTo: 374, why: "pencil notes are a 3 x 3 grid inside one cell: a third of a 36px cell holds an 11px digit (12px from 390); the digits placed are 21px" },
 	],
 	battleship: [

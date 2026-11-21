@@ -246,7 +246,7 @@ export function phoneFloors(page, roots, { hit = false, exempt = [], band = 0, u
 					allowed: [...allowed].map(([why, sel]) => [sel, why]),
 				};
 			}
-			const live = (n) => !n.disabled && n.getAttribute("aria-disabled") !== "true" && !n.closest("[inert]");
+			const live = (n) => !n.matches(":disabled") && n.getAttribute("aria-disabled") !== "true" && !n.closest("[inert]");
 			// `cursor` is inherited: only the outermost element that says pointer.
 			const pointer = all.filter((n) => !n.matches(SEL) && getComputedStyle(n).cursor === "pointer" && !(n.parentElement && getComputedStyle(n.parentElement).cursor === "pointer"));
 			// A pointer-only element inside a control (live or not) or another one is that one's tap.
