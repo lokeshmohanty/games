@@ -23,7 +23,7 @@
 import { existsSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { serve, gameScope, readyToClick, phoneFloors } from "./serve.mjs";
+import { serve, gameScope, readyToClick, phoneFloors, phoneSizes as onPhones } from "./serve.mjs";
 import { loadPlaywright } from "./playwright.mjs";
 
 const SITE = await serve(8734);
@@ -97,22 +97,8 @@ async function resultReached(page, game, how) {
 	check(`${game}: its result reached this device's stats, once, against bots`, rec?.played === 1 && rec.vsBots === 1, JSON.stringify(rec));
 	check(`${game}: …${how}, as the game itself ended`, rec && rec[how] === 1, JSON.stringify(rec));
 }
-/**
- * The game on screen in frame `F` of page `p` at 390x844 and at 354x696
- * (Lokesh's OnePlus): no text under 12px, no tap under 44px (phoneFloors,
- * from computed sizes), no sideways scroll. The page is left at 390x844.
- */
-async function phoneSizes(p, F, label) {
-	for (const [w, h] of [[390, 844], [354, 696]]) {
-		await p.setViewportSize({ width: w, height: h });
-		await F.waitForFunction((w) => innerWidth <= w, w, { timeout: TIMEOUT });
-		await F.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)))); // after the game's own resize
-		const floors = await phoneFloors(F, "body");
-		const doc = await F.evaluate(() => document.documentElement.scrollWidth);
-		check(`${label} at ${w}x${h}: text at least 12px, taps at least 44px, no sideways scroll`, !floors.text.length && !floors.taps.length && floors.measured.text > 0 && doc <= w, JSON.stringify({ ...floors, doc }));
-	}
-	await p.setViewportSize({ width: 390, height: 844 });
-}
+/** serve.mjs phoneSizes (390x844 and 354x696), through this suite's check. */
+const phoneSizes = (p, F, label) => onPhones(p, F, label, check, { timeout: TIMEOUT });
 const selfOf = (page) => page.evaluate(() => window.__party.room.selfId);
 /** The running game's scope — its frame for a framed game (gameScope). */
 let G = null;

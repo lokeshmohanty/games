@@ -55,16 +55,18 @@ function gamesOf(file) {
 	}
 	const NeonArcade = {};
 	runInNewContext(readFileSync(path, "utf8"), { window: { NeonArcade }, NeonArcade, document: { baseURI: "http://x/" }, URL }, { filename: file });
-	return [...(NeonArcade.CATALOG ?? []), ...(NeonArcade.UNLISTED ?? [])].map((g) => ({ id: g.id, kind: g.kind, board: g.leaderboard !== false }));
+	return [...(NeonArcade.CATALOG ?? []), ...(NeonArcade.UNLISTED ?? [])].map((g) => ({ id: g.id, kind: g.kind, board: g.leaderboard !== false, title: g.title ?? g.name ?? null }));
 }
 
 const table = {};
+const titles = {};
 const noBoard = new Set();
 for (const file of SOURCES) {
-	for (const { id, kind, board } of gamesOf(file)) {
+	for (const { id, kind, board, title } of gamesOf(file)) {
 		if (typeof id !== "string" || typeof kind !== "string") throw new Error(`${file}: a game without an id or a kind`);
 		if (table[id] && table[id] !== kind) throw new Error(`${id} has two kinds: ${table[id]} and ${kind}`);
 		table[id] = kind;
+		if (typeof title === "string" && title.trim()) titles[id] ??= title.trim().slice(0, 60);
 		if (!board) noBoard.add(id);
 	}
 }
@@ -90,6 +92,12 @@ export const NO_BOARD = new Set(${JSON.stringify([...noBoard].sort(), null, "\t"
 // The kinds of result a game may report, where more than its manifest's one
 // (scripts/build-games-table.mjs EXTRA_KINDS); its board keeps GAMES' kind.
 export const KINDS = Object.assign(Object.create(null), ${JSON.stringify(Object.fromEntries(Object.entries(EXTRA_KINDS).filter(([id]) => table[id]).sort()), null, "\t")});
+
+// Each game's title as its catalog writes it: the body of a party invite's
+// notification (worker/api/social.js invite), never text a sender wrote.
+export const TITLES = Object.assign(Object.create(null), {
+${ids.filter((id) => titles[id]).map((id) => `\t${JSON.stringify(id)}: ${JSON.stringify(titles[id])},`).join("\n")}
+});
 `;
 
 if (process.argv.includes("--check")) {

@@ -18,6 +18,7 @@ import "../lib/lobby.js";
 import "../lib/stats.js";
 import "../lib/account.js";
 import "../lib/account-ui.js";
+import "../lib/push.js";
 import "../lib/markdown.js";
 import "../lib/rules.js";
 import "../lib/party.js";

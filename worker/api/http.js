@@ -109,6 +109,9 @@ export const GAME_ID = /^(?:(?!dev\/)[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})\/)?[a-z0-
 
 export const now = () => Date.now();
 
+/** Tests only: AUTH_TEST=1 and the request came to a loopback host (wrangler dev). */
+export const testing = (env, request) => env.AUTH_TEST === "1" && /^(localhost|127(?:\.\d{1,3}){3}|\[::1\])$/.test(new URL(request.url).hostname);
+
 /**
  * Now, for one request. Tests only (AUTH_TEST=1, loopback host): an
  * `X-Test-Now` header (ms) pins it, so a check at a boundary of the server's

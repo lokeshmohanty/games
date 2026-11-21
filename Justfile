@@ -78,7 +78,7 @@ serve-lan: install
 # community games, so it runs after them, not in test-static.
 
 # Every suite, in the order they get slower.
-test: test-static pyodide community check-games build test-room test-party test-scan test-pwa test-bots test-rules-screen test-devkit test-protocol test-managed test-conformance test-webapp test-theme test-portal
+test: test-static pyodide community check-games build test-room test-party test-scan test-pwa test-bots test-rules-screen test-devkit test-protocol test-managed test-conformance test-webapp test-theme test-portal test-taps
 
 # The cheap checks: no build, no browser, seconds. CI's first job, which gates the shards.
 test-static: check-bindings check-colours (catalog "--check") test-stats test-submission test-codec test-just test-hub test-worker-do test-plumbing test-rules
@@ -93,7 +93,7 @@ test-static: check-bindings check-colours (catalog "--check") test-stats test-su
 # NEON_DIST and NEON_PORT_OFFSET. A suite added to `test` must go in a shard
 # too: test-just fails until it is in exactly one.
 
-# One of CI's parallel test shards (1-4): `just test-shard 2`.
+# One of CI's parallel test shards (1-5): `just test-shard 2`.
 test-shard n:
     @{{just}} --show _shard-{{n}} >/dev/null 2>&1 || { echo "error: there is no shard '{{n}}' (the shards are the _shard-<n> recipes)" >&2; exit 2; }
     @[ "${NEON_BUILT:-}" = 1 ] || {{just}} pyodide community check-games build
@@ -103,6 +103,7 @@ _shard-1: test-bots
 _shard-2: test-room test-party test-scan test-theme
 _shard-3: test-pwa test-devkit test-managed test-portal test-protocol test-webapp test-rules-screen test-conformance
 _shard-4: test-wrangler
+_shard-5: test-taps
 
 # The Justfile itself: no variadic recipe swallows the next recipe's name, and the CI shards drop no suite.
 test-just:
@@ -216,6 +217,10 @@ test-conformance *lanes: (_not-recipes "test-conformance" lanes) pyodide
 test-bots:
     node scripts/test-bots.mjs
 
+# The community games at 390x844 and 354x696, every phase: taps 44px (box and hit area), text 12px.
+test-taps:
+    node scripts/test-taps.mjs
+
 # A game's rules: shown on its first open, once; GOT IT; "?"; none without rules; 390x844 in every theme; offline.
 test-rules-screen:
     node scripts/test-rules-screen.mjs
@@ -256,13 +261,19 @@ games-table *args: (_not-recipes "games-table" args)
 check-games:
     node scripts/build-games-table.mjs --check
 
+# Fail while the remote D1 has migrations not yet applied (scripts/check-migrations.mjs).
+check-migrations:
+    cd worker && {{wrangler}} d1 migrations list arcade --remote 2>&1 | node ../scripts/check-migrations.mjs
+
 # Not part of `test`: deploys the room server for real. Its table of games
 # must match what the site lists, so the registry's games are fetched and the
 # table checked first (docs/accounts.md "Deploying"). D1 migrations are
-# separate: `wrangler d1 migrations apply arcade --remote` (worker/).
+# separate — `wrangler d1 migrations apply arcade --remote` (worker/) — and
+# must come first: a Worker that reads a pending migration's table answers
+# 500, so the deploy refuses while any is pending (check-migrations).
 
-# Deploy the room server (worker/) after checking its table of games.
-deploy-worker: community check-games
+# Deploy the room server (worker/) after checking its table of games and the remote D1's migrations.
+deploy-worker: community check-games check-migrations
     cd worker && {{wrangler}} deploy
 
 # Fetch every registered outside repo at its pinned commit into community/
@@ -308,10 +319,17 @@ test-accounts:
 test-social:
     node scripts/test-social.mjs
 
+# Party invites as notifications (Web Push): the API under wrangler dev
+# sending to a fake push service that decrypts and checks VAPID, then the
+# offer card, the profile switch and the service worker in Chromium at
+# 390x844 and 354x696. Needs wrangler.
+test-push:
+    node scripts/test-push.mjs
+
 # Not part of `test`, but CI runs them, in a shard of their own.
 
-# The suites that need wrangler: test-worker, test-accounts, test-social.
-test-wrangler: test-worker test-accounts test-social
+# The suites that need wrangler: test-worker, test-accounts, test-social, test-push.
+test-wrangler: test-worker test-accounts test-social test-push
 
 # No colour named outside lib/theme.css (pages, styles, SDK, games). Pass
 # other repos to check too: `just check-colours ../web-games`.

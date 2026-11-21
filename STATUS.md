@@ -35,7 +35,16 @@ docs/index.md "Who said it"; memory `signed-messages.md`. Waits for
 Lokesh's review before merge; the open residuals are in Honest gaps.
 
 **Queued (approved by Lokesh, not started):**
-- **Web Push** — opt-in, invites only (memory `no-third-party-services`).
+- **Web Push** — built on branch `web-push` (2026-11-18..21, pushed, not
+  merged or deployed): opt-in per device, party invites only; the review's
+  abuse and reliability findings fixed 2026-11-21 (news-only notifications,
+  titles by game id, hidden/frozen pages, canonical endpoints, key
+  rotation, expired sessions). Deploy needs
+  Lokesh's one-time steps (VAPID keys as secrets, migration 0006, then the
+  Worker): docs/accounts.md "Deploying invites by notification". Unproven
+  until then: real FCM/autopush/Apple delivery and a real notification tap
+  (`.agents/skills/pwa/memory/push-testing.md`), and the Worker's CPU on
+  Cloudflare itself (`wrangler tail`).
 - **Worker** — edge caching of leaderboard GETs; free-plan usage limits;
   D1 backups; worker deploy from CI (Lokesh adds `CLOUDFLARE_API_TOKEN`);
   join-failure counting.
