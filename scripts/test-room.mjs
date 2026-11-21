@@ -940,17 +940,23 @@ try {
 		const invites = [];
 		const create = host.room.createInvite.bind(host.room);
 		host.room.createInvite = (o) => (invites.push(o?.forPeer ?? null), create(o));
+		const reloadedAt = performance.now();
 		window.__reload(g, token);
 		// Back at once: inside the second the host's socket used to be away.
 		const back = await NeonArcade.joinRoom(host.code, { name: "G", reconnectGraceMs: 60_000 });
-		await wait(1500);
+		// A link to the returner that opened since the reload — not the old one,
+		// which a loaded machine notices dead only after a while (the host
+		// waits on it before offering: room-join's stale-link polls).
+		const fresh = () => (host.room.links.get(back.room.selfId)?.openedAt ?? 0) > reloadedAt;
+		for (const end = Date.now() + 10_000; Date.now() < end && !(invites.includes(back.room.selfId) && fresh()); ) await wait(100);
+		await wait(300);
 		clearInterval(watcher);
 		const out = {
 			unattended,
 			replaced: !!seat()?.socket && seat().socket !== firstSocket,
 			oldClosed: firstSocket?.readyState === 3,
 			hostOffered: invites.includes(back.room.selfId),
-			linked: host.room.directPeers().includes(back.room.selfId),
+			linked: fresh(),
 			hostAlive: !host.room.closed,
 		};
 		back.room.leave();

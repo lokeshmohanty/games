@@ -146,7 +146,9 @@ on CI (`gh workflow run test.yml --ref <branch>`, dumps on failure):
   overtakes it (only unsigned control means an old client);
 - two links for one pair must be ranked the same on both ends (`_linkRank`);
 - the test mock's per-message timers reordered notices under Chrome's
-  nested-timeout clamp; the mock now delivers in order, as a socket does.
+  nested-timeout clamp; it now delivers in order, one message per task, as a
+  socket does (a batch in one task starved a dial's continuation and lost
+  the notice behind its reply).
 Latency alone (0–800 ms per hello) reproduced only the mock's case; CPU
 starvation reproduced the rest.
 
