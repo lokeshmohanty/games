@@ -15,6 +15,7 @@
 import { createEffect, on, onCleanup, onMount } from "solid-js";
 import "../../lib/portal.js";
 import { openJoinCode } from "../JoinCode";
+import { askNameOnce } from "../NamePrompt";
 import { currentUrl, navigate, portalTab, viewOf } from "../router";
 import "./portal.css";
 
@@ -40,6 +41,7 @@ export default function Portal() {
 		A.nav.draw();
 		A.renderInstallOffer?.(); // the slot is new on every visit
 		onCleanup(A.portal.mount(main, tab()));
+		askNameOnce(); // a first visit's name (src/NamePrompt.tsx), once per device
 	});
 	// A sub-tab chosen, Back to the other one, or to another search: the same
 	// view, redrawn. (An address of another view: this one is going.)

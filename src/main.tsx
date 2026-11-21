@@ -11,6 +11,7 @@
 import "../lib/pwa.js";
 import "../lib/load.js";
 import "../lib/qr.js";
+import "../lib/names.js";
 import "../lib/net.js";
 import "../lib/room-join.js";
 import "../lib/games.js";

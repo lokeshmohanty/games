@@ -4,7 +4,7 @@
 // 390x844 (and Lokesh's phone, 354x696).
 
 import { existsSync, readFileSync } from "node:fs";
-import { phoneFloors, serve, settled } from "./serve.mjs";
+import { PHONE_SIZES, phoneFloors, serve, settled } from "./serve.mjs";
 import { launchFirefox, loadPlaywright } from "./playwright.mjs";
 
 const TIMEOUT = 20_000;
@@ -1381,6 +1381,93 @@ console.log("\nportal: My Games · All Games");
 	check("every card scrolled past: each clip fetched once, however many sections show its game", Object.keys(clipRequests).length >= 5 && !twice.length, { fetched: Object.keys(clipRequests).length, twice });
 	check("…and a game in several sections plays one shared copy in all of them", shared.length > 0 && shared.every(([, , srcs]) => srcs === 1), shared);
 	await cp.close();
+
+	// ------------------------------------------------------ first visit's name
+	//
+	// Lokesh, 2026-11-21: "first time a user enters, pop up asking for his
+	// name (default: random two word title case name), with a button to
+	// generate a new random name". Away under automation (lib/rules.js's
+	// rule); localStorage neon.namePrompt = "on" brings it back here.
+	console.log("\nportal: a first visit asks for a name");
+	const TWO_WORDS = /^[A-Z][a-z-]+ [A-Z][a-z-]+$/;
+	for (const [w, h] of PHONE_SIZES) {
+		const at = `${w}x${h}`;
+		const nc = await browser.newContext({ viewport: { width: w, height: h }, hasTouch: true, isMobile: true });
+		await nc.addInitScript(() => localStorage.setItem("neon.namePrompt", "on"));
+		const np = await nc.newPage();
+		const native = [];
+		np.on("dialog", (d) => (native.push(d.type()), d.dismiss()));
+		await np.goto(site.url("index.html"));
+		const dlg = np.locator("dialog.name-prompt[open]");
+		const opened = await dlg.waitFor({ timeout: TIMEOUT }).then(() => true, () => false);
+		const first = await np.evaluate(() => ({ value: document.getElementById("name-prompt-field")?.value, focus: document.activeElement?.id, def: NeonArcade.defaultName() }));
+		check(`${at}: a first visit opens the name dialog over the portal, in the page (no native prompt)`, opened && !native.length, { opened, native });
+		check(`${at}: …the field holds a random two-word Title Case name (this device's default), focused`, TWO_WORDS.test(first.value ?? "") && first.value.length <= 16 && first.value === first.def && first.focus === "name-prompt-field", first);
+		const box = await dlg.boundingBox();
+		const nf = await phoneFloors(np, "dialog.name-prompt");
+		check(`${at}: …it fits: inside the screen, taps 44px, text 12px`, box && box.x >= 0 && box.x + box.width <= w && box.y >= 0 && box.y + box.height <= h && !nf.taps.length && !nf.text.length && nf.measured.taps >= 3, { box, nf });
+		const rolled = [];
+		for (let i = 0; i < 3; i++) {
+			await np.locator(".name-prompt-roll").tap();
+			rolled.push(await np.locator("#name-prompt-field").inputValue());
+		}
+		check(`${at}: NEW NAME gives another two-word name each time`, rolled.every((n) => TWO_WORDS.test(n) && n.length <= 16) && new Set([first.value, ...rolled]).size === 4, rolled);
+		if (w === 390) {
+			// THAT'S ME keeps what the field says — typed, here.
+			await np.locator("#name-prompt-field").fill("Ada");
+			await np.locator(".name-prompt-ok").tap();
+		} else {
+			// Escape keeps the suggested name (the last rolled), not a half-typed edit.
+			await np.locator("#name-prompt-field").fill("Half typ");
+			await np.keyboard.press("Escape");
+		}
+		const want = w === 390 ? "Ada" : rolled.at(-1);
+		const saved = await settled(() => np.evaluate(() => ({ open: !!document.querySelector("dialog.name-prompt"), name: localStorage.getItem("neon.name") })), (x) => !x.open);
+		check(`${at}: ${w === 390 ? "THAT'S ME saves the name typed" : "Escape closes it and keeps the suggested name"} where the party reads it`, !saved.open && saved.name === want, { saved, want });
+		await np.reload();
+		await np.waitForSelector(".game-card:visible");
+		await np.waitForTimeout(300);
+		check(`${at}: …and it is never asked again`, (await np.locator("dialog.name-prompt").count()) === 0);
+		if (w === 390) {
+			await np.goto(site.url("?game=connect4&fresh=1&mode=bots"));
+			await np.waitForFunction(() => window.__party?.room, null, { timeout: TIMEOUT });
+			check(`${at}: …the party uses it`, (await np.evaluate(() => window.__party.room.self()?.name)) === "Ada");
+		}
+		await nc.close();
+	}
+	{
+		// A signed-in account with a display name: used, never asked.
+		const sc = await browser.newContext({ viewport: { width: 390, height: 844 } });
+		await sc.addInitScript(() => {
+			localStorage.setItem("neon.namePrompt", "on");
+			localStorage.setItem("neon.token", "test-token");
+		});
+		await sc.route("**/api/me", (r) => r.fulfill({ status: 200, contentType: "application/json", headers: { "Access-Control-Allow-Origin": "*" }, body: JSON.stringify({ id: "u1", name: "Grace Hopper", identities: [] }) }));
+		await sc.route("**/api/**", (r) => (r.request().url().endsWith("/api/me") ? r.fallback() : r.fulfill({ status: 200, contentType: "application/json", headers: { "Access-Control-Allow-Origin": "*" }, body: "{}" })));
+		const sp = await sc.newPage();
+		await sp.goto(site.url("index.html"));
+		await sp.waitForSelector(".game-card:visible");
+		const used = await settled(() => sp.evaluate(() => localStorage.getItem("neon.name")), (n) => n === "Grace Hopper", 5000);
+		await sp.waitForTimeout(300);
+		check("signed in with a display name: not asked, and that name is the player's", used === "Grace Hopper" && (await sp.locator("dialog.name-prompt").count()) === 0, used);
+		await sc.close();
+		// Never asked: no dialog under automation without the switch, and the
+		// default is a friendly random name, the same on every visit — not "Linux".
+		const dc = await browser.newContext({ viewport: { width: 390, height: 844 } });
+		const dp = await dc.newPage();
+		await dp.goto(site.url("index.html"));
+		await dp.waitForSelector(".game-card:visible");
+		await dp.waitForTimeout(300);
+		const d1 = await dp.evaluate(() => NeonArcade.defaultName());
+		await dp.reload();
+		await dp.waitForSelector(".game-card:visible");
+		const d2 = await dp.evaluate(() => NeonArcade.defaultName());
+		check("under automation the dialog stays away (the suites are not stopped by it)", (await dp.locator("dialog.name-prompt").count()) === 0);
+		check("a name nobody chose is a random two-word name, kept for the device (not the device's name)", TWO_WORDS.test(d1) && d1 === d2 && !/^(Linux|Android|iPhone|Mac|Windows)$/.test(d1), { d1, d2 });
+		const pool = await dp.evaluate(() => ({ a: NeonArcade.names.adjectives.length, n: NeonArcade.names.nouns.length, fit: NeonArcade.names.adjectives.flatMap((a) => NeonArcade.names.nouns.map((n) => `${a} ${n}`)).filter((s) => s.length <= 16).length }));
+		check("…from big lists: at least 200 adjectives and 250 nouns, over 50,000 names that fit the 16-character field", pool.a >= 200 && pool.n >= 250 && pool.fit > 50_000, pool);
+		await dc.close();
+	}
 
 	console.log("\nportal: previews when no video plays");
 	// Every video fails (offline, or a browser that plays neither format):
