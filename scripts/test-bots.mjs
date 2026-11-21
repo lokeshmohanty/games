@@ -1021,7 +1021,26 @@ try {
 			console.log(`  FAIL page error: ${err.message}`);
 			failures++;
 		});
+		// What the page said, for a failed join's details (CI has no other window).
+		p.__log = [];
+		p.on("console", (m) => {
+			p.__log.push(`${((performance.now() / 1000) | 0)}s ${m.type()}: ${m.text().slice(0, 240)}`);
+			if (p.__log.length > 60) p.__log.shift();
+		});
 		return { ctx, p };
+	}
+	/** Each page's room and recent console, when a join fails. */
+	async function dumpPhones(pages) {
+		for (const [i, p] of pages.entries()) {
+			const state = await p
+				.evaluate(() => {
+					const r = window.__party?.room;
+					return { status: document.querySelector(".lobby-status")?.textContent ?? null, room: r && { self: r.selfId, host: r.hostId(), links: r.directPeers(), pending: [...r.pending.keys()], refusals: r.refusals, members: r.getMembers().map((m) => m.id) } };
+				})
+				.catch((e) => String(e));
+			console.log(`    [phone ${i + 1}] ${JSON.stringify(state)}`);
+			for (const line of p.__log.slice(-25)) console.log(`    [phone ${i + 1}] ${line}`);
+		}
 	}
 	/** Slow the page and the game's frame (its own process, when it is one) to `rate` x CPU. */
 	async function throttle(ctx, p, F, rate) {
@@ -2122,7 +2141,14 @@ try {
 		await reply.waitFor({ timeout: TIMEOUT });
 		await host.p.locator("textarea.share-code").last().fill(await reply.inputValue());
 		await host.p.locator("button", { hasText: "CONNECT" }).first().click();
-		await host.p.locator(".party-member").nth(1).waitFor({ timeout: TIMEOUT });
+		await host.p
+			.locator(".party-member")
+			.nth(1)
+			.waitFor({ timeout: TIMEOUT })
+			.catch(async (err) => {
+				await dumpPhones([host.p, guest.p]);
+				throw err;
+			});
 		await host.p.locator("button", { hasText: "START GAME" }).first().click();
 		const HF = await gameScope(host.p, TIMEOUT);
 		const GF = await gameScope(guest.p, TIMEOUT);

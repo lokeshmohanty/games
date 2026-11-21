@@ -2364,5 +2364,48 @@ for (const seq of [false, true]) {
 	for (const r of [p, a, b]) r.leave();
 }
 
+
+// ---------------------------------------------------------------------------
+console.log("\ntwo links for one pair");
+
+{
+	// Two links between Ana and Bo complete at once (a server offer and a
+	// relayed one, a glare, a swap) and each side finishes them in the other
+	// order — common since a link waits for its hello. "The last to open
+	// wins" left each side holding the link the other had closed: no link at
+	// all, and a join that never completes (CI, 2026-11-21). Both sides now
+	// keep the same one.
+	for (const order of ["opposite", "same"]) {
+		const [h, a, b] = await party(["Host", "Ana", "Bo"], [[0, 1], [0, 2]]);
+		const [l1a, l1b] = linkPair(a, b);
+		const [l2a, l2b] = linkPair(a, b);
+		const [lo, hi] = a.selfId < b.selfId ? [a, b] : [b, a];
+		// Link 1 offered by the lower id, link 2 by the higher.
+		for (const [la, lb] of [[l1a, l1b], [l2a, l2b]]) {
+			la.offered = undefined;
+			lb.offered = undefined;
+		}
+		(lo === a ? l1a : l1b).offered = true;
+		(lo === a ? l1b : l1a).offered = false;
+		(hi === a ? l2a : l2b).offered = true;
+		(hi === a ? l2b : l2a).offered = false;
+		a._linkOpened(l1a);
+		a._linkOpened(l2a);
+		if (order === "opposite") {
+			b._linkOpened(l2b);
+			b._linkOpened(l1b);
+		} else {
+			b._linkOpened(l1b);
+			b._linkOpened(l2b);
+		}
+		await sleep(30);
+		const ka = a.links.get(b.selfId);
+		const kb = b.links.get(a.selfId);
+		const same = (ka === l1a && kb === l1b) || (ka === l2a && kb === l2b);
+		check(`two links for one pair, finished in ${order} order: both sides keep the same one, open (the lower id's offer)`, same && !ka.closed && !kb.closed && ka === l1a, `a keeps ${ka === l1a ? "1" : ka === l2a ? "2" : "none"}, b keeps ${kb === l1b ? "1" : kb === l2b ? "2" : "none"}`);
+		for (const r of [h, a, b]) r.leave();
+	}
+}
+
 console.log(failures ? `\n${failures} failing\n` : "\nall passing\n");
 process.exit(failures ? 1 : 0);
