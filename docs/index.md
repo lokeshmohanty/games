@@ -420,7 +420,8 @@ skill memory `signed-messages.md` keeps the reasons.
    tab is a second player. The room server's rejoin token holds the id, and a
    rejoin loads that id's key (`NeonArcade.identity({ id })`). A browser
    without IndexedDB gets a key for the page only; its id changes per load.
-   A page holds the Web Lock `neon.key:<id>` for its life. "Duplicate tab"
+   A page holds the Web Lock `neon.key:<id>` while it is shown (it lets go
+   going into the back/forward cache, and takes it back on return). "Duplicate tab"
    and `window.open` copy sessionStorage, so a tab whose key another live
    page holds mints its own (a reload waits up to 1.5 s for its
    predecessor to let go). A rejoin may borrow a key another tab holds, for
@@ -1635,10 +1636,13 @@ the icon for exactly this reason. `test-pwa` now parses the file.
   - **A newcomer with no party id yet** is captured by a record from another
     party, handed on by the member it linked to. It has nothing to check the
     `pa` against.
-  - **The key's Web Lock under the back/forward cache**: Chrome keeps such a
-    page out of the cache or releases its lock. Safari and Firefox are not
-    tested (VERIFY): a cached page that kept its lock would make the restored
-    tab, or a new one naming that key, mint a fresh key.
+  - **The key's Web Lock under the back/forward cache.** Chrome keeps a page
+    that holds a Web Lock out of the cache: test-worker caught it after the
+    merge with main, 2026-11-20. So a page lets go of its keys' locks on
+    `pagehide`, as room-join does with a seat's lock, and one restored from
+    the cache takes this tab's back. A page in the cache therefore holds no
+    lock, and a duplicate opened meanwhile may take its key. Safari and
+    Firefox are not tested (VERIFY).
   - **Extra votes cost real peer connections, not real devices.** Any member
     can seat extra voters by opening extra rooms in its own page (or extra
     tabs), each with its own key and real WebRTC links to the host. Nothing

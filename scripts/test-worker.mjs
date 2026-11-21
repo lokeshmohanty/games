@@ -541,7 +541,12 @@ try {
 		await dialog;
 		await a.waitForEvent("load", { timeout: TIMEOUT }).catch(() => {});
 		check("accepted: joined the other party", await waitInParty(a, NO_ANSWER_WAIT));
-		check("as a new member", (await a.evaluate(() => window.__party.room.selfId)) !== before);
+		// As a member of that party, with this tab's own id: since signed party
+		// messages an id is the tab's key (Lokesh, 2026-11-18: per tab
+		// session), so it carries over, while the seat is new — the token
+		// below names the new party and the old seat is given back.
+		const now = await a.evaluate(() => ({ id: window.__party.room.selfId, host: window.__party.room.hostId() }));
+		check("as a member of the other party, with this tab's own id", now.id === before && now.host === tc.id, JSON.stringify({ ...now, before, host2: tc.id }));
 		check("its token names the new party", (await token(a))?.code === tc.code);
 		check("the old party's seat was given back", (await claimOf(ta.code, ta.id)) !== "id-taken");
 		check("the other host sees two members", await waitForMembers(c, 2));

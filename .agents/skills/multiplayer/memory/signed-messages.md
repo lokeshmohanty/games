@@ -130,6 +130,12 @@ link, nobody vouching, past the grace) and linked again since the vacated
 record. And K's mirror counts only crowns taken (`elected`), never a commit
 that went nowhere.
 
+Merge with main (2026-11-20, test-worker): **a page holding a Web Lock is
+kept out of Chrome's back/forward cache.** The key lock is let go on
+`pagehide` and retaken on a persisted `pageshow`, as room-join does with the
+seat lock. And under per-tab keys a tab that joins another party keeps its
+id (only the seat is new); test-worker's "as a new member" now checks that.
+
 Costs: see docs/index.md "Who said it" (Node and throttled Chromium).
 
 Related: [[split-party]], [[addressed-is-not-private]], [[bots-as-members]],
