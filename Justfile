@@ -261,13 +261,19 @@ games-table *args: (_not-recipes "games-table" args)
 check-games:
     node scripts/build-games-table.mjs --check
 
+# Fail while the remote D1 has migrations not yet applied (scripts/check-migrations.mjs).
+check-migrations:
+    cd worker && {{wrangler}} d1 migrations list arcade --remote 2>&1 | node ../scripts/check-migrations.mjs
+
 # Not part of `test`: deploys the room server for real. Its table of games
 # must match what the site lists, so the registry's games are fetched and the
 # table checked first (docs/accounts.md "Deploying"). D1 migrations are
-# separate: `wrangler d1 migrations apply arcade --remote` (worker/).
+# separate — `wrangler d1 migrations apply arcade --remote` (worker/) — and
+# must come first: a Worker that reads a pending migration's table answers
+# 500, so the deploy refuses while any is pending (check-migrations).
 
-# Deploy the room server (worker/) after checking its table of games.
-deploy-worker: community check-games
+# Deploy the room server (worker/) after checking its table of games and the remote D1's migrations.
+deploy-worker: community check-games check-migrations
     cd worker && {{wrangler}} deploy
 
 # Fetch every registered outside repo at its pinned commit into community/

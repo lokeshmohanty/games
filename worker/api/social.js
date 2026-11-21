@@ -66,7 +66,7 @@ const INVITES_PER_SENDER = 20; // friends invited per INVITE_TTL_MS
 const INVITES_PER_RECIPIENT = 10; // invites waiting for one person
 // A notification per pair at most this often, even for a new party code: a
 // friend re-inviting every 20 s must not make a closed phone buzz (review,
-// 2026-11-21). The same code again never notifies while its invite waits.
+// 2026-11-21). The same code never notifies twice within INVITE_TTL_MS.
 const INVITE_NOTIFY_AGAIN_MS = 2 * 60_000;
 const notifyAgain = (env) => Number(env.INVITE_NOTIFY_AGAIN_MS ?? INVITE_NOTIFY_AGAIN_MS);
 const friendsMax = (env) => Number(env.FRIENDS_MAX ?? FRIENDS_MAX);
@@ -262,6 +262,7 @@ export async function removeFriend(env, me, other) {
 /** Waiting invites and mutes between two people (unfriended, blocked). */
 const forgetPair = (env, x, y) => [
 	env.DB.prepare("DELETE FROM invites WHERE (recipient = ? AND sender = ?) OR (recipient = ? AND sender = ?)").bind(x, y, y, x),
+	env.DB.prepare("DELETE FROM invite_notices WHERE (recipient = ? AND sender = ?) OR (recipient = ? AND sender = ?)").bind(x, y, y, x),
 	env.DB.prepare("DELETE FROM mutes WHERE (account = ? AND muted = ?) OR (account = ? AND muted = ?)").bind(x, y, y, x),
 ];
 
@@ -349,7 +350,7 @@ export async function invite(env, me, other, request, { ctx = null } = {}) {
 	if (!(await areFriends(env, me.id, other))) throw new HttpError(403, "you can only invite friends");
 	const t = now();
 	const since = t - inviteTtl(env);
-	const last = await env.DB.prepare("SELECT at, code, pushed FROM invites WHERE recipient = ? AND sender = ?").bind(other, me.id).first();
+	const last = await env.DB.prepare("SELECT at FROM invites WHERE recipient = ? AND sender = ?").bind(other, me.id).first();
 	if (last && t - last.at < inviteAgain(env)) throw new HttpError(429, "you invited them just now");
 	const sent = await env.DB.prepare("SELECT COUNT(*) AS n FROM invites WHERE sender = ? AND at > ?").bind(me.id, since).first();
 	if (sent.n >= INVITES_PER_SENDER) throw new HttpError(429, "that is a lot of invites; wait a few minutes");
@@ -357,18 +358,11 @@ export async function invite(env, me, other, request, { ctx = null } = {}) {
 	if (await env.DB.prepare("SELECT 1 FROM mutes WHERE account = ? AND muted = ?").bind(other, me.id).first()) return { invited: true };
 	const waiting = await env.DB.prepare("SELECT COUNT(*) AS n FROM invites WHERE recipient = ? AND sender != ? AND at > ?").bind(other, me.id, since).first();
 	if (waiting.n >= INVITES_PER_RECIPIENT) throw new HttpError(429, "they have plenty of invites waiting; try again soon");
-	// A notification only for news: no invite of theirs waiting, or a new
-	// party code — and then at most once per INVITE_NOTIFY_AGAIN_MS. A repeat
-	// still refreshes the waiting invite and reaches open pages (which show
-	// one card per sender and code).
-	const waitingNow = last && last.at > since;
-	const notify = !waitingNow || (last.code !== String(code) && t - (last.pushed ?? 0) >= notifyAgain(env));
 	await env.DB.batch([
 		env.DB.prepare("DELETE FROM invites WHERE recipient = ? AND at <= ?").bind(other, since),
 		env.DB.prepare(
-			`INSERT INTO invites (recipient, sender, code, at, pushed) VALUES (?, ?, ?, ?, ?)
-			 ON CONFLICT (recipient, sender) DO UPDATE SET code = excluded.code, at = excluded.at, pushed = COALESCE(excluded.pushed, invites.pushed)`,
-		).bind(other, me.id, String(code), t, notify ? t : null),
+			"INSERT INTO invites (recipient, sender, code, at) VALUES (?, ?, ?, ?) ON CONFLICT (recipient, sender) DO UPDATE SET code = excluded.code, at = excluded.at",
+		).bind(other, me.id, String(code), t),
 	]);
 	const msg = { t: "invite", from: { id: me.id, name: me.name }, code: String(code), at: t };
 	// The game by its id, shown by its catalog title (games.js TITLES): never
@@ -377,7 +371,23 @@ export async function invite(env, me, other, request, { ctx = null } = {}) {
 	const loopback = testing(env, request);
 	const deliver = async () => {
 		const live = await push(env, other, msg);
-		if (notify && !live.attentive) await pushInvite(env, other, { ...msg, ...(game ? { game } : {}) }, { ttlMs: inviteTtl(env), loopback });
+		if (live.attentive) return; // a page of theirs is in view and showed it
+		// A notification only for news (D1 invite_notices: the last one that
+		// reached a device): none for this code within the invite's life, and a
+		// new code at most once per INVITE_NOTIFY_AGAIN_MS. A repeat still
+		// refreshes the waiting invite and reaches open pages.
+		const seen = await env.DB.prepare("SELECT code, at FROM invite_notices WHERE recipient = ? AND sender = ?").bind(other, me.id).first();
+		const recent = seen && t - seen.at < inviteTtl(env);
+		if (recent && (seen.code === String(code) || t - seen.at < notifyAgain(env))) return;
+		const sent = await pushInvite(env, other, { ...msg, ...(game ? { game } : {}) }, { ttlMs: inviteTtl(env), loopback });
+		if (sent) {
+			await env.DB.prepare(
+				"INSERT INTO invite_notices (recipient, sender, code, at) VALUES (?, ?, ?, ?) ON CONFLICT (recipient, sender) DO UPDATE SET code = excluded.code, at = excluded.at",
+			)
+				.bind(other, me.id, String(code), t)
+				.run()
+				.catch((err) => console.error("invite_notices", err));
+		}
 	};
 	if (ctx?.waitUntil) ctx.waitUntil(deliver());
 	else await deliver();

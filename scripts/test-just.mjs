@@ -97,5 +97,15 @@ check("the CI matrix runs exactly these shards", matrix?.join() === shards.join(
 check("CI's first job is `just test-static`", /run:\s*just test-static\b/.test(workflow));
 check("…and its build job checks the Worker's table of games (check-games)", /build-games-table\.mjs --check/.test(workflow));
 
+console.log("\njust: no Worker deploy before its migrations (review, 2026-11-21)");
+check("deploy-worker runs check-migrations first", deps("deploy-worker").includes("check-migrations"), deps("deploy-worker").join(", "));
+const verdict = (out) => spawnSync(process.execPath, [join(ROOT, "scripts/check-migrations.mjs")], { input: out, encoding: "utf8" });
+const pendingOut = "Migrations to be applied:\n│ 0006_push.sql       │\n";
+const doneOut = "Resource location: remote\n\n✅ No migrations to apply!\n";
+const pend = verdict(pendingOut);
+check("check-migrations refuses while one is pending, naming it", pend.status === 1 && /0006_push\.sql/.test(pend.stderr), `exit ${pend.status}: ${pend.stderr.trim().split("\n")[0]}`);
+check("…and when wrangler said nothing useful (fails closed)", verdict("✘ [ERROR] You are not authenticated.\n").status === 1 && verdict("").status === 1);
+check("…and passes when wrangler says there are none", verdict(doneOut).status === 0);
+
 console.log(failures ? `\n${failures} justfile check(s) failed` : "\nall justfile checks passed");
 process.exit(failures ? 1 : 0);

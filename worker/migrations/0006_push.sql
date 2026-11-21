@@ -25,7 +25,18 @@ CREATE TABLE push_subs (
 );
 CREATE INDEX push_subs_account ON push_subs (account, at);
 
--- When a waiting invite last made a notification (ms), per sender and
--- recipient: at most one per INVITE_NOTIFY_AGAIN_MS, and none for the same
--- party code again (worker/api/social.js invite). NULL on rows from before.
-ALTER TABLE invites ADD COLUMN pushed INTEGER;
+-- When an invite last reached a device as a notification, per sender and
+-- recipient, and for which party code (worker/api/social.js invite). Written
+-- only once a push service accepted it, so an invite first seen on an open
+-- page still notifies when repeated after the page is gone; kept apart from
+-- `invites`, so NOT NOW (which deletes the waiting invite) does not make the
+-- next repeat news again. The same code never notifies twice within the
+-- invite's 10 minutes; a new code at most every INVITE_NOTIFY_AGAIN_MS.
+CREATE TABLE invite_notices (
+	recipient TEXT NOT NULL REFERENCES accounts (id) ON DELETE CASCADE,
+	sender TEXT NOT NULL REFERENCES accounts (id) ON DELETE CASCADE,
+	code TEXT NOT NULL,
+	at INTEGER NOT NULL,
+	PRIMARY KEY (recipient, sender)
+);
+CREATE INDEX invite_notices_sender ON invite_notices (sender);

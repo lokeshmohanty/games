@@ -14,11 +14,13 @@
 // open page a person is looking at. A phone's app switched away keeps its
 // socket for minutes, frozen, and a hidden tab is not seen. So each socket's
 // attachment holds when it last spoke (`seen`) and whether its page said it
-// was visible ({t:"vis", visible}, also on status and ping; lib/account.js).
-// /push answers `attentive`: the sockets of visible pages heard from within
-// ATTENTIVE_MS. An invite is sent as a notification when that is 0, though
-// every open page still gets it. A page from before `visible` (unknown)
-// counts as visible while it is fresh.
+// was visible and in use ({t:"vis", visible, active}, also on status and
+// ping; lib/account.js: active = a tap or key on it within 5 minutes, or a
+// game frame holding the focus). /push answers `attentive`: the sockets of
+// visible, active pages heard from within ATTENTIVE_MS. An invite is sent as
+// a notification when that is 0, though every open page still gets it — so a
+// desktop tab left on the arcade does not keep a phone quiet for hours. A
+// page from before these flags (unknown) counts as both while it is fresh.
 
 // A visible page pings every 4 minutes (lib/account.js): a socket quiet for
 // longer than this is a frozen or gone page.
@@ -37,16 +39,18 @@ export class UserLive {
 			a = ws.deserializeAttachment();
 		} catch {}
 		const fresh = t - (a?.seen ?? 0) < Number(this.env.ATTENTIVE_MS ?? ATTENTIVE_MS);
-		return fresh && a?.visible !== false;
+		return fresh && a?.visible !== false && a?.active !== false;
 	}
 
-	heard(ws, visible) {
+	/** A message from this socket's page: when, and what it said of itself. */
+	heard(ws, msg) {
 		let a = null;
 		try {
 			a = ws.deserializeAttachment();
 		} catch {}
+		const flag = (k) => (typeof msg?.[k] === "boolean" ? msg[k] : (a?.[k] ?? null));
 		try {
-			ws.serializeAttachment({ seen: Date.now(), visible: typeof visible === "boolean" ? visible : (a?.visible ?? null) });
+			ws.serializeAttachment({ seen: Date.now(), visible: flag("visible"), active: flag("active") });
 		} catch {}
 	}
 
@@ -71,7 +75,7 @@ export class UserLive {
 		const pair = new WebSocketPair();
 		const [client, server] = Object.values(pair);
 		this.state.acceptWebSocket(server, [account]);
-		server.serializeAttachment({ seen: Date.now(), visible: null });
+		server.serializeAttachment({ seen: Date.now(), visible: null, active: null });
 		await this.presence(account, 1, null);
 		return new Response(null, { status: 101, webSocket: client, headers: { "Sec-WebSocket-Protocol": "neon" } });
 	}
@@ -84,7 +88,7 @@ export class UserLive {
 		} catch {
 			return;
 		}
-		this.heard(ws, msg?.visible);
+		this.heard(ws, msg);
 		if (msg?.t === "status") {
 			const game = typeof msg.game === "string" && msg.game.length <= 80 ? msg.game : null;
 			await this.presence(account, 1, game);

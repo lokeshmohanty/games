@@ -124,6 +124,7 @@ export async function deleteMe(env, me) {
 		env.DB.prepare("DELETE FROM mutes WHERE account = ? OR muted = ?").bind(id, id),
 		env.DB.prepare("DELETE FROM request_pushes WHERE asker = ? OR target = ?").bind(id, id),
 		env.DB.prepare("DELETE FROM push_subs WHERE account = ?").bind(id),
+		env.DB.prepare("DELETE FROM invite_notices WHERE recipient = ? OR sender = ?").bind(id, id),
 		env.DB.prepare("DELETE FROM feedback_log WHERE account = ?").bind(id),
 		env.DB.prepare("DELETE FROM accounts WHERE id = ?").bind(id),
 	]);
@@ -188,6 +189,8 @@ export async function exportMe(env, me, page = 0) {
 		// push service, since when, last refreshed. Not the endpoint nor the
 		// keys: together they let anyone send to that device, and an export
 		// is a file people keep and pass around.
+		// When a friend's invite last reached one of our devices as a notification.
+		inviteNotices: await q("SELECT sender, code, at FROM invite_notices WHERE recipient = ?", me.id),
 		pushDevices: (await q("SELECT endpoint, created, at FROM push_subs WHERE account = ? ORDER BY at DESC", me.id)).map((r) => ({
 			service: new URL(r.endpoint).host,
 			created: r.created,
