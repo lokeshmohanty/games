@@ -791,10 +791,11 @@ only if friends are wanted (`ensureCode`).
   server, the bots re-seated), INVITE A FRIEND, the seats, START GAME.
   PERSON seats turn back into bots. No question first: it is a game against
   bots. **UNSURE, the cost of its room:** a game is 52 px shorter while it
-  shows, and two community games are bound by height on Lokesh's phone:
-  at 354x696 Sudoku's cells go from 39–40 px to 34 px and Battleship's
+  shows, and three games are bound by height on Lokesh's phone: at
+  354x696 Sudoku's cells go from 39–40 px to 34 px and Battleship's
   squares from 39.6 px to 35.8 px (40.3 px at 360x640, against 40.4), under
-  the floors test-taps allows them, so test-taps fails there. Lokesh to
+  the floors test-taps allows them, and Neon Fission's eight-player grid
+  (8 × 12) from 40 px cells to 36 px (test-bots); those checks fail. Lokesh to
   choose: accept smaller boards (and lower those floors), have web-games fit
   the shorter frame, or move the button into the top band.
 - **The lobby's seats:** ADD BOT and REMOVE BOT, as before (the contract

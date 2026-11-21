@@ -2069,13 +2069,15 @@ try {
 		const k = await F.evaluate(() => W / document.getElementById("gameCanvas").getBoundingClientRect().width);
 		const box = await F.locator("#gameCanvas").boundingBox();
 		const s0 = await ship();
-		// Down at the bottom-left corner of the screen, far from the ship.
-		await dragBy(cdp, [30, 680], [60, -40]);
+		// Down at the bottom-left corner of the game, far from the ship (the
+		// frame stops above PLAY WITH FRIENDS, the bar under a game played alone).
+		const y0 = Math.round(box.y + box.height) - 16;
+		await dragBy(cdp, [30, y0], [60, -40]);
 		await sleep(300);
 		const s1 = await ship();
 		const want = { x: s0.x + 60 * k, y: s0.y - 40 * k };
 		check("a drag from a corner moves the ship by as much as the finger, not to the finger", near(s1, want), JSON.stringify({ s0, s1, want, k }));
-		const under = { x: (90 - box.x) * k, y: (640 - box.y) * k };
+		const under = { x: (90 - box.x) * k, y: (y0 - 40 - box.y) * k };
 		check("…so it is not under the thumb", Math.hypot(s1.x - under.x, s1.y - under.y) > 50, JSON.stringify({ s1, under }));
 		// Far past the right edge: held inside the arena, and back at once.
 		await dragBy(cdp, [100, 400], [600, 0], 12);
