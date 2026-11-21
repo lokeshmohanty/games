@@ -26,7 +26,7 @@ GitHub Pages has no rewrites, and the hash already carries invites (`#i=`,
 | Address | View |
 |---|---|
 | `./` | the portal, on the sub-tab the router picks (below) |
-| `./?page=games&tab=mine`, `./?page=games&tab=all` (with `&q=…`, a search) | the portal's sub-tabs, My Games and All Games |
+| `./?page=games&tab=mine`, `./?page=games&tab=all` (with `&q=…`, a search; `&genre=<id>`, a genre's page) | the portal's sub-tabs, My Games and All Games |
 | `./?page=leaderboard` (or `profile`, `contribute`, `contributors`, `collections`) | that view; its own query parameters ride along |
 | `./?game=connect4`, `?mode`, `?fresh`, `?dev`, `?party`, or an invite or code hash (`./?party#i=…`) | the party |
 
@@ -75,6 +75,12 @@ the sections of the sub-tab showing.
   therefore the drawn row's, and test-portal compares the two (with the
   app's code blocked, then loaded): same boxes, same lit sub-tab, the title
   unmoved. **Change nav.js's tabs and that markup together.**
+- **A genre's page** (2026-11-21) is the same view at
+  `./?page=games&tab=all&genre=<id>`, reached by a category's SEE ALL (a
+  link, so a history entry: Back returns to All Games). lib/portal.js draws
+  only that section, as a grid, and the view's ← All Games link
+  (`[data-genre-back]`); the router needs nothing new, since the address
+  already names its sub-tab.
 - **PLAY SOMETHING** (Popular's heading; on My Games, Recently played's
   heading, else ★ Favourites', and the empty state) is the SINGLE PLAYER
   address, plus `start=1` (the game's remembered quick table at once, never
@@ -120,12 +126,25 @@ stage.
   service worker pins every page it takes over, a first visit included, so
   this is rare.
 - **Viewport.** It is fixed (no zoom) only while the party view shows.
+- **One tap plays** (2026-11-21): a portal card, its SINGLE PLAYER, a
+  Recently played chip and PLAY SOMETHING are all
+  `./?game=<id>&fresh=1&mode=bots&start=1` — the remembered table, started
+  at once with no room server, so it works offline. party.js drops `start`
+  from the address with `fresh` and `mode`.
+- **PLAY WITH FRIENDS** (party.js `friendsBar`) is fixed chrome at the
+  bottom, beside `.top-band` at the top, and like it hidden on every other
+  view. It has room of its own: while it shows, `body[data-friends-bar]`
+  shortens the game's frame and the end card by `--friends-bar`. It ends
+  the bots game and shows the party lobby for that game.
 - **SINGLE PLAYER's quick table** (2026-11-17) is part of this screen, not
-  a view of its own: `./?game=<id>&fresh=1&mode=bots` of a game whose seats
-  leave a choice draws Players − n + and the seats before START GAME, with
-  no room server (the bots path), so it works offline. PLAY SOMETHING's
-  `&start=1` skips it; party.js drops `start` from the address with `fresh`
-  and `mode`. The design is docs/index.md "The party API".
+  a view of its own: Players − n + and the seats before START GAME, with no
+  room server. It shows from CHANGE PLAYERS (the end card, or the party
+  screen over a game) and from `./?game=<id>&fresh=1&mode=bots` without
+  `start`; the lobby for a game sets its seats with ADD BOT and REMOVE BOT. The design is
+  docs/index.md "The party API".
+- **A first visit's name** (`src/NamePrompt.tsx`) is an in-page dialog on
+  document.body, opened by the portal's view once per device, like JOIN
+  WITH A CODE's (`src/JoinCode.tsx`). docs/index.md "First visit: a name".
 
 ## The build
 
