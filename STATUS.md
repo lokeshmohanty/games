@@ -31,8 +31,11 @@ before SINGLE PLAYER, last-move markers, and the flaky-test fixes
 **Queued (approved by Lokesh, not started):**
 - **Signed party messages** — `f`, `__i`, `pk`, election and `__p` are
   unsigned; close that before any game relies on `seal.*`.
-- **Web Push** — built on branch `web-push` (2026-11-18..20, pushed, not
-  merged or deployed): opt-in per device, party invites only. Deploy needs
+- **Web Push** — built on branch `web-push` (2026-11-18..21, pushed, not
+  merged or deployed): opt-in per device, party invites only; the review's
+  abuse and reliability findings fixed 2026-11-21 (news-only notifications,
+  titles by game id, hidden/frozen pages, canonical endpoints, key
+  rotation, expired sessions). Deploy needs
   Lokesh's one-time steps (VAPID keys as secrets, migration 0006, then the
   Worker): docs/accounts.md "Deploying invites by notification". Unproven
   until then: real FCM/autopush/Apple delivery and a real notification tap
