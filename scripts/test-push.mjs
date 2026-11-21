@@ -87,6 +87,12 @@ const w = await startWrangler({
 	VAPID_PUBLIC_KEY: vapid.publicKey,
 	VAPID_PRIVATE_KEY: vapid.privateKey,
 	PUSH_DEVICES_MAX: String(DEVICES),
+	// Short so the tests can reach them: one invite per pair every 20 s
+	// deployed, a notification per pair every 2 min, a quiet socket counts
+	// as a page in view for 5 min.
+	INVITE_AGAIN_MS: "1000",
+	INVITE_NOTIFY_AGAIN_MS: "8000",
+	ATTENTIVE_MS: "2500",
 });
 if (!w) {
 	fake.stop();
@@ -138,7 +144,7 @@ const listen = async (token) => {
 		setTimeout(bad, 8000);
 	}).catch(() => {});
 	ws.onmessage = (e) => heard.push(JSON.parse(e.data));
-	return { heard, close: () => ws.close() };
+	return { heard, close: () => ws.close(), send: (m) => ws.send(JSON.stringify(m)) };
 };
 /** `who` is offline to `friend` (their last live socket has closed). */
 const offline = async (friend, who) => {
@@ -194,11 +200,20 @@ try {
 		mine = (await rows(`account = '${zed.id}'`)).map((r) => r.endpoint);
 		check("…a device in use (refreshed) keeps its place", mine.length === DEVICES && mine.includes(subs[0].endpoint) && !mine.includes(subs[1].endpoint), mine);
 		const other = await login("Yan");
-		check("someone else cannot delete my device", (await call("DELETE", "/api/push", { token: other.token, body: { endpoint: sub.endpoint } })).status === 200 && (await rows(`endpoint = '${sub.endpoint}'`)).length === 1);
 		await subscribeAs(other, sub);
 		const moved = await rows(`endpoint = '${sub.endpoint}'`);
 		check("the same browser signed in as someone else: the device is theirs now (one row)", moved.length === 1 && moved[0].account === other.id, moved);
 		check("no message was sent to any of these", fake.received.length === 0, fake.received.length);
+
+		// One device, one row, however its endpoint is spelled (review, 2026-11-21).
+		const port = new URL(fake.base).port;
+		const one = await fake.subscription("spell");
+		const spellings = [one.endpoint, `HTTP://127.0.0.1:${port}/push/spell`, `http://127.1:${port}/push/spell`, ` http://0x7f000001:${port}/push/spell`];
+		for (const endpoint of spellings) await call("POST", "/api/push", { token: other.token, body: { endpoint, keys: one.keys } });
+		const spelled = await rows(`endpoint LIKE '%/push/spell'`);
+		check("four spellings of one endpoint are one row, stored as its canonical URL", spelled.length === 1 && spelled[0].endpoint === one.endpoint, spelled);
+		const gone = await call("DELETE", "/api/push", { body: { endpoint: `HTTP://127.1:${port}/push/spell` } });
+		check("DELETE needs no sign-in (an expired session still forgets its device), by any spelling", gone.status === 200 && (await rows(`endpoint LIKE '%/push/spell'`)).length === 0, gone.status);
 	}
 
 	console.log("\npush: an invite, pushed only when no page is open");
@@ -210,7 +225,7 @@ try {
 		await subscribeAs(bo, bo1);
 
 		const ear = await listen(bo.token);
-		const live = await call("POST", `/api/friends/${bo.id}/invite`, { token: asha.token, body: { code: "111111", game: "Connect 4" } });
+		const live = await call("POST", `/api/friends/${bo.id}/invite`, { token: asha.token, body: { code: "111111", game: "connect4" } });
 		for (const end = Date.now() + 8000; !ear.heard.some((m) => m.t === "invite") && Date.now() < end; ) await sleep(100);
 		await sleep(1500);
 		check("Bo has a page open: the page gets the invite…", ear.heard.some((m) => m.t === "invite" && m.code === "111111"), ear.heard);
@@ -218,12 +233,13 @@ try {
 		ear.close();
 		check("(Bo's last page closed: offline)", await offline(cy, bo));
 
-		const pushed = await call("POST", `/api/friends/${bo.id}/invite`, { token: cy.token, body: { code: "222222", game: "Connect 4" } });
+		const pushed = await call("POST", `/api/friends/${bo.id}/invite`, { token: cy.token, body: { code: "222222", game: "connect4" } });
+		const cyNotified = Date.now();
 		await fake.waitFor(() => fake.to("bo1").length >= 1);
 		const m = fake.to("bo1")[0];
 		check("no page open: one notification to Bo's device", fake.to("bo1").length === 1, fake.received);
 		check("…its VAPID JWT verifies under the arcade's key, for this push service's origin", m?.ok === true && m.claims?.aud === fake.base, m?.error ?? m?.claims);
-		check("…and it decrypts with the browser's private key to the invite", m?.payload?.t === "invite" && m.payload.from?.id === cy.id && m.payload.from?.name === "Cy" && m.payload.code === "222222" && m.payload.game === "Connect 4", m?.payload);
+		check("…and it decrypts with the browser's private key to the invite, the game by its catalog title", m?.payload?.t === "invite" && m.payload.from?.id === cy.id && m.payload.from?.name === "Cy" && m.payload.code === "222222" && m.payload.game === "Connect 4", m?.payload);
 		check("…TTL the invite's 10 minutes, urgent, one topic per sender, padded to 512 bytes", m?.ttl === "600" && m.urgency === "high" && /^inv[A-Za-z0-9_-]+$/.test(m.topic ?? "") && m.topic.length <= 32 && m.padded === 512, { ttl: m?.ttl, urgency: m?.urgency, topic: m?.topic, padded: m?.padded });
 		check("the sender's answer is identical whether a page or a notification got it", answer(live) === answer(pushed) && pushed.body.invited === true, [answer(live), answer(pushed)]);
 		const noDevice = await call("POST", `/api/friends/${gus.id}/invite`, { token: asha.token, body: { code: "333333" } });
@@ -234,25 +250,70 @@ try {
 		const m2 = fake.to("bo1")[1];
 		check("a second message to the same push service reuses the cached JWT", m2?.ok && m2.jwt === m.jwt, { a: m?.jwt?.slice(-12), b: m2?.jwt?.slice(-12) });
 		check("no game named: the payload has none (the notification says \"Tap to see the invite.\")", m2?.payload && !("game" in m2.payload), m2?.payload);
-		check("the invite limits still apply: Cy again at once is refused, nothing sent", (await call("POST", `/api/friends/${bo.id}/invite`, { token: cy.token, body: { code: "222222" } })).status === 429 && (await sleep(800), fake.to("bo1").length === 2));
+
+		// A friend re-inviting as often as allowed does not make the phone buzz
+		// each time (review, 2026-11-21): the same code never again while it
+		// waits, a new code at most every INVITE_NOTIFY_AGAIN_MS (8 s here).
+		await sleep(1100);
+		const again = await call("POST", `/api/friends/${bo.id}/invite`, { token: cy.token, body: { code: "222222" } });
+		const tooSoon = await call("POST", `/api/friends/${bo.id}/invite`, { token: cy.token, body: { code: "222222" } });
+		check("the invite limits still apply: Cy again at once is refused", tooSoon.status === 429, tooSoon.status);
+		await sleep(1100);
+		const newCode = await call("POST", `/api/friends/${bo.id}/invite`, { token: cy.token, body: { code: "232323" } });
+		await sleep(1500);
+		check("re-inviting with the same code, or a new one at once: no new notification", again.status === 200 && newCode.status === 200 && fake.to("bo1").length === 2, fake.to("bo1").length);
+		check("…the sender is answered the same", answer(again) === answer(pushed) && answer(newCode) === answer(pushed));
+		const waitingNow = (await call("GET", "/api/invites", { token: bo.token })).body.invites?.find((i) => i.from.id === cy.id);
+		check("…and the waiting invite is the newest code", waitingNow?.code === "232323", waitingNow);
+		await sleep(Math.max(0, cyNotified + 8300 - Date.now())); // 8 s since Cy's last notification
+		await call("POST", `/api/friends/${bo.id}/invite`, { token: cy.token, body: { code: "242424", game: "Free coins at evil.example" } });
+		await fake.waitFor(() => fake.to("bo1").length >= 3);
+		const m3 = fake.to("bo1")[2];
+		check("a new party code after the gap notifies again", fake.to("bo1").length === 3 && m3?.payload?.code === "242424", fake.to("bo1").map((x) => x.payload?.code));
+		check("…and a game the arcade does not list, or free text, shows no game line", m3?.payload && !("game" in m3.payload), m3?.payload);
+
+		// A page that is open but not in view: a phone switched to another
+		// app, a hidden tab (it said so), or one that has gone quiet.
+		const hidden = await listen(bo.token);
+		hidden.send({ t: "vis", visible: false });
+		await sleep(300);
+		await call("POST", `/api/friends/${bo.id}/invite`, { token: asha.token, body: { code: "121212", game: "connect4" } });
+		await fake.waitFor(() => fake.to("bo1").length >= 4);
+		check("a page that is hidden still gets the invite, and the device a notification", hidden.heard.some((x) => x.t === "invite" && x.code === "121212") && fake.to("bo1").at(-1)?.payload?.code === "121212", { heard: hidden.heard, sent: fake.to("bo1").length });
+		hidden.close();
+		const quiet = await listen(bo.token);
+		quiet.send({ t: "status", game: null, visible: true });
+		await sleep(2800); // ATTENTIVE_MS is 2.5 s here (5 min deployed; a visible page pings every 4)
+		await call("POST", `/api/friends/${bo.id}/invite`, { token: dee.token, body: { code: "131313" } });
+		await fake.waitFor(() => fake.to("bo1").length >= 5);
+		check("a page not heard from lately (frozen) counts as not in view: a notification", fake.to("bo1").at(-1)?.payload?.code === "131313", fake.to("bo1").length);
+		quiet.close();
+		check("(Bo's pages closed again)", await offline(cy, bo));
+		const sent = fake.to("bo1").length;
 
 		await call("POST", `/api/friends/${eve.id}/mute`, { token: bo.token });
 		const muted = await call("POST", `/api/friends/${bo.id}/invite`, { token: eve.token, body: { code: "555555" } });
 		await call("POST", `/api/friends/${fay.id}/block`, { token: bo.token });
 		const blocked = await call("POST", `/api/friends/${bo.id}/invite`, { token: fay.token, body: { code: "666666" } });
 		await sleep(1500);
-		check("muted: answered the same, and no notification", answer(muted) === answer(pushed) && fake.to("bo1").length === 2, answer(muted));
-		check("blocked: refused as before (no longer friends), and no notification", blocked.status === 403 && fake.to("bo1").length === 2, blocked.status);
+		check("muted: answered the same, and no notification", answer(muted) === answer(pushed) && fake.to("bo1").length === sent, answer(muted));
+		check("blocked: refused as before (no longer friends), and no notification", blocked.status === 403 && fake.to("bo1").length === sent, blocked.status);
+
+		// The VAPID key changed (a row made with another key): never sent to, and deleted.
+		const old = await fake.subscription("bo-oldkey");
+		await subscribeAs(bo, old);
+		await w.sql(`UPDATE push_subs SET vapid = 'an-older-key' WHERE endpoint = '${old.endpoint}'`);
 
 		const bo2 = await fake.subscription("bo2");
 		await subscribeAs(bo, bo2);
 		fake.status.set("/push/bo1", 410);
 		fake.status.set("/push/bo2", 404);
 		await call("POST", `/api/friends/${bo.id}/invite`, { token: hal.token, body: { code: "777777" } });
-		await fake.waitFor(() => fake.to("bo1").length >= 3 && fake.to("bo2").length >= 1);
+		await fake.waitFor(() => fake.to("bo1").length >= sent + 1 && fake.to("bo2").length >= 1);
 		let left = [];
 		for (const end = Date.now() + 8000; Date.now() < end; await sleep(200)) if (!(left = await rows(`account = '${bo.id}'`)).length) break;
-		check("a 410 and a 404 from the push service delete those devices", fake.to("bo1").length === 3 && fake.to("bo2").length === 1 && left.length === 0, { left, sent: [fake.to("bo1").length, fake.to("bo2").length] });
+		check("a 410 and a 404 from the push service delete those devices", fake.to("bo1").length === sent + 1 && fake.to("bo2").length === 1 && left.length === 0, { left, sent: [fake.to("bo1").length, fake.to("bo2").length] });
+		check("a device made with an older VAPID key is not sent to, and is deleted", fake.to("bo-oldkey").length === 0 && !left.some((r) => r.endpoint === old.endpoint), fake.to("bo-oldkey").length);
 	}
 
 	console.log("\npush: export and account deletion");
@@ -372,6 +433,42 @@ try {
 			await floors(bo.p, '[data-section="notifications"]', "…the section");
 		}
 
+		if (vw === 390) {
+			// The server cannot be asked for its key: the switch still shows
+			// this device's choice (review, 2026-11-21: it said "Not available yet").
+			const keyless = (u) => u.pathname === "/api/push";
+			await bo.ctx.route(keyless, (r) => (r.request().method() === "GET" ? r.abort() : r.continue()));
+			await bo.p.reload();
+			await bo.p.waitForFunction(() => document.querySelector('[data-section="notifications"]')?.querySelector(".push-toggle")?.dataset.state, null, { timeout: TIMEOUT });
+			const st = await bo.p.evaluate(() => {
+				const t = document.querySelector('[data-section="notifications"] .push-toggle');
+				const b = t.querySelector('[data-setting="push"]');
+				return { state: t.dataset.state, checked: b.getAttribute("aria-checked"), disabled: b.disabled, note: t.querySelector("p").textContent };
+			});
+			check("the key cannot be fetched: an on switch still shows on, and is not \"Not available yet\"", st.state === "on" && st.checked === "true" && !st.disabled && !/not available/i.test(st.note), st);
+			await bo.ctx.unroute(keyless);
+
+			// The app switched away (the page hidden): the invite comes as a
+			// notification as well as to the page (review, 2026-11-21).
+			const cyn = await login(`Cyn${vw}`);
+			await befriend(cyn, bo);
+			await bo.p.goto(page("index.html"));
+			await bo.p.locator(".site-menu .acct-me").waitFor({ state: "attached", timeout: TIMEOUT });
+			await sleep(500); // the live socket is open
+			await bo.p.evaluate(() => {
+				Object.defineProperty(document, "visibilityState", { configurable: true, get: () => "hidden" });
+				document.dispatchEvent(new Event("visibilitychange"));
+			});
+			await sleep(300);
+			const n0 = fake.to(`page-${vw}`).length;
+			await call("POST", `/api/friends/${bo.id}/invite`, { token: cyn.token, body: { code: "343434", game: "neon-bid" } });
+			await fake.waitFor(() => fake.to(`page-${vw}`).length > n0);
+			const hm = fake.to(`page-${vw}`).at(-1);
+			check("a hidden arcade page (app switched away): the device gets a notification…", fake.to(`page-${vw}`).length === n0 + 1 && hm?.payload?.code === "343434" && hm.payload.game === "Neon Bid", hm?.payload);
+			check("…and the page has the invite for when it comes back", await bo.p.locator(".neon-invite[data-invite]", { hasText: "invited you to a party" }).waitFor({ state: "attached", timeout: TIMEOUT }).then(() => true, () => false));
+			await bo.p.evaluate(() => document.querySelector(".neon-invite[data-invite] button")?.click()); // NOT NOW
+		}
+
 		// Bo closes the arcade (a blank tab); Asha invites from her party.
 		await bo.p.goto("about:blank");
 		check("(Bo's arcade closed: offline)", await offline(asha, bo));
@@ -441,10 +538,20 @@ try {
 		await bo.p.goto(page("", `&invite=${encodeURIComponent(asha.id)}`));
 		check("a notification tapped after its invite is gone says so", await bo.p.locator(".neon-toast", { hasText: "That invite has expired." }).waitFor({ timeout: TIMEOUT }).then(() => true, () => false));
 
-		await bo.p.evaluate(() => NeonArcade.account.signOut());
 		let after = [];
-		for (const end = Date.now() + 8000; Date.now() < end; await sleep(200)) if (!(after = await rows(`account = '${bo.id}'`)).length) break;
-		check("signing out: this device stops getting the account's invites", after.length === 0 && (await bo.p.evaluate(() => localStorage.getItem("test.pushsub"))) === null, after);
+		if (vw === 390) {
+			await bo.p.evaluate(() => NeonArcade.account.signOut());
+			for (const end = Date.now() + 8000; Date.now() < end; await sleep(200)) if (!(after = await rows(`account = '${bo.id}'`)).length) break;
+			check("signing out: this device stops getting the account's invites", after.length === 0 && (await bo.p.evaluate(() => localStorage.getItem("test.pushsub"))) === null, after);
+		} else {
+			// The session ends elsewhere (expired, signed out on another
+			// device): the next 401 forgets the device too (review, 2026-11-21).
+			check("(the device is on, told as this account)", (await rows(`account = '${bo.id}'`)).length === 1 && ((await bo.p.evaluate(() => localStorage.getItem("neon.push.sent"))) ?? "").split(" ")[1] === bo.id);
+			await call("POST", "/api/me/signout", { token: bo.token });
+			await bo.p.evaluate(() => NeonArcade.account.api("/api/me").catch(() => {}));
+			for (const end = Date.now() + 8000; Date.now() < end; await sleep(200)) if (!(after = await rows(`account = '${bo.id}'`)).length) break;
+			check("a session that ended elsewhere (401): this device stops getting the account's invites", after.length === 0 && (await bo.p.evaluate(() => [localStorage.getItem("test.pushsub"), localStorage.getItem("neon.push")])).every((x) => x === null), after);
+		}
 		await asha.ctx.close();
 		await bo.ctx.close();
 	}

@@ -286,8 +286,9 @@ Duels, free-for-all and teams share it; co-op has none.
 reporter (a duel board could be flipped to wins), and any id matching the
 pattern got a board, a snapshot file and a play count.*
 
-`worker/api/games.js` lists every game the site lists and its manifest kind,
-generated from `lib/catalog.js` and `community/catalog.js` by
+`worker/api/games.js` lists every game the site lists and its manifest kind
+(and, since 2026-11-21, its catalog title, `TITLES`: the body of an invite's
+notification, "Party invites by notification"), generated from `lib/catalog.js` and `community/catalog.js` by
 `scripts/build-games-table.mjs` (`just games-table`) and committed, like
 `lib/catalog.js`, so the Worker bundles it. The Worker refuses any id
 not in it (the tables have no prototype: `constructor` or `__proto__` is not
@@ -715,16 +716,38 @@ not set up on the server).
 every existing check — friends only (a block ends the friendship, so a
 blocked sender is refused with the same 403 as before), a mute drops it
 quietly, the 20 s / 20 friends / 10 waiting limits — to the friend's open
-pages through `UserLive`, as before. Only when **no page of theirs holds the
-live socket** is it sent to their devices instead. Both deliveries run after
-the sender is answered (`ctx.waitUntil`): the answer is `{ invited: true }`,
-the same bytes and headers, whether a page got it, a notification, or
-nothing (D16). The invite still waits in D1 for 10 minutes as before.
+pages through `UserLive`, as before. It is **also** sent to their devices
+when **no page of theirs is in view** (`live.js` `attentive`): every page
+says whether it is visible as that changes (`{t:"vis", visible}`, and on
+status and ping; a phone that switches apps hides the page before freezing
+it), and a socket not heard from for 5 minutes (`ATTENTIVE_MS`; a visible
+page pings every 4) counts as a frozen page. An open socket alone is not
+"open": Android and iOS keep a switched-away app's socket for minutes (the
+review of 2026-11-21 found the first version never pushed in that, the main,
+case). Chosen over a per-socket staleness timer alone because hiding is
+reported at once, while a timer would leave the first minutes after
+switching away silent. A page from before `visible` counts as visible while
+fresh. A hidden page that comes back shows the invite too; tapping the
+notification focuses it, and the card is not shown twice.
+
+**Only news makes a notification** (review, 2026-11-21: a friend re-inviting
+every 20 s made a closed phone buzz every 20 s). A notification goes when the
+sender has no unexpired invite waiting for this friend, or the party code is
+new — and then at most once per pair every 2 minutes
+(`INVITE_NOTIFY_AGAIN_MS`, D1 `invites.pushed`). A repeat still refreshes the
+waiting invite and reaches open pages. Both deliveries run after the sender
+is answered (`ctx.waitUntil`): the answer is `{ invited: true }`, the same
+bytes and headers, whether a page got it, a notification, or nothing (D16).
+The invite still waits in D1 for 10 minutes as before.
 
 **What it says.** "Asha invited you to a party", with the game's title as
 the body ("Connect 4") — the game in play, else the one the party picked
 (`partyBlock`'s `picked`, lib/party.js) — or "Tap to see the invite." with
-none. One notification per friend (`tag invite:<sender>`; a newer one
+none. The page sends the game's **id**; the Worker checks it against its
+table of games and writes the catalog's title (`worker/api/games.js`
+`TITLES`, generated with the rest of the table), so the body is never text
+a sender wrote (review, 2026-11-21: it was free text, a phishing line). An
+id the arcade does not list shows no game line. One notification per friend (`tag invite:<sender>`; a newer one
 replaces it). A push whose payload cannot be read still shows "A friend
 invited you to a party" (Chrome requires a notification for every push to a
 `userVisibleOnly` subscription). **Tapping it** focuses an open arcade page,
@@ -747,7 +770,13 @@ device's row; other refusals are logged.
 **SSRF.** The Worker fetches a URL a browser handed the page. Only
 `https://` with no port or credentials on `fcm.googleapis.com`,
 `updates.push.services.mozilla.com`, `*.push.apple.com` or
-`*.notify.windows.com` is accepted (`PUSH_HOSTS`, verified 2026-11-18) —
+`*.notify.windows.com` is accepted (`PUSH_HOSTS`). The two wildcards are
+the vendors' own: Apple's web push guide says to allow
+`https://*.push.apple.com`, and Microsoft's WNS firewall page lists
+`*.notify.windows.com` (checked 2026-11-21). Narrowing them to
+`web.push.apple.com` or `wns2-*` is not done: neither vendor documents
+those as the only hosts, and every name under those two domains is the
+vendor's own, so the wildcard adds no SSRF reach. It is checked
 when subscribing (400 otherwise) and again before each send (a row whose
 endpoint no longer passes is deleted). Redirects are not followed. Under
 `AUTH_TEST=1` on a loopback host, `http://127.0.0.1` / `localhost` is also
@@ -755,14 +784,24 @@ accepted, for the tests' fake push service.
 
 **Devices.** One D1 row per endpoint (`push_subs`), keyed to the account
 signed in there: the same browser signed in as someone else moves the row
-to them. At most **5 devices** an account (`PUSH_DEVICES_MAX`, bounded by
+to them (a page re-tells the server when the account signed in differs from
+the one it last told, localStorage `neon.push.sent`). Endpoints are stored,
+sent to and deleted in one spelling (`new URL(endpoint).href`): upper case,
+`:443` or `https:host` were each a row of their own, and one device got one
+push per spelling (review, 2026-11-21). Each row records a fingerprint of
+the VAPID key it was made with; only rows of the current key are sent to,
+and the rest are deleted. At most **5 devices** an account (`PUSH_DEVICES_MAX`, bounded by
 CPU, below): a sixth evicts the one refreshed longest ago, and a page with
 the setting on refreshes its row once a day (or when the browser rotated the
 subscription), so a device in use keeps its place. **TURN OFF** deletes the
 row, then unsubscribes the browser (offline, the row stays until the push
-service answers 410). **Signing out** does the same first, so a shared
-phone stops getting that account's invites; deleting the account deletes
-every row. The **export** lists each device as its push service's host and
+service answers 410). **Signing out** does the same first, and so does a
+session that **ended elsewhere** (expired, or signed out on another device:
+the page's next 401), so a shared phone stops getting that account's
+invites. `DELETE /api/push` needs **no sign-in** for that reason: the
+endpoint is the device's own secret, so holding it is the proof, and the
+most a stolen endpoint does there is turn one device's notifications off.
+Deleting the account deletes every row. The **export** lists each device as its push service's host and
 two dates (`pushDevices`), **not** the endpoint or the keys: an endpoint
 with its keys lets anyone send to that device, and an export is a file
 people keep and pass around.
@@ -781,10 +820,15 @@ deploy) — **VERIFY** there once.
 **What it does not do.** The tap cannot join a party by itself: it shows
 the invite, and JOIN is still the player's. iOS needs the arcade on the
 Home Screen (Safari's rule). A browser on a push service not in the list
-gets "cannot" on its switch. Changing the VAPID key pair turns every
-device off until its page subscribes again on its next visit; delete the
-old rows then (`DELETE FROM push_subs`), since push services answer 403,
-not 410, to a key that no longer matches.
+gets "cannot" on its switch. **There is no `pushsubscriptionchange`
+handler**: when a browser or push service rotates a subscription, the
+worker cannot tell the server (it has no session), so invites sent between
+the rotation and the player's next visit are lost; that visit's page
+subscribes again and tells the server (lib/push.js `refresh`). **Changing
+the VAPID key pair** turns every device off until its page's next visit:
+the Worker stops sending to rows of the old key and deletes them, and the
+page deletes its old row, unsubscribes and subscribes with the new key.
+Nothing to clean up by hand.
 
 ## The API
 
@@ -807,10 +851,11 @@ address per 5-minute window (IpGate `api`).
 | `GET /api/lb/<game>?scope=global\|friends\|group:<id>` | global: anyone (`&me=1`: signed in) | signed in, also `me`: your row and rank even past the top 100, or `rank: null` with `need` (more games) or `hidden`; null with no ranked game. Global without `me=1` is the one cached publicly. Also `levels`, `unit` and `botsBoard` (the game has a board against bots) when they apply |
 | `GET /api/lb/<game>?vs=bots&scope=…` | as above | the board of wins against bots: `kind: "bots"`, rows `{ rank, id, name, avatar, wins, first, at }`, `perDay`; `me` as above. No offline copy (not in the snapshot) |
 | `GET /api/u/<id or friend code>` | anyone | public profile; hidden: a name to befriend, or all of it for a signed-in friend; by code: charged against guessing |
-| `GET /api/friends`, `GET /api/friends/recent`, `POST/DELETE /api/friends/<id or code>`, `POST/DELETE /api/friends/<id>/block`, `…/mute`, `POST /api/friends/<id>/invite` | signed in | invite `{ code, game? }` → `{ invited: true }`, always the same; `game` is the title for a notification's body (≤ 40 characters) |
+| `GET /api/friends`, `GET /api/friends/recent`, `POST/DELETE /api/friends/<id or code>`, `POST/DELETE /api/friends/<id>/block`, `…/mute`, `POST /api/friends/<id>/invite` | signed in | invite `{ code, game? }` → `{ invited: true }`, always the same; `game` is a game's id, named in a notification by its catalog title (an unknown id: no game line) |
 | `GET /api/invites`, `DELETE /api/invites/<sender>` | signed in | invites waiting (10 minutes) |
 | `GET /api/push` | anyone | `{ key }`: the VAPID public key to subscribe with, or null while the server has none |
-| `POST /api/push` `{ endpoint, keys: { p256dh, auth } }`, `DELETE /api/push` `{ endpoint }` | signed in | this device gets this account's party invites as notifications (`{ on: true }`; push-service hosts only, 400 otherwise; at most 5 devices, the least recently refreshed goes) / no longer (`{ on: false }`) |
+| `POST /api/push` `{ endpoint, keys: { p256dh, auth } }` | signed in | this device gets this account's party invites as notifications (`{ on: true }`; push-service hosts only, 400 otherwise; at most 5 devices, the least recently refreshed goes; the endpoint stored as its canonical URL) |
+| `DELETE /api/push` `{ endpoint }` | anyone holding the endpoint (no sign-in: an expired session still forgets its device) | `{ on: false }` |
 | `POST /api/me/friend-code` | signed in | a new friend code; the old one dies |
 | `GET/POST /api/groups`, `POST /api/groups/join`, `GET/PATCH/DELETE /api/groups/<id>`, `POST /api/groups/<id>/code`, `POST /api/groups/<id>/owner`, `DELETE /api/groups/<id>/members/<acct>`, `DELETE /api/groups/<id>/bans/<acct>` | signed in | |
 | `GET /api/feedback/<game>` / `POST` | read: anyone; post: GitHub connected, 5 a day | posted as the player |
@@ -832,7 +877,7 @@ or loopback; public reads are open.
 | Favourites, friends, groups, presence | D1 | no (friends see each other online unless "appear offline") |
 | Friend code | D1 `accounts.friend_code` | to whoever you give it; rotatable |
 | Blocks, declines (7 days), mutes, group bans, waiting invites (10 minutes), when a request was last pushed | D1 `friends`, `mutes`, `group_bans`, `invites`, `request_pushes` | no; in the export (your own rows; never a block of someone else's on you; group bans of you and by you; when your requests were pushed); deleted with the account |
-| Devices getting party invites as notifications: the push service's endpoint, the browser's public key and auth secret, created, last refreshed | D1 `push_subs` (0006), at most 5 an account | no; in the export as push service host and the two dates only (no endpoint, no keys); deleted on TURN OFF, sign-out, a 404/410 from the push service, and with the account |
+| Devices getting party invites as notifications: the push service's endpoint, the browser's public key and auth secret, which VAPID key (a fingerprint), created, last refreshed; when a waiting invite last made a notification | D1 `push_subs` (0006), at most 5 an account; `invites.pushed` | no; in the export as push service host and the two dates only (no endpoint, no keys); deleted on TURN OFF, sign-out, a 404/410 from the push service, and with the account |
 | Ranked matches and ratings | D1 | on boards and public profiles, unless hidden |
 | Reports not yet settled, "I am seated" starts, outcomes waiting to be read | D1 `reports` (15 min; starts 1 h after their last beat) | no; in the export (`reports`); deleted with the account |
 | Solo runs and runs against bots: id, game, seed, start, used, counted, daily, `vs` | D1 `runs`, kept 4 days | no; deleted with the account |
@@ -1024,7 +1069,8 @@ deploy**, from `worker/`, once the branch is merged:
 
 `worker/migrations/0006_push.sql` (branch `web-push`, 2026-11-18) adds
 `push_subs` (one row per device that turned invites by notification on) and
-its index. Additive; **migrate first, then deploy** — "Deploying invites by
+its index, and `invites.pushed` (when a waiting invite last made a
+notification). Additive; **migrate first, then deploy** — "Deploying invites by
 notification" above.
 
 ## Testing
@@ -1114,13 +1160,21 @@ notification" above.
   decrypts every payload with the subscription's private key: subscribe
   (signed in only), refused hosts and bad keys, a real host accepted,
   unsubscribe, the device cap (`PUSH_DEVICES_MAX` 3 there) evicting the
-  least recently refreshed, someone else cannot delete a device, an
-  endpoint moving accounts; an invite to a friend with a page open is not
-  pushed, without one it is (payload, TTL, Urgency, Topic, 512-byte
-  padding), the sender's answer byte-identical across page / notification /
-  neither / muted, the JWT reused per origin, a missing game, the 20 s
-  limit, muted and blocked send nothing, a 410 and a 404 delete their rows;
-  the export (hosts and dates, no endpoints or keys) and account deletion.
+  least recently refreshed, an endpoint moving accounts, four spellings of
+  one endpoint as one row, DELETE without a sign-in by any spelling; an
+  invite to a friend with a page in view is not pushed, without one it is
+  (payload, the game's catalog title from its id, TTL, Urgency, Topic,
+  512-byte padding), the sender's answer byte-identical across page /
+  notification / neither / muted / repeats, the JWT reused per origin, a
+  missing game, the pair limit (`INVITE_AGAIN_MS` 1 s there), a repeat with
+  the same code or a new code too soon makes no notification and a new code
+  after the gap does (`INVITE_NOTIFY_AGAIN_MS` 8 s there), free text or an
+  unknown id shows no game, a hidden page and a quiet page (`ATTENTIVE_MS`
+  2.5 s there) get a notification as well, muted and blocked send nothing,
+  a row of an older VAPID key is not sent to and is deleted, a 410 and a
+  404 delete their rows; the export (hosts and dates, no endpoints or keys)
+  and account deletion. Each check added after the review of 2026-11-21
+  failed against the Worker before it.
   In Chromium at 390×844 and 354×696 (`phoneFloors`, in view, no sideways
   scroll): no offer before a friend; the offer after one; NOT NOW never
   again; the profile switch on (subscribed with `userVisibleOnly` and the
@@ -1131,6 +1185,8 @@ notification" above.
   opens `./?invite=<sender>` (openWindow recorded: CDP cannot click a
   notification, so the tap is a `NotificationEvent` with the real
   notification), which shows the invite with JOIN for the party's code; the
-  tap with a page open shows it there; an expired one says so; signing out
-  removes the device. Chromium cannot subscribe to FCM here, so the page's
+  tap with a page open shows it there; an expired one says so; the key not
+  reachable leaves an on switch on; a hidden page (app switched away) gets
+  the invite and the device a notification; signing out, and a session
+  ended elsewhere (401), remove the device. Chromium cannot subscribe to FCM here, so the page's
   `PushManager` is stubbed with a subscription on the fake service.
