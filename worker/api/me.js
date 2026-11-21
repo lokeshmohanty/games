@@ -8,7 +8,8 @@
 //   GET    /api/me/export      all of it, as one JSON document: profile, sign-ins,
 //                              favourites, ratings, wins against bots, runs,
 //                              matches (paged), pending reports, friends,
-//                              groups, sessions, feedback posts, presence
+//                              groups, sessions, feedback posts, presence,
+//                              devices getting invites as notifications (no keys)
 //   GET    /api/me/favs        { favs: [id] }
 //   PUT    /api/me/favs        { favs: [id] } — replaces (the page merges first);
 //                              an id is a game's, "contributor:<login>" or
@@ -122,6 +123,8 @@ export async function deleteMe(env, me) {
 		env.DB.prepare("DELETE FROM invites WHERE recipient = ? OR sender = ?").bind(id, id),
 		env.DB.prepare("DELETE FROM mutes WHERE account = ? OR muted = ?").bind(id, id),
 		env.DB.prepare("DELETE FROM request_pushes WHERE asker = ? OR target = ?").bind(id, id),
+		env.DB.prepare("DELETE FROM push_subs WHERE account = ?").bind(id),
+		env.DB.prepare("DELETE FROM invite_notices WHERE recipient = ? OR sender = ?").bind(id, id),
 		env.DB.prepare("DELETE FROM feedback_log WHERE account = ?").bind(id),
 		env.DB.prepare("DELETE FROM accounts WHERE id = ?").bind(id),
 	]);
@@ -182,6 +185,17 @@ export async function exportMe(env, me, page = 0) {
 		requestPushes: await q("SELECT target, at FROM request_pushes WHERE asker = ?", me.id),
 		invites: await q("SELECT sender, recipient, code, at FROM invites WHERE recipient = ? OR sender = ?", me.id, me.id),
 		sessions: await q("SELECT created, exp FROM sessions WHERE account = ?", me.id),
+		// Devices getting invites as notifications (worker/api/push.js): which
+		// push service, since when, last refreshed. Not the endpoint nor the
+		// keys: together they let anyone send to that device, and an export
+		// is a file people keep and pass around.
+		// When a friend's invite last reached one of our devices as a notification.
+		inviteNotices: await q("SELECT sender, code, at FROM invite_notices WHERE recipient = ?", me.id),
+		pushDevices: (await q("SELECT endpoint, created, at FROM push_subs WHERE account = ? ORDER BY at DESC", me.id)).map((r) => ({
+			service: new URL(r.endpoint).host,
+			created: r.created,
+			at: r.at,
+		})),
 	};
 }
 
