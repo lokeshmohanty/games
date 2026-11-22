@@ -788,9 +788,12 @@ try {
 	const p2C4 = await gameFrame(p2, TIMEOUT);
 	await p2C4.waitForFunction(() => window.__game.handle?.debug?.().started, null, { timeout: TIMEOUT });
 	await readyToClick(p2); // clicks into a game frame: see serve.mjs
+	// Who opens is drawn (docs/sdk-v2.md "Who starts"): if it is the bot, its disc comes first.
+	await p2C4.waitForFunction(() => window.__game.handle.debug().turn === window.__game.handle.debug().you, null, { timeout: TIMEOUT });
+	const discsBefore = await p2C4.evaluate(() => window.__game.handle.debug().board.flat().filter(Boolean).length);
 	await p2C4.locator("#board").click();
 	const botAnswered = await p2C4
-		.waitForFunction(() => window.__game.handle.debug().board.flat().filter(Boolean).length === 2, null, { timeout: TIMEOUT })
+		.waitForFunction((n) => window.__game.handle.debug().board.flat().filter(Boolean).length === n + 2, discsBefore, { timeout: TIMEOUT })
 		.then(() => true, () => false);
 	check("…which the new host plays", botAnswered);
 	// The lost screen (net.js _lose; Lokesh, 2026-11-16/17: only the side

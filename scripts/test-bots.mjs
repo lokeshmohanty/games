@@ -1135,9 +1135,10 @@ try {
 			await F.evaluate(() => (window.__showMs.length = 0));
 			await p.touchscreen.tap(box.x + inset + b.px, box.y + inset + b.py);
 			// What this phone shows right after the touch, before anything is let go.
-			const shown = await F.evaluate(() => ({ score: __game.handle.debug().score, hidden: hidden.size, effects: effects.length, ack: view?.ack ?? 0, taps: tapN, ms: window.__showMs[0] ?? null }));
+			// `hid`: this tap took a bubble off this phone's field (hidden, by tap number).
+			const shown = await F.evaluate(() => ({ score: __game.handle.debug().score, hid: [...hidden.values()].includes(tapN), effects: effects.length, ack: view?.ack ?? 0, taps: tapN, ms: window.__showMs[0] ?? null }));
 			await F.evaluate(() => window.__release());
-			if (shown.score > before.score && shown.hidden > before.hidden && shown.effects > before.effects) {
+			if (shown.score > before.score && shown.hid && shown.effects > before.effects) {
 				out.instant++;
 				if (shown.ack < shown.taps) out.early++;
 				if (shown.ms !== null) out.showMs = Math.max(out.showMs, Math.round(shown.ms));
