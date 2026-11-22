@@ -25,10 +25,12 @@
 //      pinned commit is used without asking. Either way the commit is
 //      exported with `git archive`, never the working tree.)
 //   NEON_PIN_OVERRIDE=owner/repo=<sha>[,…] node scripts/fetch-community.mjs
-//     (testing only: build from that commit instead of the pin, games list
-//      read from it too — to run this platform's tests against a contributor's
-//      unmerged branch. The registry file is never touched; pins move only by
-//      the contributor's pull request.)
+//     (testing only: build from that commit instead of the pin — to run this
+//      platform's tests against a contributor's unmerged branch. The games
+//      are the registry's list plus every top-level folder of that commit
+//      with a game.json, so a new game can be tested before its pin moves.
+//      The registry file is never touched; pins move only by the
+//      contributor's pull request.)
 //   NEON_APP_CACHE=dir node scripts/fetch-community.mjs
 //     (keep each web app's build in dir, and reuse it while the pin and the
 //      build tooling are unchanged — CI restores dir with actions/cache.
@@ -192,6 +194,16 @@ function main() {
 				entry = { ...entry, commit: override };
 			}
 			const src = checkout(owner, repo, entry.commit);
+			if (override) {
+				// A new game on the branch is built too: the registry lists it
+				// only once the pin moves.
+				const more = readdirSync(src, { withFileTypes: true })
+					.filter((d) => d.isDirectory() && NAME.test(d.name) && !entry.games.includes(d.name) && existsSync(join(src, d.name, "game.json")))
+					.map((d) => d.name)
+					.sort();
+				if (more.length) console.log(`  ${owner}/${repo}: also ${more.join(", ")}, not yet in the registry (NEON_PIN_OVERRIDE)`);
+				entry = { ...entry, games: [...entry.games, ...more] };
+			}
 			try {
 				for (const path of entry.games) {
 					const from = join(src, path);

@@ -22,7 +22,14 @@ scripts/make-preview.sh connect4          # one game
 scripts/make-preview.sh all               # every game
 scripts/make-preview.sh draw-guess --seconds 20 --width 700
 scripts/make-preview.sh neon-survival --trim-end 3   # drop an unwanted tail
+scripts/make-preview.sh five-in-a-row --gif ../web-games/five-in-a-row/preview.gif
 ```
+
+`--gif FILE` is for a game in an outside repo (web-games): its card is its
+own `preview.gif`, so the gif is written there and nothing in `assets/` is
+touched; commit it in that repo. Build the site with that repo's games first
+(`NEON_LOCAL_REPOS` / `NEON_PIN_OVERRIDE`, scripts/fetch-community.mjs header;
+the override also builds game folders the registry does not list yet).
 
 That is the whole job: it plays the game, records it, converts it to a gif in
 a temp folder, writes `assets/<game>.webp`, `.webm` and `.mp4` from it
@@ -30,13 +37,19 @@ a temp folder, writes `assets/<game>.webp`, `.webm` and `.mp4` from it
 `game.json` already names the poster, so a successful run needs **no edit**.
 A new game: set `"preview": "../../assets/<game>.webp"` and run `just catalog`.
 
-Games: `scripts/preview.mjs --list` is the authority (2026-11-16: undercover,
-liars-dice, neon-bid, battleship, light-cycles, connect4, draw-guess,
-neon-fission, neon-survival-mp). Only five are this repo's (games/); battleship,
-liars-dice, light-cycles and draw-guess live in web-games now, whose own
-preview.gif is what the portal shows, so a run for them writes files here that
-nothing names. Whether their scenarios still run against the community ids is
-unverified (VERIFY).
+Games: `scripts/preview.mjs --list` is the authority (2026-11-22: undercover,
+liars-dice, neon-bid, battleship, light-cycles, bubble-rush, connect4,
+draw-guess, neon-fission, tic-tac-toe-js, five-in-a-row, snakes-and-ladders,
+neon-survival-mp). This repo's own: games/ and `tic-tac-toe-js`, the Tic Tac
+Toe listed under Strategy (its game.json names `../../../../assets/
+tic-tac-toe-js.webp`). The rest live in web-games, whose own preview.gif is
+what the portal shows: record those with `--gif`. Five in a Row, Snakes &
+Ladders and Tic Tac Toe were recorded 2026-11-22; whether the older community
+scenarios (battleship, liars-dice, light-cycles, draw-guess) still run
+against the community ids is unverified (VERIFY).
+
+A one-phone scenario against bots uses `soloTable(page, n)` in its
+`beforeStart` (SINGLE PLAYER, n at the quick table, START GAME, off camera).
 
 ## What it does
 
@@ -126,3 +139,6 @@ A clip is ~15–60 KB; much more means the profile needs lowering.
 - `memory/p2p-handshake.md` — how `connectPeers` drives the invite/answer lobby,
   the fragment-navigation trap that hangs the guest, and why back-to-back peer
   joins hid a real connection bug for months.
+- `memory/screenshot-breaks-frame-clicks.md` — after a screenshot in an
+  `isMobile` context, Playwright clicks into the game frame stopped firing
+  (2026-11-22, not root-caused); click inside the frame instead.

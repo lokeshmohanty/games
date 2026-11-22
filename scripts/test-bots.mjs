@@ -2235,6 +2235,94 @@ try {
 		await guest.ctx.close();
 	}
 
+	// ------------------------------------------------------ five in a row
+	//
+	// Two to four seats, a board with no edges: the bots must place only
+	// where the rules allow, and a game with three of them must still end.
+
+	/** Open a community game's SINGLE PLAYER with `n` at the quick table, START GAME, and wait for its first view. */
+	async function openSolo(p, id, n) {
+		await p.goto(url(`?game=lokeshmohanty%2F${id}&fresh=1`));
+		await p.locator("button", { hasText: "SINGLE PLAYER" }).first().click();
+		await setPlayers(p, n);
+		await p.locator(".quick-table button", { hasText: "START GAME" }).first().click();
+		await p.waitForFunction(() => window.__game?.handle, null, { timeout: TIMEOUT });
+		const F = await gameScope(p, TIMEOUT);
+		await F.waitForFunction((n) => window.__game.handle.debug().seats?.length === n, n, { timeout: TIMEOUT });
+		await readyToClick(p);
+		return F;
+	}
+
+	console.log("\nbots: five in a row, one person and three bots, to the end and a rematch");
+	{
+		G = await openSolo(page, "five-in-a-row", 4);
+		let v = await debug(page);
+		const self = await selfOf(page);
+		check("four seats: this phone and three bots, the board empty", v.seats.length === 4 && v.seats[v.you] === self && v.seats.filter((id) => id.startsWith("bot_")).length === 3 && v.marks.length === 0, JSON.stringify({ seats: v.seats, you: v.you }));
+		await phoneSizes(page, G, "five in a row, the board");
+		const opener = v.turn;
+		/** A careless move on our turn: the legal cell nearest the middle of the view, tapped with a finger's pointer events. */
+		const tapCareless = () =>
+			G.evaluate(() => {
+				const d = window.__game.handle.debug();
+				const [x, y] = d.legal.reduce((a, b) => (Math.hypot(b[0] - d.cam.x, b[1] - d.cam.y) < Math.hypot(a[0] - d.cam.x, a[1] - d.cam.y) ? b : a));
+				const c = document.querySelector(".fr-board canvas");
+				const r = c.getBoundingClientRect();
+				const at = { clientX: r.left + d.box.w / 2 + (x - d.cam.x) * d.cam.z, clientY: r.top + d.box.h / 2 + (y - d.cam.y) * d.cam.z, pointerId: 3, pointerType: "touch", isPrimary: true, bubbles: true };
+				c.dispatchEvent(new PointerEvent("pointerdown", at));
+				c.dispatchEvent(new PointerEvent("pointerup", at));
+				return d.marks.length;
+			});
+		for (const end = Date.now() + 240_000; v.winner === null && Date.now() < end; v = await debug(page)) {
+			if (v.myTurn) {
+				const n = await tapCareless();
+				await G.waitForFunction((n) => window.__game.handle.debug().marks.length > n || window.__game.handle.debug().winner !== null, n, { timeout: TIMEOUT });
+			} else await sleep(150);
+		}
+		check("the game ends", v.winner !== null, `${v.marks.length} marks`);
+		const legalAll = await G.evaluate(() => {
+			const R = window.fiveInARowRules;
+			const d = window.__game.handle.debug();
+			const board = new Map();
+			return d.marks.every(([x, y, p]) => {
+				const ok = R.legal(board, x, y);
+				board.set(R.key(x, y), p);
+				return ok;
+			});
+		});
+		check("every mark went where the rules allow: the centre first, each after it next to one", legalAll && v.marks[0][0] === 0 && v.marks[0][1] === 0);
+		check("the bots placed their own marks", new Set(v.marks.map((m) => m[2])).size >= 3, JSON.stringify([...new Set(v.marks.map((m) => m[2]))]));
+		if (v.winner >= 0) check("the winner has five or more in a line", v.line?.length >= 5, JSON.stringify(v.line));
+		await resultReached(page, "lokeshmohanty/five-in-a-row", v.winner === v.you ? "won" : v.winner < 0 ? "drawn" : "lost");
+		await page.locator(".managed-over button", { hasText: "PLAY AGAIN" }).first().click({ timeout: TIMEOUT });
+		await G.waitForFunction(() => window.__game.handle.debug().match === 2, null, { timeout: TIMEOUT });
+		v = await debug(page);
+		check("PLAY AGAIN: the next seat opens (who starts goes round the table)", v.turn === (opener + 1) % 4 && v.marks.length <= 1, JSON.stringify({ opener, now: v.turn, marks: v.marks.length }));
+	}
+
+	// -------------------------------------------------- snakes & ladders
+
+	console.log("\nbots: snakes & ladders, one person and two bots, to the end");
+	{
+		G = await openSolo(page, "snakes-and-ladders", 3);
+		let v = await debug(page);
+		const fair = await G.evaluate(() => window.snakesAndLaddersRules.unfair(window.__game.handle.debug().board));
+		check("three seats, two of them bots, everyone off the board, on a fair board", v.seats.length === 3 && v.seats.filter((id) => id.startsWith("bot_")).length === 2 && v.pos.join() === "0,0,0" && fair === null, JSON.stringify({ seats: v.seats, pos: v.pos, fair }));
+		await phoneSizes(page, G, "snakes & ladders, the board and the die");
+		let botRolled = false;
+		for (const end = Date.now() + 360_000; v.winner === null && Date.now() < end; v = await debug(page)) {
+			if (v.last && v.last.seat !== v.you) botRolled = true;
+			if (v.myTurn && !v.tumbling) await G.evaluate(() => document.querySelector(".sl-die:not(:disabled)")?.click());
+			await sleep(250);
+		}
+		check("the bots roll their own turns", botRolled);
+		check("the game ends with someone on 100, exactly", v.winner !== null && v.pos[v.winner] === 100, JSON.stringify({ winner: v.winner, pos: v.pos, rolls: v.rolls }));
+		await G.waitForFunction(() => !window.__game.handle.debug().busy, null, { timeout: TIMEOUT });
+		const drawn = await debug(page);
+		check("…and the board has caught up: every token drawn where it is", drawn.shown.join() === drawn.pos.join(), JSON.stringify({ shown: drawn.shown, pos: drawn.pos }));
+		await resultReached(page, "lokeshmohanty/snakes-and-ladders", v.winner === v.you);
+	}
+
 	// ------------------------------------------------------- draw & guess
 
 	console.log("\nbots: draw & guess says it needs people");
