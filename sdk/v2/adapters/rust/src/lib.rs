@@ -17,7 +17,7 @@
 //!     type Action = u32;          // what `arcade.act(…)` sends
 //!     type View = u32;            // what each phone draws
 //!     type Snapshot = (u32, Vec<String>);
-//!     fn init(seats: Vec<Seat>, _opts: serde_json::Value, _seed: i64, _match_no: i64) -> Self {
+//!     fn init(seats: Vec<Seat>, _opts: serde_json::Value, _seed: i64, _match_no: i64, _first: Option<String>) -> Self {
 //!         Counter { n: 0, seats: seats.into_iter().map(|s| s.id).collect() }
 //!     }
 //!     fn apply(&mut self, by_how_much: u32, _by: &str) -> Result<(), String> {
@@ -112,8 +112,11 @@ pub trait Game: Sized {
     type Snapshot: Serialize + DeserializeOwned;
 
     /// A new match. `opts` is the manifest's `opts` (an object), `seed` a
-    /// random number, `match_no` 0 and then 1, 2, … on each PLAY AGAIN.
-    fn init(seats: Vec<Seat>, opts: Value, seed: i64, match_no: i64) -> Self;
+    /// random number, `match_no` 0 and then 1, 2, … on each PLAY AGAIN, and
+    /// `first` the seat that moves first where that matters (docs/sdk-v2.md
+    /// "Who starts": random for the first match, then the next seat on each
+    /// rematch; `None` from an older shell).
+    fn init(seats: Vec<Seat>, opts: Value, seed: i64, match_no: i64, first: Option<String>) -> Self;
     /// Make `by`'s move, or refuse it: `Err(reason)` is shown to that player.
     fn apply(&mut self, action: Self::Action, by: &str) -> Result<(), String>;
     /// What `seat` may see; `None` is a spectator.
@@ -155,6 +158,8 @@ struct Call {
     seed: i64,
     #[serde(default, rename = "match")]
     match_no: i64,
+    #[serde(default)]
+    first: Option<String>,
     #[serde(default)]
     action: Value,
     #[serde(default)]
@@ -203,7 +208,7 @@ pub fn dispatch<G: Game>(slot: &RefCell<Option<G>>, call: &str) -> String {
     match call.rule.as_str() {
         "init" => {
             let opts = if call.opts.is_null() { Value::Object(Default::default()) } else { call.opts };
-            *slot = Some(G::init(call.seats, opts, call.seed, call.match_no));
+            *slot = Some(G::init(call.seats, opts, call.seed, call.match_no, call.first));
             ok(())
         }
         "restore" => match serde_json::from_value(call.snapshot) {
@@ -281,8 +286,8 @@ mod tests {
         type Action = u32;
         type View = CounterView<'static>;
         type Snapshot = Counter;
-        fn init(seats: Vec<Seat>, opts: Value, seed: i64, match_no: i64) -> Self {
-            let n = opts["start"].as_u64().unwrap_or(0) as u32 + seed as u32 + match_no as u32;
+        fn init(seats: Vec<Seat>, opts: Value, seed: i64, match_no: i64, first: Option<String>) -> Self {
+            let n = opts["start"].as_u64().unwrap_or(0) as u32 + seed as u32 + match_no as u32 + first.map_or(0, |f| f.len() as u32);
             Counter { n, seats: seats.into_iter().map(|s| s.id).collect() }
         }
         fn apply(&mut self, k: u32, by: &str) -> Result<(), String> {
@@ -343,6 +348,16 @@ mod tests {
         assert_eq!(run(&g, r#"{"fn":"view","seat":"a"}"#), r#"{"v":{"n":8,"mine":true,"by":"z"}}"#);
         assert!(run(&g, r#"{"fn":"restore","snapshot":7}"#).starts_with(r#"{"err":"arcade: not a snapshot"#));
         assert!(run(&g, "not json").starts_with(r#"{"err":"arcade: not a rules call"#));
+    }
+
+    #[test]
+    fn init_hands_over_who_starts() {
+        let g = RefCell::new(None);
+        // `first` ("ab": 2 more) reaches init; an older shell's call has none.
+        run(&g, r#"{"fn":"init","seats":[{"id":"ab","name":"A","team":null,"bot":false}],"opts":{},"seed":0,"match":0,"first":"ab"}"#);
+        assert_eq!(run(&g, r#"{"fn":"view","seat":null}"#), r#"{"v":{"n":2,"mine":false,"by":"z"}}"#);
+        run(&g, r#"{"fn":"init","seats":[{"id":"ab","name":"A","team":null,"bot":false}],"opts":{},"seed":0,"match":0}"#);
+        assert_eq!(run(&g, r#"{"fn":"view","seat":null}"#), r#"{"v":{"n":0,"mine":false,"by":"z"}}"#);
     }
 
     #[test]

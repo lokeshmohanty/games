@@ -4,7 +4,8 @@ Take turns marking squares on a 3 by 3 grid. The first to get three of their mar
 
 ## How to play
 - Two players: **X** (Team A) and **O** (Team B). Playing alone, a bot takes the other mark.
-- X moves first, then you take turns.
+- Who moves first is picked at random for the first game. After that it alternates: on **PLAY AGAIN**, whoever went second last time goes first.
+- Then you take turns.
 - On your turn, mark any empty square. A square that is taken cannot be played again.
 
 ## Scoring

@@ -8,7 +8,7 @@ protocol:
     import arcade
 
     class TicTacToe(arcade.Game):
-        def __init__(self, seats, opts, seed, match): ...   # a new match
+        def __init__(self, seats, opts, seed, match, first=None): ...   # a new match; first: who moves first
         def apply(self, action, by): ...    # None allows the move; a str refuses it (the reason)
         def view(self, seat): ...           # what this seat may see; seat None = a spectator
         def turn(self): ...                 # [ids] whose move it is
@@ -29,6 +29,7 @@ the game's bots against each other instead and prints how it went.
 """
 
 import dataclasses
+import inspect
 import json
 import sys
 
@@ -53,7 +54,7 @@ class Seat:
 class Game:
     """Subclass this. `__init__` starts a match; the platform calls the rest."""
 
-    def __init__(self, seats, opts, seed, match):
+    def __init__(self, seats, opts, seed, match, first=None):
         pass
 
     def apply(self, action, by):
@@ -96,6 +97,11 @@ def _encode(value):
     raise TypeError(f"{type(value).__name__} is not JSON")
 
 
+def _takes_first(cls):
+    params = inspect.signature(cls.__init__).parameters.values()
+    return any(p.name == "first" or p.kind is p.VAR_KEYWORD for p in params)
+
+
 def _call(c):
     global _game
     fn = c.get("fn")
@@ -103,7 +109,11 @@ def _call(c):
         raise RuntimeError("arcade.run(YourGame) was never called")
     if fn == "init":
         seats = [Seat.from_json(s) for s in c.get("seats") or []]
-        _game = _game_class(seats, c.get("opts") or {}, c.get("seed"), c.get("match", 0))
+        args = (seats, c.get("opts") or {}, c.get("seed"), c.get("match", 0))
+        # `first`, the seat that moves first (docs/sdk-v2.md "Who starts"),
+        # goes only to an __init__ that takes it: one written before it
+        # existed still starts.
+        _game = _game_class(*args, first=c.get("first")) if _takes_first(_game_class) else _game_class(*args)
         return None
     if fn == "restore":
         _game = _game_class.restore(c.get("snapshot"))

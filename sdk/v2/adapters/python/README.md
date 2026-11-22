@@ -20,7 +20,7 @@ the JavaScript reference.
 import arcade
 
 class Coin(arcade.Game):
-    def __init__(self, seats, opts, seed, match):    # seats: [arcade.Seat(id, name, team, bot)]
+    def __init__(self, seats, opts, seed, match, first=None):    # seats: [arcade.Seat(id, name, team, bot)]; first: who moves first
         self.ids = [s.id for s in seats]
         self.heads = None
 

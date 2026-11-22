@@ -45,7 +45,7 @@ impl Game for Race {
     type View = Race;                            // what each phone draws
     type Snapshot = Race;                        // what the heir needs
 
-    fn init(seats: Vec<Seat>, _opts: serde_json::Value, _seed: i64, _match_no: i64) -> Self {
+    fn init(seats: Vec<Seat>, _opts: serde_json::Value, _seed: i64, _match_no: i64, _first: Option<String>) -> Self {
         Race { at: seats.into_iter().map(|s| (s.id, 0)).collect(), turn: 0 }
     }
     fn apply(&mut self, step: Step, by: &str) -> Result<(), String> {

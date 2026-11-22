@@ -73,9 +73,13 @@ impl Game for TicTacToe {
     type View = View;
     type Snapshot = TicTacToe;
 
-    fn init(seats: Vec<Seat>, _opts: Value, _seed: i64, _match_no: i64) -> Self {
+    fn init(seats: Vec<Seat>, _opts: Value, _seed: i64, _match_no: i64, first: Option<String>) -> Self {
         let team = |t: &str, i: usize| seats.iter().find(|s| s.team.as_deref() == Some(t)).or(seats.get(i)).map(|s| s.id.clone());
-        TicTacToe { board: [0; 9], turn: 1, winner: None, x: team("A", 0), o: team("B", 1) }
+        let (x, o) = (team("A", 0), team("B", 1));
+        // The platform's `first` moves first: it takes turns between rematches
+        // (docs/sdk-v2.md "Who starts"). X otherwise, as from an older shell.
+        let turn = if first.is_some() && first == o { 2 } else { 1 };
+        TicTacToe { board: [0; 9], turn, winner: None, x, o }
     }
 
     fn apply(&mut self, mv: Move, by: &str) -> Result<(), String> {
