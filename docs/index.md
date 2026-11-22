@@ -125,7 +125,10 @@ Under the brand and the party banner:
   `solo`, `other`; `lib/portal.js` `GENRES`), its title, ← All Games, and
   every game of the genre in the same grid as My Games (Lokesh,
   2026-11-21). It is a real address: a reload or a shared link opens it, and
-  Back returns to All Games. No search there.
+  Back returns to All Games; so does ← All Games, as Back (no new history
+  entry) when SEE ALL led there (the entry's `history.state.genreFrom`). A
+  genre with no game (More games, while every game has a category) or an
+  unknown id is All Games, its address fixed. No search there.
 
 Changing sub-tab closes any card left open, so a row on the other sub-tab is
 never held back as "in use" and is current when you return (review,
@@ -280,8 +283,9 @@ rolls another (never one shown already in that dialog), THAT'S ME keeps the
 field. Focus starts in the field (selected) and goes back where it was;
 Escape, ✕ or a tap outside keep the *suggested* name, not a half-typed
 edit. Whichever way it closes, the name is saved where the party reads it
-(localStorage `neon.name`, `NeonArcade.rememberName`), so it never asks
-again; a name typed on the party screen counts too. A signed-in account
+(localStorage `neon.name`, `NeonArcade.rememberName`), and a party already
+running behind the portal takes it at once (`room.setName`), so it never
+asks again; a name typed on the party screen counts too. A signed-in account
 with a display name is not asked: that name is saved. The names
 (`lib/names.js`) are an adjective and an animal, a thing from nature or a
 small object, kept kind, about 220 × 280 words (some 63,000 names within
@@ -1129,9 +1133,23 @@ lone host before leaving.
 
 **One tap, and PLAY WITH FRIENDS** (Lokesh, 2026-11-21). A portal card's tap
 is `./?game=<id>&fresh=1&mode=bots&start=1`: hosted at once with no room
-server (`startsAtOnce`), the remembered table seated (`quickGoing`, bots
-only), the game started with no START tap. The party code is fetched later,
-only if friends are wanted (`ensureCode`).
+server (`startsAtOnce`), the table last played on that game seated, PERSON
+seats included (Lokesh, 2026-11-22: "Yes, reuse the table" — a group
+passing one phone just taps and plays), the game started with no START
+tap. The party code is fetched later, only if friends are wanted
+(`ensureCode`).
+- **A reload mid-game is a fresh bots game** (Lokesh, 2026-11-22: "A fresh
+  bots game"). While this page plays alone (the host, no other person, no
+  party code, not the lobby for friends), the address stays the tap's
+  (party.js `syncAddress`), so a reload starts a new game against bots at
+  once. Once friends are wanted (the lobby, a code, another person) the
+  flags go, and a reload rejoins as before. Invite links never carry them
+  (`shareBase` drops `start` as well as `fresh` and `mode`).
+- **A seat this browser still holds** when a tap starts a game: held by a
+  live tab (a local lock, no network), this tab says "This party is open in
+  another tab", as every other way into a party does, and starts nothing;
+  otherwise the seat is handed back in the background once the room server
+  answers. Offline, or with no server, the token stays: nothing released it.
 - **PLAY WITH FRIENDS** (party.js `playWithFriends`; Lokesh, 2026-11-22:
   "Bottom, between rounds"). It sits where nothing else needs the space:
   the bottom of the end card (lib/sdk-managed.js, after PLAY AGAIN, CHANGE
@@ -1149,7 +1167,9 @@ only if friends are wanted (`ensureCode`).
   opens the party lobby for that game** (Lokesh's decision): the game's
   name, the code (the party is hosted again through the room server, the
   bots re-seated), INVITE A FRIEND, the seats, START GAME. PERSON seats turn
-  back into bots. No question first: it is a game against bots. A game's
+  back into bots. From PARTY over a running game it asks first, as END GAME
+  beside it does, and so does CHANGE PLAYERS there; from the end card,
+  between rounds, neither asks. A game's
   own setup screen inside its frame (Bubble Rush's mode, Battleship's
   fleet) gets no button of the shell's; PARTY has it there.
 - **The lobby's seats:** ADD BOT and REMOVE BOT, as before (the contract
@@ -1157,7 +1177,11 @@ only if friends are wanted (`ensureCode`).
   drive), under a line saying who is at the table ("3 players: You, 1
   friend and 1 bot"); the bots carried over from the game played alone stay.
   For a game with a table, a change while you are the one person here is
-  remembered (`neon.table`), so the next tap on the card plays it. A friend
+  remembered (`neon.table`), so the next tap on the card plays it. A full
+  party (PLAY WITH FRIENDS from an eight-seat table) still lets a friend in:
+  the host's page gives up its newest bot's seat when an invite would be
+  refused as full (net.js `createInvite`, the room option `yieldBot`; INVITE
+  and a join by code alike), never over a running game. A friend
   who joins takes a bot's seat rather than one more (`seatTarget`,
   `fitTable`): Connect 4 that was you and a bot is you and your friend, not
   a friend left watching.
@@ -1198,8 +1222,8 @@ compact table instead of starting at once (party.js `tableBlock`):
   are cleared (party.js `tidyPeople`, on every party change) when a second
   person joins, when the crown moves to another phone, when "Play with
   friends instead" is chosen, and when a quick start other than the table
-  starts the game; PLAY SOMETHING (`start=1`) seats the remembered count as
-  bots only, never its PERSON seats.
+  starts the game. A tap (`start=1`, a card or PLAY SOMETHING) seats the
+  table last played, PERSON seats included (since 2026-11-22).
 - **START GAME** sits right under the stepper whatever the count. The table
   is remembered per game (localStorage `neon.table`,
   `{ [id]: { n, people: [seat…] } }`), written at START and as the table (or

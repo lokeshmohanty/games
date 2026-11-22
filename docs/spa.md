@@ -129,8 +129,10 @@ stage.
 - **One tap plays** (2026-11-21): a portal card, its SINGLE PLAYER, a
   Recently played chip and PLAY SOMETHING are all
   `./?game=<id>&fresh=1&mode=bots&start=1` — the remembered table, started
-  at once with no room server, so it works offline. party.js drops `start`
-  from the address with `fresh` and `mode`.
+  at once with no room server, so it works offline. While that page plays
+  alone the address keeps those flags, so a reload is a fresh bots game;
+  once friends are wanted party.js drops `start` with `fresh` and `mode`
+  (`syncAddress`).
 - **PLAY WITH FRIENDS** is no fixed chrome: it is a button at the bottom of
   the end card and of the shell's start screens, and on the party screen
   pulled up over a game (PARTY), so the game's frame keeps the whole

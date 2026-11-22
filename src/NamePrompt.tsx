@@ -8,8 +8,9 @@
 // lib/names.js), NEW NAME rolls another, THAT'S ME keeps what the field says.
 // Escape, ✕ or a tap outside keep the suggested name — the last one rolled,
 // not a half-typed edit. Whichever way it closes, the name is saved where the
-// party reads it (localStorage "neon.name", NeonArcade.rememberName), so it
-// never asks again; so does a name typed on the party screen.
+// party reads it (localStorage "neon.name", NeonArcade.rememberName), and a
+// party already running takes it at once, so it never asks again; so does a
+// name typed on the party screen.
 //
 // Not asked: a device with a name already; a signed-in account with a
 // display name (that name is saved instead); under automation
@@ -104,7 +105,12 @@ function NamePrompt(props: { gone: () => void }) {
 
 	// Closed any way: THAT'S ME keeps the field; Escape, ✕, a tap outside the suggestion.
 	const closed = () => {
-		A.rememberName?.(chosen ?? suggested);
+		const name = chosen ?? suggested;
+		A.rememberName?.(name);
+		// A party running behind the portal (it outlives the view) takes it
+		// too, so its members see the new name, not the old one.
+		const party = (window as any).__party;
+		if (party?.live && party.room?.self?.()?.name !== name) party.room.setName?.(name);
 		props.gone();
 	};
 

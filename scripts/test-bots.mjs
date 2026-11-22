@@ -1166,6 +1166,44 @@ try {
 		await guest.ctx.close();
 	}
 
+	console.log("\nbots: PLAY WITH FRIENDS from a full table: a friend takes a bot's seat");
+	{
+		// Neon Fission at eight (you and seven bots), one tap, PARTY, PLAY
+		// WITH FRIENDS: the party is full, and an invite used to be refused
+		// ("This party is full (8 players)"; review, 2026-11-22). The host now
+		// gives up its newest bot's seat for the newcomer (net.js yieldBot).
+		const host = await phone();
+		const guest = await phone();
+		await host.p.goto(url("index.html?page=contribute"));
+		await host.p.evaluate(() => localStorage.setItem("neon.table", JSON.stringify({ "neon-fission": { n: 8, people: [] } })));
+		await host.p.goto(url("?game=neon-fission&fresh=1&mode=bots&start=1"));
+		await host.p.waitForFunction(() => window.__party?.game === "neon-fission", null, { timeout: TIMEOUT });
+		const eight = await host.p.evaluate(() => window.__party.room.getMembers().length);
+		await host.p.locator(".party-pill").click();
+		await host.p.locator(".party-peek button", { hasText: "PLAY WITH FRIENDS" }).click();
+		await host.p.locator('dialog.neon-ask[open] [data-ask="yes"]').click();
+		await host.p.locator(".party-quick button", { hasText: "INVITE A FRIEND" }).first().click();
+		const invite = host.p.locator("textarea.share-code").first();
+		const minted = await invite.waitFor({ timeout: TIMEOUT }).then(() => true, () => false);
+		const refused = await host.p.evaluate(() => /full/i.test(document.getElementById("party")?.textContent ?? ""));
+		check("from a full eight-seat table, INVITE A FRIEND mints an invite (not \"This party is full\")", eight === 8 && minted && !refused, JSON.stringify({ eight, minted, refused }));
+		if (minted) {
+			await guest.p.goto(await invite.inputValue());
+			const reply = guest.p.locator("textarea.share-code").first();
+			await reply.waitFor({ timeout: TIMEOUT });
+			await host.p.locator("textarea.share-code").last().fill(await reply.inputValue());
+			await host.p.locator("button", { hasText: "CONNECT" }).first().click();
+			const joined = await host.p
+				.waitForFunction(() => window.__party.room.getMembers().filter((m) => !NeonArcade.isBotId(m.id)).length === 2, null, { timeout: TIMEOUT })
+				.then(() => true, () => false);
+			await sleep(500);
+			const after = await host.p.evaluate(() => ({ members: window.__party.room.getMembers().length, bots: window.__party.room.getMembers().filter((m) => NeonArcade.isBotId(m.id)).length }));
+			check("…the friend joins, in place of a bot: eight members, six of them bots", joined && after.members === 8 && after.bots === 6, JSON.stringify({ joined, ...after }));
+		}
+		await host.ctx.close();
+		await guest.ctx.close();
+	}
+
 	console.log("\nbots: connect 4 plays a real opponent");
 	// The game page is a party shortcut; its quick start must suit a phone.
 	await page.goto(url("?game=connect4&fresh=1"));
@@ -1773,7 +1811,9 @@ try {
 		await q.waitForFunction(() => window.__party?.game === "neon-fission", null, { timeout: TIMEOUT });
 		const quickStart = await q.evaluate(() => ({ saw: window.__sawTable, bots: window.__party.room.getMembers().filter((m) => m.id.startsWith("bot_")).length, search: location.search }));
 		check("PLAY SOMETHING (start=1) skips the table: the remembered 4 players, at once", !quickStart.saw && quickStart.bots === 3, JSON.stringify(quickStart));
-		check("…and start=1 leaves the address, so a reload is not a new start", !/start=|fresh=|mode=/.test(quickStart.search), quickStart.search);
+		// While it plays alone the address stays the tap's: a reload is a
+		// fresh bots game (Lokesh, 2026-11-22: "A fresh bots game").
+		check("…and the address keeps fresh, mode=bots and start while it plays alone, so a reload starts it again", /fresh=1/.test(quickStart.search) && /mode=bots/.test(quickStart.search) && /start=1/.test(quickStart.search), quickStart.search);
 
 		// The portal's PLAY SOMETHING links say start=1, and one tap plays without a table.
 		await q.goto(url("index.html?page=games&tab=all"));
@@ -1835,11 +1875,16 @@ try {
 		check("with a PERSON at the table, the game seats them (local) and no run against bots is asked for", got.kinds === "human,local,bot" && !got.runs.some((x) => x.vs === "bots"), JSON.stringify(got));
 		got = await startWithPerson(false);
 		check("…the same table with that seat a BOT: the run against bots is asked for", !got.local && got.kinds === "human,bot,bot" && got.runs.some((x) => x.vs === "bots" && x.game === "neon-fission"), JSON.stringify(got));
-		// PLAY SOMETHING (start=1): the remembered table's count, but bots only — its PERSON seats need the table on screen.
+		// A tap (start=1) plays the table last played, PERSON seats included
+		// (Lokesh, 2026-11-22: "Yes, reuse the table"): a group passing one
+		// phone just taps and plays.
+		await startWithPerson(true);
 		await r.goto(url("?game=neon-fission&fresh=1&mode=bots&start=1"));
 		await r.waitForFunction(() => window.__party?.game === "neon-fission", null, { timeout: TIMEOUT });
-		const ps = await r.evaluate(() => window.__party.room.getMembers().map((m) => m.local === true));
-		check("PLAY SOMETHING restores the remembered count but no PERSON seat", ps.length === 3 && !ps.some(Boolean), JSON.stringify(ps));
+		const PF = await gameScope(r, TIMEOUT);
+		await PF.waitForFunction(() => window.__game.handle.debug().match != null, null, { timeout: TIMEOUT });
+		const ps = { local: await r.evaluate(() => window.__party.room.getMembers().map((m) => m.local === true)), kinds: (await fission(PF)).players.map((p) => p.kind).join(), saw: await r.evaluate(() => !!document.querySelector(".quick-table")) };
+		check("a tap plays the table last played, its PERSON seat included, with no table drawn", ps.local.join() === "false,true,false" && ps.kinds === "human,local,bot", JSON.stringify(ps));
 		await rctx.close();
 	}
 

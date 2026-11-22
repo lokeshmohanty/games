@@ -437,6 +437,42 @@ try {
 	check("long before the deadline", full.newcomer.ms < 5000, String(full.newcomer.ms));
 	check("and the newcomer's claim is given back", full.claims === 2, String(full.claims));
 
+	// A host whose page gives up a bot's seat (net.js `yieldBot`, the party
+	// screen's lobby for friends): the newcomer by code is let in, in place
+	// of the newest bot (review, 2026-11-22: PLAY WITH FRIENDS from an
+	// eight-seat table let nobody in).
+	console.log("\nroom: a full party of bots gives a newcomer a bot's seat");
+	const yielded = await page.evaluate(async () => {
+		localStorage.removeItem("neon.room");
+		let host;
+		const yieldBot = () => {
+			const bot = host.room.getMembers().filter((m) => NeonArcade.isBotId(m.id)).at(-1);
+			if (!bot) return false;
+			host.room.removeMember(bot.id);
+			return true;
+		};
+		host = await NeonArcade.hostRoom({ name: "Host", yieldBot });
+		for (let i = 0; i < 7; i++) host.room.addBot();
+		const size = host.room.getMembers().length;
+		localStorage.removeItem("neon.room");
+		let joined;
+		let after = [];
+		try {
+			const late = await NeonArcade.joinRoom(host.code, { name: "Late", answerTimeoutMs: 15000 });
+			joined = late.room.selfId;
+			await new Promise((r) => setTimeout(r, 500));
+			after = host.room.getMembers();
+			late.room.leave();
+		} catch (err) {
+			joined = `error: ${err.reason}`;
+			after = host.room.getMembers();
+		}
+		const out = { size, joined, members: after.length, bots: after.filter((m) => NeonArcade.isBotId(m.id)).length, late: after.some((m) => m.name === "Late") };
+		host.room.leave();
+		return out;
+	});
+	check("a full party (host and seven bots) whose host gives up a bot's seat lets a newcomer in by code", yielded.size === 8 && !String(yielded.joined).startsWith("error") && yielded.late && yielded.members === 8 && yielded.bots === 6, JSON.stringify(yielded));
+
 	// ---------------------------------------- 6e. cancelling a join
 	// START A NEW PARTY during a reconnect used to navigate away with the
 	// claim still held. An aborted join hands it back on the spot.
@@ -2123,18 +2159,14 @@ try {
 		const told = await until(a, () => /open in another tab/i.test(document.querySelector(".lobby-status")?.textContent ?? ""), undefined, "displaced");
 		check("START A PARTY while a live tab holds the seat: open in another tab", told);
 		check("…the token is kept for that tab", (await a.evaluate(() => NeonArcade.rejoinToken()?.id)) === GHOST.id);
+		// A card's tap beside it says so too (review, 2026-11-22): a bots game
+		// here would leave that tab's token for a later reload of this one to
+		// reconnect into its party.
 		await seed();
-		await a.goto(SERVED("?game=neon-survival-mp&fresh=1&mode=bots", "&mockroom=1"));
-		await passTable(a, TIMEOUT);
-		check("SINGLE PLAYER still starts the bots game beside it", await until(a, () => window.__party?.game === "neon-survival-mp", undefined, "bots beside live tab"));
+		await a.goto(SERVED("?game=neon-survival-mp&fresh=1&mode=bots&start=1", "&mockroom=1"));
+		const toldTap = await until(a, () => /open in another tab/i.test(document.querySelector(".lobby-status")?.textContent ?? ""), undefined, "displaced (tap)");
+		check("a card's tap while a live tab holds the seat: open in another tab, no bots game", toldTap && !(await a.evaluate(() => window.__party?.game)));
 		check("…leaving that tab's token alone", (await a.evaluate(() => NeonArcade.rejoinToken()?.id)) === GHOST.id);
-		// The game ends: back on the party screen, which asks for a code
-		// (ensureCode) — hosting would write its token over the live tab's.
-		await a.evaluate(() => window.__party.room.setGame(null));
-		await a.locator(".party-member").first().waitFor({ timeout: TIMEOUT });
-		await new Promise((r) => setTimeout(r, 3000));
-		const after = await a.evaluate(() => ({ token: NeonArcade.rejoinToken()?.id, code: document.querySelector(".party-code-digits")?.textContent ?? null }));
-		check("…and still alone after its game ends: no code hosted over that tab's token", after.token === GHOST.id && after.code === null, JSON.stringify(after));
 		await seed();
 		await a.goto(SERVED("?fresh=1", "&mockroom=1"));
 		await a.locator("button", { hasText: "USE IT HERE" }).click({ timeout: TIMEOUT });
