@@ -232,6 +232,13 @@ try {
 	}
 	const spectatorHud = await (await gameFrame(p3, TIMEOUT)).locator("#hud").textContent();
 	check("spectator is seated as one", /SPECTATOR/.test(spectatorHud ?? ""), spectatorHud ?? "");
+	// PLAY WITH FRIENDS is for a game played alone: with real people in the
+	// party the host's PARTY screen over the game does not offer it.
+	await host.locator(".party-pill").click();
+	await host.locator(".party-peek").waitFor({ timeout: TIMEOUT });
+	const friendsOffered = await host.locator(".party-peek button", { hasText: "PLAY WITH FRIENDS" }).count();
+	check("with people in the party, PARTY over the game offers no PLAY WITH FRIENDS", friendsOffered === 0, friendsOffered);
+	await host.locator(".party-peek button", { hasText: "BACK TO GAME" }).click();
 
 	console.log("\nparty: switching games without reconnecting");
 	const idsBefore = await host.evaluate(() => window.__party.room.directPeers().sort().join(","));
@@ -1287,6 +1294,8 @@ try {
 		check(`${w}x${h}: the band is ← Games, ?, feedback, favourite, PARTY in one row, each 44px, inside the top 52px`, t.btns.length === 5 && t.big && t.inside && !t.over && t.word && !t.sideways, JSON.stringify(t));
 		const f = await phoneFloors(pg, ".top-band");
 		check(`${w}x${h}: …its text 12px or more`, f.measured.text >= 2 && !f.text.length && !f.taps.length, JSON.stringify(f));
+		const frameBottom = await pg.evaluate(() => Math.round(document.querySelector(".game-frame").getBoundingClientRect().bottom));
+		check(`${w}x${h}: alone with a bot, the game keeps the whole screen (no bar under it)`, frameBottom === h, frameBottom);
 		// Squeezed to its arrow, ← Games is still named "Games" (review,
 		// 2026-11-19: the word was visibility: hidden, the arrow aria-hidden).
 		await pg.evaluate(() => document.querySelector(".top-band .portal-link").classList.add("is-tight"));
@@ -1297,6 +1306,7 @@ try {
 		await pg.locator(".party-pill").click();
 		await pg.locator(".party-peek").waitFor({ timeout: TIMEOUT });
 		const peek = await phoneFloors(pg, ".party-peek, .top-band");
+		check(`${w}x${h}: …alone with a bot, PLAY WITH FRIENDS is there`, (await pg.locator(".party-peek button", { hasText: "PLAY WITH FRIENDS" }).count()) === 1);
 		check(`${w}x${h}: the party pulled up over the game: every button 44px, every line 12px (TEAM A, BOT, REMOVE…)`, peek.measured.taps >= 6 && !peek.taps.length && !peek.text.length, JSON.stringify(peek));
 		await c.close();
 	}

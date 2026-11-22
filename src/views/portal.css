@@ -735,3 +735,66 @@
 }
 
 
+
+/* My Games and a genre's page (lib/portal.js .is-grid; Lokesh, 2026-11-21):
+   the cards in a grid that scrolls down, several columns — two on a phone,
+   more as the screen widens (the base .section-row's auto-fill). All Games'
+   sections stay rows. Recently played's titles wrap rather than scroll. */
+:where(.view-portal) .recent-list {
+  flex-wrap: wrap;
+  overflow-x: visible;
+}
+@media (max-width: 560px) {
+  :where(.view-portal) .recent-list {
+    margin-inline: 0;
+    padding-inline: 0;
+  }
+  :where(.view-portal) .section-row.is-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-auto-flow: row;
+    grid-auto-columns: auto;
+    overflow: visible;
+    margin-inline: 0;
+    padding-inline: 0;
+    scroll-snap-type: none;
+  }
+}
+/* A genre's SEE ALL, at its heading's right, and the genre page's way back. */
+:where(.view-portal) .see-all,
+:where(.view-portal) .genre-back {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex: none;
+  box-sizing: border-box;
+  min-height: 44px;
+  padding: 0 14px;
+  border: 1px solid var(--accent);
+  border-radius: 999px;
+  color: var(--accent);
+  font-family: var(--font-body);
+  font-size: 0.8rem;
+  font-weight: bold;
+  letter-spacing: 0.5px;
+  text-decoration: none;
+  white-space: nowrap;
+}
+:where(.view-portal) .see-all[hidden],
+:where(.view-portal) .genre-back[hidden] {
+  display: none;
+}
+:where(.view-portal) .genre-back {
+  align-self: flex-start;
+  margin: 0 0 12px 10%;
+}
+:where(.view-portal)[data-genre] .section-title {
+  font-size: 1.4rem;
+}
+@media (max-width: 560px) {
+  :where(.view-portal) .genre-back {
+    margin-left: 3%;
+  }
+  :where(.view-portal)[data-genre] .section-title {
+    font-size: 1.1rem;
+  }
+}

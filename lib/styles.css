@@ -160,6 +160,13 @@ a.neon-btn {
   text-transform: uppercase;
   font-family: var(--font);
 }
+/* The party's own name field: wide enough for a two-word name ("Brave
+   Otter", lib/names.js), all of it on show. */
+.lobby-input[data-party-name] {
+  width: min(100%, 320px);
+  box-sizing: border-box;
+  letter-spacing: 1px;
+}
 .lobby-input:focus {
   outline: none;
   border-color: var(--accent);
@@ -1193,6 +1200,36 @@ canvas {
   justify-content: flex-end;
 }
 .join-code-actions .neon-btn {
+  min-height: 44px;
+}
+/* A first visit's name (src/NamePrompt.tsx): the suggestion in a wide
+   field, as it will read (not upper-cased), NEW NAME and THAT'S ME under it. */
+.name-prompt .neon-sheet-text {
+  display: block;
+}
+.name-prompt-field {
+  display: block;
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 52px;
+  padding: 8px 12px;
+  border: 2px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface-2);
+  color: var(--accent);
+  font: 600 1.3rem var(--font);
+  text-align: center;
+}
+.name-prompt-field:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 12px var(--accent-glow);
+}
+.name-prompt-actions {
+  justify-content: flex-end;
+  margin-top: 16px;
+}
+.name-prompt-actions .neon-btn {
   min-height: 44px;
 }
 /* lib/rules.js: a game's RULES.md over the game ("?" in .top-actions). The

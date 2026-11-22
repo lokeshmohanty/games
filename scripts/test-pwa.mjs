@@ -748,10 +748,13 @@ console.log("\npwa: every game offline in single player");
 		if (errors.length) check(`${g.name}: …with no page errors`, false, errors.join(" | ").slice(0, 200));
 	}
 
-	// The table is for the games whose seats leave a choice, and only those.
+	// A card's SINGLE PLAYER starts the remembered table at once (start=1,
+	// Lokesh 2026-11-21), so the table never shows from a card; the address
+	// without start (an unlisted game's, as the guide links it) still opens
+	// on it, for the games whose seats leave a choice and only those.
 	{
-		const want = catalog.filter((g) => !g.local && g.bots && g.runtime !== "python" && g.seats.max > g.seats.min).map((g) => g.id).sort();
-		check(`offline, the quick table showed for exactly the games whose seats leave a choice (${want.length})`, JSON.stringify([...tables].sort()) === JSON.stringify(want), `shown: ${tables.join(", ")}; want: ${want.join(", ")}`);
+		const want = catalog.filter((g) => g.listed === false && !g.local && g.bots && g.runtime !== "python" && g.seats.max > g.seats.min).map((g) => g.id).sort();
+		check(`offline, no card's SINGLE PLAYER showed the quick table; the plain address did for exactly the unlisted games with a choice (${want.length})`, JSON.stringify([...tables].sort()) === JSON.stringify(want), `shown: ${tables.join(", ")}; want: ${want.join(", ")}`);
 	}
 
 	// PLAY SOMETHING (lib/portal.js quickPick), offline: the SINGLE PLAYER of
