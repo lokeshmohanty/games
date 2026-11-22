@@ -83,8 +83,9 @@ the sections of the sub-tab showing.
   already names its sub-tab.
 - **PLAY SOMETHING** (Popular's heading; on My Games, Recently played's
   heading, else ★ Favourites', and the empty state) is the SINGLE PLAYER
-  address, plus `start=1` (the game's remembered quick table at once, never
-  shown: docs/index.md "The party API"), of a game from the five most played that one person can play now
+  address, plus `start=pick` (the size of the game's remembered quick table
+  at once, every other seat a bot, never shown: docs/index.md "The party
+  API"), of a game from the five most played that one person can play now
   (bots, or one-device and playable alone), never a people-only or Python
   game. Picked at random once per visit and kept for the visit, even when
   late play counts reorder the pool; saved as the last pick (`neon.quick`)
@@ -126,9 +127,9 @@ stage.
   service worker pins every page it takes over, a first visit included, so
   this is rare.
 - **Viewport.** It is fixed (no zoom) only while the party view shows.
-- **One tap plays** (2026-11-21): a portal card, its SINGLE PLAYER, a
-  Recently played chip and PLAY SOMETHING are all
-  `./?game=<id>&fresh=1&mode=bots&start=1` — the remembered table, started
+- **One tap plays** (2026-11-21): a portal card, its SINGLE PLAYER and a
+  Recently played chip are all `./?game=<id>&fresh=1&mode=bots&start=1`
+  (PLAY SOMETHING: `start=pick`, bots only) — the remembered table, started
   at once with no room server, so it works offline. While that page plays
   alone the address keeps those flags, so a reload is a fresh bots game;
   once friends are wanted party.js drops `start` with `fresh` and `mode`
