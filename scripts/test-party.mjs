@@ -1157,6 +1157,101 @@ try {
 	);
 	await solo.close();
 
+	console.log("\nparty: signed messages — four humans, ids, an old client");
+	// Signed party messages (Lokesh, 2026-11-18): an id is its key's hash,
+	// per tab session. Four humans, so when the host goes the heir needs a
+	// real grant and a real acknowledgement, signed, over real links (with
+	// three, the heir's own vote is half and the tie-break: no message at
+	// all is needed).
+	{
+		const sctx = await browser.newContext({ viewport: { width: 390, height: 844 } });
+		const [q1, q2, q3, q4] = await Promise.all([1, 2, 3, 4].map(() => sctx.newPage()));
+		for (const [i, page] of [q1, q2, q3, q4].entries()) {
+			page.on("pageerror", (err) => {
+				console.log(`  FAIL page error on q${i + 1}: ${err.message}`);
+				failures++;
+			});
+		}
+		await q1.goto(PARTY);
+		await q1.locator(".party-member").first().waitFor({ timeout: TIMEOUT });
+		await invite(q1, q2, "q2");
+		await invite(q2, q3, "q3");
+		await invite(q1, q4, "q4");
+		const all = [q1, q2, q3, q4];
+		const meshed = await Promise.all(
+			all.map((p) => p.waitForFunction(() => window.__party.room.directPeers().length === 3 && window.__party.room.getMembers().length === 4, null, { timeout: TIMEOUT, polling: 100 }).then(() => true, () => false)),
+		);
+		check("four tabs, fully meshed", meshed.every(Boolean), meshed.join());
+		const ids = await Promise.all(all.map((p) => p.evaluate(() => window.__party.room.selfId)));
+		check("two tabs are two players: four tabs of one browser, four ids", new Set(ids).size === 4 && ids.every((id) => /^[0-9a-z]{16}$/.test(id)), ids.join());
+		const refusedBefore = await Promise.all(all.map((p) => p.evaluate(() => window.__party.room.refused)));
+		check("an honest party refuses nothing", refusedBefore.every((n) => n === 0), refusedBefore.join());
+
+		// The host's tab dies; its heir is elected by the rest.
+		await q1.close();
+		const rest = [q2, q3, q4];
+		const crowned = await Promise.all(
+			rest.map((p) => p.waitForFunction((old) => window.__party.room.hostId() !== old && window.__party.room.party.term === 1, ids[0], { timeout: TIMEOUT, polling: 100 }).then(() => true, () => false)),
+		);
+		const hosts = await Promise.all(rest.map((p) => p.evaluate(() => window.__party.room.hostId())));
+		const heirPage = rest[ids.slice(1).indexOf(hosts[0])] ?? q2;
+		const proof = await heirPage.evaluate(() => {
+			const r = window.__party.room;
+			return { host: r.isHost(), self: r.selfId, v: r.proof?.cp?.v, acks: r.proof?.cp?.acks?.map((a) => a.f) ?? [] };
+		});
+		check("the host gone, the three elect one heir: one crown, at the next term", crowned.every(Boolean) && new Set(hosts).size === 1 && proof.host, `${crowned.join()} ${JSON.stringify(proof)}`);
+		check("…by signed acknowledgements that crossed real links (its crown's proof)", proof.v === "vote" && proof.acks.length >= 1 && proof.acks.every((f) => ids.slice(1).includes(f) && f !== proof.self), JSON.stringify(proof));
+		const lost = await Promise.all(rest.map((p) => p.evaluate(() => window.__party.room.lost)));
+		check("…and nobody is lost", lost.every((x) => !x), lost.join());
+
+		// The heir's next record — with that proof — is taken by everyone.
+		await heirPage.evaluate(() => window.__party.room.setName("Heir"));
+		const named = await Promise.all(rest.map((p) => p.waitForFunction((id) => window.__party.room.getMember(id)?.name === "Heir", proof.self, { timeout: TIMEOUT }).then(() => true, () => false)));
+		check("…and the new host's records are taken on that proof", named.every(Boolean));
+		const refusedAfter = await Promise.all(rest.map((p) => p.evaluate(() => window.__party.room.refusals)));
+		check("…with nothing refused along the way", refusedAfter.every((r) => r.length === 0), JSON.stringify(refusedAfter));
+
+		// A reply from a build before signed messages (a 10-character id):
+		// refused at once, and the screen says why.
+		await heirPage.evaluate(async () => {
+			const sdp = ["v=0", "a=ice-ufrag:abcd", "a=ice-pwd:abcdefghijklmnopqrstuv", "a=fingerprint:sha-256 AA:BB", "a=setup:active", "a=candidate:1 1 udp 1 192.0.2.1 5000 typ host", ""].join("\r\n");
+			location.hash = "#a=" + (await NeonArcade._codec.packSignal({ s: "abcd", i: "oldclient1", n: "Grandpa" }, sdp));
+		});
+		const said = await heirPage
+			.waitForFunction(() => /older version/.test(document.querySelector(".lobby-status")?.textContent ?? ""), null, { timeout: TIMEOUT })
+			.then(async () => heirPage.evaluate(() => document.querySelector(".lobby-status").textContent), () => null);
+		check("an old client's reply is refused, and the screen says so (reload to update)", !!said && /reload/i.test(said), String(said));
+
+		// A reload keeps this tab's id (its key, named in sessionStorage);
+		// another tab gets its own.
+		const r1 = await sctx.newPage();
+		await r1.goto(SITE.url(""));
+		const before = await r1.evaluate(async () => (await NeonArcade.identity()).id);
+		await r1.reload();
+		const after = await r1.evaluate(async () => (await NeonArcade.identity()).id);
+		const r2 = await sctx.newPage();
+		await r2.goto(SITE.url(""));
+		const other = await r2.evaluate(async () => (await NeonArcade.identity()).id);
+		check("a reload keeps the tab's id", before === after && /^[0-9a-z]{16}$/.test(before), `${before} / ${after}`);
+		check("…and a new tab of the same browser is another", other !== before, other);
+		// window.open and "duplicate tab" copy sessionStorage, key name and
+		// all: the key's Web Lock (held by r1) says it is not this tab's.
+		const [popup] = await Promise.all([sctx.waitForEvent("page"), r1.evaluate(() => void window.open(location.href))]);
+		await popup.waitForLoadState();
+		const copied = await popup.evaluate(() => sessionStorage.getItem("neon.key"));
+		const opened = await popup.evaluate(async () => (await NeonArcade.identity()).id);
+		check("a window.open'd tab (sessionStorage copied) is another player", copied === before && opened !== before && /^[0-9a-z]{16}$/.test(opened), `${copied === before} ${opened}`);
+		const dup = await sctx.newPage();
+		await dup.goto(SITE.url(""));
+		await dup.evaluate((id) => sessionStorage.setItem("neon.key", id), before);
+		await dup.reload();
+		const duplicated = await dup.evaluate(async () => (await NeonArcade.identity()).id);
+		check("…and so is a duplicated tab naming the same key", duplicated !== before && duplicated !== opened, duplicated);
+		const back = await r1.evaluate(async () => (await NeonArcade.identity()).id);
+		check("…while the first tab keeps its own", back === before, back);
+		await sctx.close();
+	}
+
 	console.log("\nparty: the top band and the party over a game, on a phone");
 	// Lokesh's phone (354x696, 2026-11-15) and 390x844: every button of the
 	// shell's own chrome over a game 44px, every line 12px; and the band

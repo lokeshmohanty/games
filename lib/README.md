@@ -14,7 +14,7 @@ mesh — once per person, never per pair.
 
 **Connections and the party**
 
-- **`net.js`** — the P2P mesh: `createHost` / `createGuest`, the replicated party record, typed channels, invite links (`shareBase`).
+- **`net.js`** — the P2P mesh: `createHost` / `createGuest`, the replicated party record, typed channels, invite links (`shareBase`), and who said it: `identity()` (a member's id is its signing key's hash), the link hello, signed and proven messages (docs/index.md "Who said it").
 - **`room-join.js`** — join by six-digit code over the optional room server (`worker/`), rejoin tokens; falls back to the scan/paste flow.
 - **`party.js`** — `mountParty()`: the persistent party screen — roster, teams, game switching, host handover; the quick table, PLAY WITH FRIENDS and CHANGE PLAYERS.
 - **`lobby.js`** — what every party screen shares: invite/reply blocks, the leave question, presence toasts, the back guard.

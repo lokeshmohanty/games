@@ -343,9 +343,12 @@ one ASGI call (or a WSGI call). Requests wait until it is up; 20 s timeout.
 directly; a guest's goes `p$http` → host → `p$httpr`, bodies base64, 1 MB
 cap each way. Addressed messages can be relayed through other phones in
 plaintext (memory: addressed-is-not-private) — fine for a shared screen,
-not for hidden information. The address: `p$addr` to everyone; a phone whose
-address differs remounts its frame there; a late guest asks the host
-(`p$addrq`). A crown change ends the game: the server's memory left with the
+not for hidden information. The address is the host's: the host sends
+`p$addr` to everyone and a phone whose address differs remounts its frame
+there; a guest's own navigation moves only its own screen, and a `p$addr`
+from anyone but the host is ignored (2026-11-20). A phone the crown passes
+to sends its address at once, so the party follows it rather than keeping
+the last host's. A late guest asks the host (`p$addrq`). A crown change ends the game: the server's memory left with the
 host.
 
 **Runtime** (`scripts/vendor-pyodide.mjs`, `just pyodide`): Pyodide

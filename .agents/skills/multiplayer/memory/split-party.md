@@ -50,8 +50,11 @@ How net.js does it (docs/index.md "A split party"):
   - **Refused requests are kept** (`asks`): one refused because the host's
     link lingered, or because our grant was given, is granted when that
     changes.
-  - **Threat model:** election messages can be forged, since `f` is unsigned
-    (as with `__p`). Signing is the planned follow-up.
+  - **Threat model (2026-11-18):** every election message is signed by its
+    sender, so a relay can drop one but never write one; a crown won by
+    election shows its `__ka` quorum (signed) as proof, so a member cannot
+    crown itself with a higher term. Left: a malicious *voter* acknowledging
+    two candidates. See [[signed-messages]].
   - No quorum in `HEIR_WAIT_MS`: release (`__r`), never count them again,
     step aside. A voter is freed only by hearing that release; a release
     that overtook its request is remembered (`releases`).
