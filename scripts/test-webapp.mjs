@@ -125,6 +125,16 @@ try {
 	await gf.locator("#click").click();
 	await gf.locator("#click").click();
 	check("the guest's clicks show on the host (polling the host's server)", await text(hf, "count", "2"));
+	// The party's address is the host's (Lokesh, 2026-11-20: "host-only"):
+	// a guest's own navigation moves its own screen, never the host's.
+	await gf.locator("#new").click();
+	const elsewhere = `/room \\w+/.test(document.getElementById("room").textContent) && document.getElementById("room").textContent !== ${JSON.stringify(hostRoom)}`;
+	const gf2 = await appFrame(guest, elsewhere);
+	const guestNew = gf2 && (await gf2.evaluate(() => document.getElementById("room").textContent));
+	await new Promise((r) => setTimeout(r, 2000));
+	hf = await appFrame(host, inRoom);
+	const hostNow = hf && (await hf.evaluate(() => document.getElementById("room").textContent));
+	check("a guest's own navigation moves only its own screen; the host's app stays", !!guestNew && guestNew !== hostRoom && hostNow === hostRoom, `guest ${guestNew}, host ${hostNow} (was ${hostRoom})`);
 
 	await host.bringToFront();
 	await hf.locator("#rules").click();

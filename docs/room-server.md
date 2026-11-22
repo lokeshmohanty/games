@@ -525,6 +525,15 @@ down with it, and the old party would keep a seat for a browser that is
 gone. (Over loopback the unwaited frame was never seen lost — 0 in 4 —
 so the guarantee is the wait, not a measured race.)
 
+**The token's id is a key's hash** (since 2026-11-18, docs/index.md "Who
+said it"). A member id is the hash of the signing key the browser keeps in
+IndexedDB, so a reconnect loads the token id's key (`NeonArcade.identity({
+id })`) and proves it on every link. A browser that no longer holds that key
+(storage cleared, a private window's earlier page) cannot take the seat back:
+it joins as somebody new, and the old seat lapses with the grace. A join or
+rejoin that meets a party on an older build ends at once with reason
+`outdated` (or `outdated-self`), naming who must reload.
+
 **A reload with a token always tries the reconnect**, even when the
 reachability probe would fail: an unreachable server answers `unreachable`,
 which keeps the token and offers RETRY beside START A NEW PARTY. (Until
