@@ -407,6 +407,13 @@ function updateHud() {
 	if (view.winner !== null) msg = view.winner === 0 ? " — DRAW" : view.winner === mine ? " — YOU WIN!" : mine ? " — YOU LOSE" : "";
 	else if (!view.red || !view.yellow) msg = " — Waiting for opponent…";
 	else if (mine) msg = view.turn === mine ? " — YOUR TURN" : " — Opponent's turn";
+	else {
+		// A watcher: whose turn, by colour and name, as who opens takes turns
+		// between matches (docs/sdk-v2.md "Who starts").
+		const colour = view.turn === RED ? "Red" : "Yellow";
+		const name = arcade.party?.members?.find((m) => m.id === (view.turn === RED ? view.red : view.yellow))?.name;
+		msg = ` — ${name ? `${name} (${colour})` : colour} to move`;
+	}
 	hudEl.replaceChildren(tag, document.createTextNode(msg));
 }
 

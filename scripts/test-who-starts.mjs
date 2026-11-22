@@ -100,5 +100,35 @@ await series("Neon Fission, three seats", "../games/neon-fission/neon-fission.js
 await series("Tic Tac Toe (JavaScript, the conformance reference)", "../sdk/v2/examples/tic-tac-toe-js/tic-tac-toe.js", duel);
 await series("Tic Tac Toe (HTML/CSS)", "../sdk/v2/examples/tic-tac-toe-html/rules.js", duel);
 
+console.log("\nConnect 4: a watcher reads whose turn it is");
+{
+	// Who opens changes between matches, so "Opponent's turn" is not enough
+	// for a watcher: the turn line names the colour, and the player. The
+	// page is loaded against a page whose HUD records what it is given.
+	const shown = {};
+	const element = (id) =>
+		new Proxy(function () {}, {
+			get: (_, k) => (k === "replaceChildren" ? (...nodes) => (shown[id] = nodes.map((n) => n.textContent).join("")) : k === Symbol.toPrimitive ? () => "" : stub()),
+			set: () => true,
+		});
+	const page = new Proxy(function () {}, {
+		get: (_, k) => (k === "getElementById" ? (id) => element(id) : k === "createElement" ? () => ({ textContent: "" }) : k === "createTextNode" ? (text) => ({ textContent: text }) : stub()),
+	});
+	const handlers = {};
+	const was = { document: globalThis.document, arcade: globalThis.arcade };
+	globalThis.document = page;
+	globalThis.arcade = { ...was.arcade, on: (t, fn) => (handlers[t] = fn), party: { members: [{ id: "pA", name: "Ada" }, { id: "pB", name: "Bo" }] } };
+	load("../games/connect4/connect4.js");
+	const board = Array.from({ length: 6 }, () => Array(7).fill(0));
+	const view = (turn, you) => ({ board, turn, winner: null, started: true, red: "pA", yellow: "pB", match: 1, moves: 0, last: null, you });
+	handlers.view({ state: view(2, 0) });
+	check("a watcher, yellow to open: the line says Bo (Yellow) to move", /Bo \(Yellow\) to move/.test(shown.hud ?? ""), shown.hud);
+	handlers.view({ state: view(1, 0) });
+	check("…and then Ada (Red)", /Ada \(Red\) to move/.test(shown.hud ?? ""), shown.hud);
+	handlers.view({ state: view(1, 1) });
+	check("a player still reads YOUR TURN", /YOUR TURN/.test(shown.hud ?? ""), shown.hud);
+	Object.assign(globalThis, was);
+}
+
 console.log(failures ? `\n${failures} failing\n` : "\nall passing\n");
 process.exit(failures ? 1 : 0);
