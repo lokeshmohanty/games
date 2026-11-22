@@ -445,10 +445,10 @@ try {
 	const yielded = await page.evaluate(async () => {
 		localStorage.removeItem("neon.room");
 		let host;
-		const yieldBot = () => {
+		const yieldBot = (now) => {
 			const bot = host.room.getMembers().filter((m) => NeonArcade.isBotId(m.id)).at(-1);
 			if (!bot) return false;
-			host.room.removeMember(bot.id);
+			if (now) host.room.removeMember(bot.id);
 			return true;
 		};
 		host = await NeonArcade.hostRoom({ name: "Host", yieldBot });
@@ -2159,14 +2159,19 @@ try {
 		const told = await until(a, () => /open in another tab/i.test(document.querySelector(".lobby-status")?.textContent ?? ""), undefined, "displaced");
 		check("START A PARTY while a live tab holds the seat: open in another tab", told);
 		check("…the token is kept for that tab", (await a.evaluate(() => NeonArcade.rejoinToken()?.id)) === GHOST.id);
-		// A card's tap beside it says so too (review, 2026-11-22): a bots game
-		// here would leave that tab's token for a later reload of this one to
-		// reconnect into its party.
+		// A card's tap beside it starts the bots game anyway (Lokesh,
+		// 2026-11-23), with a note, and leaves that tab its party and token;
+		// a reload here is a fresh bots game (the address keeps the tap's
+		// flags), never a reconnect into that party.
 		await seed();
 		await a.goto(SERVED("?game=neon-survival-mp&fresh=1&mode=bots&start=1", "&mockroom=1"));
-		const toldTap = await until(a, () => /open in another tab/i.test(document.querySelector(".lobby-status")?.textContent ?? ""), undefined, "displaced (tap)");
-		check("a card's tap while a live tab holds the seat: open in another tab, no bots game", toldTap && !(await a.evaluate(() => window.__party?.game)));
+		const tapped = await until(a, () => window.__party?.game === "neon-survival-mp", undefined, "bots beside live tab");
+		const note = await a.evaluate(() => [...document.querySelectorAll(".neon-toast")].map((t) => t.textContent).join(" | "));
+		check("a card's tap while a live tab holds the seat: the bots game starts anyway, with a note that the party is still open in another tab", tapped && /still open in another tab/i.test(note) && !/open in another tab/i.test(await said(a)), note);
 		check("…leaving that tab's token alone", (await a.evaluate(() => NeonArcade.rejoinToken()?.id)) === GHOST.id);
+		await a.reload();
+		const again = await until(a, () => window.__party?.game === "neon-survival-mp", undefined, "bots again after reload");
+		check("…and a reload there is a fresh bots game, not a reconnect into that party", again && (await a.evaluate(() => NeonArcade.rejoinToken()?.id)) === GHOST.id && !(await a.evaluate(() => /Reconnecting/.test(document.querySelector(".lobby-sub")?.textContent ?? ""))));
 		await seed();
 		await a.goto(SERVED("?fresh=1", "&mockroom=1"));
 		await a.locator("button", { hasText: "USE IT HERE" }).click({ timeout: TIMEOUT });

@@ -1187,6 +1187,10 @@ try {
 		const minted = await invite.waitFor({ timeout: TIMEOUT }).then(() => true, () => false);
 		const refused = await host.p.evaluate(() => /full/i.test(document.getElementById("party")?.textContent ?? ""));
 		check("from a full eight-seat table, INVITE A FRIEND mints an invite (not \"This party is full\")", eight === 8 && minted && !refused, JSON.stringify({ eight, minted, refused }));
+		// The bot goes when the friend is admitted, not when the invite is
+		// made: an invite that lapses, or a join that fails, costs no bot.
+		const invited = await host.p.evaluate(() => ({ members: window.__party.room.getMembers().length, bots: window.__party.room.getMembers().filter((m) => NeonArcade.isBotId(m.id)).length }));
+		check("…the invite alone costs no bot: still eight, seven of them bots", invited.members === 8 && invited.bots === 7, JSON.stringify(invited));
 		if (minted) {
 			await guest.p.goto(await invite.inputValue());
 			const reply = guest.p.locator("textarea.share-code").first();
@@ -1806,21 +1810,21 @@ try {
 		await F.waitForFunction(() => window.__game.handle.debug().match != null, null, { timeout: TIMEOUT });
 		check("…one tap, START GAME, plays it", (await fission(F)).players.length === 4);
 
-		// PLAY SOMETHING's address (?start=1): that table at once, never drawn.
-		await q.goto(url("?game=neon-fission&fresh=1&mode=bots&start=1"));
+		// PLAY SOMETHING's address (?start=pick): that table's size at once, never drawn.
+		await q.goto(url("?game=neon-fission&fresh=1&mode=bots&start=pick"));
 		await q.waitForFunction(() => window.__party?.game === "neon-fission", null, { timeout: TIMEOUT });
 		const quickStart = await q.evaluate(() => ({ saw: window.__sawTable, bots: window.__party.room.getMembers().filter((m) => m.id.startsWith("bot_")).length, search: location.search }));
-		check("PLAY SOMETHING (start=1) skips the table: the remembered 4 players, at once", !quickStart.saw && quickStart.bots === 3, JSON.stringify(quickStart));
+		check("PLAY SOMETHING (start=pick) skips the table: the remembered 4 players, at once", !quickStart.saw && quickStart.bots === 3, JSON.stringify(quickStart));
 		// While it plays alone the address stays the tap's: a reload is a
 		// fresh bots game (Lokesh, 2026-11-22: "A fresh bots game").
-		check("…and the address keeps fresh, mode=bots and start while it plays alone, so a reload starts it again", /fresh=1/.test(quickStart.search) && /mode=bots/.test(quickStart.search) && /start=1/.test(quickStart.search), quickStart.search);
+		check("…and the address keeps fresh, mode=bots and start while it plays alone, so a reload starts it again", /fresh=1/.test(quickStart.search) && /mode=bots/.test(quickStart.search) && /start=pick/.test(quickStart.search), quickStart.search);
 
-		// The portal's PLAY SOMETHING links say start=1, and one tap plays without a table.
+		// The portal's PLAY SOMETHING links say start=pick, and one tap plays without a table.
 		await q.goto(url("index.html?page=games&tab=all"));
 		const quick = q.locator('[data-section="popular"] [data-quick]');
 		const href = await quick.getAttribute("href", { timeout: TIMEOUT });
 		const pick = await quick.getAttribute("data-game");
-		check("PLAY SOMETHING's link is the card's SINGLE PLAYER plus start=1", new URLSearchParams(href.slice(2)).get("start") === "1" && new URLSearchParams(href.slice(2)).get("game") === pick, href);
+		check("PLAY SOMETHING's link is the card's SINGLE PLAYER plus start=pick (bots only)", new URLSearchParams(href.slice(2)).get("start") === "pick" && new URLSearchParams(href.slice(2)).get("game") === pick, href);
 		await quick.click();
 		await q.waitForFunction((id) => window.__party?.game === id, pick, { timeout: TIMEOUT });
 		check("…one tap into it, no table on the way", !(await q.evaluate(() => window.__sawTable)), pick);
@@ -1885,6 +1889,19 @@ try {
 		await PF.waitForFunction(() => window.__game.handle.debug().match != null, null, { timeout: TIMEOUT });
 		const ps = { local: await r.evaluate(() => window.__party.room.getMembers().map((m) => m.local === true)), kinds: (await fission(PF)).players.map((p) => p.kind).join(), saw: await r.evaluate(() => !!document.querySelector(".quick-table")) };
 		check("a tap plays the table last played, its PERSON seat included, with no table drawn", ps.local.join() === "false,true,false" && ps.kinds === "human,local,bot", JSON.stringify(ps));
+		// PLAY SOMETHING, the random pick (start=pick), seats bots only, at
+		// the remembered size (Lokesh, 2026-11-23: "Bots only for random
+		// picks"), and leaves the PERSON seat saved for the next card tap.
+		await r.goto(url("?game=neon-fission&fresh=1&mode=bots&start=pick"));
+		await r.waitForFunction(() => window.__party?.game === "neon-fission", null, { timeout: TIMEOUT });
+		const RF = await gameScope(r, TIMEOUT);
+		await RF.waitForFunction(() => window.__game.handle.debug().match != null, null, { timeout: TIMEOUT });
+		const rp = { local: await r.evaluate(() => window.__party.room.getMembers().map((m) => m.local === true)), kinds: (await fission(RF)).players.map((p) => p.kind).join(), saved: await r.evaluate(() => JSON.parse(localStorage.getItem("neon.table"))["neon-fission"]) };
+		check("PLAY SOMETHING seats bots only, at the remembered size (3), keeping the saved PERSON seat", rp.local.join() === "false,false,false" && rp.kinds === "human,bot,bot" && rp.saved.n === 3 && rp.saved.people.join() === "1", JSON.stringify(rp));
+		await r.goto(url("?game=neon-fission&fresh=1&mode=bots&start=1"));
+		await r.waitForFunction(() => window.__party?.game === "neon-fission", null, { timeout: TIMEOUT });
+		const back = await r.evaluate(() => window.__party.room.getMembers().map((m) => m.local === true));
+		check("…and the next card tap seats that PERSON again", back.join() === "false,true,false", JSON.stringify(back));
 		await rctx.close();
 	}
 
