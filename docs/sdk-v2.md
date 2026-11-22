@@ -211,9 +211,9 @@ How it runs:
     `Setup.First` ("" without), C `setup->first` (NULL without), Python
     `__init__(self, seats, opts, seed, match, first=None)` (passed only to an
     `__init__` that takes it, so an older game still starts), and Rust's
-    `Game::init` gained a fifth argument, `first: Option<String>`: a Rust
-    game rebuilt against this adapter must add it (one built before keeps
-    its own copy and is unaffected).
+    `Game::set_first(&mut self, first: &str)`, called right after `init`
+    when there is one (a provided method that ignores it, so a Rust game
+    written before still compiles).
   - Who uses it: Connect 4, Neon Fission, Draw & Guess (the first drawer;
     the rotation goes on from them), Liar's Dice (the opening bid) and every
     lane's Tic Tac Toe. Undercover already shuffles its speaking order every
