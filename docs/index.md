@@ -475,7 +475,9 @@ These four fixes made joins and rejoins that hung on slow runners finish:
   every 700 ms until the far side answers on the link.
 - **A message that overtakes it is kept.** A signed message that arrives
   before the hello comes from a current client whose hello went missing. It
-  is kept and taken in order once the hello is through. An *unsigned*
+  is kept and taken in order, before anything that arrived while the hello
+  was checked. At most 64 messages and 1 MB may wait; past either, the link
+  is refused. An *unsigned*
   control message is still an old client, refused at once.
 - **Two links for one pair settle on the same one.** Both sides keep the
   same link, the lower id's offer (then the DTLS fingerprints decide), rather

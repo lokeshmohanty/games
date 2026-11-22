@@ -2428,5 +2428,46 @@ console.log("\ntwo links for one pair");
 	for (const r of [h, g]) r.leave();
 }
 
+
+{
+	// What overtook a hello is taken first, in order, even while the hello
+	// is still being checked and more arrives behind it (review, 2026-11-22:
+	// e1, e2, hello, m3, m4 came out m3, m4, e1, e2).
+	const [a, b] = await party(["A", "B"], []);
+	const got = [];
+	const accept = a._accept.bind(a);
+	a._accept = (l, m) => (m.a !== undefined && got.push(m.a), accept(l, m));
+	const game = (from, act) => ({ id: `g${++rawSeq}`, h: 2, m: null, t: null, f: from.selfId, a: act });
+	const fp = a._fingerprints.bind(a);
+	a._fingerprints = async (l) => (await sleep(150), fp(l)); // a slow machine: the fingerprints read back late
+	const [ea, eb] = linkPair(a, b, { hello: true });
+	b.__deaf = true;
+	a._linkUp(ea);
+	eb.send(game(b, "e1"));
+	eb.send(game(b, "e2"));
+	await sleep(50);
+	b.__deaf = false;
+	b._linkUp(eb);
+	await sleep(30);
+	eb.send(game(b, "m3"));
+	eb.send(game(b, "m4"));
+	await sleep(800);
+	check("messages that overtook the hello are taken first, in order, before what came after it", got.join() === "e1,e2,m3,m4", got.join());
+	for (const r of [a, b]) r.leave();
+}
+
+{
+	// What may wait for a hello is capped in bytes as well as in count: a
+	// kept message can be a reassembled 12 MB one.
+	const h = await bare({ name: "Host" });
+	const g = await bare({ name: "New" }, false);
+	const [toG, toH] = linkPair(h, g, { hello: true });
+	h._linkUp(toG);
+	for (let i = 0; i < 3; i++) toH.send({ a: "big", d: "x".repeat(400_000), f: g.selfId, t: null, id: `big${i}`, h: 2, m: null });
+	await sleep(60);
+	check("more than 1 MB waiting for a hello: the link is refused", toG.refused === true && h.refusals.some((r) => /flood/.test(r)), `${toG.refused} ${h.refusals}`);
+	for (const r of [h, g]) r.leave();
+}
+
 console.log(failures ? `\n${failures} failing\n` : "\nall passing\n");
 process.exit(failures ? 1 : 0);
