@@ -1120,8 +1120,8 @@ try {
 				const h = canvas.clientHeight;
 				const drawn = bubbles
 					.filter((b) => !isHidden(b.id) && b.k !== "x" && R.alive(b, t) && R.surfaced(b, t))
-					.map((b) => ({ ...R.position(b, t), r: b.r }))
-					.map((q) => ({ px: q.x * w, py: q.y * h, pr: q.r * w }))
+					.map((b) => ({ id: b.id, ...R.position(b, t), r: b.r }))
+					.map((q) => ({ id: q.id, px: q.x * w, py: q.y * h, pr: q.r * w }))
 					.filter((q) => q.py > q.pr && q.py < h - q.pr);
 				return drawn[Math.floor(Math.random() * drawn.length)] ?? null;
 			});
@@ -1135,8 +1135,10 @@ try {
 			await F.evaluate(() => (window.__showMs.length = 0));
 			await p.touchscreen.tap(box.x + inset + b.px, box.y + inset + b.py);
 			// What this phone shows right after the touch, before anything is let go.
-			// `hid`: this tap took a bubble off this phone's field (hidden, by tap number).
-			const shown = await F.evaluate(() => ({ score: __game.handle.debug().score, hid: [...hidden.values()].includes(tapN), effects: effects.length, ack: view?.ack ?? 0, taps: tapN, ms: window.__showMs[0] ?? null }));
+			// `hid`: the bubble touched is off this phone's field — hidden by this
+			// tap, or already dropped by a view that came since (the host's word
+			// on this pop, or a bot's pop of it that both keep).
+			const shown = await F.evaluate((id) => ({ score: __game.handle.debug().score, hid: [...hidden.values()].includes(tapN) || !bubbles.some((x) => x.id === id), effects: effects.length, ack: view?.ack ?? 0, taps: tapN, ms: window.__showMs[0] ?? null }), b.id);
 			await F.evaluate(() => window.__release());
 			if (shown.score > before.score && shown.hid && shown.effects > before.effects) {
 				out.instant++;
