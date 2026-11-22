@@ -192,9 +192,13 @@ const colourOf = (id) => (id === s.red ? RED : id === s.yellow ? YELLOW : 0);
 const idOf = (colour) => (colour === RED ? s.red : s.yellow);
 
 arcade.managed({
-	init({ seats, match }) {
+	init({ seats, match, first }) {
 		const team = (t, i) => (seats.find((p) => p.team === t) ?? seats[i])?.id ?? null;
 		s = { match: match + 1, board: emptyBoard(), turn: RED, winner: null, started: true, red: team("A", 0), yellow: team("B", 1), moves: 0, line: null, last: null };
+		// Who drops first: the platform's `first`, which takes turns between
+		// rematches (docs/sdk-v2.md "Who starts"). Red stays red; only the
+		// opening move changes hands. An older shell sends none: red starts.
+		if (first && first === s.yellow) s.turn = YELLOW;
 	},
 	apply({ action, by }) {
 		const col = action?.col;
