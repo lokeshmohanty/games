@@ -234,7 +234,7 @@ a card's two buttons on a touch screen is the browser's `contextmenu`,
 tested only as that event: unverified on a real Android phone, and Safari
 on iOS fires none, so there it shows nothing. Lokesh's call (2026-11-18)
 stands either way: one tap plays the game (since 2026-11-21, against bots),
-and its PLAY WITH FRIENDS offers the other choice.
+and PLAY WITH FRIENDS (end card, PARTY) offers the other choice.
 
 **Nine games have to fit a phone.** They did not: a `minmax(300px, 1fr)` column
 at 80% width is a single column on a 390px screen, and a 200px image plus a
@@ -778,26 +778,26 @@ is `./?game=<id>&fresh=1&mode=bots&start=1`: hosted at once with no room
 server (`startsAtOnce`), the remembered table seated (`quickGoing`, bots
 only), the game started with no START tap. The party code is fetched later,
 only if friends are wanted (`ensureCode`).
-- **PLAY WITH FRIENDS** (party.js `friendsBar`) is a bar of the shell's at
-  the bottom of the screen, under the game, never over it: while it shows,
-  `body[data-friends-bar]` makes the game's frame and the end card stop
-  52 px (plus the safe area) short of the bottom (lib/styles.css
-  `--friends-bar`), so it covers no control of any game at 390x844 or
-  354x696. It shows for the host alone with bots (no other person in the
-  party), online, in a game that is not `local`, and not while the party
-  screen is pulled up over the game. A tap **ends the bots game and opens
-  the party lobby for that game** (Lokesh's decision; `playWithFriends`):
-  the game's name, the code (the party is hosted again through the room
-  server, the bots re-seated), INVITE A FRIEND, the seats, START GAME.
-  PERSON seats turn back into bots. No question first: it is a game against
-  bots. **UNSURE, the cost of its room:** a game is 52 px shorter while it
-  shows, and three games are bound by height on Lokesh's phone: at
-  354x696 Sudoku's cells go from 39–40 px to 34 px and Battleship's
-  squares from 39.6 px to 35.8 px (40.3 px at 360x640, against 40.4), under
-  the floors test-taps allows them, and Neon Fission's eight-player grid
-  (8 × 12) from 40 px cells to 36 px (test-bots); those checks fail. Lokesh to
-  choose: accept smaller boards (and lower those floors), have web-games fit
-  the shorter frame, or move the button into the top band.
+- **PLAY WITH FRIENDS** (party.js `playWithFriends`; Lokesh, 2026-11-22:
+  "Bottom, between rounds"). It sits where nothing else needs the space:
+  the bottom of the end card (lib/sdk-managed.js, after PLAY AGAIN, CHANGE
+  PLAYERS and SEE THE BOARD), and of the shell's own start screens (the
+  quick table's and the bots quick start's "Play with friends instead").
+  During play it is on the party screen pulled up over the game (PARTY),
+  beside BACK TO GAME, END GAME and CHANGE PLAYERS; that is also where Neon
+  Bid and Liar's Dice, which have no shell end card, offer it between
+  rounds. Never a bar over or under the game: from 2026-11-21 to 11-22 it was
+  a bar with 52 px of its own at the bottom, which shrank the boards bound
+  by height at 354x696 (Sudoku's cells to 34 px, Battleship's squares to
+  35.8 px, Neon Fission's eight-player grid to 36 px). It is offered to the
+  host alone with bots (no other person in the party), online, in a game
+  that is not `local` (`canPlayWithFriends`). A tap **ends the bots game and
+  opens the party lobby for that game** (Lokesh's decision): the game's
+  name, the code (the party is hosted again through the room server, the
+  bots re-seated), INVITE A FRIEND, the seats, START GAME. PERSON seats turn
+  back into bots. No question first: it is a game against bots. A game's
+  own setup screen inside its frame (Bubble Rush's mode, Battleship's
+  fleet) gets no button of the shell's; PARTY has it there.
 - **The lobby's seats:** ADD BOT and REMOVE BOT, as before (the contract
   test-managed, test-protocol, `scripts/preview.mjs` and validate-game
   drive), under a line saying who is at the table ("3 players: You, 1
@@ -864,12 +864,13 @@ compact table instead of starting at once (party.js `tableBlock`):
   a live region outside the rebuilt screen announces "4 players. You and 3
   bots."; the control in use keeps the focus across re-renders.
 - Tested in test-bots ("quick table", at 390×844 and 354×696 in all three
-  themes; CHANGE PLAYERS from the end card, above PLAY WITH FRIENDS at both
-  sizes), test-pwa (offline: no card shows it; the plain address does, for
+  themes; CHANGE PLAYERS and PLAY WITH FRIENDS on the end card at both
+  sizes, the game keeping the whole screen), test-pwa (offline: no card shows it; the plain address does, for
   exactly the games with a choice), test-portal ("one tap on a game starts
-  it against bots": no table, no room server, PLAY WITH FRIENDS and its
-  room, the lobby's ADD BOT remembered, at both sizes) and test-party (no
-  PLAY WITH FRIENDS with people in the party).
+  it against bots": no table, no room server, no bar, PLAY WITH FRIENDS
+  from PARTY, the lobby's ADD BOT remembered, at both sizes) and test-party
+  (PARTY offers PLAY WITH FRIENDS alone with a bot, not with people in the
+  party).
 
 **The room controller** (lib/net.js `createHost` / `createGuest`):
 

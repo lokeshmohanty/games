@@ -1102,48 +1102,6 @@ canvas {
   background: var(--bg);
 }
 
-/* PLAY WITH FRIENDS under a game played alone (lib/party.js friendsBar).
-   The shell's own strip at the bottom, never over the game: while it shows
-   (body[data-friends-bar]) the frame and the end card stop above it, so no
-   control of the game sits under it at any size. */
-:root {
-  --friends-bar: calc(52px + env(safe-area-inset-bottom));
-}
-.friends-bar {
-  position: fixed;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  z-index: 45;
-  display: flex;
-  justify-content: center;
-  align-items: flex-start;
-  box-sizing: border-box;
-  height: var(--friends-bar);
-  padding: 4px max(16px, env(safe-area-inset-right)) env(safe-area-inset-bottom) max(16px, env(safe-area-inset-left));
-  border-top: 1px solid var(--border);
-  background: var(--bg);
-}
-.friends-bar[hidden] {
-  display: none;
-}
-.friends-btn {
-  width: min(358px, 100%);
-  min-height: 44px;
-  padding: 6px 16px;
-  font-size: 0.95rem;
-  letter-spacing: 1px;
-}
-body[data-friends-bar] .game-frame {
-  height: calc(100% - var(--friends-bar));
-}
-body[data-friends-bar] .managed-over {
-  bottom: var(--friends-bar);
-}
-body[data-view]:not([data-view="party"]) > .friends-bar {
-  display: none;
-}
-
 /* lib/account-ui.js: a sheet (sign in, feedback), the party's account block,
    and a friend's invite. Phone first: a sheet fills the width less a 16px
    gutter and scrolls inside itself. */

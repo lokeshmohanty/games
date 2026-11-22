@@ -1257,9 +1257,7 @@ try {
 	// 587-685px tall (553x455 at 1280x650; review 2026-11-19).
 	for (const [w, h] of [[1280, 650], [1366, 768], [390, 844], [354, 696]]) {
 		await page.setViewportSize({ width: w, height: h });
-		// The frame stops above PLAY WITH FRIENDS (the bar under a game played alone).
-		const bar = await page.evaluate(() => Math.round(document.querySelector(".friends-bar:not([hidden])")?.getBoundingClientRect().height ?? 0));
-		await c4.waitForFunction(([w, h]) => innerWidth === w && innerHeight === h, [w, h - bar], { timeout: TIMEOUT });
+		await c4.waitForFunction(([w, h]) => innerWidth === w && innerHeight === h, [w, h], { timeout: TIMEOUT });
 		const box = await c4.evaluate(async () => {
 			// The window's resize event runs before the next frame's callbacks.
 			await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
@@ -1568,10 +1566,11 @@ try {
 		check("the end card shows, with the bot and us ranked", /YOU|WIN/.test(card) && card.includes("DETAILS"), card);
 		await resultReached(page, "neon-fission", v.winner === 0);
 
-		// CHANGE PLAYERS on the end card (Lokesh, 2026-11-21): the quick table
-		// is no longer passed through before a game, so the next round's
-		// seats are changed from here. It sits above PLAY WITH FRIENDS (the
-		// bar under the frame), at both phone sizes.
+		// CHANGE PLAYERS and PLAY WITH FRIENDS on the end card (Lokesh,
+		// 2026-11-21 and 2026-11-22, "Bottom, between rounds"): the quick
+		// table is no longer passed through before a game, so the next
+		// round's seats are changed here, and friends are one tap away. PLAY
+		// WITH FRIENDS is the card's last button, at both phone sizes.
 		for (const [w, h] of [
 			[390, 844],
 			[354, 696],
@@ -1579,20 +1578,19 @@ try {
 			await page.setViewportSize({ width: w, height: h });
 			await page.waitForTimeout(150);
 			const end = await page.evaluate(() => {
-				const btn = [...document.querySelectorAll(".managed-over button")].find((b) => b.textContent === "CHANGE PLAYERS");
-				const bar = document.querySelector(".friends-bar");
-				const r = btn?.getBoundingClientRect();
-				return { btn: r && { top: r.top, bottom: r.bottom, h: r.height, right: r.right }, bar: bar && !bar.hidden ? bar.getBoundingClientRect().top : null, card: document.querySelector(".managed-over").getBoundingClientRect().bottom };
+				const btns = [...document.querySelectorAll(".managed-over .managed-actions button")];
+				const at = (t) => btns.find((b) => b.textContent === t)?.getBoundingClientRect();
+				return { labels: btns.map((b) => b.textContent), seats: at("CHANGE PLAYERS")?.height ?? 0, friends: at("PLAY WITH FRIENDS")?.toJSON() ?? null, frame: Math.round(document.querySelector(".game-frame").getBoundingClientRect().bottom) };
 			});
-			const floors = await phoneFloors(page, ".managed-over, .friends-bar", { hit: true });
-			check(`${w}x${h}: the end card offers CHANGE PLAYERS, 44px, above PLAY WITH FRIENDS (the card stops at the bar)`, !!end.btn && end.btn.h >= 44 && end.btn.right <= w && end.bar !== null && end.btn.bottom <= end.bar && end.card <= end.bar + 0.5, JSON.stringify(end));
-			check(`${w}x${h}: …every control on the end card and the bar 44px (box and hit area), none covered`, !floors.taps.length && !floors.text.length, JSON.stringify(floors));
+			const floors = await phoneFloors(page, ".managed-over", { hit: true });
+			check(`${w}x${h}: the end card offers PLAY AGAIN, CHANGE PLAYERS and, at its bottom, PLAY WITH FRIENDS, each 44px, on screen; the game keeps the whole screen`, end.labels.join() === "PLAY AGAIN,CHANGE PLAYERS,SEE THE BOARD,PLAY WITH FRIENDS" && end.seats >= 44 && end.friends?.height >= 44 && end.friends.bottom <= h && end.friends.right <= w && end.frame === h, JSON.stringify(end));
+			check(`${w}x${h}: …every control on the end card 44px (box and hit area), none covered`, !floors.taps.length && !floors.text.length, JSON.stringify(floors));
 		}
 		await page.setViewportSize({ width: 390, height: 844 });
 		await page.locator(".managed-over button", { hasText: "CHANGE PLAYERS" }).click();
 		await page.locator(".quick-table").waitFor({ timeout: TIMEOUT }).catch(() => {});
-		const t = await page.evaluate(() => ({ game: window.__party.game, n: Number(document.querySelector(".quick-table .quick-n")?.textContent), bar: !document.querySelector(".friends-bar").hidden }));
-		check("CHANGE PLAYERS ends the game and shows its table (Players 2), the friends bar gone with the game", t.game === null && t.n === 2 && !t.bar, JSON.stringify(t));
+		const t = await page.evaluate(() => ({ game: window.__party.game, n: Number(document.querySelector(".quick-table .quick-n")?.textContent), friends: !!document.querySelector(".quick-table .party-switch") }));
+		check("CHANGE PLAYERS ends the game and shows its table (Players 2), with Play with friends at its bottom", t.game === null && t.n === 2 && t.friends, JSON.stringify(t));
 		await setPlayers(page, 3);
 		await page.locator(".quick-table button", { hasText: "START GAME" }).click();
 		await page.waitForFunction(() => window.__party.game === "neon-fission", null, { timeout: TIMEOUT }).catch(() => {});
@@ -2069,15 +2067,13 @@ try {
 		const k = await F.evaluate(() => W / document.getElementById("gameCanvas").getBoundingClientRect().width);
 		const box = await F.locator("#gameCanvas").boundingBox();
 		const s0 = await ship();
-		// Down at the bottom-left corner of the game, far from the ship (the
-		// frame stops above PLAY WITH FRIENDS, the bar under a game played alone).
-		const y0 = Math.round(box.y + box.height) - 16;
-		await dragBy(cdp, [30, y0], [60, -40]);
+		// Down at the bottom-left corner of the screen, far from the ship.
+		await dragBy(cdp, [30, 680], [60, -40]);
 		await sleep(300);
 		const s1 = await ship();
 		const want = { x: s0.x + 60 * k, y: s0.y - 40 * k };
 		check("a drag from a corner moves the ship by as much as the finger, not to the finger", near(s1, want), JSON.stringify({ s0, s1, want, k }));
-		const under = { x: (90 - box.x) * k, y: (y0 - 40 - box.y) * k };
+		const under = { x: (90 - box.x) * k, y: (640 - box.y) * k };
 		check("…so it is not under the thumb", Math.hypot(s1.x - under.x, s1.y - under.y) > 50, JSON.stringify({ s1, under }));
 		// Far past the right edge: held inside the arena, and back at once.
 		await dragBy(cdp, [100, 400], [600, 0], 12);

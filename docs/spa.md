@@ -131,11 +131,10 @@ stage.
   `./?game=<id>&fresh=1&mode=bots&start=1` — the remembered table, started
   at once with no room server, so it works offline. party.js drops `start`
   from the address with `fresh` and `mode`.
-- **PLAY WITH FRIENDS** (party.js `friendsBar`) is fixed chrome at the
-  bottom, beside `.top-band` at the top, and like it hidden on every other
-  view. It has room of its own: while it shows, `body[data-friends-bar]`
-  shortens the game's frame and the end card by `--friends-bar`. It ends
-  the bots game and shows the party lobby for that game.
+- **PLAY WITH FRIENDS** is no fixed chrome: it is a button at the bottom of
+  the end card and of the shell's start screens, and on the party screen
+  pulled up over a game (PARTY), so the game's frame keeps the whole
+  screen. It ends the bots game and shows the party lobby for that game.
 - **SINGLE PLAYER's quick table** (2026-11-17) is part of this screen, not
   a view of its own: Players − n + and the seats before START GAME, with no
   room server. It shows from CHANGE PLAYERS (the end card, or the party

@@ -239,9 +239,7 @@ const GAMES = {
 		// A shorter phone, 360x640: the ship rack and the buttons one row each,
 		// so the squares keep the 40.4px they had (two rows took them to 34px).
 		await page.setViewportSize({ width: 360, height: 640 });
-		// The frame stops above PLAY WITH FRIENDS (the bar under a game played alone).
-		const bar = await page.evaluate(() => Math.round(document.querySelector(".friends-bar:not([hidden])")?.getBoundingClientRect().height ?? 0));
-		await G.waitForFunction((h) => innerWidth === 360 && innerHeight === h, 640 - bar, { timeout: TIMEOUT });
+		await G.waitForFunction(() => innerWidth === 360 && innerHeight === 640, null, { timeout: TIMEOUT });
 		await G.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
 		const short = await G.evaluate(() => ({
 			square: Math.round(document.querySelector('[data-board="mine"] .bs-cell').getBoundingClientRect().width * 10) / 10,

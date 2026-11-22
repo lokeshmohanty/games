@@ -1393,8 +1393,10 @@ console.log("\nportal: My Games · All Games");
 	// Lokesh, 2026-11-21: "when a user clicks on a game, directly take to the
 	// single-player game page (it has a button at bottom to rather play with
 	// friends)". A tap is the remembered table at once (?mode=bots&start=1),
-	// with no room server; PLAY WITH FRIENDS, a bar under the frame (never over
-	// it), ends that game and opens the party lobby for it.
+	// with no room server. PLAY WITH FRIENDS ends that game and opens the
+	// party lobby for it: between rounds at the bottom of the end card
+	// (test-bots), during play in PARTY's screen over the game (2026-11-22:
+	// "Bottom, between rounds"; no bar, so the game keeps the whole screen).
 	console.log("\nportal: one tap on a game starts it against bots");
 	for (const [w, h] of PHONE_SIZES) {
 		const at = `${w}x${h}`;
@@ -1431,18 +1433,18 @@ console.log("\nportal: My Games · All Games");
 		check(`${at}: one tap on a card runs that game against bots, in the page (${running} ms), with no table or choice drawn first`, running !== null && ran.same && ran.bots >= 1 && !ran.table, { running, ...ran });
 		check(`${at}: …no party wait: the room server not asked, no party code`, !pings.length && !ran.code, { pings, code: ran.code });
 		check(`${at}: …and the address forgets fresh, mode and start, for a reload`, !/fresh=|mode=|start=/.test(ran.search), ran.search);
-		// PLAY WITH FRIENDS: the shell's bar at the bottom, and the frame stops above it.
-		const bar = await op.evaluate(() => {
-			const b = document.querySelector(".friends-bar");
-			const btn = b.querySelector("button").getBoundingClientRect();
-			const f = document.querySelector(".game-frame").getBoundingClientRect();
-			return { shown: !b.hidden && b.getClientRects().length > 0, top: b.getBoundingClientRect().top, bottom: b.getBoundingClientRect().bottom, btn: { h: btn.height, w: btn.width, left: btn.left, right: btn.right }, frameBottom: f.bottom, doc: document.documentElement.scrollWidth, text: b.textContent.trim() };
-		});
-		check(`${at}: PLAY WITH FRIENDS shows at the bottom, 44px tall, inside the screen`, bar.shown && bar.text === "PLAY WITH FRIENDS" && bar.btn.h >= 44 && bar.btn.left >= 0 && bar.btn.right <= w && Math.round(bar.bottom) === h && bar.doc <= w, bar);
-		check(`${at}: …with room kept for it: the game's frame ends where the bar begins`, bar.frameBottom <= bar.top + 0.5, bar);
-		const barFloors = await phoneFloors(op, ".friends-bar");
-		check(`${at}: …taps 44px and text 12px`, !barFloors.taps.length && !barFloors.text.length && barFloors.measured.taps === 1, barFloors);
-		await op.locator(".friends-btn").tap();
+		// No bar over or under the game (Lokesh, 2026-11-22: "Bottom, between
+		// rounds"): the frame keeps the whole screen. During play PLAY WITH
+		// FRIENDS is in the party screen pulled up over the game (PARTY).
+		const full = await op.evaluate(() => ({ frame: Math.round(document.querySelector(".game-frame").getBoundingClientRect().bottom), fixed: [...document.body.children].filter((n) => n.getClientRects().length && getComputedStyle(n).position === "fixed" && n.getBoundingClientRect().bottom >= innerHeight - 1 && n.textContent.includes("FRIENDS")).length }));
+		check(`${at}: …the game has the whole screen: no PLAY WITH FRIENDS bar at the bottom`, full.frame === h && full.fixed === 0, full);
+		await op.locator(".party-pill").tap();
+		await op.locator(".party-peek").waitFor({ timeout: TIMEOUT });
+		const peekBtn = op.locator(".party-peek button", { hasText: "PLAY WITH FRIENDS" });
+		const pb = await peekBtn.boundingBox().catch(() => null);
+		const peekFloors = await phoneFloors(op, ".party-peek");
+		check(`${at}: PARTY over the game offers PLAY WITH FRIENDS, 44px, inside the screen, beside BACK TO GAME and CHANGE PLAYERS`, !!pb && pb.height >= 44 && pb.x >= 0 && pb.x + pb.width <= w && (await op.locator(".party-peek button", { hasText: "CHANGE PLAYERS" }).count()) === 1 && !peekFloors.taps.length && !peekFloors.text.length, { pb, peekFloors });
+		await peekBtn.tap();
 		await op.waitForFunction(() => !window.__party.game && document.querySelector(".party-quick"), null, { timeout: TIMEOUT }).catch(() => {});
 		const lobby = await op.evaluate(() => ({
 			game: window.__party.game,
@@ -1452,11 +1454,10 @@ console.log("\nportal: My Games · All Games");
 			addBot: [...document.querySelectorAll(".party-quick button")].some((b) => b.textContent === "ADD BOT"),
 			says: document.querySelector(".party-quick .party-bots-count")?.textContent,
 			members: window.__party.room.getMembers().length,
-			bar: !document.querySelector(".friends-bar").hidden,
-			reserved: "friendsBar" in document.body.dataset,
+			peek: !!document.querySelector(".party-peek"),
 		}));
 		check(`${at}: PLAY WITH FRIENDS ends the bots game and opens the lobby for it (its name, INVITE A FRIEND, START GAME)`, lobby.game === null && lobby.title === "NEON FISSION" && lobby.invite && lobby.start, lobby);
-		check(`${at}: …the bar gone with the game, and its room given back`, !lobby.bar && !lobby.reserved, lobby);
+		check(`${at}: …the party screen is the lobby now, not pulled up over a game`, !lobby.peek, lobby);
 		check(`${at}: …the lobby keeps the table that was playing (its bots), and says who is at it`, lobby.addBot && lobby.members >= 2 && lobby.says === `${lobby.members} players: You and ${lobby.members - 1} bot${lobby.members === 2 ? "" : "s"}`, lobby);
 		// The seats from the lobby: ADD BOT seats one more, and the table is remembered for the game.
 		await op.locator(".party-quick button", { hasText: "ADD BOT" }).tap();
@@ -1478,13 +1479,16 @@ console.log("\nportal: My Games · All Games");
 		await op.locator("button", { hasText: "INVITE A FRIEND" }).first().waitFor({ timeout: TIMEOUT }).catch(() => {});
 		const dg = await op.evaluate(() => ({ game: window.__party?.game, choice: !!document.querySelector(".party-choice"), invite: [...document.querySelectorAll("#party button")].some((b) => b.textContent === "INVITE A FRIEND") }));
 		check(`${at}: a people-only game (Draw & Guess) opens straight on its lobby with friends, no choice first`, dg.game === null && !dg.choice && dg.invite, dg);
-		// A one-device game starts at once, with no friends bar (one phone, passed round).
+		// A one-device game starts at once, with no PLAY WITH FRIENDS (one phone, passed round).
 		await op.goto(site.url(ALL));
 		await op.waitForSelector(".game-card:visible");
 		await op.locator('.game-card[data-game="undercover"] h3').first().tap();
 		await op.waitForFunction(() => window.__party?.game === "undercover", null, { timeout: TIMEOUT }).catch(() => {});
-		const uc = await op.evaluate(() => ({ game: window.__party?.game, bar: !document.querySelector(".friends-bar")?.hidden }));
-		check(`${at}: a one-device game (Undercover) starts at once, and offers no PLAY WITH FRIENDS`, uc.game === "undercover" && !uc.bar, uc);
+		const uc = { game: await op.evaluate(() => window.__party?.game) };
+		await op.locator(".party-pill").tap().catch(() => {});
+		await op.locator(".party-peek").waitFor({ timeout: TIMEOUT }).catch(() => {});
+		uc.friends = await op.locator(".party-peek button", { hasText: "PLAY WITH FRIENDS" }).count();
+		check(`${at}: a one-device game (Undercover) starts at once, and offers no PLAY WITH FRIENDS`, uc.game === "undercover" && uc.friends === 0, uc);
 		await oc.close();
 	}
 	{
