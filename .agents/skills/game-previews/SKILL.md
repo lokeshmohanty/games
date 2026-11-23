@@ -40,11 +40,11 @@ A new game: set `"preview": "../../assets/<game>.webp"` and run `just catalog`.
 Games: `scripts/preview.mjs --list` is the authority (2026-11-22: undercover,
 liars-dice, neon-bid, battleship, light-cycles, bubble-rush, connect4,
 draw-guess, neon-fission, tic-tac-toe-js, five-in-a-row, snakes-and-ladders,
-neon-survival-mp). This repo's own: games/ and `tic-tac-toe-js`, the Tic Tac
+neon-survival-mp, ludo). This repo's own: games/ and `tic-tac-toe-js`, the Tic Tac
 Toe listed under Strategy (its game.json names `../../../../assets/
 tic-tac-toe-js.webp`). The rest live in web-games, whose own preview.gif is
 what the portal shows: record those with `--gif`. Five in a Row, Snakes &
-Ladders and Tic Tac Toe were recorded 2026-11-22; whether the older community
+Ladders and Tic Tac Toe were recorded 2026-11-22, Ludo 2026-11-23; whether the older community
 scenarios (battleship, liars-dice, light-cycles, draw-guess) still run
 against the community ids is unverified (VERIFY).
 
