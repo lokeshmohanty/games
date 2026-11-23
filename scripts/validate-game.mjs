@@ -26,9 +26,14 @@
 // waits for the server to answer.
 //
 // Browser: the game is served with the dev kit and mounted in the real party
-// at 390x844 with every other seat a bot (or alone, for a local game); it must
-// come up in its sandboxed frame, run 5 s under the frame's real CSP with no
-// violation, no page error and no console error, and not scroll sideways.
+// at 390x844, started as a tap on its card starts it (lib/portal.js tapLink,
+// `?mode=bots&start=1`): with every other seat a bot, or alone for a local
+// game, or with the friends' controls for a shared one. It must come up in
+// its sandboxed frame, run 5 s under the frame's real CSP with no violation,
+// no page error and no console error, and not scroll sideways. Only a game
+// for people alone ("bots": false, not local or shared: Draw & Guess) is not
+// played: it says "needs people" and is skipped. scripts/test-devkit.mjs
+// holds this to it.
 
 import { spawn } from "node:child_process";
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
@@ -214,24 +219,28 @@ async function checkBrowser(games) {
 		});
 		try {
 			const q = new URLSearchParams({ dev: `http://127.0.0.1:${p}/`, game: `dev/${m.id}`, fresh: "1", rs: "http://127.0.0.1:1" });
-			await page.goto(`${site.base}/?${q}`);
+			// Bots are allowed unless game.json says "bots": false, as the
+			// catalog reads it (scripts/catalog-lib.mjs; this once took a
+			// missing "bots" for none); a "shared" game never has them.
+			const bots = m.bots !== false && m.kind !== "shared";
 			if (m.kind === "local") {
 				// A one-device game starts by itself (lib/party.js autoStart).
-			} else if (m.kind === "shared") {
+			} else if (bots) {
+				// As a tap on its card starts it (lib/portal.js tapLink): against
+				// bots at once, at the smallest table on a fresh browser. Not
+				// through SINGLE PLAYER on the party screen: since the quick-start
+				// merge (2026-11-22) that is drawn a moment after the page loads,
+				// and looking for it at once found nothing for every game.
+				q.set("mode", "bots");
+				q.set("start", "1");
+			} else if (m.kind !== "shared") {
+				check("needs people: nothing to start alone (skipped the play check)", true);
+				continue;
+			}
+			await page.goto(`${site.base}/?${q}`);
+			if (m.kind === "shared") {
 				// One screen, no bots: alone with the friends' controls.
 				await page.locator("button", { hasText: "MULTI-PLAYER" }).first().click({ timeout: TIMEOUT });
-				await page.locator("button", { hasText: "START GAME" }).first().click({ timeout: TIMEOUT });
-			} else {
-				const solo = page.locator("button", { hasText: /SINGLE PLAYER/ }).first();
-				if (!m.bots || !(await solo.count())) {
-					check("needs people: nothing to start alone (skipped the play check)", true);
-					continue;
-				}
-				await solo.click({ timeout: TIMEOUT });
-				// A game whose seats leave a choice opens on the quick table,
-				// already at its minimum; fixed seats show ADD BOT.
-				const add = page.locator("button", { hasText: "ADD BOT" }).first();
-				for (let i = 1; i < m.seats.min && (await add.count()) && (await add.isEnabled().catch(() => false)); i++) await add.click();
 				await page.locator("button", { hasText: "START GAME" }).first().click({ timeout: TIMEOUT });
 			}
 			const frame = await gameFrame(page, TIMEOUT).catch(() => null);

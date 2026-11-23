@@ -16,6 +16,9 @@
 //   2. A ticking fixture (scripts/fixtures/tick-game), host + guest + bot:
 //      a guest's inputs and the bot's reach the host's tick, views arrive at
 //      viewRate, and the result ends it.
+//   2b. A turn of two moves (scripts/fixtures/double-turn): two bots play it
+//      to the end, each move after its pause, the second of a turn too; a
+//      bot that answers null is asked once, not in a loop.
 //   3. The end card on a phone (390x844): the ranking (places, seat colours,
 //      names, scores, you marked) on every phone; DETAILS closed at first,
 //      remembered once opened, and holding the series (match, time, wins
@@ -513,6 +516,66 @@ try {
 	await B.collect();
 	await B.context.close();
 	tick.stop();
+
+	// ---------------------------------------------------------------- 2b
+	console.log("\nmanaged: a bot that keeps the turn after its own move (scripts/fixtures/double-turn)");
+	// Every turn is two moves (Ludo's extra roll on a 6). Before 2026-11-23 a
+	// bot's pending move was cleared only after the refresh its own move set
+	// off had already tried to schedule the next one, so a bot on turn twice
+	// running was never asked again and the game stalled.
+	{
+		const fx2 = await devServer("scripts/fixtures", 5200, "double-turn");
+		const T = await party(fx2.base, 1);
+		const [tp] = T.pages;
+		for (const n of [1, 2]) {
+			await tp.locator("button", { hasText: "ADD BOT" }).first().click({ timeout: TIMEOUT });
+			await tp.locator(".party-member").nth(n).waitFor({ timeout: TIMEOUT });
+		}
+		// Only the bots play; this phone (the host) watches.
+		await tp.evaluate(() => {
+			const r = window.__party.room;
+			for (const m of r.getMembers()) r.setTeam(m.id, NeonArcade.isBotId(m.id) ? "A" : "spectator");
+		});
+		await tp.locator(".party-game", { hasText: "DOUBLE TURN CHECK" }).first().click({ timeout: TIMEOUT });
+		const tf = await gameFrame(tp, TIMEOUT);
+		const ended = await tp.locator(".managed-over h2").textContent({ timeout: 30_000 }).catch(() => null);
+		const live = await tf.evaluate(() => window.rules()).catch(() => null);
+		const [b1, b2] = live?.order ?? [];
+		const by = (live?.moves ?? []).map((m) => m.by).join(",");
+		check("two bots, two moves a turn each, play to the end", !!ended && by === [b1, b1, b2, b2, b1, b1].join(","), { ended, moves: live?.moves?.map((m) => m.by), score: live?.score });
+		const gaps = (live?.moves ?? []).slice(1).map((m, i) => m.at - live.moves[i].at);
+		// lib/sdk-managed.js BOT_MS: 600–1100 ms, before the second of a turn's moves too.
+		check("…each move after a human-feeling pause, the second of a turn's too", gaps.length === 5 && gaps.every((g) => g >= 550), gaps);
+		check("…and each bot asked once a move", live?.asked?.[b1] === 4 && live?.asked?.[b2] === 2, live?.asked);
+		await T.collect();
+		await T.context.close();
+
+		// A game that keeps naming a bot that has no move (bot() → null) is
+		// not asked in a loop: a null ends the bot's run of moves.
+		const N = await party(fx2.base, 1);
+		const [np] = N.pages;
+		await np.locator("button", { hasText: "ADD BOT" }).first().click({ timeout: TIMEOUT });
+		await np.locator(".party-member").nth(1).waitFor({ timeout: TIMEOUT });
+		await np.evaluate(() => {
+			const r = window.__party.room;
+			for (const m of r.getMembers()) r.setTeam(m.id, "A");
+		});
+		await np.locator(".party-game", { hasText: "DOUBLE TURN CHECK" }).first().click({ timeout: TIMEOUT });
+		const nf = await gameFrame(np, TIMEOUT);
+		const me = await np.evaluate(() => window.__party.room.selfId);
+		// The person's turn (first, or after the bot's two moves), then `stall`.
+		const mine = await viewUntil(nf, (v) => v.at === me);
+		await nf.evaluate(() => window.arcade.act({ t: "stall" }));
+		await viewUntil(nf, (v) => v.at !== me, 5000);
+		await np.waitForTimeout(4000);
+		const stalled = await nf.evaluate(() => window.rules()).catch(() => null);
+		const bot = stalled?.order.find((id) => id !== me);
+		const moved = (stalled?.moves ?? []).filter((m) => m.by === bot).length;
+		check("a bot that answers null is asked once, not in a loop", !!mine && stalled?.stalled === true && stalled.asked[bot] - moved === 1, { asked: stalled?.asked, moved });
+		await N.collect();
+		await N.context.close();
+		fx2.stop();
+	}
 
 	// ---------------------------------------------------------------- 3
 	console.log("\nmanaged: Connect 4's and Neon Survival's end cards, eight players, every theme");
