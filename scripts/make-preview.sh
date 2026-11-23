@@ -3,7 +3,7 @@
 #
 #   scripts/make-preview.sh connect4
 #   scripts/make-preview.sh all --width 600
-#   scripts/make-preview.sh ludo --gif ../web-games/ludo/preview.gif
+#   scripts/make-preview.sh five-in-a-row --gif ../web-games/five-in-a-row/preview.gif
 #
 # Drives the game in a real browser (scripts/preview.mjs), converts the
 # recording to a gif in a temporary folder, and writes the portal's files from
@@ -39,6 +39,10 @@ profile_for() {
     neon-bid) echo "480 12 low" ;;
     # Bubbles rising and wobbling the whole clip, in an upright 420x760 frame.
     bubble-rush) echo "300 10 low" ;;
+    # An upright 460x760 frame, like Bubble Rush's; still pictures between moves.
+    snakes-and-ladders) echo "360 12 medium" ;;
+    # A wide light board with fine lines: 2 MB at the default profile.
+    five-in-a-row) echo "520 10 low" ;;
     # An upright 460x760 frame, still between moves.
     ludo) echo "360 12 medium" ;;
     *) echo "600 12 medium" ;;

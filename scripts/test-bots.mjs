@@ -2313,13 +2313,23 @@ try {
 		await guest.ctx.close();
 	}
 
-	// --------------------------------------------------------------- ludo
+	// ------------------------------------------------------ five in a row
 	//
-	// Bots on both boards: each bot's move is its whole turn (a 6 rolls again
-	// inside it). The setup only the first time (Lokesh, 2026-11-23): a fresh
-	// phone's card tap goes straight in, PLAY AGAIN too; a different table
-	// brings the setup; the same table again goes straight in on its board
-	// and teams. Until the registry's pin has Ludo these skip, saying so.
+	// Two to four seats, a board with no edges: the bots must place only
+	// where the rules allow, and a game with three of them must still end.
+
+	/** Open a community game's SINGLE PLAYER with `n` at the quick table, START GAME, and wait for its first view. */
+	async function openSolo(p, id, n) {
+		await p.goto(url(`?game=lokeshmohanty%2F${id}&fresh=1`));
+		await p.locator("button", { hasText: "SINGLE PLAYER" }).first().click();
+		await setPlayers(p, n);
+		await p.locator(".quick-table button", { hasText: "START GAME" }).first().click();
+		await p.waitForFunction(() => window.__game?.handle, null, { timeout: TIMEOUT });
+		const F = await gameScope(p, TIMEOUT);
+		await F.waitForFunction((n) => window.__game.handle.debug()?.seats?.length === n, n, { timeout: TIMEOUT });
+		await readyToClick(p);
+		return F;
+	}
 
 	/** A block for a game the registry's pin may not have yet (it skips, saying so, until the pin moves). */
 	const pinned = (id) => {
@@ -2329,6 +2339,213 @@ try {
 		console.log(`  skip lokeshmohanty/${id} is not in community/catalog.js (the registry's pin has not moved to it yet)`);
 		return false;
 	};
+	/** A finger's tap on Five in a Row cell (x, y), as pointer events at its spot. */
+	const tapBoard = (F, x, y, id = 3) =>
+		F.evaluate(([x, y, id]) => {
+			const d = window.__game.handle.debug();
+			const c = document.querySelector(".fr-board canvas");
+			const r = c.getBoundingClientRect();
+			const at = { clientX: r.left + d.box.w / 2 + (x - d.cam.x) * d.cam.z, clientY: r.top + d.box.h / 2 + (y - d.cam.y) * d.cam.z, pointerId: id, pointerType: "touch", isPrimary: true, bubbles: true };
+			c.dispatchEvent(new PointerEvent("pointerdown", at));
+			c.dispatchEvent(new PointerEvent("pointerup", at));
+		}, [x, y, id]);
+	/** The legal cell nearest the middle of the view: a careless player's move. */
+	const careless = (d) => d.legal.reduce((a, b) => (Math.hypot(b[0] - d.cam.x, b[1] - d.cam.y) < Math.hypot(a[0] - d.cam.x, a[1] - d.cam.y) ? b : a));
+
+	console.log("\nbots: five in a row, one person and three bots, to the end and a rematch");
+	if (pinned("five-in-a-row")) {
+		G = await openSolo(page, "five-in-a-row", 4);
+		let v = await debug(page);
+		const self = await selfOf(page);
+		check("four seats: this phone and three bots, the board empty", v.seats.length === 4 && v.seats[v.you] === self && v.seats.filter((id) => id.startsWith("bot_")).length === 3 && v.marks.length === 0, JSON.stringify({ seats: v.seats, you: v.you }));
+		await phoneSizes(page, G, "five in a row, the board");
+		const opener = v.turn;
+
+		// The board is the player's while they move it (review, 2026-11-23):
+		// a finger still down after a drag keeps the camera where it put it,
+		// even as the bots' marks land off screen.
+		await G.waitForFunction(() => window.__game.handle.debug().myTurn, null, { timeout: TIMEOUT });
+		v = await debug(page);
+		await tapBoard(G, ...careless(v));
+		const held = await G.evaluate(async () => {
+			const c = document.querySelector(".fr-board canvas");
+			const r = c.getBoundingClientRect();
+			const ev = (type, x, y) => c.dispatchEvent(new PointerEvent(type, { clientX: r.left + x, clientY: r.top + y, pointerId: 6, pointerType: "touch", isPrimary: true, bubbles: true }));
+			const n0 = window.__game.handle.debug().marks.length;
+			ev("pointerdown", 300, 300);
+			let x = 300;
+			for (let i = 0; i < 40; i++) {
+				x -= 6;
+				ev("pointermove", x, 300);
+				await new Promise(requestAnimationFrame);
+			}
+			const before = window.__game.handle.debug().cam;
+			const t0 = performance.now();
+			while (window.__game.handle.debug().marks.length < n0 + 2 && performance.now() - t0 < 8000) await new Promise(requestAnimationFrame);
+			await new Promise((r) => setTimeout(r, 400));
+			const after = window.__game.handle.debug().cam;
+			ev("pointerup", x, 300);
+			return { before, after, moved: window.__game.handle.debug().marks.length - n0 };
+		});
+		check("a finger held after a drag keeps the board where it put it while the bots play", held.moved >= 2 && held.before.x === held.after.x && held.before.y === held.after.y, JSON.stringify(held));
+
+		// The keyboard: focus shows the cursor and a ring on the board; Enter
+		// with no cursor shows it and places nothing.
+		await G.locator(".fr-board canvas").focus();
+		const focused = await G.evaluate(() => ({ d: window.__game.handle.debug(), ring: getComputedStyle(document.querySelector(".fr-board canvas")).outlineStyle }));
+		check("keyboard focus on the board: a focus ring and the cursor shown", focused.d.focused && focused.ring !== "none" && Array.isArray(focused.d.cursor), JSON.stringify({ ring: focused.ring, cursor: focused.d.cursor }));
+		const enter = await G.evaluate(() => {
+			const c = document.querySelector(".fr-board canvas");
+			c.blur();
+			c.focus({ focusVisible: false });
+			const before = window.__game.handle.debug();
+			if (before.cursor) return { skipped: true };
+			c.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+			const after = window.__game.handle.debug();
+			return { cursor: after.cursor, placed: after.marks.length - before.marks.length, said: document.querySelector(".fr-hint").textContent };
+		});
+		check("Enter with no cursor shows where it is and places nothing", enter.skipped || (Array.isArray(enter.cursor) && enter.placed === 0), JSON.stringify(enter));
+		await G.evaluate(() => document.querySelector(".fr-board canvas").blur());
+
+		for (const end = Date.now() + 240_000; v.winner === null && Date.now() < end; v = await debug(page)) {
+			if (v.myTurn) {
+				const n = v.marks.length;
+				await tapBoard(G, ...careless(v));
+				await G.waitForFunction((n) => window.__game.handle.debug().marks.length > n || window.__game.handle.debug().winner !== null, n, { timeout: TIMEOUT });
+			} else await sleep(150);
+		}
+		check("the game ends", v.winner !== null, `${v.marks.length} marks`);
+		const legalAll = await G.evaluate(() => {
+			const R = window.fiveInARowRules;
+			const d = window.__game.handle.debug();
+			const board = new Map();
+			return d.marks.every(([x, y, p]) => {
+				const ok = R.legal(board, x, y);
+				board.set(R.key(x, y), p);
+				return ok;
+			});
+		});
+		check("every mark went where the rules allow: the centre first, each after it next to one", legalAll && v.marks[0][0] === 0 && v.marks[0][1] === 0);
+		check("the bots placed their own marks", new Set(v.marks.map((m) => m[2])).size >= 3, JSON.stringify([...new Set(v.marks.map((m) => m[2]))]));
+		if (v.winner >= 0) check("the winner has five or more in a line", v.line?.length >= 5, JSON.stringify(v.line));
+		await resultReached(page, "lokeshmohanty/five-in-a-row", v.winner === v.you ? "won" : v.winner < 0 ? "drawn" : "lost");
+		await page.locator(".managed-over button", { hasText: "PLAY AGAIN" }).first().click({ timeout: TIMEOUT });
+		await G.waitForFunction(() => window.__game.handle.debug().match === 2, null, { timeout: TIMEOUT });
+		v = await debug(page);
+		check("PLAY AGAIN: the next seat opens (who starts goes round the table)", v.turn === (opener + 1) % 4 && v.marks.length <= 1, JSON.stringify({ opener, now: v.turn, marks: v.marks.length }));
+	}
+
+	console.log("\nbots: five in a row in a glowing theme: 500 marks zoomed out cost a blur per seat, not per mark");
+	if (pinned("five-in-a-row")) {
+		const ctx = await newContext();
+		await ctx.addInitScript(() => {
+			try {
+				localStorage.setItem("neon.theme", JSON.stringify({ theme: "neon", mode: "dark" }));
+			} catch {}
+		});
+		const p = await ctx.newPage();
+		const F = await openSolo(p, "five-in-a-row", 2);
+		const cost = await F.evaluate(() => {
+			// The board as it might be late in a long game: 499 marks, every seat, zoomed right out.
+			const list = [];
+			for (let y = -12; y <= 12; y++) for (let x = -10; x <= 10; x++) if (list.length < 499) list.push([x, y, (((x * 3 + y * 7) % 4) + 4) % 4]);
+			marks = R.boardOf(list);
+			legalNow = R.legalCells(marks);
+			cam = { x: 0, y: 0, z: 14 };
+			const runs = [];
+			for (let i = 0; i < 6; i++) {
+				const t0 = performance.now();
+				frame(performance.now());
+				runs.push({ ms: performance.now() - t0, blurs: window.__game.handle.debug().blurs });
+			}
+			return { glowing: glows(), runs };
+		});
+		const steady = cost.runs.slice(1);
+		check(`the theme glows; after the first frame no mark is blurred again (${cost.runs.map((r) => r.blurs).join(", ")} blurred draws; ${steady.map((r) => r.ms.toFixed(1)).join(", ")} ms)`, cost.glowing && cost.runs[0].blurs <= 4 && steady.every((r) => r.blurs === 0), JSON.stringify(cost));
+		await ctx.close();
+	}
+
+	console.log("\nbots: five in a row frames a win even just after the board was zoomed");
+	if (pinned("five-in-a-row")) {
+		// The views are handed to the page's own handler (onView), so the win
+		// lands at a chosen moment: right after a tap on −, when following a
+		// mark is held off (re-review, 2026-11-23: the win was never framed
+		// then, nor afterwards).
+		const ctx = await newContext();
+		const p = await ctx.newPage();
+		const F = await openSolo(p, "five-in-a-row", 2);
+		// On our turn nothing else arrives: the bot waits for us.
+		await F.waitForFunction(() => window.__game.handle.debug().myTurn, null, { timeout: TIMEOUT });
+		const framed = await F.evaluate(async () => {
+			const base = window.__game.handle.debug();
+			const mk = (marks, winner, line, last, match) => ({ match, seats: base.seats, out: base.out, turn: 1, you: base.you, marks, last, winner, line, moves: marks.length });
+			const marks = [];
+			for (let x = 0; x <= 14; x++) marks.push([x, 0, x < 10 ? x % 2 : 1]);
+			const match = base.match + 1;
+			onView({ state: mk(marks.slice(0, 14), null, null, [13, 0], match) });
+			await new Promise((r) => setTimeout(r, 400));
+			cam = { x: 0, y: 0, z: 44 };
+			glide = null;
+			document.querySelector(".fr-tools button").click(); // −: the camera is the player's for 2 s
+			const line = [[10, 0], [11, 0], [12, 0], [13, 0], [14, 0]];
+			onView({ state: mk(marks, 1, line, [14, 0], match) });
+			await new Promise((r) => setTimeout(r, 500));
+			const d = window.__game.handle.debug();
+			const sx = (x) => d.box.w / 2 + (x - d.cam.x) * d.cam.z;
+			return { left: sx(10), right: sx(14), w: d.box.w, z: d.cam.z };
+		});
+		check("a win right after a tap on −: the winning line is framed on the board", framed.left >= 0 && framed.right <= framed.w, JSON.stringify(framed));
+		await ctx.close();
+	}
+
+	// -------------------------------------------------- snakes & ladders
+
+	console.log("\nbots: snakes & ladders, one person and two bots, playing on for places");
+	if (pinned("snakes-and-ladders")) {
+		G = await openSolo(page, "snakes-and-ladders", 3);
+		let v = await debug(page);
+		const fair = await G.evaluate(() => window.snakesAndLaddersRules.unfair(window.__game.handle.debug().board));
+		check("three seats, two of them bots, everyone off the board, on a fair board", v.seats.length === 3 && v.seats.filter((id) => id.startsWith("bot_")).length === 2 && v.pos.join() === "0,0,0" && fair === null, JSON.stringify({ seats: v.seats, pos: v.pos, fair }));
+		// Each seat's token and chip carry their own mark, not only a colour (review, 2026-11-23).
+		const glyphs = await G.evaluate(() => [...document.querySelectorAll(".sl-player svg")].map((s) => s.dataset.glyph));
+		check(`each seat's chip shows its token's own mark (${glyphs.join(", ")})`, glyphs.length === 3 && new Set(glyphs).size === 3 && glyphs.every(Boolean), JSON.stringify(glyphs));
+		await phoneSizes(page, G, "snakes & ladders, the board and the die");
+		// A roll lost on its way must not leave the die dead: it comes back after 4 s.
+		await G.waitForFunction(() => window.__game.handle.debug().myTurn, null, { timeout: TIMEOUT });
+		const lost = await G.evaluate(async () => {
+			const act = arcade.act;
+			arcade.act = () => {}; // the roll never reaches the host
+			document.querySelector(".sl-die").click();
+			const during = { tumbling: window.__game.handle.debug().tumbling, disabled: document.querySelector(".sl-die").disabled };
+			await new Promise((r) => setTimeout(r, 4600));
+			arcade.act = act;
+			return { during, after: { tumbling: window.__game.handle.debug().tumbling, disabled: document.querySelector(".sl-die").disabled, said: document.querySelector(".sl-said").textContent } };
+		});
+		check("a roll that never arrives: the die tumbles, then after 4 s can be tapped again", lost.during.tumbling && lost.during.disabled && !lost.after.tumbling && !lost.after.disabled, JSON.stringify(lost));
+		let botRolled = false;
+		let playedOn = false;
+		for (const end = Date.now() + 480_000; !v.over && Date.now() < end; v = await debug(page)) {
+			if (v.last && v.last.seat !== v.you) botRolled = true;
+			if (v.home.length === 1 && v.last && !v.home.includes(v.last.seat)) playedOn = true;
+			if (v.myTurn && !v.tumbling) await G.evaluate(() => document.querySelector(".sl-die:not(:disabled)")?.click());
+			await sleep(250);
+		}
+		check("the bots roll their own turns", botRolled);
+		check("someone home on 100 and the others played on, until second place too", v.over && playedOn && v.home.length === 2 && v.home.every((i) => v.pos[i] === 100), JSON.stringify({ home: v.home, pos: v.pos, rolls: v.rolls }));
+		await G.waitForFunction(() => !window.__game.handle.debug().busy, null, { timeout: TIMEOUT });
+		const drawn = await debug(page);
+		check("…and the board has caught up: every token drawn where it is", drawn.shown.join() === drawn.pos.join(), JSON.stringify({ shown: drawn.shown, pos: drawn.pos }));
+		await resultReached(page, "lokeshmohanty/snakes-and-ladders", v.winner === v.you);
+	}
+
+	// --------------------------------------------------------------- ludo
+	//
+	// Bots on both boards: each bot's move is its whole turn (a 6 rolls again
+	// inside it). The setup only the first time (Lokesh, 2026-11-23): a fresh
+	// phone's card tap goes straight in, PLAY AGAIN too; a different table
+	// brings the setup; the same table again goes straight in on its board
+	// and teams. Until the registry's pin has Ludo these skip, saying so.
+
 	/** Ludo with bots, `n` at the quick table, through to its first view. */
 	async function openLudo(p, n) {
 		await p.goto(url("?game=lokeshmohanty%2Fludo&fresh=1&mode=bots"));

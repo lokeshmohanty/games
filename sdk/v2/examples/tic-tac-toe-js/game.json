@@ -25,5 +25,6 @@
   "state": "managed",
   "categories": [
     "strategy"
-  ]
+  ],
+  "preview": "../../../../assets/tic-tac-toe-js.webp"
 }

@@ -16,19 +16,17 @@ separate `TODO.md`.*
 
 ## Now (2026-11-18)
 
-**Branch `ludo` (2026-11-23, both repos, local only, not merged):** Ludo in
+**Branch `ludo` (2026-11-23, both repos, pushed, not merged):** Ludo in
 web-games (`ludo`, 4- and 6-player boards, free-for-all or teams), and here
 its test-taps, test-bots and preview blocks, `make-preview.sh --gif`,
-`communityHas` and NEON_PIN_OVERRIDE building a branch's unlisted folders
-(the same as `new-games`, which it will conflict with trivially), and
-`EXTRA_KINDS` for its `teams` results. Until the pin has Ludo its blocks skip,
+and `EXTRA_KINDS` for its `teams` results. Until the pin has Ludo its blocks skip,
 saying so. To land: merge web-games, move `registry/lokeshmohanty/web-games.json`
 (commit and `ludo`), run `just games-table`. Found on the way: lib/sdk-managed.js
 `botMove` never asks again a bot still on turn after its own move (its entry
 is deleted only after `refresh` tried to reschedule), so Ludo's bot plays its
 whole turn in one move; and validate-game's browser check skips the play
 check ("needs people") for every game since quick-start (its SINGLE PLAYER
-lookup). Neither fixed here. Review fixes (2026-11-23): test-taps holds
+lookup). Both fixed on main since (platform-fixes). Review fixes (2026-11-23): test-taps holds
 players sharing a star (a crafted turn, both boards) to 7px tokens, none
 over another, counts clear of them, see-through pushed rings; Lokesh's
 calls — a free-for-all ends once only bots race, and the setup only the
@@ -40,10 +38,20 @@ Re-review (2026-11-23): a crowded safe square's tokens stand clear of every
 other token and the yards (test-taps checks every drawn token, six on a
 star too); "Next game: … · CHANGE" at the end (Lokesh) — on the game's end
 screen, reached by SEE THE BOARD, since the shell's card takes no game
-content. main merged in (its platform-fixes answer both findings above);
-`registryLists` copied from PR #15 (merging that unmerged branch was
-refused), so its merge meets identical text in serve.mjs; preview.mjs will
-still conflict with it (both add helpers before the scenarios).
+content. main merged in, with platform-fixes (both findings above) and
+PR #15 (Five in a Row, Snakes & Ladders, `registryLists`).
+
+**Branch `new-games` (2026-11-22, both repos, pushed, not merged):** Five in
+a Row and Snakes & Ladders in web-games (`new-games`), and here test-taps,
+test-bots and preview scenarios for them, Tic Tac Toe's portal preview
+(`assets/tic-tac-toe-js.*`), `make-preview.sh --gif` for web-games cards,
+and NEON_PIN_OVERRIDE building a branch's unlisted game folders. To land:
+merge web-games, then move `registry/lokeshmohanty/web-games.json`
+(commit and both games) in this branch's PR and run `just games-table`.
+Until the pin has them their test-taps and test-bots blocks skip, saying
+so (`communityHas`), so main stays green. Snakes & Ladders plays on for
+places (Lokesh, 2026-11-23). Not pushed yet (GitHub unreachable
+2026-11-23). Ludo is still to build (brief from Lokesh, 2026-11-21).
 
 **Branch `quick-start` (2026-11-22, pushed, not merged):** one tap on a game
 starts it against bots, PLAY WITH FRIENDS (end card and PARTY, "Bottom,

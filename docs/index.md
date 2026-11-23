@@ -38,7 +38,7 @@ questions about this project from this folder alone.
 | Test the room hub (codes, claims, TTLs) | `node scripts/test-hub.mjs` — pure hub logic against the real rules, no browser, no Cloudflare account needed |
 | Test the join-by-code path | `node scripts/test-room.mjs` — the real client (lib/room-join.js, net.js, the party and lobby screens) against the in-page mock room server; WebRTC handshake itself is real |
 | Test across real (simulated) networks | `just test-nat` — NAT routers built from network namespaces (cone, full cone, symmetric), netem loss/latency, a network switch mid-party, a blocked room server; real Chrome per device and the real worker under `wrangler dev`. Needs `nix shell`, so not in `just test`. See [network-testing.md](network-testing.md) |
-| Regenerate a portal preview | `scripts/make-preview.sh <game>` (or `all`) — plays the game headless and writes `assets/<game>.webp` (poster), `.webm` and `.mp4`; no gif is kept |
+| Regenerate a portal preview | `scripts/make-preview.sh <game>` (or `all`) — plays the game headless and writes `assets/<game>.webp` (poster), `.webm` and `.mp4`; no gif is kept. A web-games game: `--gif ../web-games/<game>/preview.gif` (its card is its own gif) |
 | Serve it locally | `just run` — http://127.0.0.1:8000. `just serve-lan` binds every interface for phone testing, but a plain LAN http:// address is not a secure context, so SCAN REPLY will not work there (use PASTE) |
 | Run everything | `just test`, or `just --list` for the rest |
 | Check the offline precache | `just build` — `scripts/assemble.mjs` derives the precache list from what it built and copied, and fails if a listed file is missing; `just test-pwa` then plays every game offline |
@@ -219,6 +219,12 @@ fixed 2026-11-19, branch `phone-shell`)**, asserted with computed sizes
   caption were 9.9–11.5px; Battleship's end put NEW GAME off a 354x696
   screen. Its ship rack and buttons keep one row each from 354px wide, so
   placement squares stay 39.6px at 354x696 and 40.4px at 360x640.
+  Five in a Row and Snakes & Ladders joined them (web-games branch
+  `new-games`, 2026-11-22; test-taps plays your turn, a game zoomed in and
+  out with a ghost waiting, your roll, a move playing and each end). A
+  block for a game the registry's pin does not have yet skips, saying so
+  (`scripts/serve.mjs` `communityHas`), so main stays green between the
+  games repo's merge and the pin's.
   `just test-taps` (CI shard 5) plays every phase of each and holds the
   whole frame to `phoneSizes` (390x844 and 354x696, in `scripts/serve.mjs`)
   with `phoneFloors`' `hit: true`: box and hit area, every enabled control
