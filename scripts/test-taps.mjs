@@ -9,7 +9,7 @@
  * A real-device pass on Lokesh's Android phone (2026-11-18: 354x696 CSS px at
  * DPR 3.5) found tap targets under 44px and text under 12px inside games —
  * which no suite caught, because each checked the few controls it knew of.
- * This plays each of lokeshmohanty/web-games' six games (registry pin, or
+ * This plays each of lokeshmohanty/web-games' games (registry pin, or
  * NEON_PIN_OVERRIDE) through its setup, play and end, and at each step holds
  * the whole game frame to scripts/serve.mjs `phoneSizes` — at 390x844 and at
  * that phone's 354x696 — with `phoneFloors`' `hit: true`: every visible,
@@ -25,7 +25,7 @@
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { homedir } from "node:os";
-import { gameScope, phoneFloors, phoneSizes, readyToClick, serve, settled } from "./serve.mjs";
+import { communityHas, gameScope, phoneFloors, phoneSizes, readyToClick, serve, settled } from "./serve.mjs";
 import { loadPlaywright } from "./playwright.mjs";
 
 const TIMEOUT = 30_000;
@@ -68,6 +68,7 @@ const EXEMPT = {
 	"light-cycles": [],
 	"bubble-rush": [],
 	"draw-guess": [],
+	ludo: [],
 };
 
 const chrome = [process.env.CHROME, "/run/current-system/sw/bin/google-chrome-stable", "/run/current-system/sw/bin/chromium", join(homedir(), ".nix-profile", "bin", "google-chrome-stable"), "/usr/bin/google-chrome"]
@@ -334,6 +335,59 @@ const GAMES = {
 		await audit(page, G, "bubble-rush", "the round over", { min: 0, canvas: true });
 	},
 
+	/**
+	 * Setting up, your roll, a move playing and a choice of tokens (its rings)
+	 * on the 4-player board, played to the end; then PLAY AGAIN onto the
+	 * 6-player board: setting up, your roll and a choice there.
+	 */
+	async ludo(page) {
+		const G = await solo(page, "ludo", 2);
+		const fit = [".lu-status, .lu-players, .lu-board, .lu-bar", 4];
+		/** Roll and pick (the first ring) as a thumb would, until `done(debug)`. */
+		const drive = async (done, ms) => {
+			const end = Date.now() + ms;
+			for (let d = await debug(G); !done(d) && Date.now() < end; d = await debug(G)) {
+				if (d.myTurn && d.stage === "roll" && !d.tumbling && !d.busy) await G.evaluate(() => document.querySelector(".lu-die:not(:disabled)")?.click());
+				else if (d.targets.length && !d.picking) await G.evaluate(() => document.querySelector(".lu-pick")?.click());
+				await sleep(150);
+			}
+			return debug(G);
+		};
+		const choice = (d) => d.myTurn && d.stage === "move" && !d.busy && d.targets.length >= 2;
+		await until(G, () => window.__game.handle.debug().phase === "setup");
+		// Two players: both boards, free-for-all (teams need every seat), START.
+		await audit(page, G, "ludo", "setting up", { min: 4 });
+		await G.locator(".lu-start").click();
+		await until(G, () => window.__game.handle.debug().phase === "play");
+		await drive((d) => d.myTurn && d.stage === "roll" && !d.busy, 60_000);
+		await audit(page, G, "ludo", "your roll, 4-player board", { min: 1, canvas: true, fit });
+		await G.evaluate(() => document.querySelector(".lu-die").click());
+		await until(G, () => window.__game.handle.debug().busy);
+		await audit(page, G, "ludo", "a move playing", { min: 0, canvas: true, fit });
+		let d = await drive(choice, 180_000);
+		check("ludo · a choice of tokens came up on the 4-player board", choice(d), { targets: d.targets, tokens: d.tokens });
+		if (choice(d)) await audit(page, G, "ludo", "a choice of tokens, 4-player board", { min: 2, canvas: true, fit });
+		// The rest of the game without the animations (bots wait for none).
+		await page.emulateMedia({ reducedMotion: "reduce" });
+		d = await drive((d) => d.over, 300_000);
+		check("ludo reached its end", d.over, { done: d.done, tokens: d.tokens });
+		await until(G, () => !window.__game.handle.debug().busy);
+		await audit(page, G, "ludo", "the end", { min: 0, canvas: true, fit });
+		await page.emulateMedia({ reducedMotion: null });
+		await page.locator(".managed-over button", { hasText: "PLAY AGAIN" }).first().click({ timeout: TIMEOUT });
+		await until(G, () => window.__game.handle.debug().match === 2 && window.__game.handle.debug().phase === "setup");
+		await G.locator('.lu-setup button[data-board="6"]').click();
+		await until(G, () => window.__game.handle.debug().board === 6);
+		await audit(page, G, "ludo", "setting up, 6-player board", { min: 4 });
+		await G.locator(".lu-start").click();
+		await until(G, () => window.__game.handle.debug().phase === "play");
+		await drive((d) => d.myTurn && d.stage === "roll" && !d.busy, 60_000);
+		await audit(page, G, "ludo", "your roll, 6-player board", { min: 1, canvas: true, fit });
+		d = await drive(choice, 180_000);
+		check("ludo · a choice of tokens came up on the 6-player board", choice(d), { targets: d.targets, tokens: d.tokens });
+		if (choice(d)) await audit(page, G, "ludo", "a choice of tokens, 6-player board", { min: 2, canvas: true, fit });
+	},
+
 	/** Two people (no bots): drawing and guessing, the reveal, game over — both phones. */
 	async "draw-guess"(host) {
 		const guest = watch(await host.context().newPage());
@@ -444,12 +498,21 @@ async function floorsItself() {
 	await ctx.close();
 }
 
+// Games a web-games branch adds before the registry's pin has them: with the
+// pin's build they are not in community/catalog.js, and their blocks skip
+// (said, not silent) so main stays green until the pin moves.
+const AWAITING_PIN = new Set(["ludo"]);
+
 const only = process.argv.slice(2);
 try {
 	if (!only.length || only.includes("floors")) await floorsItself();
 	for (const [id, run] of Object.entries(GAMES)) {
 		if (only.length && !only.includes(id)) continue;
 		console.log(`\ntaps: ${id}`);
+		if (AWAITING_PIN.has(id) && !communityHas(`lokeshmohanty/${id}`)) {
+			console.log(`  skip lokeshmohanty/${id} is not in community/catalog.js (the registry's pin has not moved to it yet)`);
+			continue;
+		}
 		const ctx = await phone();
 		const page = watch(await ctx.newPage());
 		try {

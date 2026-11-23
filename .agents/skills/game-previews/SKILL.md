@@ -32,7 +32,9 @@ A new game: set `"preview": "../../assets/<game>.webp"` and run `just catalog`.
 
 Games: `scripts/preview.mjs --list` is the authority (2026-11-16: undercover,
 liars-dice, neon-bid, battleship, light-cycles, connect4, draw-guess,
-neon-fission, neon-survival-mp). Only five are this repo's (games/); battleship,
+neon-fission, neon-survival-mp, ludo). An outside repo's game records its card
+with `--gif FILE` (`scripts/make-preview.sh ludo --gif ../web-games/ludo/preview.gif`):
+the gif goes there and nothing in assets/ is touched. Only five are this repo's (games/); battleship,
 liars-dice, light-cycles and draw-guess live in web-games now, whose own
 preview.gif is what the portal shows, so a run for them writes files here that
 nothing names. Whether their scenarios still run against the community ids is

@@ -39,10 +39,11 @@ if (unknown.length) {
  * Games whose results come in more kinds than their manifest's one: the
  * results a game sends of each are accepted, on its one board (of the
  * manifest's kind). Bubble Rush is "ffa" but its teams mode reports "teams"
- * (a review, 2026-11-16). Kept here so it survives regeneration; a later
- * manifest field ("kinds", docs/platform.md) would replace it.
+ * (a review, 2026-11-16); so is Ludo, whose teams report "teams". Kept here
+ * so it survives regeneration (a game not yet in a catalog is left out of the
+ * table); a later manifest field ("kinds", docs/platform.md) would replace it.
  */
-const EXTRA_KINDS = { "lokeshmohanty/bubble-rush": ["ffa", "teams"] };
+const EXTRA_KINDS = { "lokeshmohanty/bubble-rush": ["ffa", "teams"], "lokeshmohanty/ludo": ["ffa", "teams"] };
 const OUT = join(ROOT, "worker", "api", "games.js");
 const SOURCES = ["lib/catalog.js", "community/catalog.js"];
 

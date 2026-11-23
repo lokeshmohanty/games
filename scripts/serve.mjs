@@ -5,7 +5,7 @@
 // the way `just run` does. Same python3 server test-pwa.mjs uses.
 
 import { spawn } from "node:child_process";
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -23,6 +23,18 @@ export const SITE_DIR = !process.env.NEON_SERVE_SRC && existsSync(join(DIST, "in
  * runs — two agents, or a test beside `just run` — do not share a server.
  */
 export const PORT_OFFSET = Number(process.env.NEON_PORT_OFFSET ?? 0) || 0;
+
+/**
+ * Whether the site served lists community game `id` ("owner/game") in
+ * community/catalog.js. A suite's block for a game that only an unmerged
+ * branch has (built with NEON_PIN_OVERRIDE) skips, saying so, when the
+ * registry's pin does not have it yet — so main stays green between the
+ * games repo's merge and the pin's.
+ */
+export function communityHas(id) {
+	const file = join(SITE_DIR, "community", "catalog.js");
+	return existsSync(file) && readFileSync(file, "utf8").includes(`"id": ${JSON.stringify(id)}`);
+}
 
 /**
  * Start serving SITE_DIR (or `dir`); returns { base, url(path), stop() } once

@@ -16,6 +16,20 @@ separate `TODO.md`.*
 
 ## Now (2026-11-18)
 
+**Branch `ludo` (2026-11-23, both repos, local only, not merged):** Ludo in
+web-games (`ludo`, 4- and 6-player boards, free-for-all or teams), and here
+its test-taps, test-bots and preview blocks, `make-preview.sh --gif`,
+`communityHas` and NEON_PIN_OVERRIDE building a branch's unlisted folders
+(the same as `new-games`, which it will conflict with trivially), and
+`EXTRA_KINDS` for its `teams` results. Until the pin has Ludo its blocks skip,
+saying so. To land: merge web-games, move `registry/lokeshmohanty/web-games.json`
+(commit and `ludo`), run `just games-table`. Found on the way: lib/sdk-managed.js
+`botMove` never asks again a bot still on turn after its own move (its entry
+is deleted only after `refresh` tried to reschedule), so Ludo's bot plays its
+whole turn in one move; and validate-game's browser check skips the play
+check ("needs people") for every game since quick-start (its SINGLE PLAYER
+lookup). Neither fixed here. Not pushed (GitHub unreachable 2026-11-23).
+
 **Branch `quick-start` (2026-11-22, pushed, not merged):** one tap on a game
 starts it against bots, PLAY WITH FRIENDS (end card and PARTY, "Bottom,
 between rounds" — no bar, boards keep their size), CHANGE PLAYERS, a first
