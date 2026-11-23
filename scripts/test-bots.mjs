@@ -2248,7 +2248,7 @@ try {
 		await p.locator(".quick-table button", { hasText: "START GAME" }).first().click();
 		await p.waitForFunction(() => window.__game?.handle, null, { timeout: TIMEOUT });
 		const F = await gameScope(p, TIMEOUT);
-		await F.waitForFunction((n) => window.__game.handle.debug().seats?.length === n, n, { timeout: TIMEOUT });
+		await F.waitForFunction((n) => window.__game.handle.debug()?.seats?.length === n, n, { timeout: TIMEOUT });
 		await readyToClick(p);
 		return F;
 	}
@@ -2382,6 +2382,39 @@ try {
 		});
 		const steady = cost.runs.slice(1);
 		check(`the theme glows; after the first frame no mark is blurred again (${cost.runs.map((r) => r.blurs).join(", ")} blurred draws; ${steady.map((r) => r.ms.toFixed(1)).join(", ")} ms)`, cost.glowing && cost.runs[0].blurs <= 4 && steady.every((r) => r.blurs === 0), JSON.stringify(cost));
+		await ctx.close();
+	}
+
+	console.log("\nbots: five in a row frames a win even just after the board was zoomed");
+	if (pinned("five-in-a-row")) {
+		// The views are handed to the page's own handler (onView), so the win
+		// lands at a chosen moment: right after a tap on −, when following a
+		// mark is held off (re-review, 2026-11-23: the win was never framed
+		// then, nor afterwards).
+		const ctx = await newContext();
+		const p = await ctx.newPage();
+		const F = await openSolo(p, "five-in-a-row", 2);
+		// On our turn nothing else arrives: the bot waits for us.
+		await F.waitForFunction(() => window.__game.handle.debug().myTurn, null, { timeout: TIMEOUT });
+		const framed = await F.evaluate(async () => {
+			const base = window.__game.handle.debug();
+			const mk = (marks, winner, line, last, match) => ({ match, seats: base.seats, out: base.out, turn: 1, you: base.you, marks, last, winner, line, moves: marks.length });
+			const marks = [];
+			for (let x = 0; x <= 14; x++) marks.push([x, 0, x < 10 ? x % 2 : 1]);
+			const match = base.match + 1;
+			onView({ state: mk(marks.slice(0, 14), null, null, [13, 0], match) });
+			await new Promise((r) => setTimeout(r, 400));
+			cam = { x: 0, y: 0, z: 44 };
+			glide = null;
+			document.querySelector(".fr-tools button").click(); // −: the camera is the player's for 2 s
+			const line = [[10, 0], [11, 0], [12, 0], [13, 0], [14, 0]];
+			onView({ state: mk(marks, 1, line, [14, 0], match) });
+			await new Promise((r) => setTimeout(r, 500));
+			const d = window.__game.handle.debug();
+			const sx = (x) => d.box.w / 2 + (x - d.cam.x) * d.cam.z;
+			return { left: sx(10), right: sx(14), w: d.box.w, z: d.cam.z };
+		});
+		check("a win right after a tap on −: the winning line is framed on the board", framed.left >= 0 && framed.right <= framed.w, JSON.stringify(framed));
 		await ctx.close();
 	}
 
