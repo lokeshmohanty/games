@@ -77,8 +77,8 @@ while [ "$#" -gt 0 ]; do
   esac
 done
 
-[ -z "$GIF_OUT" ] || [ "${#targets[@]}" -le 1 ] || { printf 'error: --gif takes one game\n'; exit 2; }
 [ "${#targets[@]}" -gt 0 ] || { printf 'error: name a game (or `all`)\ngames: %s\n' "${GAMES[*]}"; exit 2; }
+[ -z "$GIF_OUT" ] || [ "${#targets[@]}" -eq 1 ] || { printf 'error: --gif takes one game\n'; exit 2; }
 
 for game in "${targets[@]}"; do
   case " ${GAMES[*]} " in *" $game "*) ;; *) printf 'error: unknown game %s\nvalid: %s\n' "$game" "${GAMES[*]}"; exit 2 ;; esac

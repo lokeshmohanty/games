@@ -645,7 +645,9 @@ const GAMES = {
 			await page.waitForFunction(() => window.__game?.handle, null, { timeout: 20_000 });
 			const G = await gameScope(page, 20_000);
 			await readyToClick(page);
-			await G.locator(".lu-start").click({ timeout: 20_000 });
+			// A fresh phone's tap goes straight in; a setup shows only for a different table.
+			await G.waitForFunction(() => window.__game.handle.debug().phase, null, { timeout: 20_000 });
+			if ((await G.evaluate(() => window.__game.handle.debug().phase)) === "setup") await G.locator(".lu-start").click({ timeout: 20_000 });
 			// The opening off camera: the clip starts with tokens out round the board.
 			await ludoTurns(page, 90, (v) => v.tokens.flat().filter((p) => p >= 0).length >= 6 && !v.busy);
 		},

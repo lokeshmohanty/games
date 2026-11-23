@@ -28,7 +28,14 @@ saying so. To land: merge web-games, move `registry/lokeshmohanty/web-games.json
 is deleted only after `refresh` tried to reschedule), so Ludo's bot plays its
 whole turn in one move; and validate-game's browser check skips the play
 check ("needs people") for every game since quick-start (its SINGLE PLAYER
-lookup). Neither fixed here. Not pushed (GitHub unreachable 2026-11-23).
+lookup). Neither fixed here. Review fixes (2026-11-23): test-taps holds
+players sharing a star (a crafted turn, both boards) to 7px tokens, none
+over another, counts clear of them, see-through pushed rings; Lokesh's
+calls — a free-for-all ends once only bots race, and the setup only the
+first time (PLAY AGAIN and a card's tap at the same table go straight in;
+a different table, CHANGE PLAYERS to another count, brings it) — are in the
+rules and in test-bots. CHANGE PLAYERS back to the same count goes straight
+in too: the game cannot tell it from a card's tap (no signal in `init`).
 
 **Branch `quick-start` (2026-11-22, pushed, not merged):** one tap on a game
 starts it against bots, PLAY WITH FRIENDS (end card and PARTY, "Bottom,
