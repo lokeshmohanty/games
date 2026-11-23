@@ -166,6 +166,15 @@ How it runs:
     2026-11-19 the game stalled on the bot's turn). The first call's late
     answer is dropped. The queue itself moves on after a timeout, so the
     retry can reach the frame while the first call is still running there.
+  - **A bot still on turn after its own move** (an extra roll on a 6, a
+    turn of several steps) moves again, after another pause (2026-11-23;
+    before, it was never asked again and the game stalled, so Ludo made a
+    bot's action its whole turn). Only a move `apply` took leads to the
+    next: a bot that answers `null`, or whose move is refused, is not asked
+    again until something else changes, so a game that keeps naming a bot
+    with no move is not polled in a loop. A bot whose moves are accepted is
+    asked for as long as `turn()` names it: Sudoku's racing bots poll so.
+    scripts/fixtures/turns-game is the test (`just test-managed`).
 - **People on the host's phone** (2026-11-17). A game with `"sameDevice":
   true` in game.json may get a bot seat with `local: true` in `init`: the
   one person at SINGLE PLAYER's quick table made it a PERSON, someone beside
