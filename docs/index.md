@@ -79,10 +79,19 @@ game is starred (☆, `lib/stats.js`) and given feedback (💬) only from
 inside it, at the party's top right beside PARTY (2026-11-14; a star on the
 cards was tried on 2026-11-15 and taken out the next day, Lokesh: "Only
 inside games"); a contributor or a collection is starred on its own page.
-Every star lands in My Games at once. **One tap on a card opens the game's
-party screen**, its quick start (`./?game=<id>&fresh=1`; Lokesh, 2026-11-18:
-it used to take two on a phone, the first only showing the card's two
-buttons). The buttons, SINGLE PLAYER and MULTI-PLAYER, show on hover with a
+Every star lands in My Games at once. **One tap on a card starts the game
+against bots** (Lokesh, 2026-11-21: "directly take to the single-player game
+page … this prevents the delay the user has to face waiting for party
+creation"): `./?game=<id>&fresh=1&mode=bots&start=1` (`lib/portal.js`
+`tapLink`), the game's remembered table at once with no room server (see
+[The party API](#the-party-api), "One tap, and PLAY WITH FRIENDS"). A
+one-device game (Undercover) starts at once too (`&start=1`, no bots); a
+people-only game (Draw & Guess) has no bots to start against and opens
+straight on its lobby with friends (`&mode=friends`). The card's SINGLE
+PLAYER and a Recently played chip take the same address. (On 2026-11-18 a
+tap became one: it used to take two on a phone, the first only showing the
+card's two buttons; from then until 2026-11-21 it opened the game's party
+screen.) The buttons, SINGLE PLAYER and MULTI-PLAYER, show on hover with a
 mouse, on keyboard focus, and after a long press on a touch screen; a tap
 off them closes them. A sideways swipe of a row is not a tap (a click after
 the pointer moved 10px, or after the row scrolled, is dropped; a click with
@@ -100,13 +109,26 @@ the device has a favourite or a recently played game, else on All Games,
 decided before the first paint ([spa.md](spa.md) "The portal's sub-tabs").
 Under the brand and the party banner:
 
-- **My Games** — the Recently played row (PLAY SOMETHING at its heading's
-  right), then ★ Favourites (the button in its heading instead when nothing
-  was played yet). With neither, a line on how to star (★, from inside a
-  game), PLAY SOMETHING and ALL GAMES.
+- **My Games** — Recently played (PLAY SOMETHING at its heading's right;
+  its titles wrap, never scroll sideways), then ★ Favourites as a **grid
+  that scrolls down**: two columns on a phone, more as the screen widens
+  (Lokesh, 2026-11-21: "vertical scrollable with multiple columns instead of
+  horizontal scrollable with single row"; `.section-row.is-grid`). The
+  button sits in ★ Favourites' heading instead when nothing was played yet.
+  With neither, a line on how to star (★, from inside a game), PLAY
+  SOMETHING and ALL GAMES.
 - **All Games** — the search, then Popular (with **PLAY SOMETHING** at its
   right: one tap into the single player of a popular game with bots, never
-  people-only or Python, varied per visit) and the categories.
+  people-only or Python, varied per visit) and the categories, each still a
+  row. Each category's heading has **SEE ALL**: the genre's own page,
+  `./?page=games&tab=all&genre=<id>` (`arcade`, `party`, `strategy`,
+  `solo`, `other`; `lib/portal.js` `GENRES`), its title, ← All Games, and
+  every game of the genre in the same grid as My Games (Lokesh,
+  2026-11-21). It is a real address: a reload or a shared link opens it, and
+  Back returns to All Games; so does ← All Games, as Back (no new history
+  entry) when SEE ALL led there (the entry's `history.state.genreFrom`). A
+  genre with no game (More games, while every game has a category) or an
+  unknown id is All Games, its address fixed. No search there.
 
 Changing sub-tab closes any card left open, so a row on the other sub-tab is
 never held back as "in use" and is current when you return (review,
@@ -214,8 +236,8 @@ Not covered by that pass: the leaderboard view still scrolls sideways at
 a card's two buttons on a touch screen is the browser's `contextmenu`,
 tested only as that event: unverified on a real Android phone, and Safari
 on iOS fires none, so there it shows nothing. Lokesh's call (2026-11-18)
-stands either way: one tap opens the game's page, which offers the same
-choices.
+stands either way: one tap plays the game (since 2026-11-21, against bots),
+and PLAY WITH FRIENDS (end card, PARTY) offers the other choice.
 
 **Nine games have to fit a phone.** They did not: a `minmax(300px, 1fr)` column
 at 80% width is a single column on a 390px screen, and a 200px image plus a
@@ -241,6 +263,40 @@ their job. Each card still carries `data-tags`, and the search reads them
 `parseQuery`). The tags are `alone` · `duel` · `party` · `one-phone` ·
 `strategy` · `quick`, and a new game should be given whichever apply. A
 search matching nothing says so rather than leaving a blank page.
+
+**The search box says only "Search games"** (Lokesh, 2026-11-21: "don't
+mislead by displaying them in the placeholder"). It used to read "Search —
+or author:name type:duel tag:quick players:4". The fields work (test-portal
+"search"), but the placeholder misled two ways: `author:name` taken
+literally matches no author, and a phone's keyboard puts a space after the
+colon, and `type: duel` found nothing. A space after the colon is now the
+same field, and a field still waiting for its value (`author:`) narrows
+nothing yet. The fields stay, unadvertised in the page: a starred
+contributor or collection is opened as one (`author:`, `from:`).
+
+**First visit: a name** (Lokesh, 2026-11-21: "first time a user enters, pop
+up asking for his name (default: random two word title case name), with a
+button to generate a new random name"). Once per device, over the portal,
+an in-page dialog (`src/NamePrompt.tsx`, `.neon-sheet`; never `prompt()`):
+the field holds a random two-word Title Case name ("Brave Otter"), NEW NAME
+rolls another (never one shown already in that dialog), THAT'S ME keeps the
+field. Focus starts in the field (selected) and goes back where it was;
+Escape, ✕ or a tap outside keep the *suggested* name, not a half-typed
+edit. Whichever way it closes, the name is saved where the party reads it
+(localStorage `neon.name`, `NeonArcade.rememberName`), and a party already
+running behind the portal takes it at once (`room.setName`), so it never
+asks again; a name typed on the party screen counts too. A signed-in account
+with a display name is not asked: that name is saved. The names
+(`lib/names.js`) are an adjective and an animal, a thing from nature or a
+small object, kept kind, about 220 × 280 words (some 63,000 names within
+the 16-character name field). **The default name is one of them**:
+`NeonArcade.defaultName()` (lib/net.js) is this device's own random name,
+chosen once and kept (`neon.defaultName`), never the device ("Android",
+"Linux") it used to be. **Automation:** under `navigator.webdriver` the
+dialog stays away, as the rules sheet does (lib/rules.js), so no suite is
+stopped by it; localStorage `neon.namePrompt` = `"on"` brings it back
+(test-portal "a first visit asks for a name"), `"off"` turns it off
+anywhere. Asserted at 390x844 and 354x696.
 
 ## Contributors and collections
 
@@ -1060,8 +1116,9 @@ screen in `container`; mounted games build themselves into `stage`. It handles
 joining (`#i=` / `#c=` in the URL), recruiting, teams, switching and
 succession.
 
-**A game's address is a shortcut into it** (2026-11-13): `./?game=<id>&fresh=1`,
-a portal card's link ([spa.md](spa.md)). With `?game=` the host of a fresh
+**A game's address is a shortcut into it** (2026-11-13): `./?game=<id>&fresh=1`
+([spa.md](spa.md); a portal card's link adds `&mode=bots&start=1` since
+2026-11-21, below). With `?game=` the host of a fresh
 party gets a **quick start** first: the game's name as the title, INVITE A
 FRIEND and SINGLE PLAYER (enough bots to make it legal), then ADD
 BOT / REMOVE BOT and START GAME (START alone for a local game, which shows
@@ -1074,9 +1131,73 @@ alone; past the game's seats, the rest watch. After the
 first game it is an ordinary party. A party opened this way does not ask a
 lone host before leaving.
 
+**One tap, and PLAY WITH FRIENDS** (Lokesh, 2026-11-21). A portal card's tap
+is `./?game=<id>&fresh=1&mode=bots&start=1`: hosted at once with no room
+server (`startsAtOnce`), the table last played on that game seated, PERSON
+seats included (Lokesh, 2026-11-22: "Yes, reuse the table" — a group
+passing one phone just taps and plays), the game started with no START
+tap. The party code is fetched later, only if friends are wanted
+(`ensureCode`).
+- **A reload mid-game is a fresh bots game** (Lokesh, 2026-11-22: "A fresh
+  bots game"). While this page plays alone (the host, no other person, no
+  party code, not the lobby for friends), the address stays the tap's
+  (party.js `syncAddress`), so a reload starts a new game against bots at
+  once. Once friends are wanted (the lobby, a code, another person) the
+  flags go, and a reload rejoins as before. Invite links never carry them
+  (`shareBase` drops `start` as well as `fresh` and `mode`).
+- **A seat this browser still holds** when a tap starts a game: held by a
+  live tab (a local lock, no network), this tab says "This party is open in
+  another tab", as every other way into a party does, and starts nothing;
+  otherwise the seat is handed back in the background once the room server
+  answers. Offline, or with no server, the token stays: nothing released it.
+- **PLAY WITH FRIENDS** (party.js `playWithFriends`; Lokesh, 2026-11-22:
+  "Bottom, between rounds"). It sits where nothing else needs the space:
+  the bottom of the end card (lib/sdk-managed.js, after PLAY AGAIN, CHANGE
+  PLAYERS and SEE THE BOARD), and of the shell's own start screens (the
+  quick table's and the bots quick start's "Play with friends instead").
+  During play it is on the party screen pulled up over the game (PARTY),
+  beside BACK TO GAME, END GAME and CHANGE PLAYERS; that is also where Neon
+  Bid and Liar's Dice, which have no shell end card, offer it between
+  rounds. Never a bar over or under the game: from 2026-11-21 to 11-22 it was
+  a bar with 52 px of its own at the bottom, which shrank the boards bound
+  by height at 354x696 (Sudoku's cells to 34 px, Battleship's squares to
+  35.8 px, Neon Fission's eight-player grid to 36 px). It is offered to the
+  host alone with bots (no other person in the party), online, in a game
+  that is not `local` (`canPlayWithFriends`). A tap **ends the bots game and
+  opens the party lobby for that game** (Lokesh's decision): the game's
+  name, the code (the party is hosted again through the room server, the
+  bots re-seated), INVITE A FRIEND, the seats, START GAME. PERSON seats turn
+  back into bots. From PARTY over a running game it asks first, as END GAME
+  beside it does, and so does CHANGE PLAYERS there; from the end card,
+  between rounds, neither asks. A game's
+  own setup screen inside its frame (Bubble Rush's mode, Battleship's
+  fleet) gets no button of the shell's; PARTY has it there.
+- **The lobby's seats:** ADD BOT and REMOVE BOT, as before (the contract
+  test-managed, test-protocol, `scripts/preview.mjs` and validate-game
+  drive), under a line saying who is at the table ("3 players: You, 1
+  friend and 1 bot"); the bots carried over from the game played alone stay.
+  For a game with a table, a change while you are the one person here is
+  remembered (`neon.table`), so the next tap on the card plays it. A full
+  party (PLAY WITH FRIENDS from an eight-seat table) still lets a friend in:
+  the host's page gives up its newest bot's seat when an invite would be
+  refused as full (net.js `createInvite`, the room option `yieldBot`; INVITE
+  and a join by code alike), never over a running game. A friend
+  who joins takes a bot's seat rather than one more (`seatTarget`,
+  `fitTable`): Connect 4 that was you and a bot is you and your friend, not
+  a friend left watching.
+- **CHANGE PLAYERS** (`changePlayers`): on the end card (lib/sdk-managed.js,
+  a managed game's), and on the party screen pulled up over any game (PARTY),
+  for the host alone with bots in a game with a table. It ends the game and
+  shows the table; START GAME plays the next round at it. A game that is not
+  managed (Neon Bid, Liar's Dice) has no shell end card, so there it is the
+  PARTY screen's button.
+
 **The quick table** (Lokesh, 2026-11-17: "I don't see option to add more
 players/bots in single player mode in neon fission"; he chose "Quick table
-before start"). SINGLE PLAYER of a game whose seats leave a choice —
+before start"). Since 2026-11-21 it is not passed through before a game
+(above): it shows from CHANGE PLAYERS, and from the plain SINGLE PLAYER
+address (`./?game=<id>&fresh=1&mode=bots`, an unlisted game's, or the party
+screen's SINGLE PLAYER). SINGLE PLAYER of a game whose seats leave a choice —
 `seats.max > seats.min`, bots allowed, not a `local` game — opens on a
 compact table instead of starting at once (party.js `tableBlock`):
 - **Players − n +** from `seats.min` to `seats.max` (capped at the party's
@@ -1101,12 +1222,13 @@ compact table instead of starting at once (party.js `tableBlock`):
   are cleared (party.js `tidyPeople`, on every party change) when a second
   person joins, when the crown moves to another phone, when "Play with
   friends instead" is chosen, and when a quick start other than the table
-  starts the game; PLAY SOMETHING (`start=1`) seats the remembered count as
-  bots only, never its PERSON seats.
+  starts the game. A tap (`start=1`, a card or PLAY SOMETHING) seats the
+  table last played, PERSON seats included (since 2026-11-22).
 - **START GAME** sits right under the stepper whatever the count. The table
   is remembered per game (localStorage `neon.table`,
-  `{ [id]: { n, people: [seat…] } }`, written at START), so a repeat play is
-  two taps: SINGLE PLAYER, START GAME (Lokesh's choice).
+  `{ [id]: { n, people: [seat…] } }`), written at START and as the table (or
+  the lobby's stepper) changes while you are the one person here, so the
+  next tap on the card plays it.
 - **No table** for fixed seats (Connect 4, Tic Tac Toe, Battleship: 2 and 2),
   a `local` game (Undercover, which takes its names itself) or a people-only
   one (Draw & Guess has no SINGLE PLAYER): they start as before.
@@ -1120,8 +1242,13 @@ compact table instead of starting at once (party.js `tableBlock`):
   a live region outside the rebuilt screen announces "4 players. You and 3
   bots."; the control in use keeps the focus across re-renders.
 - Tested in test-bots ("quick table", at 390×844 and 354×696 in all three
-  themes), test-pwa (offline, for exactly the games with a choice) and
-  test-portal (PLAY SOMETHING draws no table).
+  themes; CHANGE PLAYERS and PLAY WITH FRIENDS on the end card at both
+  sizes, the game keeping the whole screen), test-pwa (offline: no card shows it; the plain address does, for
+  exactly the games with a choice), test-portal ("one tap on a game starts
+  it against bots": no table, no room server, no bar, PLAY WITH FRIENDS
+  from PARTY, the lobby's ADD BOT remembered, at both sizes) and test-party
+  (PARTY offers PLAY WITH FRIENDS alone with a bot, not with people in the
+  party).
 
 **The room controller** (lib/net.js `createHost` / `createGuest`):
 

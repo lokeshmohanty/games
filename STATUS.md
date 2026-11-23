@@ -16,6 +16,11 @@ separate `TODO.md`.*
 
 ## Now (2026-11-18)
 
+**Branch `quick-start` (2026-11-22, pushed, not merged):** one tap on a game
+starts it against bots, PLAY WITH FRIENDS (end card and PARTY, "Bottom,
+between rounds" — no bar, boards keep their size), CHANGE PLAYERS, a first
+visit's name, My Games and genre pages as grids, "Search games".
+
 **main f41a01e is live** (Pages deploy gated on tests; worker version
 7846f9ec deployed 2026-11-18, D1 migrations through 0005 applied remotely).
 Everything from the 2026-11-15..18 round is merged: SDK v1 removal and

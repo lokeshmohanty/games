@@ -3,7 +3,8 @@
 //   My Games   (./?page=games&tab=mine) recently played, ★ favourites, or
 //              how to star when there are none
 //   All Games  (./?page=games&tab=all) the search, Popular (with PLAY
-//              SOMETHING) and the categories
+//              SOMETHING) and the categories, each with SEE ALL: its own
+//              page (&genre=<id>), a grid
 // The router names the sub-tab for ./ (src/router.ts portalAddress); this
 // view follows the address, so Back moves between them.
 //
@@ -15,6 +16,7 @@
 import { createEffect, on, onCleanup, onMount } from "solid-js";
 import "../../lib/portal.js";
 import { openJoinCode } from "../JoinCode";
+import { askNameOnce } from "../NamePrompt";
 import { currentUrl, navigate, portalTab, viewOf } from "../router";
 import "./portal.css";
 
@@ -40,6 +42,7 @@ export default function Portal() {
 		A.nav.draw();
 		A.renderInstallOffer?.(); // the slot is new on every visit
 		onCleanup(A.portal.mount(main, tab()));
+		askNameOnce(); // a first visit's name (src/NamePrompt.tsx), once per device
 	});
 	// A sub-tab chosen, Back to the other one, or to another search: the same
 	// view, redrawn. (An address of another view: this one is going.)
@@ -139,8 +142,8 @@ export default function Portal() {
 				<input
 					type="search"
 					data-search
-					placeholder="Search — or author:name  type:duel  tag:quick  players:4"
-					aria-label="Search games by name, author, type, tag or players"
+					placeholder="Search games"
+					aria-label="Search games"
 					autocomplete="off"
 					spellcheck={false}
 				/>
@@ -153,6 +156,11 @@ export default function Portal() {
 			    community/catalog.js): a registered game needs no edit here.
 			    The sections (favourites, popular, the categories), and the
 			    search's results in their place while a search is typed. */}
+			{/* A genre's page (./?page=games&tab=all&genre=party, lib/portal.js):
+			    the way back to All Games, over the genre's grid. */}
+			<a class="genre-back" data-genre-back href="./?page=games&tab=all" hidden>
+				<span aria-hidden="true">←</span> All Games
+			</a>
 			<div class="portal-sections" data-sections />
 			<div class="games-grid" hidden />
 		</main>
