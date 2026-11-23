@@ -56,7 +56,13 @@ func newGame(s arcade.Setup) arcade.Game {
 		}
 		return nil
 	}
-	return &game{Mover: 1, X: team("A", 0), O: team("B", 1)}
+	g := &game{Mover: 1, X: team("A", 0), O: team("B", 1)}
+	// The platform's First moves first: it takes turns between rematches
+	// (docs/sdk-v2.md "Who starts"). X otherwise, as from an older shell.
+	if s.First != "" && g.O != nil && *g.O == s.First {
+		g.Mover = 2
+	}
+	return g
 }
 
 func restoreGame(snapshot arcade.RawJSON) (arcade.Game, error) {

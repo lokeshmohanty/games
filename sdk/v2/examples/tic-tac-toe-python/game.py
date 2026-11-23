@@ -29,7 +29,7 @@ def square(action):
 
 
 class TicTacToe(arcade.Game):
-    def __init__(self, seats, opts, seed, match):
+    def __init__(self, seats, opts, seed, match, first=None):
         def team(t, i):
             seat = next((s for s in seats if s.team == t), seats[i] if i < len(seats) else None)
             return seat.id if seat else None
@@ -39,6 +39,10 @@ class TicTacToe(arcade.Game):
         self.winner = None
         self.x = team("A", 0)
         self.o = team("B", 1)
+        # The platform's `first` moves first: it takes turns between rematches
+        # (docs/sdk-v2.md "Who starts"). X otherwise, as from an older shell.
+        if first is not None and first == self.o:
+            self.turn_mark = 2
 
     def mark_of(self, id):
         return 1 if id == self.x else 2 if id == self.o else 0

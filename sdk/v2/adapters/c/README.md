@@ -45,7 +45,7 @@ These are the fields of `arcade_game`, in order. Leave out any you don't need:
 
 | Field | Signature | Returns |
 |---|---|---|
-| `init` | `void (const arcade_setup *)` | `seats` (`id`, `name`, `team` or NULL, `bot`), `nseats`, `opts`, `seed`, `match` |
+| `init` | `void (const arcade_setup *)` | `seats` (`id`, `name`, `team` or NULL, `bot`), `nseats`, `opts`, `seed`, `match`, `first` (who moves first, or NULL) |
 | `apply` | `const char *(arcade_val action, const char *by)` | NULL allows the move; a string refuses it, and is the reason shown |
 | `view` | `void (arcade_out *, const char *seat)` | what this seat may see |
 | `turn` | `void (arcade_out *)` | an array of ids |

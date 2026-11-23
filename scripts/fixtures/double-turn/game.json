@@ -1,0 +1,15 @@
+{
+  "sdk": 2,
+  "id": "double-turn",
+  "name": "DOUBLE TURN CHECK",
+  "blurb": "A fixture for scripts/test-managed.mjs: a managed game whose every turn is two moves.",
+  "entry": "index.html",
+  "kind": "ffa",
+  "shape": "free",
+  "seats": { "min": 2, "max": 4 },
+  "bots": true,
+  "state": "managed",
+  "license": "MIT",
+  "author": "lokeshmohanty",
+  "repo": "https://github.com/lokeshmohanty/games"
+}

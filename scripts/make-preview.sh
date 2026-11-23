@@ -3,6 +3,7 @@
 #
 #   scripts/make-preview.sh connect4
 #   scripts/make-preview.sh all --width 600
+#   scripts/make-preview.sh five-in-a-row --gif ../web-games/five-in-a-row/preview.gif
 #   scripts/make-preview.sh glowdown --gif ../card-games/glowdown/preview.gif
 #
 # Drives the game in a real browser (scripts/preview.mjs), converts the
@@ -13,7 +14,7 @@
 # human has to play the game and nothing takes over the screen — the browser
 # runs headless, so this is safe to run while you work.
 #
-# --gif FILE is for a game from an outside repo (card-games), whose portal card
+# --gif FILE is for a game from an outside repo (web-games, card-games), whose portal card
 # is its own preview.gif (scripts/fetch-community.mjs makes the poster and
 # clips from it at deploy): the gif is written there instead, and nothing in
 # assets/ is touched.
@@ -39,6 +40,10 @@ profile_for() {
     neon-bid) echo "480 12 low" ;;
     # Bubbles rising and wobbling the whole clip, in an upright 420x760 frame.
     bubble-rush) echo "300 10 low" ;;
+    # An upright 460x760 frame, like Bubble Rush's; still pictures between moves.
+    snakes-and-ladders) echo "360 12 medium" ;;
+    # A wide light board with fine lines: 2 MB at the default profile.
+    five-in-a-row) echo "520 10 low" ;;
     # The card games (lokeshmohanty/card-games): upright 420x760 phone frames.
     # Glowdown's and 29's many card faces made 2 MB gifs at 360px/10fps/medium.
     glowdown|twenty-nine) echo "320 8 low" ;;

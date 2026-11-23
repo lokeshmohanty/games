@@ -40,6 +40,12 @@ const phone = { viewport: { width: 390, height: 844 } };
 /** A browser "device" signed in as `name` (the loopback-only test sign-in). */
 async function device(name, uid = name) {
 	const ctx = await browser.newContext(phone);
+	// Who opens rotates and a run's first match draws at random (lib/sdk-managed.js
+	// nextFirst): these checks expect the first seat to open (tests only).
+	await ctx.addInitScript(() => {
+		window.NeonArcade = window.NeonArcade || {};
+		window.NeonArcade.firstDraw = () => 0;
+	});
 	const p = await ctx.newPage();
 	p.on("pageerror", (e) => check(`no page error on ${name}'s device (${e.message})`, false));
 	const back = page("?page=profile");
@@ -171,6 +177,9 @@ try {
 	const anaStarts = [];
 	ana.p.on("request", (r) => r.url().includes("/api/match/start") && anaStarts.push(r.url()));
 	await ana.p.evaluate(() => {
+		// Who opens rotates and the first match draws at random (lib/sdk-managed.js
+		// nextFirst, 2026-11-22): pin the draw so Ana, the first seat, opens.
+		window.NeonArcade.firstDraw = () => 0;
 		const r = window.__party.room;
 		const [a, b] = r.getMembers();
 		r.setTeam(a.id, "A");

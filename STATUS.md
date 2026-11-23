@@ -20,21 +20,29 @@ separate `TODO.md`.*
 community repo, lokeshmohanty/card-games (../card-games, local commits on
 `main`; GitHub repo exists, nothing pushed): Glowdown (an original shedding
 game with house rules), Guess What (a picture clue party game, every phone or
-one phone) and 29. Here: their test-taps and test-bots blocks (skipping
-until the pin has them, `communityHas`, ported from `new-games`), preview
-scenarios and `make-preview.sh --gif`, and NEON_PIN_OVERRIDE building an
-override's unlisted folders (also from `new-games`). No registry pin is
-committed: `registry/lokeshmohanty/card-games.json` moves by PR, with
-`just games-table` (worker/api/games.js) in the same PR. test-portal's
+one phone) and 29. Each asks its settings only before the first match
+(Lokesh, 2026-11-23, as Ludo): PLAY AGAIN keeps them, the end says "Next
+game: … · CHANGE" (host only), a one-tap start uses the host device's last
+settings. Here: their test-taps and test-bots blocks (skipping only while
+the registry does not list them, `registryLists`), preview scenarios
+(`cardTable`). No registry pin is committed:
+`registry/lokeshmohanty/card-games.json` moves by PR, with `just
+games-table` (worker/api/games.js) in the same PR. test-portal's
 Contributors and Collections checks expect card-games once the catalog has
-it (they listed exactly two repos). Found on
-the way: lib/sdk-managed.js `botMove` re-schedules from inside its own timer,
-before `finally` frees the bot's slot, so a bot left on turn by its own move
-(a trick it took and must lead, a drawn card that plays) is never asked
-again; the card games work round it in their rules (a bot's apply plays its
-follow-up moves), the platform is unchanged. And validate-game's play check
-skips every bots game as "needs people" since quick-start (no SINGLE PLAYER
-on the dev page).
+it. The card games' rules still play a bot's own follow-up moves in its
+apply, for shells cached before platform-fixes re-asked such bots.
+
+**Branch `new-games` (2026-11-22, both repos, pushed, not merged):** Five in
+a Row and Snakes & Ladders in web-games (`new-games`), and here test-taps,
+test-bots and preview scenarios for them, Tic Tac Toe's portal preview
+(`assets/tic-tac-toe-js.*`), `make-preview.sh --gif` for web-games cards,
+and NEON_PIN_OVERRIDE building a branch's unlisted game folders. To land:
+merge web-games, then move `registry/lokeshmohanty/web-games.json`
+(commit and both games) in this branch's PR and run `just games-table`.
+Until the pin has them their test-taps and test-bots blocks skip, saying
+so (`communityHas`), so main stays green. Snakes & Ladders plays on for
+places (Lokesh, 2026-11-23). Not pushed yet (GitHub unreachable
+2026-11-23). Ludo is still to build (brief from Lokesh, 2026-11-21).
 
 **Branch `quick-start` (2026-11-22, pushed, not merged):** one tap on a game
 starts it against bots, PLAY WITH FRIENDS (end card and PARTY, "Bottom,
@@ -80,6 +88,13 @@ Lokesh's review before merge; the open residuals are in Honest gaps.
   frame theme, tap targets and text sizes. Left, in the games: Connect 4's
   canvas is blurry (DPR); Neon Fission toasts pile up; Neon Survival's thumb
   offset; Connect 4 bot long task. iOS remains unverified.
+
+**In review: game rules** (branch `game-rules` here and in web-games,
+2026-11-21/22, pushed, not merged; the web-games pin moves by PR). Bubble
+Rush judges a tap on the tapping phone and the host takes its word (both
+phones keep a pop of one bubble); turn-based games take turns to start:
+`first` in managed `init` (docs/sdk-v2.md "Who starts"), used by Connect 4,
+Neon Fission, Draw & Guess, every Tic Tac Toe lane, and Liar's Dice by hand.
 
 **Bubble Rush asks every round** (Lokesh, 2026-11-18): no default mode; the
 host picks FREE-FOR-ALL or TEAMS before START (web-games `ask-mode`, its pin

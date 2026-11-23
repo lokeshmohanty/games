@@ -83,6 +83,12 @@ export interface Start {
 	seed: number;
 	/** Which match of this run: 0, then 1 on the first rematch… */
 	match: number;
+	/**
+	 * The seat that moves first (docs/sdk-v2.md "Who starts"): random for a
+	 * run's first match, then the next seat on each rematch. Null from an
+	 * older shell.
+	 */
+	first: MemberId | null;
 }
 
 /** docs/platform.md "Results". */
@@ -150,7 +156,7 @@ export function defineGame<S, A, V>(rules: Rules<S, A, V>): Game<A> {
 	};
 	const raw: RawRules = {
 		init: (c) => {
-			state = rules.init({ seats: c.seats ?? [], opts: c.opts ?? {}, seed: c.seed ?? 0, match: c.match ?? 0 });
+			state = rules.init({ seats: c.seats ?? [], opts: c.opts ?? {}, seed: c.seed ?? 0, match: c.match ?? 0, first: c.first ?? null });
 			started = true;
 		},
 		apply: (c) => rules.apply(s(), c.action as Untrusted<A>, c.by as MemberId) ?? null,

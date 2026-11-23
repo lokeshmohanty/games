@@ -257,6 +257,16 @@ at 390×844 with no page/console error, no CSP violation and no sideways
 scroll, and a v2 game must say `ready`. sdk-v2.md, "The rules a game must
 follow (v2)", has the reasoning.
 
+The browser check starts a game as a tap on its card does (lib/portal.js
+`tapLink`, `?game=<id>&fresh=1&mode=bots&start=1`): against bots at once,
+at the smallest table. A one-device game starts by itself; a shared one
+alone with the friends' controls. Only a game for people alone (`"bots":
+false`, such as Draw & Guess) is skipped, as "needs people". From the
+quick-start merge (2026-11-22) to 2026-11-23 it looked for SINGLE PLAYER on
+the party screen at once, before that is drawn, so every game was skipped
+unplayed, the registry's PR check included; `just test-devkit` now fails if
+a game that allows bots is not played.
+
 ## Web apps: an existing site and its server, unchanged
 
 **Why.** Lokesh, 2026-11-14, about a friend's React + FastAPI chess variant

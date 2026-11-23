@@ -38,7 +38,7 @@ questions about this project from this folder alone.
 | Test the room hub (codes, claims, TTLs) | `node scripts/test-hub.mjs` — pure hub logic against the real rules, no browser, no Cloudflare account needed |
 | Test the join-by-code path | `node scripts/test-room.mjs` — the real client (lib/room-join.js, net.js, the party and lobby screens) against the in-page mock room server; WebRTC handshake itself is real |
 | Test across real (simulated) networks | `just test-nat` — NAT routers built from network namespaces (cone, full cone, symmetric), netem loss/latency, a network switch mid-party, a blocked room server; real Chrome per device and the real worker under `wrangler dev`. Needs `nix shell`, so not in `just test`. See [network-testing.md](network-testing.md) |
-| Regenerate a portal preview | `scripts/make-preview.sh <game>` (or `all`) — plays the game headless and writes `assets/<game>.webp` (poster), `.webm` and `.mp4`; no gif is kept. An outside repo's game (card-games): `--gif ../card-games/<game>/preview.gif` (its card is its own gif) |
+| Regenerate a portal preview | `scripts/make-preview.sh <game>` (or `all`) — plays the game headless and writes `assets/<game>.webp` (poster), `.webm` and `.mp4`; no gif is kept. An outside repo's game (web-games, card-games): `--gif ../<repo>/<game>/preview.gif` (its card is its own gif) |
 | Serve it locally | `just run` — http://127.0.0.1:8000. `just serve-lan` binds every interface for phone testing, but a plain LAN http:// address is not a secure context, so SCAN REPLY will not work there (use PASTE) |
 | Run everything | `just test`, or `just --list` for the rest |
 | Check the offline precache | `just build` — `scripts/assemble.mjs` derives the precache list from what it built and copied, and fails if a listed file is missing; `just test-pwa` then plays every game offline |
@@ -219,13 +219,19 @@ fixed 2026-11-19, branch `phone-shell`)**, asserted with computed sizes
   caption were 9.9–11.5px; Battleship's end put NEW GAME off a 354x696
   screen. Its ship rack and buttons keep one row each from 354px wide, so
   placement squares stay 39.6px at 354x696 and 40.4px at 360x640.
+  Five in a Row and Snakes & Ladders joined them (web-games branch
+  `new-games`, 2026-11-22; test-taps plays your turn, a game zoomed in and
+  out with a ghost waiting, your roll, a move playing and each end). A
+  block for a game the registry's pin does not have yet skips, saying so
+  (`scripts/serve.mjs` `communityHas`), so main stays green between the
+  games repo's merge and the pin's.
   The three games of lokeshmohanty/card-games joined them (branch
   `card-games`, 2026-11-23): Glowdown's house rules, your turn, a pick and
   a hand of 13 or more fanned in rows; 29's rules, bid, trump pick, asking
   for the trump and turn; Guess What's options, a clue-giver's screen, the
   guesser's nine, the answer and the one-phone game. Their blocks (and
-  test-bots') skip, saying so, until the registry's pin has them
-  (`scripts/serve.mjs` `communityHas`), so main stays green before the pin.
+  test-bots') skip, saying so, only while the registry does not list them
+  (`scripts/serve.mjs` `registryLists`); listed but missing fails.
   `just test-taps` (CI shard 5) plays every phase of each and holds the
   whole frame to `phoneSizes` (390x844 and 354x696, in `scripts/serve.mjs`)
   with `phoneFloors`' `hit: true`: box and hit area, every enabled control
@@ -1153,10 +1159,16 @@ tap. The party code is fetched later, only if friends are wanted
   flags go, and a reload rejoins as before. Invite links never carry them
   (`shareBase` drops `start` as well as `fresh` and `mode`).
 - **A seat this browser still holds** when a tap starts a game: held by a
-  live tab (a local lock, no network), this tab says "This party is open in
-  another tab", as every other way into a party does, and starts nothing;
-  otherwise the seat is handed back in the background once the room server
-  answers. Offline, or with no server, the token stays: nothing released it.
+  live tab (a local lock, no network), the bots game starts here anyway
+  (Lokesh, 2026-11-23: "Start the bots game anyway"), that tab keeps its
+  party and its token, and a toast says "Your party is still open in
+  another tab." A reload here is a fresh bots game, never a reconnect into
+  that party, and PLAY WITH FRIENDS hosts no code over its token
+  (`ensureCode`). The blocking "This party is open in another tab" screen
+  stays where the seat itself is wanted: START A PARTY, a code link (`#c=`),
+  JOIN WITH A CODE, a reconnect, a seat displaced by another tab. Otherwise
+  the seat is handed back in the background once the room server answers.
+  Offline, or with no server, the token stays: nothing released it.
 - **PLAY WITH FRIENDS** (party.js `playWithFriends`; Lokesh, 2026-11-22:
   "Bottom, between rounds"). It sits where nothing else needs the space:
   the bottom of the end card (lib/sdk-managed.js, after PLAY AGAIN, CHANGE
@@ -1186,9 +1198,16 @@ tap. The party code is fetched later, only if friends are wanted
   For a game with a table, a change while you are the one person here is
   remembered (`neon.table`), so the next tap on the card plays it. A full
   party (PLAY WITH FRIENDS from an eight-seat table) still lets a friend in:
-  the host's page gives up its newest bot's seat when an invite would be
-  refused as full (net.js `createInvite`, the room option `yieldBot`; INVITE
-  and a join by code alike), never over a running game. A friend
+  an invite that would be refused as full is made anyway when the host's
+  page would give up a bot's seat, and its newest bot goes only as the
+  newcomer is admitted (net.js `createInvite` asks `yieldBot(false)`,
+  `_addMember` calls `yieldBot(true)`; INVITE and a join by code alike),
+  never over a running game, so an invite that lapses or a join that fails
+  costs no bot. Each such invite reserves its bot (`yieldReserved`, passed
+  to `yieldBot`), so two invites never count on one bot: the second is
+  refused as full when it is made, and a join that would still take the
+  party past `maxMembers` at admission is let go (`_addMember` returns
+  false). The party never exceeds `maxMembers`. A friend
   who joins takes a bot's seat rather than one more (`seatTarget`,
   `fitTable`): Connect 4 that was you and a bot is you and your friend, not
   a friend left watching.
@@ -1229,8 +1248,11 @@ compact table instead of starting at once (party.js `tableBlock`):
   are cleared (party.js `tidyPeople`, on every party change) when a second
   person joins, when the crown moves to another phone, when "Play with
   friends instead" is chosen, and when a quick start other than the table
-  starts the game. A tap (`start=1`, a card or PLAY SOMETHING) seats the
-  table last played, PERSON seats included (since 2026-11-22).
+  starts the game. A card's tap (`start=1`) seats the table last played,
+  PERSON seats included (since 2026-11-22); PLAY SOMETHING's random pick
+  (`start=pick`) seats bots in every other seat, its size the remembered
+  one, and leaves the PERSON seats saved for that game as they were
+  (Lokesh, 2026-11-23: "Bots only for random picks").
 - **START GAME** sits right under the stepper whatever the count. The table
   is remembered per game (localStorage `neon.table`,
   `{ [id]: { n, people: [seat…] } }`), written at START and as the table (or
@@ -1239,9 +1261,10 @@ compact table instead of starting at once (party.js `tableBlock`):
 - **No table** for fixed seats (Connect 4, Tic Tac Toe, Battleship: 2 and 2),
   a `local` game (Undercover, which takes its names itself) or a people-only
   one (Draw & Guess has no SINGLE PLAYER): they start as before.
-  **PLAY SOMETHING** adds `start=1` to the card's address: the remembered (or
-  smallest) table at once, never drawn (`quickGoing`); `start` is dropped
-  from the address with `fresh` and `mode`.
+  **PLAY SOMETHING** adds `start=pick` to the card's address: the
+  remembered (or smallest) table's size at once, bots only, never drawn
+  (`quickGoing`, `botsOnly`); `start` is dropped from the address with
+  `fresh` and `mode` once friends are wanted.
 - **Offline** it is the same table (a bots game never asks the room server);
   the friends link hides while `navigator.onLine` is false.
 - **Phones and access:** every control is 44 px, the list ellipsises names
