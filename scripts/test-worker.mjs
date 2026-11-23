@@ -309,6 +309,11 @@ async function person(tag, ip = `10.77.0.${++personIp}`) {
 		try {
 			localStorage.setItem("neon.rs", rs);
 		} catch {}
+		// Who opens rotates and a run's first match draws at random
+		// (lib/sdk-managed.js nextFirst): these checks expect the first seat to
+		// open, so the draw is pinned (tests only; test-managed tests the rule).
+		window.NeonArcade = window.NeonArcade || {};
+		window.NeonArcade.firstDraw = () => 0;
 	}, server.base);
 	const page = await context.newPage();
 	page.on("pageerror", (err) => {
@@ -1238,6 +1243,10 @@ try {
 				await p.addInitScript(() => {
 					window.NeonArcade = window.NeonArcade || {};
 					window.NeonArcade.turnWaitMs = 3000;
+					// Who opens rotates and the first match draws at random
+					// (lib/sdk-managed.js nextFirst): pin it to the first seat,
+					// the host, whom these handover checks expect to open.
+					window.NeonArcade.firstDraw = () => 0;
 				});
 			}
 			const t = await host(h);
