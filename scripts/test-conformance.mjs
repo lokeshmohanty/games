@@ -50,7 +50,7 @@ const views = () => [
 	{ fn: "result" },
 ];
 const SCRIPT = [
-	[{ fn: "init", seats: SEATS, opts: {}, seed: 7, match: 0 }, ...views()],
+	[{ fn: "init", seats: SEATS, opts: {}, seed: 7, match: 0, first: X }, ...views()],
 	[{ fn: "apply", action: { i: 4 }, by: O }], // not O's turn
 	[{ fn: "apply", action: { i: 4 }, by: X }, ...views()],
 	[{ fn: "apply", action: { i: 4 }, by: O }], // taken
@@ -74,7 +74,11 @@ const SCRIPT = [
 	"BOT",
 	views(),
 	[{ fn: "apply", action: { i: 2 }, by: X }, ...views()],
-	[{ fn: "init", seats: SEATS, opts: {}, seed: 8, match: 1 }, ...views()], // a rematch starts clean
+	[{ fn: "init", seats: SEATS, opts: {}, seed: 8, match: 1, first: O }, ...views()], // a rematch starts clean, and O starts it (docs/sdk-v2.md "Who starts")
+	[{ fn: "apply", action: { i: 0 }, by: X }], // not X's turn: O moves first this time
+	[{ fn: "bot", seat: O }],
+	"BOT",
+	[{ fn: "init", seats: SEATS, opts: {}, seed: 9, match: 2 }, ...views()], // no `first` (an older shell): X starts
 ];
 
 function chromePath() {
@@ -222,8 +226,9 @@ try {
 		const wrong = checkTrace(trace);
 		check("every message it said conforms to protocol.json", !wrong.length, wrong.slice(0, 3).join(" | "));
 		if (lane === REFERENCE) {
-			const last = transcript.at(-2).out;
-			check("(the reference match ends in a result)", !!last.find((o) => o?.v?.ranking), last);
+			// The first match's last move (before the rematches) decides it.
+			const won = transcript.find((step) => step.out.some((o) => o?.v?.ranking));
+			check("(the reference match ends in a result)", !!won, transcript.at(-6)?.out);
 			continue;
 		}
 		const ref = results[REFERENCE]?.transcript ?? [];

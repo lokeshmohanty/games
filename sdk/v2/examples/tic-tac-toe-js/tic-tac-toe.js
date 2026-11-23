@@ -21,9 +21,12 @@ const markOf = (id) => (id === s.x ? 1 : id === s.o ? 2 : 0);
 const idOf = (mark) => (mark === 1 ? s.x : s.o);
 
 arcade.managed({
-	init({ seats }) {
+	init({ seats, first }) {
 		const team = (t, i) => (seats.find((p) => p.team === t) ?? seats[i])?.id ?? null;
 		s = { board: Array(9).fill(0), turn: 1, winner: null, x: team("A", 0), o: team("B", 1) };
+		// The platform's `first` moves first: it takes turns between rematches
+		// (docs/sdk-v2.md "Who starts"). X otherwise, as from an older shell.
+		if (first && first === s.o) s.turn = 2;
 	},
 	apply({ action, by }) {
 		const i = action?.i;

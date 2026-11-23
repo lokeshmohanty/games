@@ -35,7 +35,7 @@ const moverOf = (i) => (s.kinds[i] === "local" ? s.owner : s.ids[i]);
 const nameFor = (kind, seat, name) => (kind === "local" ? `Player ${seat + 1}` : name);
 
 arcade.managed({
-	init({ seats, seed, match }) {
+	init({ seats, seed, match, first }) {
 		const humans = seats.filter((p) => !p.bot);
 		// The one person seated plays the seats of the people beside them
 		// (the platform's `local`; it keeps them for PLAY AGAIN). With more
@@ -53,6 +53,9 @@ arcade.managed({
 			last: null,
 			rng: seed | 0,
 		};
+		// Who plays first: the platform's `first`, the next seat on each
+		// rematch (docs/sdk-v2.md "Who starts"); seat 0 from an older shell.
+		s.g.turn = Math.max(0, s.ids.indexOf(first));
 	},
 	apply({ action, by }) {
 		if (!action || typeof action !== "object") return "no such move";

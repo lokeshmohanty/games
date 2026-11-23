@@ -955,6 +955,11 @@ type RulesCall struct {
 	Seed *int `json:"seed,omitempty"`
 	// init: which match of this run (0, then 1 on the first rematch…).
 	Match *int `json:"match,omitempty"`
+	// init: the seat that moves first, for a game where who starts matters
+	// (docs/sdk-v2.md "Who starts"): random for a run's first match, then the next
+	// seat in `seats` on each rematch. Absent from an older shell, or with no
+	// seats.
+	First *MemberID `json:"first,omitempty"`
 	// apply: the move. May carry ArrayBuffers (see Json).
 	Action JSON `json:"action,omitempty"`
 	// apply: who made it (a bot's id for a bot).

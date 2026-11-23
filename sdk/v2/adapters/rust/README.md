@@ -69,6 +69,7 @@ impl Game for Race {
     fn restore(snapshot: Race) -> Self { snapshot }
     // Optional: fn skip(&mut self, seat: &str) -> bool   (SKIP TURN; default: cannot)
     //           fn tick(&mut self, inputs, dt)           (manifest "tick"; default: nothing)
+    //           fn set_first(&mut self, first: &str)     (who moves first, right after init; default: ignored)
 }
 
 arcade::export!(Race);

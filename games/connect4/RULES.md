@@ -4,7 +4,8 @@ Drop your discs into the frame and be the first to line up four of your colour i
 
 ## How to play
 - Two players: **red** (Team A) and **yellow** (Team B). Playing alone, a bot takes the other colour.
-- The board has 7 columns and 6 rows. Red moves first, then you take turns.
+- The board has 7 columns and 6 rows. You take turns, one disc each.
+- Who moves first is picked at random for the first game. After that it alternates: on **PLAY AGAIN**, whoever went second last time goes first.
 - On your turn, pick a column. Your disc falls to the lowest empty space in it.
 - A full column cannot be played; choose another.
 
