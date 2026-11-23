@@ -9,7 +9,7 @@
  * A real-device pass on Lokesh's Android phone (2026-11-18: 354x696 CSS px at
  * DPR 3.5) found tap targets under 44px and text under 12px inside games —
  * which no suite caught, because each checked the few controls it knew of.
- * This plays each of lokeshmohanty/web-games' six games (registry pin, or
+ * This plays each of lokeshmohanty/web-games' eight games (registry pin, or
  * NEON_PIN_OVERRIDE) through its setup, play and end, and at each step holds
  * the whole game frame to scripts/serve.mjs `phoneSizes` — at 390x844 and at
  * that phone's 354x696 — with `phoneFloors`' `hit: true`: every visible,
@@ -25,7 +25,7 @@
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { homedir } from "node:os";
-import { gameScope, phoneFloors, phoneSizes, readyToClick, serve, settled } from "./serve.mjs";
+import { communityHas, registryLists, gameScope, phoneFloors, phoneSizes, readyToClick, serve, settled } from "./serve.mjs";
 import { loadPlaywright } from "./playwright.mjs";
 
 const TIMEOUT = 30_000;
@@ -68,6 +68,8 @@ const EXEMPT = {
 	"light-cycles": [],
 	"bubble-rush": [],
 	"draw-guess": [],
+	"five-in-a-row": [],
+	"snakes-and-ladders": [],
 };
 
 const chrome = [process.env.CHROME, "/run/current-system/sw/bin/google-chrome-stable", "/run/current-system/sw/bin/chromium", join(homedir(), ".nix-profile", "bin", "google-chrome-stable"), "/usr/bin/google-chrome"]
@@ -334,6 +336,80 @@ const GAMES = {
 		await audit(page, G, "bubble-rush", "the round over", { min: 0, canvas: true });
 	},
 
+	/** Your turn on an empty board; a game under way, zoomed in and out (a ghost waiting for its second tap); the end. */
+	async "five-in-a-row"(page) {
+		const G = await solo(page, "five-in-a-row", 2);
+		const view = () => debug(G);
+		/** A tap on cell (x, y) of the board, as a finger's pointer events at its spot. */
+		const tap = (x, y) =>
+			G.evaluate(([x, y]) => {
+				const d = window.__game.handle.debug();
+				const c = document.querySelector(".fr-board canvas");
+				const r = c.getBoundingClientRect();
+				const at = { clientX: r.left + d.box.w / 2 + (x - d.cam.x) * d.cam.z, clientY: r.top + d.box.h / 2 + (y - d.cam.y) * d.cam.z, pointerId: 7, pointerType: "touch", isPrimary: true, bubbles: true };
+				c.dispatchEvent(new PointerEvent("pointerdown", at));
+				c.dispatchEvent(new PointerEvent("pointerup", at));
+			}, [x, y]);
+		/** The legal cell nearest the middle of the view: a careless player's move. */
+		const careless = (d) => d.legal.reduce((a, b) => (Math.hypot(b[0] - d.cam.x, b[1] - d.cam.y) < Math.hypot(a[0] - d.cam.x, a[1] - d.cam.y) ? b : a));
+		await until(G, () => window.__game.handle.debug().myTurn);
+		await audit(page, G, "five-in-a-row", "your turn", { min: 3, fit: [".fr-board, .fr-tools button", 4] });
+		let zoomed = false;
+		const end = Date.now() + 180_000;
+		for (let d = await view(); d.winner === null && Date.now() < end; d = await view()) {
+			if (!d.myTurn) {
+				await sleep(150);
+				continue;
+			}
+			if (!zoomed && d.marks.length >= 4) {
+				zoomed = true;
+				await audit(page, G, "five-in-a-row", "a game under way", { min: 3, fit: [".fr-board, .fr-tools button", 4] });
+				// Zoomed far out a first tap only shows the mark; the second places it.
+				for (let i = 0; i < 3; i++) await G.locator(".fr-tools button").first().click();
+				const z = await view();
+				const [x, y] = careless(z);
+				await tap(x, y);
+				await until(G, () => !!window.__game.handle.debug().pending);
+				const ghost = await view();
+				check("five-in-a-row · zoomed out (cells under 32px), a first tap leaves a ghost and places nothing", ghost.cam.z < 32 && ghost.marks.length === z.marks.length && ghost.pending?.join() === `${x},${y}`, { z: ghost.cam.z, pending: ghost.pending });
+				await audit(page, G, "five-in-a-row", "zoomed out, a ghost waiting", { min: 3 });
+				await tap(x, y);
+				await until(G, (n) => window.__game.handle.debug().marks.length > n, z.marks.length);
+				for (let i = 0; i < 3; i++) await G.locator(".fr-tools button").nth(1).click();
+				continue;
+			}
+			const [x, y] = careless(d);
+			await tap(x, y);
+			await until(G, (n) => window.__game.handle.debug().marks.length > n || window.__game.handle.debug().winner !== null, d.marks.length);
+		}
+		const last = await view();
+		check("five-in-a-row reached its end", last.winner !== null, { winner: last.winner, marks: last.marks.length });
+		await audit(page, G, "five-in-a-row", "the end", { min: 3 });
+	},
+
+	/** Your roll, a move playing, the end. */
+	async "snakes-and-ladders"(page) {
+		const G = await solo(page, "snakes-and-ladders", 2);
+		const fit = [".sl-status, .sl-players, .sl-board, .sl-die", 4];
+		await until(G, () => {
+			const d = window.__game.handle.debug();
+			return d.myTurn && !d.busy;
+		});
+		await audit(page, G, "snakes-and-ladders", "your roll", { min: 1, canvas: true, fit });
+		await G.evaluate(() => document.querySelector(".sl-die").click());
+		await until(G, () => window.__game.handle.debug().busy);
+		await audit(page, G, "snakes-and-ladders", "a move playing", { min: 0, canvas: true, fit });
+		const end = Date.now() + 300_000;
+		for (let d = await debug(G); !d.over && Date.now() < end; d = await debug(G)) {
+			if (d.myTurn && !d.tumbling) await G.evaluate(() => document.querySelector(".sl-die:not(:disabled)")?.click());
+			await sleep(250);
+		}
+		const last = await debug(G);
+		check("snakes-and-ladders reached its end", last.over, { home: last.home, rolls: last.rolls });
+		await until(G, () => !window.__game.handle.debug().busy);
+		await audit(page, G, "snakes-and-ladders", "the end", { min: 0, canvas: true, fit });
+	},
+
 	/** Two people (no bots): drawing and guessing, the reveal, game over — both phones. */
 	async "draw-guess"(host) {
 		const guest = watch(await host.context().newPage());
@@ -444,12 +520,25 @@ async function floorsItself() {
 	await ctx.close();
 }
 
+// Games a web-games branch adds before the registry's pin has them: with the
+// pin's build they are not in community/catalog.js, and their blocks skip
+// (said, not silent) so main stays green until the pin moves.
+const AWAITING_PIN = new Set(["five-in-a-row", "snakes-and-ladders"]);
+
 const only = process.argv.slice(2);
 try {
 	if (!only.length || only.includes("floors")) await floorsItself();
 	for (const [id, run] of Object.entries(GAMES)) {
 		if (only.length && !only.includes(id)) continue;
 		console.log(`\ntaps: ${id}`);
+		if (AWAITING_PIN.has(id) && !communityHas(`lokeshmohanty/${id}`)) {
+			if (registryLists(`lokeshmohanty/${id}`)) {
+				check(`lokeshmohanty/${id} is listed in the registry but missing from community/catalog.js`, false);
+				continue;
+			}
+			console.log(`  skip lokeshmohanty/${id} is not in community/catalog.js (the registry's pin has not moved to it yet)`);
+			continue;
+		}
 		const ctx = await phone();
 		const page = watch(await ctx.newPage());
 		try {

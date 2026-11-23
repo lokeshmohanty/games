@@ -187,6 +187,64 @@ async function sweepMouse(page, seconds, phase = 0) {
 	}
 }
 
+/**
+ * SINGLE PLAYER with `players` seated at the quick table (the others bots),
+ * then START GAME, off camera; returns once the game's first view is in.
+ */
+async function soloTable(page, players) {
+	await page.locator("button", { hasText: "SINGLE PLAYER" }).first().click();
+	// A game whose seats leave a choice opens on the quick table; one with a
+	// fixed number (Tic Tac Toe) offers START GAME straight away.
+	const table = page.locator(".quick-table");
+	if (await table.waitFor({ timeout: 5000 }).then(() => true, () => false)) {
+		for (let i = 0; i < 10 && Number(await page.locator(".quick-n").textContent()) !== players; i++) {
+			const now = Number(await page.locator(".quick-n").textContent());
+			await page.locator(`.quick-table [data-qt="${now < players ? "plus" : "minus"}"]`).click();
+			await sleep(120);
+		}
+		await page.locator(".quick-table button", { hasText: "START GAME" }).first().click();
+	} else if (!(await page.evaluate(() => !!window.__game?.handle))) await page.locator("button", { hasText: "START GAME" }).first().click({ timeout: 5000 }).catch(() => {});
+	await page.waitForFunction(() => window.__game?.handle, null, { timeout: 20_000 });
+	const G = await gameScope(page, 20_000);
+	await G.waitForFunction(() => { const d = window.__game.handle.debug(); return !!d && (d.match != null || Array.isArray(d.board)); }, null, { timeout: 20_000 }).catch(() => {});
+	await readyToClick(page);
+}
+
+/** Snakes & Ladders: tap the die on this phone's roll, for `seconds` or until `done(view)`. */
+async function slRolls(page, seconds, done) {
+	const G = await gameScope(page, 20_000);
+	const end = Date.now() + seconds * 1000;
+	while (Date.now() < end) {
+		const v = await G.evaluate(() => window.__game.handle.debug()).catch(() => null);
+		if (!v || done(v)) break;
+		if (v.myTurn && !v.tumbling) {
+			await sleep(250);
+			await G.locator(".sl-die").click({ timeout: 2000 }).catch(() => {});
+		}
+		await sleep(200);
+	}
+}
+
+/** A person's Tic Tac Toe move (tttPick), clicked on the square. */
+async function tttMove(page, G, v) {
+	const box = await G.locator("#ttt button").nth(tttPick(v.board, v.you)).boundingBox();
+	if (box) await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
+}
+
+/** Tic Tac Toe as a person plays it: win, block, the centre, a corner, the first free square. */
+function tttPick(board, me) {
+	const lines = [[0, 1, 2], [3, 4, 5], [6, 7, 8], [0, 3, 6], [1, 4, 7], [2, 5, 8], [0, 4, 8], [2, 4, 6]];
+	const them = me === 1 ? 2 : 1;
+	for (const who of [me, them]) {
+		for (const l of lines) {
+			const mine = l.filter((i) => board[i] === who).length;
+			const free = l.filter((i) => !board[i]);
+			if (mine === 2 && free.length === 1) return free[0];
+		}
+	}
+	return [4, 0, 2, 6, 8, 1, 3, 5, 7].find((i) => !board[i]) ?? 0;
+}
+
 // ---------------------------------------------------------------- scenarios
 
 const GAMES = {
@@ -596,6 +654,104 @@ const GAMES = {
 				if (moves < 0) break; // someone won
 				await sleep(80);
 			}
+			await sleep(1200);
+		},
+	},
+
+	"tic-tac-toe-js": {
+		// The Tic Tac Toe listed under Strategy (scripts/build-catalog.mjs
+		// LISTED_EXAMPLE): one phone against the bot, a game and the start of
+		// the next.
+		file: "?game=tic-tac-toe-js&fresh=1",
+		peers: 1,
+		seconds: 12,
+		async beforeStart([page]) {
+			await soloTable(page, 2);
+			// The opening off camera, so the poster (the clip's first frame)
+			// is a game under way rather than an empty grid.
+			const G = await gameScope(page, 20_000);
+			for (let i = 0; i < 40; i++) {
+				const v = await G.evaluate(() => window.__game.handle.debug()).catch(() => null);
+				if (v?.board && v.board.filter(Boolean).length >= 3) break;
+				if (v?.you && v.turn === v.you && v.winner === null) await tttMove(page, G, v);
+				await sleep(250);
+			}
+		},
+		async play([page], seconds) {
+			const G = await gameScope(page, 20_000);
+			const end = Date.now() + seconds * 1000;
+			let games = 0;
+			while (Date.now() < end) {
+				const v = await G.evaluate(() => window.__game.handle.debug()).catch(() => null);
+				if (v && v.winner !== null && v.winner !== undefined) {
+					if (++games >= 2) break;
+					await sleep(1600);
+					await page.locator(".managed-over button", { hasText: "PLAY AGAIN" }).first().click({ timeout: 5000 }).catch(() => {});
+					await sleep(500);
+					continue;
+				}
+				if (v && v.you && v.turn === v.you) {
+					await sleep(350);
+					await tttMove(page, G, v);
+				}
+				await sleep(200);
+			}
+			await sleep(1200);
+		},
+	},
+
+	"five-in-a-row": {
+		file: "?game=lokeshmohanty%2Ffive-in-a-row&fresh=1",
+		// One phone and three bots: four colours and shapes on the board.
+		peers: 1,
+		seconds: 12,
+		async beforeStart([page]) {
+			await soloTable(page, 4);
+		},
+		async play([page], seconds) {
+			const G = await gameScope(page, 20_000);
+			const end = Date.now() + seconds * 1000;
+			while (Date.now() < end) {
+				const v = await G.evaluate(() => window.__game.handle.debug()).catch(() => null);
+				if (!v || v.winner !== null) break;
+				if (v.myTurn) {
+					// The cell the game's own bot would take, tapped like a person.
+					const [x, y] = await G.evaluate(() => {
+						const d = window.__game.handle.debug();
+						const order = d.seats.map((_, i) => (d.you + i) % d.seats.length).filter((i) => !d.out[i]);
+						return window.fiveInARowRules.botCell(d.marks, d.you, order, d.moves);
+					});
+					const at = await G.evaluate(([x, y]) => {
+						const d = window.__game.handle.debug();
+						return [d.box.left + d.box.w / 2 + (x - d.cam.x) * d.cam.z, d.box.top + d.box.h / 2 + (y - d.cam.y) * d.cam.z];
+					}, [x, y]);
+					const frame = await page.locator("iframe").first().boundingBox();
+					await sleep(300);
+					if (frame) await page.mouse.click(frame.x + at[0], frame.y + at[1]);
+				}
+				await sleep(200);
+			}
+			// The whole board, to finish on.
+			await G.locator(".fr-tools button").nth(2).click().catch(() => {});
+			await sleep(1500);
+		},
+	},
+
+	"snakes-and-ladders": {
+		file: "?game=lokeshmohanty%2Fsnakes-and-ladders&fresh=1",
+		// One phone and three bots, upright like the phone it is made for.
+		peers: 1,
+		seconds: 14,
+		width: 460,
+		height: 760,
+		async beforeStart([page]) {
+			await soloTable(page, 4);
+			// The opening off camera: the clip starts with tokens up the board,
+			// near the ladders and snakes.
+			await slRolls(page, 40, (v) => Math.max(...v.pos) >= 30);
+		},
+		async play([page], seconds) {
+			await slRolls(page, seconds, (v) => v.over);
 			await sleep(1200);
 		},
 	},
