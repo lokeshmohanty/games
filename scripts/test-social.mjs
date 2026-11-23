@@ -171,6 +171,9 @@ try {
 	const anaStarts = [];
 	ana.p.on("request", (r) => r.url().includes("/api/match/start") && anaStarts.push(r.url()));
 	await ana.p.evaluate(() => {
+		// Who opens rotates and the first match draws at random (lib/sdk-managed.js
+		// nextFirst, 2026-11-22): pin the draw so Ana, the first seat, opens.
+		window.NeonArcade.firstDraw = () => 0;
 		const r = window.__party.room;
 		const [a, b] = r.getMembers();
 		r.setTeam(a.id, "A");
