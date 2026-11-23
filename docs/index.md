@@ -226,12 +226,16 @@ fixed 2026-11-19, branch `phone-shell`)**, asserted with computed sizes
   (`scripts/serve.mjs` `communityHas`), so main stays green between the
   games repo's merge and the pin's.
   The three games of lokeshmohanty/card-games joined them (branch
-  `card-games`, 2026-11-23): Glowdown's house rules, your turn, a pick and
-  a hand of 13 or more fanned in rows; 29's rules, bid, trump pick, asking
-  for the trump and turn; Guess What's options, a clue-giver's screen, the
-  guesser's nine, the answer and the one-phone game. Their blocks (and
-  test-bots') skip, saying so, only while the registry does not list them
-  (`scripts/serve.mjs` `registryLists`); listed but missing fails.
+  `card-games`, 2026-11-23): each one's settings screen at friends' first
+  game (host and guest), a one-tap start straight into play on the
+  settings kept on the phone (the settings only the first time, Lokesh
+  2026-11-23, as Ludo), Glowdown's turn, a pick and a hand of 13 or more
+  fanned in rows; 29's bid, trump pick, asking for the trump and turn;
+  Guess What's clue-giver, guesser, answer and one-phone screens; and each
+  end's "Next game: … · CHANGE" with its choices above the tucked end card.
+  Their blocks (and test-bots') skip, saying so, only while the registry
+  does not list them (`scripts/serve.mjs` `registryLists`); listed but
+  missing fails.
   `just test-taps` (CI shard 5) plays every phase of each and holds the
   whole frame to `phoneSizes` (390x844 and 354x696, in `scripts/serve.mjs`)
   with `phoneFloors`' `hit: true`: box and hit area, every enabled control

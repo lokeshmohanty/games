@@ -138,6 +138,83 @@ async function solo(page, id, players, people = []) {
 /** Press a button inside the game's frame, as the suites do (a screenshot can stop page clicks reaching a frame). */
 const press = (G, sel) => G.evaluate((sel) => document.querySelector(sel).click(), sel);
 
+/** Keep `value` in a community game's storage on this phone (what the game reads in `init.storage`), before it opens. */
+async function keepOnPhone(page, id, value) {
+	if (!page.url().startsWith(site.base)) await page.goto(site.url("./"));
+	await page.evaluate(([k, v]) => localStorage.setItem(k, JSON.stringify(v)), [`neon.g.lokeshmohanty/${id}`, value]);
+}
+
+/**
+ * A card game's first game among friends: two phones in a party by invite
+ * (and bots, where the game needs more seats), START GAME; the settings
+ * screen on the host's phone and the guest's, held to the floors. Its own
+ * context, closed after: the solo play goes on in `page`.
+ */
+async function friendsSetup(page, id, { min }) {
+	const ctx = await phone();
+	const host = watch(await ctx.newPage());
+	const guest = watch(await ctx.newPage());
+	try {
+		await host.goto(site.url(`?game=lokeshmohanty%2F${id}&fresh=1`));
+		await host.locator("button", { hasText: "MULTI-PLAYER" }).first().click();
+		await host.locator("button", { hasText: "INVITE A FRIEND" }).first().click();
+		const invite = host.locator("textarea.share-code").first();
+		await invite.waitFor({ timeout: TIMEOUT });
+		await guest.goto(await invite.inputValue());
+		const reply = guest.locator("textarea.share-code").first();
+		await reply.waitFor({ timeout: TIMEOUT });
+		await host.locator("textarea.share-code").last().fill(await reply.inputValue());
+		await host.locator("button.neon-btn", { hasText: /^CONNECT$/ }).first().click();
+		await guest.locator(".party-member").nth(1).waitFor({ timeout: TIMEOUT });
+		await host.bringToFront();
+		const start = host.locator("button", { hasText: "START GAME" }).first();
+		for (let k = 0; k < 4 && (await start.isDisabled().catch(() => false)); k++) await host.locator("button", { hasText: "ADD BOT" }).first().click();
+		await start.click();
+		await host.waitForFunction(() => window.__game?.handle, null, { timeout: TIMEOUT });
+		await guest.waitForFunction(() => window.__game?.handle, null, { timeout: TIMEOUT });
+		const H = await gameScope(host, TIMEOUT);
+		const U = await gameScope(guest, TIMEOUT);
+		await until(H, () => window.__game.handle.debug().phase === "setup");
+		await until(U, () => window.__game.handle.debug().phase === "setup");
+		check(`${id} · two people, a first game: the settings screen`, true);
+		await readyToClick(host);
+		await audit(host, H, id, "the settings, friends' first game (host)", { min });
+		await guest.bringToFront();
+		await readyToClick(guest);
+		await audit(guest, U, id, "the settings, friends' first game (guest, the host picks)", { min: 0 });
+	} catch (err) {
+		check(`${id} · friends' first game: the settings screen`, false, err.message.split("\n")[0]);
+	}
+	await ctx.close();
+}
+
+/**
+ * The end of a card game: SEE THE BOARD tucks the shell's card away, and the
+ * host's phone says what PLAY AGAIN starts, "Next game: … · CHANGE" (Lokesh,
+ * 2026-11-23, as Ludo). CHANGE opens the choices, all above the tucked card;
+ * a pick, then DONE, and the line says so.
+ */
+async function nextGameLine(page, G, id, { line, change, picks, says, min, pick, after }) {
+	await page.locator(".managed-over button", { hasText: "SEE THE BOARD" }).first().click({ timeout: TIMEOUT });
+	await until(G, (sel) => !!document.querySelector(`${sel}:not([hidden])`), line);
+	const text = () => G.evaluate((sel) => document.querySelector(sel).textContent, line);
+	check(`${id} · the end: the next game is this one's (${says.slice(11)}), with CHANGE`, (await text()).startsWith(says), await text());
+	await audit(page, G, id, "the end, the next game line", { min: 1 });
+	await press(G, change);
+	await until(G, (sel) => !!document.querySelector(sel), picks);
+	const aboveCard = async () => {
+		const card = await page.locator(".managed-over > div").first().boundingBox();
+		const frame = await page.locator("iframe.game-frame, iframe").first().boundingBox();
+		const bottom = await G.evaluate((sel) => Math.max(...[...document.querySelectorAll(`${sel} button`)].map((b) => b.getBoundingClientRect().bottom)), line);
+		return card && frame && frame.y + bottom <= card.y ? null : { cardTop: card?.y, controlsBottom: frame && frame.y + bottom };
+	};
+	await audit(page, G, id, "choosing the next game", { min, extra: aboveCard });
+	await press(G, pick);
+	await press(G, change);
+	await until(G, (sel) => !document.querySelector(sel), picks);
+	check(`${id} · CHANGE, a pick, DONE: the line says so`, (await text()).startsWith(after), await text());
+}
+
 const debug = (G) => G.evaluate(() => window.__game.handle.debug());
 /** The elements matching `sel`, on show: how many, and whether all are on screen below the band. */
 function onScreen(G, sel) {
@@ -426,16 +503,12 @@ const GAMES = {
 		await audit(page, G, "snakes-and-ladders", "the end", { min: 0, canvas: true, fit });
 	},
 
-	/** The house rules, your turn, a pick (a PRISM's suit or a 7's swap), a long hand fanned in rows, the end. */
+	/** Two phones (friends' first game): the house rules; one with bots: straight in, your turn, a pick, a long hand fanned in rows, the end, the next game's rules. */
 	async glowdown(page) {
+		await friendsSetup(page, "glowdown", { host: ".gd-rule, .gd-btn.go", min: 5 });
 		const G = await solo(page, "glowdown", 4);
-		await until(G, () => window.__game.handle.debug().phase === "setup");
-		await audit(page, G, "glowdown", "the house rules", { min: 5 });
-		for (const k of ["stack", "jumpIn", "sevenZero", "drawUntil"]) {
-			await press(G, `.gd-rule[data-rule="${k}"]`);
-			await until(G, (k) => window.__game.handle.debug().house[k], k);
-		}
-		await press(G, ".gd-btn.go");
+		await until(G, () => window.__game.handle.debug().phase !== "setup" && window.__game.handle.debug().phase != null);
+		check("glowdown · one person with bots: no setup, straight into the deal (the setup only the first time, and only for friends)", (await debug(G)).phase === "play");
 		await until(G, () => window.__game.handle.debug().myTurn);
 		const fit = [".gd-status, .gd-others, .gd-table, .gd-hand", 4];
 		await audit(page, G, "glowdown", "your turn", { min: 1, fit });
@@ -476,16 +549,18 @@ const GAMES = {
 		check("glowdown reached its end", last.phase === "over", { counts: last.counts });
 		check("glowdown: a hand of 13 or more was fanned in rows", long);
 		await audit(page, G, "glowdown", "the end", { min: 0 });
+		await nextGameLine(page, G, "glowdown", { line: ".gd-next", change: ".gd-next-change", picks: ".gd-next button[data-rule]", says: "Next game: no house rules", min: 5, pick: '.gd-next button[data-rule="stack"]', after: "Next game: Stack draws" });
 	},
 
-	/** The rules, your bid, the trump pick, your turn (asking for the trump when it comes), the end. */
+	/** Two phones and bots (friends' first game): the rules; one with bots: straight in on the rules kept on the phone, your bid, the trump pick, asking for the trump, your turn, the end, the next game's rules. */
 	async "twenty-nine"(page) {
+		await friendsSetup(page, "twenty-nine", { host: ".tn-opt, .tn-goal, .tn-btn.go", min: 5 });
+		// The rules a one-tap start uses: kept on the phone (one hand to win, to keep this short).
+		await keepOnPhone(page, "twenty-nine", { house: { pair: true, goal: 1 } });
 		const G = await solo(page, "twenty-nine", 4);
-		await until(G, () => window.__game.handle.debug().phase === "setup");
-		await audit(page, G, "twenty-nine", "the rules", { min: 5 });
-		await press(G, '.tn-goal[data-goal="1"]');
-		await until(G, () => window.__game.handle.debug().house.goal === 1);
-		await press(G, ".tn-btn.go");
+		await until(G, () => window.__game.handle.debug().phase != null && window.__game.handle.debug().phase !== "setup");
+		const first = await debug(G);
+		check("twenty-nine · one person with bots: no setup, straight into the bidding, on the rules kept on the phone", first.phase === "bid" && first.house.goal === 1, { phase: first.phase, house: first.house });
 		const seen = new Set();
 		const fit = [".tn-status, .tn-table, .tn-hand", 3];
 		const end = Date.now() + 240_000;
@@ -515,17 +590,17 @@ const GAMES = {
 		check("twenty-nine reached its end", last.phase === "over", { score: last.score });
 		check("twenty-nine: bid, played and saw your own turn", seen.has("your bid") && seen.has("your turn"), [...seen]);
 		await audit(page, G, "twenty-nine", "the end", { min: 0 });
+		await nextGameLine(page, G, "twenty-nine", { line: ".tn-next", change: ".tn-next-change", picks: ".tn-next .tn-goal", says: "Next game: first to 1 hand, pair rule on", min: 5, pick: '.tn-next .tn-goal[data-goal="3"]', after: "Next game: first to 3 hands, pair rule on" });
 	},
 
-	/** Every phone: the options, a clue-giver's screen, the guesser's nine, the answer. One phone: GO, the picture, the tally. */
+	/** Two phones (friends' first game): the options. Every phone, with bots: a clue-giver's screen, the guesser's nine, the answer, the next game's options. One phone: look away, the picture, the tally. */
 	async "guess-what"(page) {
+		await friendsSetup(page, "guess-what", { host: ".gw-opt, .gw-btn.go", min: 13 });
+		await keepOnPhone(page, "guess-what", { opts: { cats: ["animals", "food", "things", "play", "travel", "nature"], secs: 30, turns: 1 } });
 		let G = await solo(page, "guess-what", 3);
-		await until(G, () => window.__game.handle.debug().phase === "setup");
-		await audit(page, G, "guess-what", "the options", { min: 13 });
-		await press(G, '.gw-opt[data-secs="30"]');
-		await press(G, '.gw-opt[data-turns="1"]');
-		await until(G, () => window.__game.handle.debug().opts.turns === 1 && window.__game.handle.debug().opts.secs === 30);
-		await press(G, ".gw-btn.go");
+		await until(G, () => window.__game.handle.debug().phase != null && window.__game.handle.debug().phase !== "setup");
+		const first = await debug(G);
+		check("guess-what · one person with bots: no setup, straight into the first round, on the options kept on the phone", first.phase === "ready" && first.opts.secs === 30 && first.opts.turns === 1, { phase: first.phase, opts: first.opts });
 		const seen = new Set();
 		const end = Date.now() + 240_000;
 		for (let d = await debug(G); d.phase !== "over" && Date.now() < end; d = await debug(G)) {
@@ -545,13 +620,9 @@ const GAMES = {
 		}
 		check("guess-what (every phone) reached its end", (await debug(G)).phase === "over");
 		check("guess-what: gave clues, guessed and saw the answer", seen.size === 3, [...seen]);
-		// One phone: two people at this phone with the host.
+		await nextGameLine(page, G, "guess-what", { line: ".gw-next", change: ".gw-next-change", picks: ".gw-next button[data-cat]", says: "Next game: every category · 30 s · 1 turn each", min: 11, pick: '.gw-next button[data-cat="food"]', after: "Next game: Animals, Things" });
+		// One phone: two people at this phone with the host, straight to the first turn.
 		G = await solo(page, "guess-what", 3, [1, 2]);
-		await until(G, () => window.__game.handle.debug().phase === "setup");
-		await press(G, '.gw-opt[data-secs="30"]');
-		await press(G, '.gw-opt[data-turns="1"]');
-		await until(G, () => window.__game.handle.debug().opts.turns === 1 && window.__game.handle.debug().opts.secs === 30);
-		await press(G, ".gw-btn.go");
 		await until(G, () => window.__game.handle.debug().mode === "one");
 		const one = new Set();
 		for (let d = await debug(G); d.phase !== "over" && Date.now() < end + 200_000; d = await debug(G)) {
@@ -560,9 +631,7 @@ const GAMES = {
 				one.add(step);
 				await audit(page, G, "guess-what", step, { min: 1 });
 			}
-			if (d.phase === "ready") await press(G, ".gw-main .gw-btn.go");
-			else if (d.phase === "talk") await press(G, ".gw-main .gw-btn.go");
-			else if (d.phase === "tally") await press(G, ".gw-main .gw-btn.go");
+			if (d.phase === "ready" || d.phase === "talk" || d.phase === "tally") await press(G, ".gw-main .gw-btn.go");
 			await sleep(d.phase === "talk" ? 2500 : 400);
 		}
 		check("guess-what (one phone) reached its end", (await debug(G)).phase === "over" && one.size === 3, [...one]);
