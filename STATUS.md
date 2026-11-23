@@ -16,6 +16,26 @@ separate `TODO.md`.*
 
 ## Now (2026-11-18)
 
+**Branch `card-games` (2026-11-23, not pushed, not merged):** a new
+community repo, lokeshmohanty/card-games (../card-games, local commits on
+`main`; GitHub repo exists, nothing pushed): Glowdown (an original shedding
+game with house rules), Guess What (a picture clue party game, every phone or
+one phone) and 29. Here: their test-taps and test-bots blocks (skipping
+until the pin has them, `communityHas`, ported from `new-games`), preview
+scenarios and `make-preview.sh --gif`, and NEON_PIN_OVERRIDE building an
+override's unlisted folders (also from `new-games`). No registry pin is
+committed: `registry/lokeshmohanty/card-games.json` moves by PR, with
+`just games-table` (worker/api/games.js) in the same PR. test-portal's
+Contributors and Collections checks expect card-games once the catalog has
+it (they listed exactly two repos). Found on
+the way: lib/sdk-managed.js `botMove` re-schedules from inside its own timer,
+before `finally` frees the bot's slot, so a bot left on turn by its own move
+(a trick it took and must lead, a drawn card that plays) is never asked
+again; the card games work round it in their rules (a bot's apply plays its
+follow-up moves), the platform is unchanged. And validate-game's play check
+skips every bots game as "needs people" since quick-start (no SINGLE PLAYER
+on the dev page).
+
 **Branch `quick-start` (2026-11-22, pushed, not merged):** one tap on a game
 starts it against bots, PLAY WITH FRIENDS (end card and PARTY, "Bottom,
 between rounds" — no bar, boards keep their size), CHANGE PLAYERS, a first

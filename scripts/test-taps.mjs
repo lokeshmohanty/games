@@ -9,8 +9,9 @@
  * A real-device pass on Lokesh's Android phone (2026-11-18: 354x696 CSS px at
  * DPR 3.5) found tap targets under 44px and text under 12px inside games —
  * which no suite caught, because each checked the few controls it knew of.
- * This plays each of lokeshmohanty/web-games' six games (registry pin, or
- * NEON_PIN_OVERRIDE) through its setup, play and end, and at each step holds
+ * This plays each of lokeshmohanty/web-games' six games and
+ * lokeshmohanty/card-games' three (registry pins, or NEON_PIN_OVERRIDE)
+ * through its setup, play and end, and at each step holds
  * the whole game frame to scripts/serve.mjs `phoneSizes` — at 390x844 and at
  * that phone's 354x696 — with `phoneFloors`' `hit: true`: every visible,
  * enabled, uncovered target, its box and its hit area, and every text; plus
@@ -25,7 +26,7 @@
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { homedir } from "node:os";
-import { gameScope, phoneFloors, phoneSizes, readyToClick, serve, settled } from "./serve.mjs";
+import { communityHas, gameScope, phoneFloors, phoneSizes, readyToClick, serve, settled } from "./serve.mjs";
 import { loadPlaywright } from "./playwright.mjs";
 
 const TIMEOUT = 30_000;
@@ -68,6 +69,9 @@ const EXEMPT = {
 	"light-cycles": [],
 	"bubble-rush": [],
 	"draw-guess": [],
+	glowdown: [],
+	"twenty-nine": [],
+	"guess-what": [],
 };
 
 const chrome = [process.env.CHROME, "/run/current-system/sw/bin/google-chrome-stable", "/run/current-system/sw/bin/chromium", join(homedir(), ".nix-profile", "bin", "google-chrome-stable"), "/usr/bin/google-chrome"]
@@ -96,8 +100,12 @@ function watch(page) {
 	return page;
 }
 
-/** The game with bots, from its SINGLE PLAYER address, `players` seated at the quick table. */
-async function solo(page, id, players) {
+/**
+ * The game with bots, from its SINGLE PLAYER address, `players` seated at
+ * the quick table; the seats in `people` (a same-device game) played by
+ * people on this phone.
+ */
+async function solo(page, id, players, people = []) {
 	await page.goto(site.url(`?game=lokeshmohanty%2F${id}&fresh=1&mode=bots`));
 	const which = await (
 		await page.waitForFunction(() => {
@@ -112,6 +120,12 @@ async function solo(page, id, players) {
 			await page.locator(`.quick-table [data-qt="${now < players ? "plus" : "minus"}"]`).click();
 			await page.waitForFunction((was) => Number(document.querySelector(".quick-table .quick-n")?.textContent) !== was, now, { timeout: TIMEOUT });
 		}
+		for (let i = 1; i < players; i++) {
+			const q = `.quick-table [data-qt="seat${i}-${people.includes(i) ? "person" : "bot"}"]`;
+			if (!(await page.locator(q).count())) continue; // not a same-device game: bots only
+			if ((await page.locator(q).getAttribute("aria-pressed")) !== "true") await page.locator(q).click();
+			await page.waitForFunction((q) => document.querySelector(q)?.getAttribute("aria-pressed") === "true", q, { timeout: TIMEOUT });
+		}
 		await page.locator(".quick-table .quick-go button").click();
 	}
 	await page.waitForFunction(() => window.__game?.handle, null, { timeout: TIMEOUT });
@@ -119,6 +133,8 @@ async function solo(page, id, players) {
 	await readyToClick(page);
 	return G;
 }
+/** Press a button inside the game's frame, as the suites do (a screenshot can stop page clicks reaching a frame). */
+const press = (G, sel) => G.evaluate((sel) => document.querySelector(sel).click(), sel);
 
 const debug = (G) => G.evaluate(() => window.__game.handle.debug());
 /** The elements matching `sel`, on show: how many, and whether all are on screen below the band. */
@@ -334,6 +350,148 @@ const GAMES = {
 		await audit(page, G, "bubble-rush", "the round over", { min: 0, canvas: true });
 	},
 
+	/** The house rules, your turn, a pick (a PRISM's suit or a 7's swap), a long hand fanned in rows, the end. */
+	async glowdown(page) {
+		const G = await solo(page, "glowdown", 4);
+		await until(G, () => window.__game.handle.debug().phase === "setup");
+		await audit(page, G, "glowdown", "the house rules", { min: 5 });
+		for (const k of ["stack", "jumpIn", "sevenZero", "drawUntil"]) {
+			await press(G, `.gd-rule[data-rule="${k}"]`);
+			await until(G, (k) => window.__game.handle.debug().house[k], k);
+		}
+		await press(G, ".gd-btn.go");
+		await until(G, () => window.__game.handle.debug().myTurn);
+		const fit = [".gd-status, .gd-others, .gd-table, .gd-hand", 4];
+		await audit(page, G, "glowdown", "your turn", { min: 1, fit });
+		// Draw on every turn for a while: the hand grows past one row (7 cards on a 354px phone).
+		const end = Date.now() + 420_000;
+		let picked = false;
+		let long = false;
+		for (let d = await debug(G); d.phase !== "over" && Date.now() < end; d = await debug(G)) {
+			if (!d.myTurn) {
+				await sleep(150);
+				continue;
+			}
+			if (!long && d.hand.length < 13) {
+				if (d.drawn != null) await press(G, ".gd-btn:not(.go)");
+				else await press(G, ".gd-draw");
+			} else if (!long) {
+				long = true;
+				await audit(page, G, "glowdown", `a long hand (${d.hand.length} cards)`, { min: 1, fit });
+				continue;
+			} else if (d.legal.length) {
+				const wild = d.legal.find((id) => id >= 104); // the PRISMs
+				const id = !picked && wild != null ? wild : d.legal[0];
+				await press(G, `.gd-card[data-card="${id}"]`);
+				await sleep(150);
+				const p = (await debug(G)).picking;
+				if (p) {
+					if (!picked) {
+						picked = true;
+						await audit(page, G, "glowdown", p.kind === "suit" ? "pick a suit" : "pick who to swap with", { min: 3 });
+					}
+					await press(G, ".gd-pick");
+				}
+			} else if (d.drawn != null) await press(G, ".gd-btn:not(.go)");
+			else await press(G, ".gd-draw");
+			await until(G, (n) => window.__game.handle.debug().last?.n !== n || !window.__game.handle.debug().myTurn, d.last?.n).catch(() => {});
+		}
+		const last = await debug(G);
+		check("glowdown reached its end", last.phase === "over", { counts: last.counts });
+		check("glowdown: a hand of 13 or more was fanned in rows", long);
+		await audit(page, G, "glowdown", "the end", { min: 0 });
+	},
+
+	/** The rules, your bid, the trump pick, your turn (asking for the trump when it comes), the end. */
+	async "twenty-nine"(page) {
+		const G = await solo(page, "twenty-nine", 4);
+		await until(G, () => window.__game.handle.debug().phase === "setup");
+		await audit(page, G, "twenty-nine", "the rules", { min: 5 });
+		await press(G, '.tn-goal[data-goal="1"]');
+		await until(G, () => window.__game.handle.debug().house.goal === 1);
+		await press(G, ".tn-btn.go");
+		const seen = new Set();
+		const fit = [".tn-status, .tn-table, .tn-hand", 3];
+		const end = Date.now() + 240_000;
+		for (let d = await debug(G); d.phase !== "over" && Date.now() < end; d = await debug(G)) {
+			if (d.phase === "hand-over") {
+				await press(G, ".tn-bar .tn-btn");
+				await sleep(300);
+				continue;
+			}
+			if (!d.myTurn) {
+				await sleep(150);
+				continue;
+			}
+			const step = d.phase === "play" && d.canReveal ? "asking for the trump" : d.phase === "bid" ? "your bid" : d.phase === "trump" ? "the trump pick" : "your turn";
+			if (!seen.has(step)) {
+				seen.add(step);
+				await audit(page, G, "twenty-nine", step, { min: step === "your bid" ? 2 : 1, fit });
+			}
+			if (d.phase === "bid") await press(G, d.mustBid || !seen.has("bid once") ? ".tn-bids .tn-btn" : ".tn-bids .tn-btn:last-child");
+			else if (d.phase === "trump") await press(G, ".tn-card:not(:disabled)");
+			else if (d.canReveal) await press(G, ".tn-bar .tn-btn");
+			else await press(G, `.tn-card[data-card="${d.legal[0]}"]`);
+			seen.add("bid once");
+			await until(G, (n) => window.__game.handle.debug().log.at(-1)?.n !== n, d.log.at(-1)?.n).catch(() => {});
+		}
+		const last = await debug(G);
+		check("twenty-nine reached its end", last.phase === "over", { score: last.score });
+		check("twenty-nine: bid, played and saw your own turn", seen.has("your bid") && seen.has("your turn"), [...seen]);
+		await audit(page, G, "twenty-nine", "the end", { min: 0 });
+	},
+
+	/** Every phone: the options, a clue-giver's screen, the guesser's nine, the answer. One phone: GO, the picture, the tally. */
+	async "guess-what"(page) {
+		let G = await solo(page, "guess-what", 3);
+		await until(G, () => window.__game.handle.debug().phase === "setup");
+		await audit(page, G, "guess-what", "the options", { min: 13 });
+		await press(G, '.gw-opt[data-secs="30"]');
+		await press(G, '.gw-opt[data-turns="1"]');
+		await until(G, () => window.__game.handle.debug().opts.turns === 1 && window.__game.handle.debug().opts.secs === 30);
+		await press(G, ".gw-btn.go");
+		const seen = new Set();
+		const end = Date.now() + 240_000;
+		for (let d = await debug(G); d.phase !== "over" && Date.now() < end; d = await debug(G)) {
+			const step = d.phase === "guess" ? (d.iGuess ? "guessing: the nine" : "giving clues") : d.phase === "reveal" ? "the answer" : null;
+			if (step && !seen.has(step)) {
+				seen.add(step);
+				await audit(page, G, "guess-what", step, { min: step === "the answer" ? 0 : 2 });
+			}
+			if (d.phase === "guess" && d.iGuess && d.clues.length) {
+				const k = d.choices.findIndex((_, i) => !d.struck.includes(i));
+				await press(G, `.gw-tile[data-pick="${k}"]`);
+			} else if (d.phase === "guess" && !d.iGuess && !d.clues.some((c) => c.by === d.you)) {
+				await G.locator(".gw-say input").fill("look closely");
+				await press(G, ".gw-say button");
+			}
+			await sleep(400);
+		}
+		check("guess-what (every phone) reached its end", (await debug(G)).phase === "over");
+		check("guess-what: gave clues, guessed and saw the answer", seen.size === 3, [...seen]);
+		// One phone: two people at this phone with the host.
+		G = await solo(page, "guess-what", 3, [1, 2]);
+		await until(G, () => window.__game.handle.debug().phase === "setup");
+		await press(G, '.gw-opt[data-secs="30"]');
+		await press(G, '.gw-opt[data-turns="1"]');
+		await until(G, () => window.__game.handle.debug().opts.turns === 1 && window.__game.handle.debug().opts.secs === 30);
+		await press(G, ".gw-btn.go");
+		await until(G, () => window.__game.handle.debug().mode === "one");
+		const one = new Set();
+		for (let d = await debug(G); d.phase !== "over" && Date.now() < end + 200_000; d = await debug(G)) {
+			const step = { ready: "one phone: look away", talk: "one phone: the picture", tally: "one phone: the tally" }[d.phase];
+			if (step && !one.has(step)) {
+				one.add(step);
+				await audit(page, G, "guess-what", step, { min: 1 });
+			}
+			if (d.phase === "ready") await press(G, ".gw-main .gw-btn.go");
+			else if (d.phase === "talk") await press(G, ".gw-main .gw-btn.go");
+			else if (d.phase === "tally") await press(G, ".gw-main .gw-btn.go");
+			await sleep(d.phase === "talk" ? 2500 : 400);
+		}
+		check("guess-what (one phone) reached its end", (await debug(G)).phase === "over" && one.size === 3, [...one]);
+	},
+
 	/** Two people (no bots): drawing and guessing, the reveal, game over — both phones. */
 	async "draw-guess"(host) {
 		const guest = watch(await host.context().newPage());
@@ -444,12 +602,21 @@ async function floorsItself() {
 	await ctx.close();
 }
 
+// Games a registry pin may not have yet (lokeshmohanty/card-games is new):
+// without them in community/catalog.js their blocks skip, said, not silent,
+// so main stays green until the pin moves.
+const AWAITING_PIN = new Set(["glowdown", "twenty-nine", "guess-what"]);
+
 const only = process.argv.slice(2);
 try {
 	if (!only.length || only.includes("floors")) await floorsItself();
 	for (const [id, run] of Object.entries(GAMES)) {
 		if (only.length && !only.includes(id)) continue;
 		console.log(`\ntaps: ${id}`);
+		if (AWAITING_PIN.has(id) && !communityHas(`lokeshmohanty/${id}`)) {
+			console.log(`  skip lokeshmohanty/${id} is not in community/catalog.js (the registry's pin has not moved to it yet)`);
+			continue;
+		}
 		const ctx = await phone();
 		const page = watch(await ctx.newPage());
 		try {
