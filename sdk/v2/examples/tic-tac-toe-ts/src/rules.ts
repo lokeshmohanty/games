@@ -34,9 +34,13 @@ const markOf = (s: State, id: MemberId | null | undefined): Mark => (id === s.x 
 const idOf = (s: State, p: Player): MemberId => (p === 1 ? s.x : s.o)!;
 
 export const game = defineGame<State, Move, View>({
-	init({ seats }) {
+	init({ seats, first }) {
 		const team = (t: string, i: number) => (seats.find((p) => p.team === t) ?? seats[i])?.id ?? null;
-		return { board: Array<Mark>(9).fill(0), turn: 1, winner: null, x: team("A", 0), o: team("B", 1) };
+		const x = team("A", 0);
+		const o = team("B", 1);
+		// The platform's `first` moves first: it takes turns between rematches
+		// (docs/sdk-v2.md "Who starts"). X otherwise, as from an older shell.
+		return { board: Array<Mark>(9).fill(0), turn: first && first === o ? 2 : 1, winner: null, x, o };
 	},
 	apply(s, action, by) {
 		const i = action?.i;

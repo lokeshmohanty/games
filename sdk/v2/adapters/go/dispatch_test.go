@@ -32,7 +32,12 @@ func (c *counter) Snapshot() any { return c }
 
 func TestDispatch(t *testing.T) {
 	d := &Dispatcher{
-		New: func(s Setup) Game { return &counter{First: s.Seats[0].ID} },
+		New: func(s Setup) Game {
+			if s.First != "" {
+				return &counter{First: s.First}
+			}
+			return &counter{First: s.Seats[0].ID}
+		},
 		Restore: func(snap RawJSON) (Game, error) {
 			c := &counter{}
 			return c, Unmarshal(snap, c)
@@ -51,6 +56,8 @@ func TestDispatch(t *testing.T) {
 		{`{"fn":"skip","seat":"a"}`, `{"v":false}`},
 		{`{"fn":"tick","inputs":{},"dt":0.1}`, `{"err":"no rule \"tick\""}`},
 		{`{"fn":"snapshot"}`, `{"v":{"n":4,"first":"a"}}`},
+		{`{"fn":"init","seats":[{"id":"a","name":"A","team":null,"bot":false}],"opts":{},"seed":1,"match":1,"first":"z"}`, `{"v":null}`},
+		{`{"fn":"snapshot"}`, `{"v":{"n":0,"first":"z"}}`},
 		{`{"fn":"restore","snapshot":{"n":9,"first":"b"}}`, `{"v":null}`},
 		{`{"fn":"result"}`, `{"v":null}`},
 		{`{"fn":"apply","action":{"add":1},"by":"a"}`, `{"v":null}`},

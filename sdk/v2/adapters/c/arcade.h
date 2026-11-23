@@ -605,6 +605,7 @@ typedef struct {
 	arcade_val opts; /* the game's options (manifest `opts`) */
 	long long seed;  /* a random seed */
 	int match;       /* 0, then 1 on the first rematch, ... */
+	const char *first; /* the seat that moves first (docs/sdk-v2.md "Who starts"); NULL from an older shell */
 } arcade_setup;
 
 /** The rules. Any may be NULL: skip then answers false ("cannot skip"), the
@@ -680,7 +681,7 @@ static inline const char *arcade__dispatch(const arcade_game *g, const char *cal
 	arcade_val root, fnv;
 	arcade_out o;
 	char fn[16];
-	char *by = NULL, *seat = NULL;
+	char *by = NULL, *seat = NULL, *first = NULL;
 	arcade_seat *seats = NULL;
 	int nseats = 0, ok, i, ran = 1;
 	const char *answer;
@@ -728,6 +729,8 @@ static inline const char *arcade__dispatch(const arcade_game *g, const char *cal
 		s.opts = arcade_get(root, "opts");
 		s.seed = seed;
 		s.match = match;
+		if (arcade_type(arcade_get(root, "first")) == ARCADE_STRING) first = arcade_strdup(arcade_get(root, "first"));
+		s.first = first;
 		if (!o.bad) g->init(&s);
 	} else if (!strcmp(fn, "apply") && g->apply) {
 		const char *reason = g->apply(arcade_get(root, "action"), by);
@@ -754,6 +757,7 @@ static inline const char *arcade__dispatch(const arcade_game *g, const char *cal
 
 	free(by);
 	free(seat);
+	free(first);
 	for (i = 0; seats && i < nseats; i++) {
 		free((void *)seats[i].id);
 		free((void *)seats[i].name);

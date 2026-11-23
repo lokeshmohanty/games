@@ -51,6 +51,9 @@ static void init(const arcade_setup *setup) {
 	s.turn = 1;
 	s.winner = RUNNING;
 	seat_ids(arcade_dup(team(setup, "A", 0)), arcade_dup(team(setup, "B", 1)));
+	/* The platform's first moves first: it takes turns between rematches
+	 * (docs/sdk-v2.md "Who starts"). X otherwise, as from an older shell. */
+	if (same(setup->first, s.o)) s.turn = 2;
 }
 
 static const char *apply(arcade_val action, const char *by) {

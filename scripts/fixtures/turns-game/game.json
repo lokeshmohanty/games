@@ -1,0 +1,15 @@
+{
+  "sdk": 2,
+  "id": "turns-game",
+  "name": "TURNS CHECK",
+  "blurb": "A fixture for scripts/test-managed.mjs: who starts each match.",
+  "entry": "index.html",
+  "kind": "ffa",
+  "shape": "free",
+  "seats": { "min": 2, "max": 4 },
+  "bots": true,
+  "state": "managed",
+  "license": "MIT",
+  "author": "lokeshmohanty",
+  "repo": "https://github.com/lokeshmohanty/games"
+}

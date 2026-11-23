@@ -115,7 +115,16 @@ const browser = await chromium.launch({
  * hosting budget — and leave rejoin tokens that the next page's fresh start
  * then has to release. An unreachable loopback server keeps every party
  * here classic, as the game pages always were.
+ *
+ * A managed game's first match opens on a seat drawn at random, and each
+ * PLAY AGAIN on the next (docs/sdk-v2.md "Who starts"). These suites play
+ * from the first seat's side (red, X, seat 0), so the draw lands there
+ * (lib/sdk-managed.js `firstDraw`, tests only); a rematch is the next seat's.
  */
+const firstSeatOpens = () => {
+	window.NeonArcade = window.NeonArcade || {};
+	window.NeonArcade.firstDraw = () => 0;
+};
 async function newContext() {
 	const ctx = await browser.newContext({ viewport: { width: 390, height: 844 } });
 	await ctx.addInitScript(() => {
@@ -123,6 +132,7 @@ async function newContext() {
 			localStorage.setItem("neon.rs", "http://127.0.0.1:9");
 		} catch {}
 	});
+	await ctx.addInitScript(firstSeatOpens);
 	return ctx;
 }
 const context = await newContext();
@@ -348,10 +358,12 @@ try {
 	// Rolled, both cups committed and collected, the clock on to "bid": a few
 	// round trips through the shell, not a fixed time. The clock collects
 	// before it moves on (lib/rounds.js), so digests read at "bid" still prove
-	// every cup was committed first.
+	// every cup was committed first. Who opens is drawn for the first game
+	// (docs/sdk-v2.md "Who starts"): when the bot opens, its bid comes first,
+	// so this waits for our turn.
 	await G.waitForFunction(() => {
 		const d = window.__game.handle.debug();
-		return d.phase === "bid" || !!d.over;
+		return (d.phase === "bid" && d.turn === window.arcade.party.self) || !!d.over;
 	}, null, { timeout: TIMEOUT }).catch(() => {});
 
 	let ld = await debug(page);
@@ -811,12 +823,13 @@ try {
 
 	// -------------------------------------------------------- bubble rush
 	//
-	// The other ticking game, and the one where a tap is an action the host
-	// judges: a phone sends where the finger landed and when, never which
-	// bubble, and the host hit-tests it against its own field. Checked here
-	// as a person plays it — a real click on a bubble scores, a click on
-	// empty field does not — and the 60-second round has to end by itself
-	// with the bots on every other seat having played.
+	// The other ticking game, and the one where a tap is judged on the phone
+	// that made it (Lokesh, 2026-11-21): the phone pops the bubble and scores
+	// it at once, then tells the host which bubble and when, and the host
+	// scores it the same way. Checked here as a person plays it — a real
+	// click on a bubble scores, a click on empty field does not — and the
+	// 60-second round has to end by itself with the bots on every other seat
+	// having played.
 
 	console.log("\nbots: bubble rush, a whole round against three bots");
 	await page.goto(url("?game=lokeshmohanty%2Fbubble-rush&fresh=1"));
@@ -876,9 +889,10 @@ try {
 		brFit.left >= 0 && brFit.right <= 390 && brFit.bottom <= 844 && brFit.hudTop >= 52 && brFit.bottom - brFit.top > 500 && brFit.doc <= 390, JSON.stringify(brFit));
 	check("…drawn at the device's pixel ratio", Math.abs(brFit.dpr - Math.min(3, await G.evaluate(() => devicePixelRatio))) < 0.05, `${brFit.dpr}`);
 
-	// A person's taps, judged by the host. The canvas is in the frame; the
-	// mouse is the page's, which reaches into it. A bubble's place is in the
-	// canvas's content box: the page box less the canvas's own border.
+	// A person's taps, judged on this phone and taken by the host. The canvas
+	// is in the frame; the mouse is the page's, which reaches into it. A
+	// bubble's place is in the canvas's content box: the page box less the
+	// canvas's own border.
 	const canvasBox = await G.locator(".br-field canvas").boundingBox();
 	const inset = await G.evaluate(() => {
 		const c = document.querySelector(".br-field canvas");
@@ -892,8 +906,8 @@ try {
 		lastTapAt = Date.now();
 		await page.mouse.click(canvasBox.x + inset.x + x, canvasBox.y + inset.y + y);
 	};
-	// A tap is judged on the host and comes back in a view (`ack`, the last of
-	// this phone's taps judged): read after that, not after a fixed pause.
+	// The host's score holds a tap once a view says it took it (`ack`, the
+	// last of this phone's taps taken): read after that, not after a fixed pause.
 	const judged = (taps) =>
 		G.waitForFunction((t) => {
 			const d = window.__game.handle.debug();
@@ -910,7 +924,7 @@ try {
 			popped = ((await debug(page)).scores[d.you] ?? 0) > before;
 		} else await sleep(150);
 	}
-	check("a tap on a bubble pops it: the host judged it and scored it", popped);
+	check("a tap on a bubble pops it, and the host scores it as this phone did", popped);
 	// Empty field: a spot near the top no bubble is near, as far as this phone sees.
 	let missed = null;
 	for (const end = Date.now() + 20_000; missed === null && Date.now() < end; ) {
@@ -993,6 +1007,15 @@ try {
 	// (top-level bindings of a classic script, as the game-previews recorder
 	// reads Neon Survival's). Before the fix (web-games 3b08824) these were 16
 	// of 30 (host) and 20 of 30 (guest); after it, 30 of 30 each.
+	//
+	// Lokesh, 2026-11-21: "the tap is registered after a delay costing
+	// experience of the game, register whether the tap succeeded on the
+	// player's device itself". The pop is the phone's to decide: the guest
+	// here sends its taps through a 400 ms delay (the network, one way; the
+	// host's word is at least two of those away), and every pop must show on
+	// that phone — the score up, the bubble gone, the ring — before the host
+	// has even heard of it, within a few milliseconds of the touch, and the
+	// host must then come to the same score (nothing taken back).
 
 	/** A 390x844 touch phone, its page and (later) its game frame throttled to `rate` x CPU. */
 	async function phone() {
@@ -1002,6 +1025,7 @@ try {
 				localStorage.setItem("neon.rs", "http://127.0.0.1:9");
 			} catch {}
 		});
+		await ctx.addInitScript(firstSeatOpens);
 		const p = await ctx.newPage();
 		p.on("pageerror", (err) => {
 			console.log(`  FAIL page error: ${err.message}`);
@@ -1039,9 +1063,27 @@ try {
 	/**
 	 * `n` honest taps on phone `p` (game frame `F`): hold the frame on screen,
 	 * wait `holdMs` [min, max], touch the centre of a bubble as that frame drew
-	 * it. What the host said, from this phone's own counts: { pops, misses, first }.
+	 * it. What the host said, from this phone's own counts: { pops, misses,
+	 * first }; and what this phone showed before the host had the tap:
+	 * `instant` (taps whose pop showed at once: the score up, the bubble gone,
+	 * a ring), `early` (of those, shown while the host had not yet taken the
+	 * tap), `showMs` (the slowest, touch to score on screen), `settled` (taps
+	 * after which the host's score was the one this phone showed). With
+	 * `delayMs`, every move this phone sends leaves that much later.
 	 */
-	async function honestTaps(p, F, { n, holdMs }) {
+	async function honestTaps(p, F, { n, holdMs, delayMs = 0 }) {
+		await F.evaluate((delayMs) => {
+			if (delayMs) {
+				const send = arcade.act;
+				arcade.act = (a) => setTimeout(() => send(a), delayMs);
+			}
+			// Touch to score on screen: the touch reaching the canvas, then the
+			// HUD's score changing (bubble-rush.js renderHud, in the handler).
+			window.__downAt = 0;
+			window.__showMs = [];
+			canvas.addEventListener("pointerdown", () => (window.__downAt = performance.now()), { capture: true });
+			new MutationObserver(() => window.__downAt && window.__showMs.push(performance.now() - window.__downAt)).observe(document.querySelector(".br-me"), { childList: true, characterData: true, subtree: true });
+		}, delayMs);
 		await F.evaluate(() => {
 			const orig = draw;
 			window.__shown = null;
@@ -1065,8 +1107,8 @@ try {
 		});
 		const box = await F.locator(".br-field canvas").boundingBox();
 		const inset = await F.evaluate(() => document.querySelector(".br-field canvas").clientLeft);
-		const out = { pops: 0, misses: 0, first: 0 };
-		const counts = () => F.evaluate(() => ({ popped: view.mine?.popped ?? 0, misses: view.mine?.misses ?? 0 }));
+		const out = { pops: 0, misses: 0, first: 0, instant: 0, early: 0, showMs: 0, settled: 0 };
+		const counts = () => F.evaluate(() => ({ popped: view.mine?.popped ?? 0, misses: view.mine?.misses ?? 0, score: __game.handle.debug().score, hidden: hidden.size, effects: effects.length }));
 		for (let i = 0, tries = 0; out.pops + out.misses < n && tries < n * 3; tries++) {
 			await F.evaluate(() => (window.__release = window.__hold()));
 			await F.evaluate(() => window.__held); // a frame already on its way finishes
@@ -1078,8 +1120,8 @@ try {
 				const h = canvas.clientHeight;
 				const drawn = bubbles
 					.filter((b) => !isHidden(b.id) && b.k !== "x" && R.alive(b, t) && R.surfaced(b, t))
-					.map((b) => ({ ...R.position(b, t), r: b.r }))
-					.map((q) => ({ px: q.x * w, py: q.y * h, pr: q.r * w }))
+					.map((b) => ({ id: b.id, ...R.position(b, t), r: b.r }))
+					.map((q) => ({ id: q.id, px: q.x * w, py: q.y * h, pr: q.r * w }))
 					.filter((q) => q.py > q.pr && q.py < h - q.pr);
 				return drawn[Math.floor(Math.random() * drawn.length)] ?? null;
 			});
@@ -1090,8 +1132,19 @@ try {
 			}
 			const before = await counts();
 			await sleep(holdMs[0] + Math.random() * (holdMs[1] - holdMs[0]));
+			await F.evaluate(() => (window.__showMs.length = 0));
 			await p.touchscreen.tap(box.x + inset + b.px, box.y + inset + b.py);
+			// What this phone shows right after the touch, before anything is let go.
+			// `hid`: the bubble touched is off this phone's field — hidden by this
+			// tap, or already dropped by a view that came since (the host's word
+			// on this pop, or a bot's pop of it that both keep).
+			const shown = await F.evaluate((id) => ({ score: __game.handle.debug().score, hid: [...hidden.values()].includes(tapN) || !bubbles.some((x) => x.id === id), effects: effects.length, ack: view?.ack ?? 0, taps: tapN, ms: window.__showMs[0] ?? null }), b.id);
 			await F.evaluate(() => window.__release());
+			if (shown.score > before.score && shown.hid && shown.effects > before.effects) {
+				out.instant++;
+				if (shown.ack < shown.taps) out.early++;
+				if (shown.ms !== null) out.showMs = Math.max(out.showMs, Math.round(shown.ms));
+			}
 			// Until the host has judged this tap (its view's `ack` reaches this
 			// phone's tap number): a late answer must not land in the next tap's
 			// count, and a slow one is not "someone popped it first".
@@ -1100,7 +1153,8 @@ try {
 			const after = await counts();
 			if (after.popped > before.popped) out.pops++;
 			else if (after.misses > before.misses) out.misses++;
-			else out.first++; // someone popped it first: neither
+			else out.first++; // the host could not place it: neither
+			if (await F.evaluate(() => { const d = __game.handle.debug(); return d.pending === 0 && d.score === (d.scores[d.you] ?? 0); })) out.settled++;
 			await sleep(120);
 		}
 		return out;
@@ -1126,6 +1180,7 @@ try {
 		const r = await honestTaps(p, F, { n: 30, holdMs: [100, 300] });
 		const rate = r.pops / Math.max(1, r.pops + r.misses);
 		check(`touching a bubble where the screen shows it pops it, the frame 100-300 ms old (${r.pops} of ${r.pops + r.misses})`, r.pops + r.misses >= 20 && rate >= 0.95, JSON.stringify(r));
+		check(`…each pop shows at once on this phone (${r.instant} of ${r.pops}, the slowest ${r.showMs} ms from touch to score), and the host's score is the one shown (${r.settled})`, r.instant >= r.pops && r.showMs < 100 && r.settled === r.pops + r.misses + r.first, JSON.stringify(r));
 		await ctx.close();
 	}
 
@@ -1159,9 +1214,11 @@ try {
 		await HF.waitForFunction(() => window.__game.handle.debug().mode === "ffa", null, { timeout: TIMEOUT });
 		await HF.locator(".br-setup button", { hasText: "START" }).tap();
 		await GF.waitForFunction(() => window.__game.handle.debug().phase === "play", null, { timeout: TIMEOUT });
-		const r = await honestTaps(guest.p, GF, { n: 30, holdMs: [100, 300] });
+		const r = await honestTaps(guest.p, GF, { n: 30, holdMs: [100, 300], delayMs: 400 });
 		const rate = r.pops / Math.max(1, r.pops + r.misses);
-		check(`a guest's touch where its screen shows a bubble pops it on the host, the frame 100-300 ms old (${r.pops} of ${r.pops + r.misses})`, r.pops + r.misses >= 20 && rate >= 0.95, JSON.stringify(r));
+		check(`a guest's touch where its screen shows a bubble pops it on the host, the frame 100-300 ms old, its moves 400 ms on the way (${r.pops} of ${r.pops + r.misses})`, r.pops + r.misses >= 20 && rate >= 0.95, JSON.stringify(r));
+		check(`…and each pop shows on the guest's phone at once, before the host has the tap: no round trip (${r.early} of ${r.pops}, the slowest ${r.showMs} ms from touch to score, at 4x CPU)`, r.early >= r.pops && r.instant >= r.pops && r.showMs < 100, JSON.stringify(r));
+		check(`…then the host's score is the one the guest showed: nothing taken back (${r.settled} of ${r.pops + r.misses + r.first})`, r.settled === r.pops + r.misses + r.first, JSON.stringify(r));
 		await host.ctx.close();
 		await guest.ctx.close();
 	}
@@ -1187,6 +1244,10 @@ try {
 		const minted = await invite.waitFor({ timeout: TIMEOUT }).then(() => true, () => false);
 		const refused = await host.p.evaluate(() => /full/i.test(document.getElementById("party")?.textContent ?? ""));
 		check("from a full eight-seat table, INVITE A FRIEND mints an invite (not \"This party is full\")", eight === 8 && minted && !refused, JSON.stringify({ eight, minted, refused }));
+		// The bot goes when the friend is admitted, not when the invite is
+		// made: an invite that lapses, or a join that fails, costs no bot.
+		const invited = await host.p.evaluate(() => ({ members: window.__party.room.getMembers().length, bots: window.__party.room.getMembers().filter((m) => NeonArcade.isBotId(m.id)).length }));
+		check("…the invite alone costs no bot: still eight, seven of them bots", invited.members === 8 && invited.bots === 7, JSON.stringify(invited));
 		if (minted) {
 			await guest.p.goto(await invite.inputValue());
 			const reply = guest.p.locator("textarea.share-code").first();
@@ -1434,18 +1495,22 @@ try {
 	check("PLAY AGAIN: an empty board with no last move ringed", state.match === 2 && state.last === null && state.marked === null, JSON.stringify({ match: state.match, last: state.last, marked: state.marked }));
 	said = await movedLine();
 	check("…and no move said", said.text === "", JSON.stringify(said));
+	// The rematch opens on the bot (the next seat: docs/sdk-v2.md "Who starts").
+	await c4.waitForFunction(() => window.__game.handle.debug().turn === window.__game.handle.debug().you, null, { timeout: TIMEOUT });
+	state = await debug(page);
+	check("…and the rematch opened on the bot's move: who starts takes turns", state.board.flat().filter(Boolean).length === 1 && state.board.flat().includes(2), JSON.stringify(state.board.flat().filter(Boolean)));
 	// Reduced motion: no fall, and the ring is on our disc in the same paint.
 	await page.emulateMedia({ reducedMotion: "reduce" });
 	const dropsBefore = state.drops;
-	await c4.waitForFunction(() => window.__game.handle.debug().turn === window.__game.handle.debug().you, null, { timeout: TIMEOUT });
-	await drop(3);
-	state = await c4.waitForFunction(() => {
+	const col = state.board[5][3] === 0 ? 3 : state.board[5].findIndex((v) => v === 0);
+	await drop(col);
+	state = await c4.waitForFunction((c) => {
 		const d = window.__game.handle.debug();
-		return d.board[5][3] !== 0 && d;
-	}, null, { timeout: TIMEOUT }).then((h) => h.jsonValue(), () => debug(page));
-	check("…our disc is ringed at once under reduced motion, with no fall", same(state.marked, [5, 3]) && same(state.last, [5, 3]) && state.drops === dropsBefore, JSON.stringify({ marked: state.marked, last: state.last, drops: [dropsBefore, state.drops] }));
+		return d.board[5][c] !== 0 && d;
+	}, col, { timeout: TIMEOUT }).then((h) => h.jsonValue(), () => debug(page));
+	check("…our disc is ringed at once under reduced motion, with no fall", same(state.marked, [5, col]) && same(state.last, [5, col]) && state.drops === dropsBefore, JSON.stringify({ marked: state.marked, last: state.last, drops: [dropsBefore, state.drops] }));
 	said = await movedLine();
-	check("…and said: Red dropped in column 4", said.text === "Red dropped in column 4", JSON.stringify(said));
+	check(`…and said: Red dropped in column ${col + 1}`, said.text === `Red dropped in column ${col + 1}`, JSON.stringify(said));
 	await page.emulateMedia({ reducedMotion: null });
 	// A game played: ./ opens on My Games now, with Recently played; the
 	// cards with your record are All Games' (lib/portal.js).
@@ -1806,21 +1871,21 @@ try {
 		await F.waitForFunction(() => window.__game.handle.debug().match != null, null, { timeout: TIMEOUT });
 		check("…one tap, START GAME, plays it", (await fission(F)).players.length === 4);
 
-		// PLAY SOMETHING's address (?start=1): that table at once, never drawn.
-		await q.goto(url("?game=neon-fission&fresh=1&mode=bots&start=1"));
+		// PLAY SOMETHING's address (?start=pick): that table's size at once, never drawn.
+		await q.goto(url("?game=neon-fission&fresh=1&mode=bots&start=pick"));
 		await q.waitForFunction(() => window.__party?.game === "neon-fission", null, { timeout: TIMEOUT });
 		const quickStart = await q.evaluate(() => ({ saw: window.__sawTable, bots: window.__party.room.getMembers().filter((m) => m.id.startsWith("bot_")).length, search: location.search }));
-		check("PLAY SOMETHING (start=1) skips the table: the remembered 4 players, at once", !quickStart.saw && quickStart.bots === 3, JSON.stringify(quickStart));
+		check("PLAY SOMETHING (start=pick) skips the table: the remembered 4 players, at once", !quickStart.saw && quickStart.bots === 3, JSON.stringify(quickStart));
 		// While it plays alone the address stays the tap's: a reload is a
 		// fresh bots game (Lokesh, 2026-11-22: "A fresh bots game").
-		check("…and the address keeps fresh, mode=bots and start while it plays alone, so a reload starts it again", /fresh=1/.test(quickStart.search) && /mode=bots/.test(quickStart.search) && /start=1/.test(quickStart.search), quickStart.search);
+		check("…and the address keeps fresh, mode=bots and start while it plays alone, so a reload starts it again", /fresh=1/.test(quickStart.search) && /mode=bots/.test(quickStart.search) && /start=pick/.test(quickStart.search), quickStart.search);
 
-		// The portal's PLAY SOMETHING links say start=1, and one tap plays without a table.
+		// The portal's PLAY SOMETHING links say start=pick, and one tap plays without a table.
 		await q.goto(url("index.html?page=games&tab=all"));
 		const quick = q.locator('[data-section="popular"] [data-quick]');
 		const href = await quick.getAttribute("href", { timeout: TIMEOUT });
 		const pick = await quick.getAttribute("data-game");
-		check("PLAY SOMETHING's link is the card's SINGLE PLAYER plus start=1", new URLSearchParams(href.slice(2)).get("start") === "1" && new URLSearchParams(href.slice(2)).get("game") === pick, href);
+		check("PLAY SOMETHING's link is the card's SINGLE PLAYER plus start=pick (bots only)", new URLSearchParams(href.slice(2)).get("start") === "pick" && new URLSearchParams(href.slice(2)).get("game") === pick, href);
 		await quick.click();
 		await q.waitForFunction((id) => window.__party?.game === id, pick, { timeout: TIMEOUT });
 		check("…one tap into it, no table on the way", !(await q.evaluate(() => window.__sawTable)), pick);
@@ -1885,6 +1950,19 @@ try {
 		await PF.waitForFunction(() => window.__game.handle.debug().match != null, null, { timeout: TIMEOUT });
 		const ps = { local: await r.evaluate(() => window.__party.room.getMembers().map((m) => m.local === true)), kinds: (await fission(PF)).players.map((p) => p.kind).join(), saw: await r.evaluate(() => !!document.querySelector(".quick-table")) };
 		check("a tap plays the table last played, its PERSON seat included, with no table drawn", ps.local.join() === "false,true,false" && ps.kinds === "human,local,bot", JSON.stringify(ps));
+		// PLAY SOMETHING, the random pick (start=pick), seats bots only, at
+		// the remembered size (Lokesh, 2026-11-23: "Bots only for random
+		// picks"), and leaves the PERSON seat saved for the next card tap.
+		await r.goto(url("?game=neon-fission&fresh=1&mode=bots&start=pick"));
+		await r.waitForFunction(() => window.__party?.game === "neon-fission", null, { timeout: TIMEOUT });
+		const RF = await gameScope(r, TIMEOUT);
+		await RF.waitForFunction(() => window.__game.handle.debug().match != null, null, { timeout: TIMEOUT });
+		const rp = { local: await r.evaluate(() => window.__party.room.getMembers().map((m) => m.local === true)), kinds: (await fission(RF)).players.map((p) => p.kind).join(), saved: await r.evaluate(() => JSON.parse(localStorage.getItem("neon.table"))["neon-fission"]) };
+		check("PLAY SOMETHING seats bots only, at the remembered size (3), keeping the saved PERSON seat", rp.local.join() === "false,false,false" && rp.kinds === "human,bot,bot" && rp.saved.n === 3 && rp.saved.people.join() === "1", JSON.stringify(rp));
+		await r.goto(url("?game=neon-fission&fresh=1&mode=bots&start=1"));
+		await r.waitForFunction(() => window.__party?.game === "neon-fission", null, { timeout: TIMEOUT });
+		const back = await r.evaluate(() => window.__party.room.getMembers().map((m) => m.local === true));
+		check("…and the next card tap seats that PERSON again", back.join() === "false,true,false", JSON.stringify(back));
 		await rctx.close();
 	}
 
