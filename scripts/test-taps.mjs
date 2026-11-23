@@ -25,7 +25,7 @@
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { homedir } from "node:os";
-import { communityHas, gameScope, phoneFloors, phoneSizes, readyToClick, serve, settled } from "./serve.mjs";
+import { communityHas, registryLists, gameScope, phoneFloors, phoneSizes, readyToClick, serve, settled } from "./serve.mjs";
 import { loadPlaywright } from "./playwright.mjs";
 
 const TIMEOUT = 30_000;
@@ -532,6 +532,10 @@ try {
 		if (only.length && !only.includes(id)) continue;
 		console.log(`\ntaps: ${id}`);
 		if (AWAITING_PIN.has(id) && !communityHas(`lokeshmohanty/${id}`)) {
+			if (registryLists(`lokeshmohanty/${id}`)) {
+				check(`lokeshmohanty/${id} is listed in the registry but missing from community/catalog.js`, false);
+				continue;
+			}
 			console.log(`  skip lokeshmohanty/${id} is not in community/catalog.js (the registry's pin has not moved to it yet)`);
 			continue;
 		}

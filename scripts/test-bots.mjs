@@ -23,7 +23,7 @@
 import { existsSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { serve, gameScope, readyToClick, phoneFloors, phoneSizes as onPhones, communityHas } from "./serve.mjs";
+import { serve, gameScope, readyToClick, phoneFloors, phoneSizes as onPhones, communityHas, registryLists } from "./serve.mjs";
 import { loadPlaywright } from "./playwright.mjs";
 
 const SITE = await serve(8734);
@@ -2334,6 +2334,8 @@ try {
 	/** A block for a game the registry's pin may not have yet (it skips, saying so, until the pin moves). */
 	const pinned = (id) => {
 		if (communityHas(`lokeshmohanty/${id}`)) return true;
+		// Listed in the registry but not built: a failure, never a quiet skip.
+		if (registryLists(`lokeshmohanty/${id}`)) return check(`lokeshmohanty/${id} is listed in the registry but missing from community/catalog.js`, false), false;
 		console.log(`  skip lokeshmohanty/${id} is not in community/catalog.js (the registry's pin has not moved to it yet)`);
 		return false;
 	};

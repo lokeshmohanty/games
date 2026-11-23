@@ -5,7 +5,7 @@
 // the way `just run` does. Same python3 server test-pwa.mjs uses.
 
 import { spawn } from "node:child_process";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -34,6 +34,23 @@ export const PORT_OFFSET = Number(process.env.NEON_PORT_OFFSET ?? 0) || 0;
 export function communityHas(id) {
 	const file = join(SITE_DIR, "community", "catalog.js");
 	return existsSync(file) && readFileSync(file, "utf8").includes(`"id": ${JSON.stringify(id)}`);
+}
+
+/**
+ * Does the registry list `owner/game` (registry/<owner>/*.json)? A test may
+ * skip a community game only while it is not listed yet; once it is, a game
+ * missing from the catalog is a failure, never a quiet skip.
+ */
+export function registryLists(id) {
+	const [owner, game] = id.split("/");
+	const dir = join(ROOT, "registry", owner);
+	if (!existsSync(dir)) return false;
+	for (const f of readdirSync(dir).filter((f) => f.endsWith(".json"))) {
+		try {
+			if ((JSON.parse(readFileSync(join(dir, f), "utf8")).games ?? []).includes(game)) return true;
+		} catch {}
+	}
+	return false;
 }
 
 /**
