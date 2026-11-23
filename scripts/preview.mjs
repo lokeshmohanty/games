@@ -225,6 +225,12 @@ async function slRolls(page, seconds, done) {
 	}
 }
 
+/** A person's Tic Tac Toe move (tttPick), clicked on the square. */
+async function tttMove(page, G, v) {
+	const box = await G.locator("#ttt button").nth(tttPick(v.board, v.you)).boundingBox();
+	if (box) await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
+}
+
 /** Tic Tac Toe as a person plays it: win, block, the centre, a corner, the first free square. */
 function tttPick(board, me) {
 	const lines = [[0, 1, 2], [3, 4, 5], [6, 7, 8], [0, 3, 6], [1, 4, 7], [2, 5, 8], [0, 4, 8], [2, 4, 6]];
@@ -661,6 +667,15 @@ const GAMES = {
 		seconds: 12,
 		async beforeStart([page]) {
 			await soloTable(page, 2);
+			// The opening off camera, so the poster (the clip's first frame)
+			// is a game under way rather than an empty grid.
+			const G = await gameScope(page, 20_000);
+			for (let i = 0; i < 40; i++) {
+				const v = await G.evaluate(() => window.__game.handle.debug()).catch(() => null);
+				if (v?.board && v.board.filter(Boolean).length >= 3) break;
+				if (v?.you && v.turn === v.you && v.winner === null) await tttMove(page, G, v);
+				await sleep(250);
+			}
 		},
 		async play([page], seconds) {
 			const G = await gameScope(page, 20_000);
@@ -676,11 +691,8 @@ const GAMES = {
 					continue;
 				}
 				if (v && v.you && v.turn === v.you) {
-					// A person's move: win, block, the centre, a corner, anything.
-					const i = tttPick(v.board, v.you);
 					await sleep(350);
-					const box = await G.locator("#ttt button").nth(i).boundingBox();
-					if (box) await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
+					await tttMove(page, G, v);
 				}
 				await sleep(200);
 			}
@@ -739,7 +751,7 @@ const GAMES = {
 			await slRolls(page, 40, (v) => Math.max(...v.pos) >= 30);
 		},
 		async play([page], seconds) {
-			await slRolls(page, seconds, (v) => v.winner !== null);
+			await slRolls(page, seconds, (v) => v.over);
 			await sleep(1200);
 		},
 	},

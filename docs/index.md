@@ -221,7 +221,10 @@ fixed 2026-11-19, branch `phone-shell`)**, asserted with computed sizes
   placement squares stay 39.6px at 354x696 and 40.4px at 360x640.
   Five in a Row and Snakes & Ladders joined them (web-games branch
   `new-games`, 2026-11-22; test-taps plays your turn, a game zoomed in and
-  out with a ghost waiting, your roll, a move playing and each end).
+  out with a ghost waiting, your roll, a move playing and each end). A
+  block for a game the registry's pin does not have yet skips, saying so
+  (`scripts/serve.mjs` `communityHas`), so main stays green between the
+  games repo's merge and the pin's.
   `just test-taps` (CI shard 5) plays every phase of each and holds the
   whole frame to `phoneSizes` (390x844 and 354x696, in `scripts/serve.mjs`)
   with `phoneFloors`' `hit: true`: box and hit area, every enabled control

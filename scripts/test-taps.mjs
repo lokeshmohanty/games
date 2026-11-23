@@ -25,7 +25,7 @@
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { homedir } from "node:os";
-import { gameScope, phoneFloors, phoneSizes, readyToClick, serve, settled } from "./serve.mjs";
+import { communityHas, gameScope, phoneFloors, phoneSizes, readyToClick, serve, settled } from "./serve.mjs";
 import { loadPlaywright } from "./playwright.mjs";
 
 const TIMEOUT = 30_000;
@@ -400,12 +400,12 @@ const GAMES = {
 		await until(G, () => window.__game.handle.debug().busy);
 		await audit(page, G, "snakes-and-ladders", "a move playing", { min: 0, canvas: true, fit });
 		const end = Date.now() + 300_000;
-		for (let d = await debug(G); d.winner === null && Date.now() < end; d = await debug(G)) {
+		for (let d = await debug(G); !d.over && Date.now() < end; d = await debug(G)) {
 			if (d.myTurn && !d.tumbling) await G.evaluate(() => document.querySelector(".sl-die:not(:disabled)")?.click());
 			await sleep(250);
 		}
 		const last = await debug(G);
-		check("snakes-and-ladders reached its end", last.winner !== null, { winner: last.winner, rolls: last.rolls });
+		check("snakes-and-ladders reached its end", last.over, { home: last.home, rolls: last.rolls });
 		await until(G, () => !window.__game.handle.debug().busy);
 		await audit(page, G, "snakes-and-ladders", "the end", { min: 0, canvas: true, fit });
 	},
@@ -520,12 +520,21 @@ async function floorsItself() {
 	await ctx.close();
 }
 
+// Games a web-games branch adds before the registry's pin has them: with the
+// pin's build they are not in community/catalog.js, and their blocks skip
+// (said, not silent) so main stays green until the pin moves.
+const AWAITING_PIN = new Set(["five-in-a-row", "snakes-and-ladders"]);
+
 const only = process.argv.slice(2);
 try {
 	if (!only.length || only.includes("floors")) await floorsItself();
 	for (const [id, run] of Object.entries(GAMES)) {
 		if (only.length && !only.includes(id)) continue;
 		console.log(`\ntaps: ${id}`);
+		if (AWAITING_PIN.has(id) && !communityHas(`lokeshmohanty/${id}`)) {
+			console.log(`  skip lokeshmohanty/${id} is not in community/catalog.js (the registry's pin has not moved to it yet)`);
+			continue;
+		}
 		const ctx = await phone();
 		const page = watch(await ctx.newPage());
 		try {

@@ -21,10 +21,12 @@ a Row and Snakes & Ladders in web-games (`new-games`), and here test-taps,
 test-bots and preview scenarios for them, Tic Tac Toe's portal preview
 (`assets/tic-tac-toe-js.*`), `make-preview.sh --gif` for web-games cards,
 and NEON_PIN_OVERRIDE building a branch's unlisted game folders. To land:
-merge, then a pin PR that moves `registry/lokeshmohanty/web-games.json`
-(commit and both games) and runs `just games-table` — until then test-taps
-and test-bots fail on the two games without the override. Ludo is still to
-build (brief from Lokesh, 2026-11-21).
+merge web-games, then move `registry/lokeshmohanty/web-games.json`
+(commit and both games) in this branch's PR and run `just games-table`.
+Until the pin has them their test-taps and test-bots blocks skip, saying
+so (`communityHas`), so main stays green. Snakes & Ladders plays on for
+places (Lokesh, 2026-11-23). Not pushed yet (GitHub unreachable
+2026-11-23). Ludo is still to build (brief from Lokesh, 2026-11-21).
 
 **Branch `quick-start` (2026-11-22, pushed, not merged):** one tap on a game
 starts it against bots, PLAY WITH FRIENDS (end card and PARTY, "Bottom,
