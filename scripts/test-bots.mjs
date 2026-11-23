@@ -23,7 +23,7 @@
 import { existsSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { serve, gameScope, readyToClick, phoneFloors, phoneSizes as onPhones, communityHas } from "./serve.mjs";
+import { serve, gameScope, readyToClick, phoneFloors, phoneSizes as onPhones, communityHas, registryLists } from "./serve.mjs";
 import { loadPlaywright } from "./playwright.mjs";
 
 const SITE = await serve(8734);
@@ -2324,6 +2324,8 @@ try {
 	/** A block for a game the registry's pin may not have yet (it skips, saying so, until the pin moves). */
 	const pinned = (id) => {
 		if (communityHas(`lokeshmohanty/${id}`)) return true;
+		// Listed in the registry but not built: a failure, never a quiet skip.
+		if (registryLists(`lokeshmohanty/${id}`)) return check(`lokeshmohanty/${id} is listed in the registry but missing from community/catalog.js`, false), false;
 		console.log(`  skip lokeshmohanty/${id} is not in community/catalog.js (the registry's pin has not moved to it yet)`);
 		return false;
 	};
@@ -2373,10 +2375,18 @@ try {
 		check("the game ends: the winner has all four tokens home", v.over && v.winner != null && v.tokens[v.winner].every((p) => p === v.home), JSON.stringify({ winner: v.winner, tokens: v.tokens }));
 		await resultReached(page, "lokeshmohanty/ludo", v.winner === v.you);
 		await page.emulateMedia({ reducedMotion: null });
+		// "Next game: … · CHANGE" (Lokesh, 2026-11-23), on the game's end screen behind SEE THE BOARD.
+		await page.locator(".managed-over button", { hasText: "SEE THE BOARD" }).first().click({ timeout: TIMEOUT });
+		await G.waitForFunction(() => !!document.querySelector(".lu-next:not([hidden]) .lu-next-change"), null, { timeout: TIMEOUT });
+		await G.locator(".lu-next-change").click();
+		await G.locator('.lu-next button[data-board="6"]').click({ timeout: TIMEOUT });
+		await G.locator(".lu-next-change").click();
+		const said = await G.evaluate(() => document.querySelector(".lu-next").textContent);
+		check("CHANGE at the end: the next game on the 6-player board", said.startsWith("Next game: 6-player board, free-for-all"), said);
 		await page.locator(".managed-over button", { hasText: "PLAY AGAIN" }).first().click({ timeout: TIMEOUT });
 		await G.waitForFunction(() => window.__game.handle.debug().match === 2, null, { timeout: TIMEOUT });
 		v = await debug(page);
-		check("PLAY AGAIN: straight into play, the same board, the next seat to open (who starts goes round)", v.phase === "play" && v.board === 4 && v.opener === (opener + 1) % 2 && v.turn === v.opener, JSON.stringify({ phase: v.phase, opener, now: v.opener }));
+		check("PLAY AGAIN: straight into play on the board picked for it, the next seat to open (who starts goes round)", v.phase === "play" && v.board === 6 && v.arms.join() === "0,3" && v.opener === (opener + 1) % 2 && v.turn === v.opener, JSON.stringify({ phase: v.phase, board: v.board, opener, now: v.opener }));
 	}
 
 	console.log("\nbots: ludo, one person and three bots: a different table brings the setup; 2 v 2; bots' whole turns");
@@ -2384,7 +2394,9 @@ try {
 		G = await openLudo(page, 4);
 		let v = await debug(page);
 		const self = await selfOf(page);
-		check("four at the table (last time two): the setup, the 4-player board, free-for-all", v.seats[v.you] === self && v.seats.filter((id) => id.startsWith("bot_")).length === 3 && v.phase === "setup" && v.board === 4 && v.mode === "ffa", JSON.stringify({ seats: v.seats, phase: v.phase }));
+		check("four at the table (last time two): the setup, the last board (6) still picked, free-for-all", v.seats[v.you] === self && v.seats.filter((id) => id.startsWith("bot_")).length === 3 && v.phase === "setup" && v.board === 6 && v.mode === "ffa", JSON.stringify({ seats: v.seats, phase: v.phase, board: v.board }));
+		await G.locator('.lu-setup button[data-board="4"]').click();
+		await G.waitForFunction(() => window.__game.handle.debug().board === 4, null, { timeout: TIMEOUT });
 		// Each seat's chip carries its token's own mark, not only a colour.
 		const glyphs = await G.evaluate(() => [...document.querySelectorAll(".lu-player svg")].map((s) => s.dataset.glyph));
 		check(`each seat's chip shows its token's own mark (${glyphs.join(", ")})`, glyphs.length === 4 && new Set(glyphs).size === 4 && glyphs.every(Boolean), JSON.stringify(glyphs));

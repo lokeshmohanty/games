@@ -36,6 +36,14 @@ first time (PLAY AGAIN and a card's tap at the same table go straight in;
 a different table, CHANGE PLAYERS to another count, brings it) — are in the
 rules and in test-bots. CHANGE PLAYERS back to the same count goes straight
 in too: the game cannot tell it from a card's tap (no signal in `init`).
+Re-review (2026-11-23): a crowded safe square's tokens stand clear of every
+other token and the yards (test-taps checks every drawn token, six on a
+star too); "Next game: … · CHANGE" at the end (Lokesh) — on the game's end
+screen, reached by SEE THE BOARD, since the shell's card takes no game
+content. main merged in (its platform-fixes answer both findings above);
+`registryLists` copied from PR #15 (merging that unmerged branch was
+refused), so its merge meets identical text in serve.mjs; preview.mjs will
+still conflict with it (both add helpers before the scenarios).
 
 **Branch `quick-start` (2026-11-22, pushed, not merged):** one tap on a game
 starts it against bots, PLAY WITH FRIENDS (end card and PARTY, "Bottom,

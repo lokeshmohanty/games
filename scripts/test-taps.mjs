@@ -25,7 +25,7 @@
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { homedir } from "node:os";
-import { communityHas, gameScope, phoneFloors, phoneSizes, readyToClick, serve, settled } from "./serve.mjs";
+import { communityHas, registryLists, gameScope, phoneFloors, phoneSizes, readyToClick, serve, settled } from "./serve.mjs";
 import { loadPlaywright } from "./playwright.mjs";
 
 const TIMEOUT = 30_000;
@@ -197,15 +197,17 @@ async function audit(page, F, game, step, { canvas = false, min, under = null, f
 const exemptions = new Set();
 
 /**
- * Ludo, a crafted turn (review, 2026-11-23): on `board`, four players on the
- * star 8 squares (6 on the 6-player board) on from this phone's start —
+ * Ludo, a crafted turn (reviews, 2026-11-23): on `board`, every player on
+ * the star 8 squares (6 on the 6-player board) on from this phone's start —
  * this phone and the next seat with stacks of two, the others one each —
  * and this phone's two other tokens just behind it, its roll a 2. Every
- * token on the star at least 7px across, none over another, each stack's
- * count clear of the other tokens; the rings, pushed apart, see-through,
- * the stack's ring showing its count; then the floors at both sizes.
+ * token on the star at least 7px across; no token drawn over another
+ * anywhere on the board (a crowded square's ring spilling onto the next
+ * square, or a yard, counts), and no stack's count over another token; the
+ * rings, pushed apart, see-through, the stack's ring showing its count; then
+ * the floors at both sizes.
  */
-async function ludoSharedStar(page, G, board, fit) {
+async function ludoSharedStar(page, G, board, fit, who = "four players") {
 	await G.evaluate((board) => {
 		const R = window.ludoRules;
 		const s = rules.snapshot();
@@ -244,14 +246,25 @@ async function ludoSharedStar(page, G, board, fit) {
 			for (const a of star) {
 				if (a.r < 7) bad.push(`seat ${a.seat} drawn ${a.r.toFixed(1)}px across the radius`);
 				if (a.count > 1 && a.marks.length !== a.count) bad.push(`seat ${a.seat}: ${a.marks.length} notches for ${a.count}`);
-				for (const b of star) {
-					if (a === b) continue;
-					const gap = Math.hypot(a.x - b.x, a.y - b.y) - a.r - b.r;
-					if (gap < 0) bad.push(`seats ${a.seat} and ${b.seat} overlap by ${(-gap).toFixed(1)}px`);
-					for (const [mx, my] of a.marks) if (Math.hypot(mx - b.x, my - b.y) < b.r + 1) bad.push(`seat ${a.seat}'s count is over seat ${b.seat}`);
-				}
 			}
+			// Every token drawn, yards included, against every other: across squares too.
+			const name = (t) => `seat ${t.seat}${t.square ? ` (${t.square === star[0].square ? "the star" : t.square})` : ""}`;
+			d.drawn.forEach((a, i) => {
+				d.drawn.forEach((b, j) => {
+					if (i === j) return;
+					const gap = Math.hypot(a.x - b.x, a.y - b.y) - a.r - b.r;
+					if (i < j && gap < -0.05) bad.push(`${name(a)} and ${name(b)} overlap by ${(-gap).toFixed(1)}px`);
+					for (const [mx, my] of a.marks) if (Math.hypot(mx - b.x, my - b.y) < b.r + 1) bad.push(`${name(a)}'s count is over ${name(b)}`);
+				});
+			});
 			const rings = [...document.querySelectorAll(".lu-pick")];
+			// What a ring holds (its count, a token's mark when pushed far off) covers no token.
+			const box = document.querySelector(".lu-board").getBoundingClientRect();
+			for (const el of document.querySelectorAll(".lu-pick b, .lu-pick svg")) {
+				const b = el.getBoundingClientRect();
+				const [x, y, rad] = [b.left + b.width / 2 - box.left, b.top + b.height / 2 - box.top, Math.max(b.width, b.height) / 2];
+				for (const tk of d.drawn) if (Math.hypot(x - tk.x, y - tk.y) < tk.r + rad - 1) bad.push(`a ring's ${el.tagName === "B" ? "count" : "mark"} covers ${name(tk)}`);
+			}
 			const stack = rings.find((r) => r.dataset.stack === "2");
 			if (!stack || stack.querySelector("b")?.textContent !== "2") bad.push("the stack's ring does not show 2");
 			for (const r of rings.filter((r) => r.classList.contains("away"))) {
@@ -261,7 +274,7 @@ async function ludoSharedStar(page, G, board, fit) {
 			if (!rings.some((r) => r.classList.contains("away"))) bad.push("no ring was pushed apart (the crafted rings should crowd)");
 			return bad.length ? { bad, star } : null;
 		});
-	await audit(page, G, "ludo", `players sharing a star, ${board}-player board`, { min: 3, canvas: true, fit, extra: shared });
+	await audit(page, G, "ludo", `${who} sharing a star, ${board}-player board`, { min: 3, canvas: true, fit, extra: shared });
 }
 
 // ------------------------------------------------------------------ games
@@ -441,6 +454,28 @@ const GAMES = {
 		check("ludo reached its end", d.over, { done: d.done, tokens: d.tokens });
 		await until(G, () => !window.__game.handle.debug().busy);
 		await audit(page, G, "ludo", "the end", { min: 0, canvas: true, fit });
+		// SEE THE BOARD: the game's end screen, "Next game: … · CHANGE" (Lokesh, 2026-11-23).
+		await page.locator(".managed-over button", { hasText: "SEE THE BOARD" }).first().click({ timeout: TIMEOUT });
+		await until(G, () => !!document.querySelector(".lu-next:not([hidden]) .lu-next-change"));
+		const line = () => G.evaluate(() => document.querySelector(".lu-next").textContent);
+		check("ludo · the end: the next game is this one (4-player board, free-for-all), with CHANGE", (await line()).startsWith("Next game: 4-player board, free-for-all"), await line());
+		await audit(page, G, "ludo", "the end, the next game line", { min: 1, canvas: true });
+		await G.locator(".lu-next-change").click();
+		await until(G, () => !!document.querySelector(".lu-next button[data-board]"));
+		// Two players: both boards, free-for-all only (teams need every seat), and DONE —
+		// all above the shell's end card, tucked to the bottom (a thumb reaches them).
+		const aboveCard = async () => {
+			const card = await page.locator(".managed-over > div").first().boundingBox();
+			const frame = await page.locator("iframe.game-frame, iframe").first().boundingBox();
+			const bottom = await G.evaluate(() => Math.max(...[...document.querySelectorAll(".lu-next button")].map((b) => b.getBoundingClientRect().bottom)));
+			return card && frame && frame.y + bottom <= card.y ? null : { cardTop: card?.y, controlsBottom: frame && frame.y + bottom };
+		};
+		await audit(page, G, "ludo", "choosing the next game", { min: 4, extra: aboveCard });
+		check("ludo · the next game's teams are not on offer to two", await G.locator('.lu-next button[data-mode="pairs"]').isDisabled());
+		await G.locator('.lu-next button[data-board="6"]').click();
+		await G.locator(".lu-next-change").click();
+		await until(G, () => !document.querySelector(".lu-next button[data-board]"));
+		check("ludo · CHANGE, the 6-player board, DONE: the line says so", (await line()).startsWith("Next game: 6-player board, free-for-all"), await line());
 		// CHANGE PLAYERS: four at the table, a different table, so the setup.
 		await page.locator(".managed-over .managed-seats").first().click({ timeout: TIMEOUT });
 		await page.locator(".quick-table .quick-go button").waitFor({ timeout: TIMEOUT });
@@ -455,8 +490,10 @@ const GAMES = {
 		await readyToClick(page);
 		await page.emulateMedia({ reducedMotion: null });
 		d = await debug(G);
-		check("ludo · CHANGE PLAYERS to four: the setup", d.phase === "setup", { phase: d.phase });
-		// Four players: both boards, free-for-all and 2 v 2, START.
+		check("ludo · CHANGE PLAYERS to four: the setup, the board picked for next game still picked", d.phase === "setup" && d.board === 6, { phase: d.phase, board: d.board });
+		// Four players on the 4-player board: both boards, free-for-all and 2 v 2, START.
+		await G.locator('.lu-setup button[data-board="4"]').click();
+		await until(G, () => window.__game.handle.debug().board === 4);
 		await audit(page, G, "ludo", "setting up", { min: 5 });
 		await G.locator('.lu-setup button[data-board="6"]').click();
 		await until(G, () => window.__game.handle.debug().board === 6);
@@ -467,9 +504,20 @@ const GAMES = {
 		await audit(page, G, "ludo", "your roll, 6-player board", { min: 1, canvas: true, fit });
 		await page.emulateMedia({ reducedMotion: "reduce" });
 		for (const board of [6, 4]) await ludoSharedStar(page, G, board, fit);
+		// Six on one star: a fresh phone, six at the table, straight in on the 6-player board.
+		const six = await phone();
+		const P6 = watch(await six.newPage());
+		try {
+			const G6 = await solo(P6, "ludo", 6);
+			await until(G6, () => window.__game.handle.debug().phase === "play" && window.__game.handle.debug().seats.length === 6);
+			await P6.emulateMedia({ reducedMotion: "reduce" });
+			await ludoSharedStar(P6, G6, 6, fit, "six players");
+		} finally {
+			await six.close();
+		}
 	},
 
-	/** Two people (no bots): drawing and guessing, the reveal, game over — both phones. */	/** Two people (no bots): drawing and guessing, the reveal, game over — both phones. */
+	/** Two people (no bots): drawing and guessing, the reveal, game over — both phones. */
 	async "draw-guess"(host) {
 		const guest = watch(await host.context().newPage());
 		await host.goto(site.url("?game=lokeshmohanty%2Fdraw-guess&fresh=1"));
@@ -591,6 +639,10 @@ try {
 		if (only.length && !only.includes(id)) continue;
 		console.log(`\ntaps: ${id}`);
 		if (AWAITING_PIN.has(id) && !communityHas(`lokeshmohanty/${id}`)) {
+			if (registryLists(`lokeshmohanty/${id}`)) {
+				check(`lokeshmohanty/${id} is listed in the registry but missing from community/catalog.js`, false);
+				continue;
+			}
 			console.log(`  skip lokeshmohanty/${id} is not in community/catalog.js (the registry's pin has not moved to it yet)`);
 			continue;
 		}
