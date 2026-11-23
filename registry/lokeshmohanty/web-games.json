@@ -1,5 +1,5 @@
 {
   "repo": "https://github.com/lokeshmohanty/web-games",
-  "commit": "2c64576adfdb9681b76a1bf1ecaabcec17b2ec53",
+  "commit": "35b0bce28e744b3b55d0e59237ee49f05e925cfe",
   "games": ["battleship", "bubble-rush", "draw-guess", "liars-dice", "light-cycles", "sudoku"]
 }

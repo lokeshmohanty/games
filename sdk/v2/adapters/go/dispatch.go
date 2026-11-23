@@ -12,6 +12,7 @@ type call struct {
 	Opts     RawJSON            `json:"opts"`
 	Seed     int64              `json:"seed"`
 	Match    int                `json:"match"`
+	First    string             `json:"first"`
 	Action   RawJSON            `json:"action"`
 	By       string             `json:"by"`
 	Inputs   map[string]RawJSON `json:"inputs"`
@@ -64,7 +65,7 @@ func (d *Dispatcher) call(in string) (v any, err error) {
 	}
 	switch c.Fn {
 	case "init":
-		d.game = d.New(Setup{Seats: c.Seats, Opts: c.Opts, Seed: c.Seed, Match: c.Match})
+		d.game = d.New(Setup{Seats: c.Seats, Opts: c.Opts, Seed: c.Seed, Match: c.Match, First: c.First})
 		return nil, nil
 	case "restore":
 		g, err := d.Restore(c.Snapshot)

@@ -192,9 +192,13 @@ const colourOf = (id) => (id === s.red ? RED : id === s.yellow ? YELLOW : 0);
 const idOf = (colour) => (colour === RED ? s.red : s.yellow);
 
 arcade.managed({
-	init({ seats, match }) {
+	init({ seats, match, first }) {
 		const team = (t, i) => (seats.find((p) => p.team === t) ?? seats[i])?.id ?? null;
 		s = { match: match + 1, board: emptyBoard(), turn: RED, winner: null, started: true, red: team("A", 0), yellow: team("B", 1), moves: 0, line: null, last: null };
+		// Who drops first: the platform's `first`, which takes turns between
+		// rematches (docs/sdk-v2.md "Who starts"). Red stays red; only the
+		// opening move changes hands. An older shell sends none: red starts.
+		if (first && first === s.yellow) s.turn = YELLOW;
 	},
 	apply({ action, by }) {
 		const col = action?.col;
@@ -403,6 +407,13 @@ function updateHud() {
 	if (view.winner !== null) msg = view.winner === 0 ? " — DRAW" : view.winner === mine ? " — YOU WIN!" : mine ? " — YOU LOSE" : "";
 	else if (!view.red || !view.yellow) msg = " — Waiting for opponent…";
 	else if (mine) msg = view.turn === mine ? " — YOUR TURN" : " — Opponent's turn";
+	else {
+		// A watcher: whose turn, by colour and name, as who opens takes turns
+		// between matches (docs/sdk-v2.md "Who starts").
+		const colour = view.turn === RED ? "Red" : "Yellow";
+		const name = arcade.party?.members?.find((m) => m.id === (view.turn === RED ? view.red : view.yellow))?.name;
+		msg = ` — ${name ? `${name} (${colour})` : colour} to move`;
+	}
 	hudEl.replaceChildren(tag, document.createTextNode(msg));
 }
 

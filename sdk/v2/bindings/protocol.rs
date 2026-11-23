@@ -725,6 +725,11 @@ pub struct RulesCall {
     /// init: which match of this run (0, then 1 on the first rematch…).
     #[serde(rename = "match", skip_serializing_if = "Option::is_none", default)]
     pub match_: Option<i64>,
+    /// init: the seat that moves first, for a game where who starts matters (docs/sdk-v2.md "Who
+    /// starts"): random for a run's first match, then the next seat in `seats` on each rematch.
+    /// Absent from an older shell, or with no seats.
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub first: Option<MemberId>,
     /// apply: the move. May carry ArrayBuffers (see Json).
     #[serde(skip_serializing_if = "Option::is_none", default)]
     pub action: Option<Json>,

@@ -73,6 +73,13 @@ Lokesh's review before merge; the open residuals are in Honest gaps.
   canvas is blurry (DPR); Neon Fission toasts pile up; Neon Survival's thumb
   offset; Connect 4 bot long task. iOS remains unverified.
 
+**In review: game rules** (branch `game-rules` here and in web-games,
+2026-11-21/22, pushed, not merged; the web-games pin moves by PR). Bubble
+Rush judges a tap on the tapping phone and the host takes its word (both
+phones keep a pop of one bubble); turn-based games take turns to start:
+`first` in managed `init` (docs/sdk-v2.md "Who starts"), used by Connect 4,
+Neon Fission, Draw & Guess, every Tic Tac Toe lane, and Liar's Dice by hand.
+
 **Bubble Rush asks every round** (Lokesh, 2026-11-18): no default mode; the
 host picks FREE-FOR-ALL or TEAMS before START (web-games `ask-mode`, its pin
 to move by PR).

@@ -9,13 +9,16 @@
 //      - each phone gets its own view;
 //      - a move out of turn is refused;
 //      - the shell's end card names the winner on every phone;
-//      - PLAY AGAIN starts the next match;
+//      - PLAY AGAIN starts the next match, opened by the other player;
 //      - when the host's tab closes mid-match, the heir carries the board on
 //        from its snapshot, and the shell's turn-wait banner lets it skip
 //        the departed player.
 //   2. A ticking fixture (scripts/fixtures/tick-game), host + guest + bot:
 //      a guest's inputs and the bot's reach the host's tick, views arrive at
 //      viewRate, and the result ends it.
+//   2b. A turn of two moves (scripts/fixtures/double-turn): two bots play it
+//      to the end, each move after its pause, the second of a turn too; a
+//      bot that answers null is asked once, not in a loop.
 //   3. The end card on a phone (390x844): the ranking (places, seat colours,
 //      names, scores, you marked) on every phone; DETAILS closed at first,
 //      remembered once opened, and holding the series (match, time, wins
@@ -23,6 +26,9 @@
 //      at 8 rows); Connect 4's and Neon Survival's details; eight players
 //      fit without scrolling, clear of the fixed chrome, in every theme.
 //   4. PLAY AGAIN alone while the server's run is slow.
+//   1b. Who starts (scripts/fixtures/turns-game, three seats): `first` in
+//      init is the next seat on every PLAY AGAIN, and the heir carries the
+//      rotation on after the host leaves mid-series.
 //   5. The end card waits for the last move's replay (Neon Fission, whose
 //      frame says `idle`): held while the winning chain plays, at once on a
 //      tap, at most HOLD_MS when the frame goes quiet, at once under reduced
@@ -80,6 +86,9 @@ async function party(devBase, n) {
 		window.__sdk = [];
 		window.NeonArcade = window.NeonArcade || {};
 		NeonArcade.turnWaitMs = 500;
+		// A run's first match opens on the first seat (lib/sdk-managed.js
+		// nextFirst draws it at random): these sections know who moves first.
+		NeonArcade.firstDraw = () => 0;
 		NeonArcade.sdkTrace = (dir, m) => window.__sdk.push([dir, JSON.parse(JSON.stringify(m, (_k, v) => (v instanceof ArrayBuffer ? { $buffer: v.byteLength } : v)))]);
 	});
 	const pages = [];
@@ -333,6 +342,7 @@ try {
 	await host.locator(".managed-over button", { hasText: "PLAY AGAIN" }).click();
 	const fresh = await viewUntil(f2, (v) => v.board.every((m) => m === 0));
 	check("PLAY AGAIN: a fresh board on every phone, and the card goes", !!fresh && (await p2.locator(".managed-over").count()) === 0 && (await host.locator(".managed-over").count()) === 0);
+	check("…and O opens the rematch: who starts takes turns (docs/sdk-v2.md \"Who starts\")", fresh?.turn === 2, fresh);
 	await Promise.all([fh, f3].map((f) => viewUntil(f, (v) => v.board.every((m) => m === 0))));
 	rings = await ringsOn([fh, f2, f3], []);
 	check("…with no ring left over from the last game", ringsAre(rings, []), rings);
@@ -345,19 +355,20 @@ try {
 		const on = snap.onMessage;
 		snap.onMessage = (d, meta) => ((window.__heirCopy = d), on?.(d, meta));
 	});
-	await play(host, fh, 0, 1);
-	await play(p2, f2, 4, 2);
-	await viewUntil(f2, (v) => v.board[4] === 2);
-	const copied = await p2.waitForFunction(() => window.__heirCopy?.s?.board?.[4] === 2, null, { timeout: TIMEOUT }).then(() => true, () => false);
+	await play(p2, f2, 4, 1);
+	await play(host, fh, 0, 2);
+	await play(p2, f2, 8, 3);
+	await viewUntil(f2, (v) => v.board[8] === 2);
+	const copied = await p2.waitForFunction(() => window.__heirCopy?.s?.board?.[8] === 2, null, { timeout: TIMEOUT }).then(() => true, () => false);
 	check("mid-match, the heir holds a copy of the board with the last move", copied, await p2.evaluate(() => window.__heirCopy ?? null));
 	const kept = p2.locator(".neon-toast", { hasText: "You are the host now" }).first().waitFor({ timeout: TIMEOUT }).then(() => true, () => false);
 	await A.collect();
 	await host.close();
 	check("the host leaves mid-match: the heir takes the crown and the game goes on", await kept);
 	const carried = await view(f2);
-	check("…from its copy of the board, not a fresh one", JSON.stringify(carried?.board) === JSON.stringify([1, 0, 0, 0, 2, 0, 0, 0, 0]), carried);
-	rings = await ringsOn([f2, f3], [4]);
-	check("…the last mark before the host left still ringed, on the new host's phone and the spectator's", ringsAre(rings, [4]), rings);
+	check("…from its copy of the board, not a fresh one", JSON.stringify(carried?.board) === JSON.stringify([1, 0, 0, 0, 2, 0, 0, 0, 2]), carried);
+	rings = await ringsOn([f2, f3], [8]);
+	check("…the last mark before the host left still ringed, on the new host's phone and the spectator's", ringsAre(rings, [8]), rings);
 	// It is X's turn, and X has gone: the shell's banner, then SKIP TURN.
 	const skip = p2.locator(".turn-wait:not([hidden]) button", { hasText: "SKIP TURN" });
 	const offered = await skip.waitFor({ timeout: TIMEOUT }).then(() => true, () => false);
@@ -366,14 +377,90 @@ try {
 	// SKIP may be pressed as the crown arrives, before the takeover has run;
 	// it waits for it, so the turn passes a moment later.
 	await viewUntil(f2, (v) => v.turn === 2, 10_000);
-	await play(p2, f2, 8, 3);
-	const after = await viewUntil(f3, (v) => v.board[8] === 2, 10_000);
-	check("…SKIP passes their turn, and the new host's move reaches the spectator", after?.board[8] === 2, after);
-	rings = await ringsOn([f2, f3], [8]);
-	check("…and takes the ring there too", ringsAre(rings, [8]), rings);
+	await play(p2, f2, 2, 4);
+	const after = await viewUntil(f3, (v) => v.board[2] === 2, 10_000);
+	check("…SKIP passes their turn, and the new host's move reaches the spectator", after?.board[2] === 2, after);
+	rings = await ringsOn([f2, f3], [2]);
+	check("…and takes the ring there too", ringsAre(rings, [2]), rings);
 	await A.collect();
 	await A.context.close();
 	ttt.stop();
+
+	// --------------------------------------------------------------- 1b
+	console.log("\nmanaged: who starts — the next seat on every PLAY AGAIN, across a handover");
+	const turns = await devServer("scripts/fixtures", 5193, "turns-game");
+	const W = await party(turns.base, 3);
+	const [wh, w2, w3] = W.pages;
+	// The rule itself, on the page: a random seat first, then the next one;
+	// a last opener who left is followed by whoever took their place.
+	const rule1b = await wh.evaluate(() => {
+		const n = NeonArcade.nextFirst;
+		return {
+			drawn: [n(null, ["a", "b", "c"], () => 0)?.id, n(null, ["a", "b", "c"], () => 0.99)?.id],
+			next: [n({ id: "a", at: 0 }, ["a", "b", "c"]).id, n({ id: "c", at: 2 }, ["a", "b", "c"]).id],
+			gone: n({ id: "x", at: 1 }, ["a", "c"]).id,
+			goneLast: n({ id: "x", at: 2 }, ["a", "b"]).id,
+			nobody: n(null, []),
+		};
+	});
+	check("the rule: drawn at random for a run's first match, then the next seat (after the last, the first); a leaver's place goes to the seat that was next",
+		rule1b.drawn.join() === "a,c" && rule1b.next.join() === "b,a" && rule1b.gone === "c" && rule1b.goneLast === "a" && rule1b.nobody === null, rule1b);
+	// The host watches; the two guests and a bot sit, so the seats do not
+	// change when the host leaves. The first match's draw lands on the bot's seat.
+	await wh.locator("button", { hasText: "ADD BOT" }).first().click({ timeout: TIMEOUT });
+	await wh.locator(".party-member").nth(3).waitFor({ timeout: TIMEOUT });
+	await wh.evaluate(() => {
+		const r = window.__party.room;
+		for (const m of r.getMembers()) r.setTeam(m.id, m.id === r.selfId ? "spectator" : "A");
+		NeonArcade.firstDraw = () => 0.99;
+	});
+	await wh.locator(".party-game", { hasText: "TURNS CHECK" }).first().click({ timeout: TIMEOUT });
+	const [, x2, x3] = await Promise.all(W.pages.map((p) => gameFrame(p, TIMEOUT)));
+	const firsts = [];
+	const m0 = await viewUntil(x3, (v) => v.match === 0 && v.seats?.length === 3);
+	const order1b = m0?.seats ?? [];
+	firsts.push(m0?.first);
+	check("three seats (the watching host is not one), and the first match opens on the seat drawn: the last", order1b.length === 3 && m0.first === order1b[2] && order1b[2].startsWith("bot_"), m0);
+	// The heir notes each copy it is sent (lib/sdk-managed.js snapCh), hooked
+	// once the game's own handler is on the channel.
+	await w2.evaluate(() => {
+		const snap = window.__party.room.makeAction("v:m$snap");
+		const on = snap.onMessage;
+		snap.onMessage = (d, meta) => ((window.__heirCopy = d), on?.(d, meta));
+	});
+	/**
+	 * End the match from `frame`, PLAY AGAIN on `page` (the host), and read the
+	 * next match's view. The end is said again until the card shows: a new
+	 * host refuses moves while its takeover is still starting.
+	 */
+	const again = async (frame, page, m) => {
+		const button = page.locator(".managed-over button", { hasText: "PLAY AGAIN" });
+		for (let k = 0; k < 10 && !(await button.isVisible().catch(() => false)); k++) {
+			await frame.evaluate(() => window.arcade.act({ end: true }));
+			await button.waitFor({ timeout: 3000 }).catch(() => {});
+		}
+		await button.click({ timeout: TIMEOUT });
+		return viewUntil(x3, (v) => v.match === m);
+	};
+	const m1 = await again(x2, wh, 1);
+	firsts.push(m1?.first);
+	check("PLAY AGAIN: the next seat opens match 2 (after the last, the first)", m1?.first === order1b[0], { first: m1?.first, seats: order1b });
+	// Mid-match 2 the host leaves; the heir has the copy, with who opened it.
+	const copy1b = await w2.waitForFunction(() => window.__heirCopy?.m === 1 && window.__heirCopy.f, null, { timeout: TIMEOUT }).then(() => w2.evaluate(() => window.__heirCopy), () => null);
+	check("the heir's copy says who opened this match", copy1b?.f === order1b[0] && copy1b.fi === 0, copy1b && { m: copy1b.m, f: copy1b.f, fi: copy1b.fi });
+	const crowned = w2.locator(".neon-toast", { hasText: "You are the host now" }).first().waitFor({ timeout: TIMEOUT }).then(() => true, () => false);
+	await W.collect();
+	await wh.close();
+	check("the host leaves mid-series: the heir takes the crown", await crowned);
+	const m2 = await again(x2, w2, 2);
+	firsts.push(m2?.first);
+	check("the heir's PLAY AGAIN goes on round the table: the seat after match 2's opener", m2?.first === order1b[1], { first: m2?.first, seats: order1b });
+	const m3 = await again(x3, w2, 3);
+	firsts.push(m3?.first);
+	check("…and again: across three rematches every seat has opened once, in seat order", m3?.first === order1b[2] && new Set(firsts.slice(0, 3)).size === 3, firsts);
+	await W.collect();
+	await W.context.close();
+	turns.stop();
 
 	// ---------------------------------------------------------------- 2
 	console.log("\nmanaged: a ticking game, host + guest + bot");
@@ -429,6 +516,66 @@ try {
 	await B.collect();
 	await B.context.close();
 	tick.stop();
+
+	// ---------------------------------------------------------------- 2b
+	console.log("\nmanaged: a bot that keeps the turn after its own move (scripts/fixtures/double-turn)");
+	// Every turn is two moves (Ludo's extra roll on a 6). Before 2026-11-23 a
+	// bot's pending move was cleared only after the refresh its own move set
+	// off had already tried to schedule the next one, so a bot on turn twice
+	// running was never asked again and the game stalled.
+	{
+		const fx2 = await devServer("scripts/fixtures", 5200, "double-turn");
+		const T = await party(fx2.base, 1);
+		const [tp] = T.pages;
+		for (const n of [1, 2]) {
+			await tp.locator("button", { hasText: "ADD BOT" }).first().click({ timeout: TIMEOUT });
+			await tp.locator(".party-member").nth(n).waitFor({ timeout: TIMEOUT });
+		}
+		// Only the bots play; this phone (the host) watches.
+		await tp.evaluate(() => {
+			const r = window.__party.room;
+			for (const m of r.getMembers()) r.setTeam(m.id, NeonArcade.isBotId(m.id) ? "A" : "spectator");
+		});
+		await tp.locator(".party-game", { hasText: "DOUBLE TURN CHECK" }).first().click({ timeout: TIMEOUT });
+		const tf = await gameFrame(tp, TIMEOUT);
+		const ended = await tp.locator(".managed-over h2").textContent({ timeout: 30_000 }).catch(() => null);
+		const live = await tf.evaluate(() => window.rules()).catch(() => null);
+		const [b1, b2] = live?.order ?? [];
+		const by = (live?.moves ?? []).map((m) => m.by).join(",");
+		check("two bots, two moves a turn each, play to the end", !!ended && by === [b1, b1, b2, b2, b1, b1].join(","), { ended, moves: live?.moves?.map((m) => m.by), score: live?.score });
+		const gaps = (live?.moves ?? []).slice(1).map((m, i) => m.at - live.moves[i].at);
+		// lib/sdk-managed.js BOT_MS: 600–1100 ms, before the second of a turn's moves too.
+		check("…each move after a human-feeling pause, the second of a turn's too", gaps.length === 5 && gaps.every((g) => g >= 550), gaps);
+		check("…and each bot asked once a move", live?.asked?.[b1] === 4 && live?.asked?.[b2] === 2, live?.asked);
+		await T.collect();
+		await T.context.close();
+
+		// A game that keeps naming a bot that has no move (bot() → null) is
+		// not asked in a loop: a null ends the bot's run of moves.
+		const N = await party(fx2.base, 1);
+		const [np] = N.pages;
+		await np.locator("button", { hasText: "ADD BOT" }).first().click({ timeout: TIMEOUT });
+		await np.locator(".party-member").nth(1).waitFor({ timeout: TIMEOUT });
+		await np.evaluate(() => {
+			const r = window.__party.room;
+			for (const m of r.getMembers()) r.setTeam(m.id, "A");
+		});
+		await np.locator(".party-game", { hasText: "DOUBLE TURN CHECK" }).first().click({ timeout: TIMEOUT });
+		const nf = await gameFrame(np, TIMEOUT);
+		const me = await np.evaluate(() => window.__party.room.selfId);
+		// The person's turn (first, or after the bot's two moves), then `stall`.
+		const mine = await viewUntil(nf, (v) => v.at === me);
+		await nf.evaluate(() => window.arcade.act({ t: "stall" }));
+		await viewUntil(nf, (v) => v.at !== me, 5000);
+		await np.waitForTimeout(4000);
+		const stalled = await nf.evaluate(() => window.rules()).catch(() => null);
+		const bot = stalled?.order.find((id) => id !== me);
+		const moved = (stalled?.moves ?? []).filter((m) => m.by === bot).length;
+		check("a bot that answers null is asked once, not in a loop", !!mine && stalled?.stalled === true && stalled.asked[bot] - moved === 1, { asked: stalled?.asked, moved });
+		await N.collect();
+		await N.context.close();
+		fx2.stop();
+	}
 
 	// ---------------------------------------------------------------- 3
 	console.log("\nmanaged: Connect 4's and Neon Survival's end cards, eight players, every theme");
@@ -621,9 +768,13 @@ try {
 		 * 4's is above (the frame's own state).
 		 */
 		const lastMove = async (m) => {
-			// No table to set first (the platform's quick table sets it, 2026-11-17): match m opens on our move.
-			await F.waitForFunction((m) => window.arcade.view?.match === m && window.arcade.view.turn === window.arcade.view.you, m, { timeout: TIMEOUT });
+			// No table to set first (the platform's quick table sets it, 2026-11-17).
+			// Who opens takes turns between matches (docs/sdk-v2.md "Who starts"),
+			// so the known game is replayed on a fresh board from seat 0 (ours),
+			// whoever opened match m and whatever the bot played meanwhile.
+			await F.waitForFunction((m) => window.arcade.view?.match === m, m, { timeout: TIMEOUT });
 			await F.evaluate((game) => {
+				s.g = R.newGame(2);
 				for (const c of game.slice(0, -1)) R.play(s.g, c);
 				window.arcade.act({ cell: game.at(-1), n: s.g.moves });
 			}, GAME);

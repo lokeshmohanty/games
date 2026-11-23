@@ -27,6 +27,10 @@ type Setup struct {
 	Opts  RawJSON // the manifest's opts
 	Seed  int64   // a random seed
 	Match int     // 0, then 1 on the first rematch, ...
+	// First is the seat that moves first (docs/sdk-v2.md "Who starts"):
+	// random for the first match, then the next seat on each rematch; ""
+	// from an older shell.
+	First string
 }
 
 // Result is how a match ended (docs/platform.md "Results").

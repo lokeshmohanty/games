@@ -4,6 +4,7 @@ Fill cells with orbs until they burst. A burst takes over the cells next to it, 
 
 ## How to play
 - 2 to 8 players take turns in seat order. Each player has a colour.
+- A random player goes first in the first game. On each **PLAY AGAIN**, the player after them in seat order goes first, so everyone gets a turn to start.
 - The grid is 6 × 9 for 2 to 4 players, and 8 × 12 for 5 to 8.
 - On your turn, add one orb to an empty cell or to a cell that is already yours. You cannot play in another player's cell.
 - A cell bursts when it holds as many orbs as it has neighbours (up, down, left, right):

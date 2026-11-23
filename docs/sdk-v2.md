@@ -125,7 +125,7 @@ by hand:
 
 ```js
 arcade.managed({
-  init({ seats, opts, seed, match }) { … },   // seats: [{ id, name, team, bot, local? }] — local: below
+  init({ seats, opts, seed, match, first }) { … },   // seats: [{ id, name, team, bot, local? }] — local: below; first: "Who starts"
   apply({ action, by }) { … },                // return nothing to allow; a string to refuse (the reason)
   view({ seat }) { return … },                // what this seat may see; seat null = a spectator
   turn() { return [ids…] },                   // whose move it is: drives bots and the turn-wait banner
@@ -166,6 +166,15 @@ How it runs:
     2026-11-19 the game stalled on the bot's turn). The first call's late
     answer is dropped. The queue itself moves on after a timeout, so the
     retry can reach the frame while the first call is still running there.
+  - **A bot still on turn after its own move** (an extra roll on a 6, a
+    turn of several steps) moves again, after another pause (2026-11-23;
+    before, it was never asked again and the game stalled, so Ludo made a
+    bot's action its whole turn). Only a move `apply` took leads to the
+    next: a bot that answers `null`, or whose move is refused, is not asked
+    again until something else changes, so a game that keeps naming a bot
+    with no move is not polled in a loop. A bot whose moves are accepted is
+    asked for as long as `turn()` names it: Sudoku's racing bots poll so.
+    scripts/fixtures/double-turn is the test (`just test-managed`).
 - **People on the host's phone** (2026-11-17). A game with `"sameDevice":
   true` in game.json may get a bot seat with `local: true` in `init`: the
   one person at SINGLE PLAYER's quick table made it a PERSON, someone beside
@@ -180,6 +189,48 @@ How it runs:
 - **Results.** `result()` is checked after every change. It is reported once
   on every phone (with `match`), and the shell draws the end card. PLAY
   AGAIN calls `init` again with `match + 1`.
+- **`match`** counts the matches of one mount: 0 for the first, then one
+  more on each PLAY AGAIN. It survives a handover: the heir's copy carries
+  it (`m`), so the heir's PLAY AGAIN goes on from it. A fresh mount (the game
+  picked again from the party) starts at 0.
+- **Who starts** (Lokesh, 2026-11-21: "in turn based games or similar games,
+  alternate the starting player"). `init` carries `first`, a seated id: the
+  seat that moves first, for any game where who starts matters.
+  - A run's first match draws it at random; each PLAY AGAIN gives the next
+    seat in `seats` (party order), wrapping round, so over the rematches
+    every seat opens in turn (`NeonArcade.nextFirst` in lib/sdk-managed.js).
+  - A last opener who has left is followed by whoever took their place: the
+    seat that was next.
+  - It survives a handover: the heir's copy carries who opened the match
+    (`f`, `fi` beside `m`), so the heir's PLAY AGAIN goes on round the table
+    rather than drawing again.
+  - Use it, and a game gets the rule for free: make `first`'s seat the one on
+    turn when the match begins. Keep sides and colours as they were (Connect
+    4's red is still Team A; only the opening move changes hands).
+  - Ignore it where nobody moves first (simultaneous play: Bubble Rush,
+    Light Cycles, a Sudoku race, Neon Survival, Battleship's salvos, Neon
+    Bid's sealed bids).
+  - It is absent from an older shell, and with nobody seated: fall back to
+    the game's old opener (seat 0, X, red).
+  - A **protocol** (Layer 1) game runs its own matches, so it follows the
+    same rule itself: the host draws the first opener, then takes the next
+    seat each new game, and puts the opener in the state it broadcasts, so an
+    heir carries it on. Liar's Dice is the example (`nextOpener`).
+  - In the adapters: TypeScript `Start.first` (null without), Go
+    `Setup.First` ("" without), C `setup->first` (NULL without), Python
+    `__init__(self, seats, opts, seed, match, first=None)` (passed only to an
+    `__init__` that takes it, so an older game still starts), and Rust's
+    `Game::set_first(&mut self, first: &str)`, called right after `init`
+    when there is one (a provided method that ignores it, so a Rust game
+    written before still compiles).
+  - Who uses it: Connect 4, Neon Fission, Draw & Guess (the first drawer;
+    the rotation goes on from them), Liar's Dice (the opening bid) and every
+    lane's Tic Tac Toe. Undercover already shuffles its speaking order every
+    hand and every round, so it is left as it is.
+  - Tested by `scripts/test-who-starts.mjs` (each game's rules over three
+    rematches and a mid-series handover), `just test-managed` 1b (the
+    platform, real browsers, three seats, the host leaving mid-series) and
+    `just test-conformance` (every lane: O opens when named, X without it).
 - **The end card waits for the last move's animation** (2026-11-15: a
   winning chain in Neon Fission was covered by the card before the loser
   saw a cell flip). A game that animates its moves calls `arcade.idle()`
@@ -443,9 +494,10 @@ managed state through one function:
 
 Each lane ships Tic Tac Toe as a managed game in
 `sdk/v2/examples/tic-tac-toe-<lane>`. `just test-conformance` drives each
-one's real sandboxed frame through one 25-step scripted match: refusals and
-their reasons, bot moves, snapshot → restore, skip, the result and a
-rematch. Every answer must equal the JavaScript reference's.
+one's real sandboxed frame through one 29-step scripted match: refusals and
+their reasons, bot moves, snapshot → restore, skip, the result, a rematch
+that O opens (`first`, "Who starts") and one with no `first` (X opens). Every
+answer must equal the JavaScript reference's.
 
 | Lane | Adapter | The author writes | Ships (gzip) |
 |---|---|---|---|

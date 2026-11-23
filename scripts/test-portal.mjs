@@ -936,7 +936,7 @@ console.log("\nportal: My Games · All Games");
 			search: document.querySelector(".search").hidden,
 		}));
 		check("My Games is ./?page=games&tab=mine, and with nothing of yours it says how to star (★, from inside a game)", tabOf(pg) === "mine" && (await subOn(pg)) === "My Games" && /★/.test(empty.text) && /inside/.test(empty.text) && !/card/.test(empty.text) && !empty.sections && empty.search, { url: pg.url(), empty });
-		check("…with PLAY SOMETHING (a game's single player, starting at once: start=1) and ALL GAMES", /^\.\/\?game=[^&]+&fresh=1.*&start=1$/.test(empty.quick ?? "") && (await pg.locator("[data-my-empty] .my-empty-all").textContent()) === "ALL GAMES", empty.quick);
+		check("…with PLAY SOMETHING (a game's single player, starting at once, bots only: start=pick) and ALL GAMES", /^\.\/\?game=[^&]+&fresh=1.*&start=pick$/.test(empty.quick ?? "") && (await pg.locator("[data-my-empty] .my-empty-all").textContent()) === "ALL GAMES", empty.quick);
 		await pg.goBack();
 		await pg.locator('[data-section="popular"]:not([hidden]) .game-card').first().waitFor({ timeout: TIMEOUT });
 		check("Back: All Games again (its address, search and sections)", tabOf(pg) === "all" && (await subOn(pg)) === "All Games" && (await pg.locator(".search").isVisible()) && (await pg.locator("[data-my-empty]").isHidden()), pg.url());
@@ -1520,8 +1520,9 @@ console.log("\nportal: My Games · All Games");
 	{
 		// A tap with a seat this browser still has saved (review, 2026-11-22):
 		// with no room server (offline, or none answering) the token is
-		// kept, since nothing released it; a seat another tab holds is said
-		// ("open in another tab"), not overwritten by a bots game here.
+		// kept, since nothing released it; with a seat another tab holds, the
+		// bots game starts anyway, with a note, and that tab keeps its token
+		// (Lokesh, 2026-11-23: "Start the bots game anyway").
 		const tc = await browser.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
 		await tc.addInitScript(() => {
 			try {
@@ -1544,9 +1545,14 @@ console.log("\nportal: My Games · All Games");
 		await t1.goto(site.url(ALL));
 		await t1.waitForSelector(".game-card:visible");
 		await t1.locator('[data-section="popular"] .game-card[data-game="connect4"] h3').tap();
-		await t1.waitForFunction(() => /open in another tab/i.test(document.getElementById("party")?.textContent ?? ""), null, { timeout: TIMEOUT }).catch(() => {});
-		const busy = await t1.evaluate(() => ({ game: window.__party?.game ?? null, said: /open in another tab/i.test(document.getElementById("party")?.textContent ?? ""), token: JSON.parse(localStorage.getItem("neon.room") ?? "null")?.code ?? null }));
-		check("…a seat another tab holds: the tap says the party is open in another tab, starts nothing, and leaves that tab its token", busy.said && !busy.game && busy.token === seat.code, busy);
+		await t1.waitForFunction(() => window.__party?.game === "connect4", null, { timeout: TIMEOUT }).catch(() => {});
+		const busy = await t1.evaluate(() => ({
+			game: window.__party?.game ?? null,
+			note: [...document.querySelectorAll(".neon-toast")].map((t) => t.textContent).join(" | "),
+			screen: /open in another tab/i.test(document.querySelector(".lobby-status")?.textContent ?? ""),
+			token: JSON.parse(localStorage.getItem("neon.room") ?? "null")?.code ?? null,
+		}));
+		check("…a seat another tab holds: the tap starts the bots game anyway, notes \"Your party is still open in another tab\", and leaves that tab its token", busy.game === "connect4" && /Your party is still open in another tab/.test(busy.note) && !busy.screen && busy.token === seat.code, busy);
 		await tc.close();
 	}
 	{
