@@ -211,6 +211,20 @@ const GAMES = {
 			return d.phase === "play" && d.selected >= 0;
 		});
 		await audit(page, G, "sudoku", "the race", { min: 81 });
+		// A row with no digit in it is as tall as the rest. A random puzzle may
+		// deal a row with no givens, and the rows were sized by their digits:
+		// that row shrank to 13px of a 40px board (CI, 2026-11-23, now and
+		// then). Emptied here, so the check does not wait on the dealer.
+		const rows = await G.evaluate(() => {
+			const cells = [...document.querySelectorAll(".su-cell")];
+			const row = cells.slice(36, 45);
+			const kept = row.map((c) => c.innerHTML);
+			for (const c of row) c.textContent = "";
+			const h = Array.from({ length: 9 }, (_, r) => Math.round(cells[r * 9].getBoundingClientRect().height * 10) / 10);
+			row.forEach((c, k) => (c.innerHTML = kept[k]));
+			return h;
+		});
+		check("sudoku · a row with no digit in it is as tall as the rest", Math.max(...rows) - Math.min(...rows) <= 1.5, rows);
 		// Pencil notes in the selected cell.
 		await G.locator(".su-pad button", { hasText: "NOTES" }).click();
 		for (const d of ["1", "5", "9"]) await G.locator(".su-pad button", { hasText: new RegExp(`^${d}$`) }).click();
