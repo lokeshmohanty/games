@@ -174,7 +174,7 @@ How it runs:
     again until something else changes, so a game that keeps naming a bot
     with no move is not polled in a loop. A bot whose moves are accepted is
     asked for as long as `turn()` names it: Sudoku's racing bots poll so.
-    scripts/fixtures/turns-game is the test (`just test-managed`).
+    scripts/fixtures/double-turn is the test (`just test-managed`).
 - **People on the host's phone** (2026-11-17). A game with `"sameDevice":
   true` in game.json may get a bot seat with `local: true` in `init`: the
   one person at SINGLE PLAYER's quick table made it a PERSON, someone beside

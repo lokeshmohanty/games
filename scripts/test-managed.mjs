@@ -16,7 +16,7 @@
 //   2. A ticking fixture (scripts/fixtures/tick-game), host + guest + bot:
 //      a guest's inputs and the bot's reach the host's tick, views arrive at
 //      viewRate, and the result ends it.
-//   2b. A turn of two moves (scripts/fixtures/turns-game): two bots play it
+//   2b. A turn of two moves (scripts/fixtures/double-turn): two bots play it
 //      to the end, each move after its pause, the second of a turn too; a
 //      bot that answers null is asked once, not in a loop.
 //   3. The end card on a phone (390x844): the ranking (places, seat colours,
@@ -434,13 +434,13 @@ try {
 	tick.stop();
 
 	// ---------------------------------------------------------------- 2b
-	console.log("\nmanaged: a bot that keeps the turn after its own move (scripts/fixtures/turns-game)");
+	console.log("\nmanaged: a bot that keeps the turn after its own move (scripts/fixtures/double-turn)");
 	// Every turn is two moves (Ludo's extra roll on a 6). Before 2026-11-23 a
 	// bot's pending move was cleared only after the refresh its own move set
 	// off had already tried to schedule the next one, so a bot on turn twice
 	// running was never asked again and the game stalled.
 	{
-		const fx2 = await devServer("scripts/fixtures", 5200, "turns-game");
+		const fx2 = await devServer("scripts/fixtures", 5200, "double-turn");
 		const T = await party(fx2.base, 1);
 		const [tp] = T.pages;
 		for (const n of [1, 2]) {
@@ -452,7 +452,7 @@ try {
 			const r = window.__party.room;
 			for (const m of r.getMembers()) r.setTeam(m.id, NeonArcade.isBotId(m.id) ? "A" : "spectator");
 		});
-		await tp.locator(".party-game", { hasText: "TURNS CHECK" }).first().click({ timeout: TIMEOUT });
+		await tp.locator(".party-game", { hasText: "DOUBLE TURN CHECK" }).first().click({ timeout: TIMEOUT });
 		const tf = await gameFrame(tp, TIMEOUT);
 		const ended = await tp.locator(".managed-over h2").textContent({ timeout: 30_000 }).catch(() => null);
 		const live = await tf.evaluate(() => window.rules()).catch(() => null);
@@ -476,7 +476,7 @@ try {
 			const r = window.__party.room;
 			for (const m of r.getMembers()) r.setTeam(m.id, "A");
 		});
-		await np.locator(".party-game", { hasText: "TURNS CHECK" }).first().click({ timeout: TIMEOUT });
+		await np.locator(".party-game", { hasText: "DOUBLE TURN CHECK" }).first().click({ timeout: TIMEOUT });
 		const nf = await gameFrame(np, TIMEOUT);
 		const me = await np.evaluate(() => window.__party.room.selfId);
 		// The person's turn (first, or after the bot's two moves), then `stall`.

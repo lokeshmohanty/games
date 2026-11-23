@@ -1,4 +1,4 @@
-// scripts/fixtures/turns-game — a managed turn-based game for
+// scripts/fixtures/double-turn — a managed turn-based game for
 // scripts/test-managed.mjs in which a seat keeps the turn after its own
 // move: every turn is two `step`s (as Ludo's extra roll on a 6, or any
 // multi-step turn), and the first seat to GOAL steps wins. A bot steps.

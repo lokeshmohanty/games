@@ -1,7 +1,7 @@
 {
   "sdk": 2,
-  "id": "turns-game",
-  "name": "TURNS CHECK",
+  "id": "double-turn",
+  "name": "DOUBLE TURN CHECK",
   "blurb": "A fixture for scripts/test-managed.mjs: a managed game whose every turn is two moves.",
   "entry": "index.html",
   "kind": "ffa",

@@ -8,7 +8,7 @@
 // kit's old public address (sdk/v1/dev-server.mjs, a copy the build makes
 // until 2027-02-15) must serve the same file. validate-game must start a
 // game that allows bots against them and play it, and skip only a game for
-// people alone (scripts/fixtures/turns-game, three ways).
+// people alone (scripts/fixtures/double-turn, three ways).
 
 import { spawn, spawnSync } from "node:child_process";
 import { cpSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
@@ -159,8 +159,8 @@ console.log("\ndevkit: validate-game plays a game that allows bots");
 	// and "bots": false (people only: the one honest skip).
 	const tmp = mkdtempSync(join(tmpdir(), "neon-validate-"));
 	const variant = (name, edit) => {
-		const dir = join(tmp, name, "turns-game");
-		cpSync(join(ROOT, "scripts/fixtures/turns-game"), dir, { recursive: true });
+		const dir = join(tmp, name, "double-turn");
+		cpSync(join(ROOT, "scripts/fixtures/double-turn"), dir, { recursive: true });
 		const m = JSON.parse(readFileSync(join(dir, "game.json"), "utf8"));
 		edit(m);
 		writeFileSync(join(dir, "game.json"), JSON.stringify(m, null, 2));
