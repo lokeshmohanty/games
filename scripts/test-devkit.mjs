@@ -6,11 +6,13 @@
 // the game is loaded with `./?dev=…`, played against a bot to the end, at
 // 390x844. A `?dev=` that is not on this machine must be refused. The dev
 // kit's old public address (sdk/v1/dev-server.mjs, a copy the build makes
-// until 2027-02-15) must serve the same file.
+// until 2027-02-15) must serve the same file. validate-game must start a
+// game that allows bots against them and play it, and skip only a game for
+// people alone (scripts/fixtures/turns-game, three ways).
 
-import { spawn } from "node:child_process";
-import { existsSync, readFileSync } from "node:fs";
-import { homedir } from "node:os";
+import { spawn, spawnSync } from "node:child_process";
+import { cpSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { homedir, tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { PORT_OFFSET, gameFrame, readyToClick, serve } from "./serve.mjs";
@@ -147,5 +149,43 @@ check("a ?dev= that is not loopback is refused, and says why", await warned);
 
 await browser.close();
 site.stop();
+
+console.log("\ndevkit: validate-game plays a game that allows bots");
+{
+	// The quick-start merge (2026-11-22) left validate-game looking for a
+	// SINGLE PLAYER button it no longer found, so every game that allows
+	// bots — the registry's PR check too — was "needs people" and never
+	// played. The fixture three ways: bots, no "bots" (the default: allowed),
+	// and "bots": false (people only: the one honest skip).
+	const tmp = mkdtempSync(join(tmpdir(), "neon-validate-"));
+	const variant = (name, edit) => {
+		const dir = join(tmp, name, "turns-game");
+		cpSync(join(ROOT, "scripts/fixtures/turns-game"), dir, { recursive: true });
+		const m = JSON.parse(readFileSync(join(dir, "game.json"), "utf8"));
+		edit(m);
+		writeFileSync(join(dir, "game.json"), JSON.stringify(m, null, 2));
+		return dir;
+	};
+	const games = [
+		["bots", variant("bots", () => {}), true],
+		['no "bots" (allowed by default)', variant("default", (m) => delete m.bots), true],
+		['"bots": false', variant("people", (m) => (m.bots = false)), false],
+	];
+	try {
+		for (const [label, dir, plays] of games) {
+			// Ports of its own, clear of this suite's.
+			const run = spawnSync("node", [join(ROOT, "scripts/validate-game.mjs"), dir], { env: { ...process.env, NEON_PORT_OFFSET: String(PORT_OFFSET + 60) }, encoding: "utf8", timeout: 120_000 });
+			const out = `${run.stdout}${run.stderr}`;
+			const played = /ok {3}it mounts in its sandboxed frame/.test(out) && /ok {3}5 s of play with no page or console error/.test(out);
+			const skipped = /skipped the play check/.test(out);
+			const said = out.split("\n").filter((l) => /FAIL|skipped|mounts|5 s of play/.test(l)).join(" | ") || out.slice(-400);
+			if (plays) check(`validate-game, ${label}: started against bots and play-checked, not skipped`, run.status === 0 && played && !skipped, said);
+			else check(`validate-game, ${label}: needs people, so the play check is skipped`, run.status === 0 && skipped && !played, said);
+		}
+	} finally {
+		rmSync(tmp, { recursive: true, force: true });
+	}
+}
+
 console.log(failures ? `\n${failures} devkit check(s) failed` : "\nall devkit checks passed");
 process.exit(failures ? 1 : 0);
