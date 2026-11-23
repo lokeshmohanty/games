@@ -1190,7 +1190,11 @@ tap. The party code is fetched later, only if friends are wanted
   newcomer is admitted (net.js `createInvite` asks `yieldBot(false)`,
   `_addMember` calls `yieldBot(true)`; INVITE and a join by code alike),
   never over a running game, so an invite that lapses or a join that fails
-  costs no bot. A friend
+  costs no bot. Each such invite reserves its bot (`yieldReserved`, passed
+  to `yieldBot`), so two invites never count on one bot: the second is
+  refused as full when it is made, and a join that would still take the
+  party past `maxMembers` at admission is let go (`_addMember` returns
+  false). The party never exceeds `maxMembers`. A friend
   who joins takes a bot's seat rather than one more (`seatTarget`,
   `fitTable`): Connect 4 that was you and a bot is you and your friend, not
   a friend left watching.

@@ -473,6 +473,55 @@ try {
 	});
 	check("a full party (host and seven bots) whose host gives up a bot's seat lets a newcomer in by code", yielded.size === 8 && !String(yielded.joined).startsWith("error") && yielded.late && yielded.members === 8 && yielded.bots === 6, JSON.stringify(yielded));
 
+	// Two invites out against one bot it may give up: the second is refused
+	// as full, never admitted past maxMembers (follow-up review, 2026-11-23:
+	// the bot went only on admission, so two invites could count on one bot
+	// and the party reached 9). The host may give up one bot only here.
+	console.log("\nroom: two newcomers, one bot's seat: the second hears full");
+	const raced = await page.evaluate(async () => {
+		localStorage.removeItem("neon.room");
+		let host;
+		let spare = null; // the one bot this host may give up
+		const yieldBot = (now, reserved = 0) => {
+			const bot = host.room.getMembers().find((m) => m.id === spare);
+			if (!now) return !!bot && reserved < 1;
+			if (!bot) return false;
+			host.room.removeMember(bot.id);
+			return true;
+		};
+		host = await NeonArcade.hostRoom({ name: "Host", yieldBot });
+		localStorage.removeItem("neon.room");
+		const guest = await NeonArcade.joinRoom(host.code, { name: "G", identity: await NeonArcade.identity({ fresh: true }) });
+		await new Promise((r) => setTimeout(r, 500));
+		for (let i = 0; i < 6; i++) spare = host.room.addBot();
+		const size = host.room.getMembers().length;
+		localStorage.removeItem("neon.room");
+		const tryJoin = async (name) => {
+			try {
+				const r = await NeonArcade.joinRoom(host.code, { name, identity: await NeonArcade.identity({ fresh: true }), answerTimeoutMs: 15000 });
+				return { name, ok: true, r };
+			} catch (err) {
+				return { name, ok: false, reason: err.reason };
+			}
+		};
+		const both = await Promise.all([tryJoin("A"), tryJoin("B")]);
+		await new Promise((r) => setTimeout(r, 800));
+		const members = host.room.getMembers();
+		const out = {
+			size,
+			results: both.map(({ name, ok, reason }) => ({ name, ok, reason })),
+			members: members.length,
+			bots: members.filter((m) => NeonArcade.isBotId(m.id)).length,
+			newcomers: members.filter((m) => m.name === "A" || m.name === "B").map((m) => m.name),
+		};
+		for (const b of both) b.r?.room.leave();
+		guest.room.leave();
+		host.room.leave();
+		return out;
+	});
+	const okOne = raced.results.filter((r) => r.ok).length === 1 && raced.results.some((r) => !r.ok && r.reason === "full");
+	check("two newcomers by code against one bot's seat: one joins, the other hears full, and the party stays at 8 (never 9)", raced.size === 8 && okOne && raced.members === 8 && raced.bots === 5 && raced.newcomers.length === 1, JSON.stringify(raced));
+
 	// ---------------------------------------- 6e. cancelling a join
 	// START A NEW PARTY during a reconnect used to navigate away with the
 	// claim still held. An aborted join hands it back on the spot.
