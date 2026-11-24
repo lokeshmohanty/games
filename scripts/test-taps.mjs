@@ -549,7 +549,9 @@ const GAMES = {
 		}
 		const last = await debug(G);
 		check("glowdown reached its end", last.phase === "over", { counts: last.counts });
-		check("glowdown: a hand of 9 or more was fanned in rows", long);
+		// A five-card game against bots may end before the hand grows that far:
+		// then only the hand of 30 below (set by hand, every run) covers the rows.
+		if (!long) console.log("  (the game ended before the hand reached 9 cards: the hand of 30 below covers the rows)");
 		await audit(page, G, "glowdown", "the end", { min: 0 });
 		await nextGameLine(page, G, "glowdown", { line: ".gd-next", change: ".gd-next-change", picks: ".gd-next button[data-rule]", says: "Next game: no house rules", min: 5, pick: '.gd-next button[data-rule="stack"]', after: "Next game: Stack sparks" });
 		// Eight at the table and a hand of 30 (review, 2026-11-24): every card a
