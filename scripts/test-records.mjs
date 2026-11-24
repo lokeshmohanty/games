@@ -513,17 +513,25 @@ console.log("\nreview fixes: a win because the others left unlocks no skill achi
 	const games = [
 		["games/connect4/game.json", { four: false, moves: 3 }],
 		["games/neon-fission/game.json", { finished: false, turns: 2, chain: 0 }],
-		["../web-games-ach/five-in-a-row/game.json", { line: 0, moves: 1 }],
-		["../web-games-ach/snakes-and-ladders/game.json", { home: false, rolls: 1, snakes: 0, ladders: 0 }],
-		["../web-games-ach/ludo/game.json", { finished: false, lost: 0, captures: 0 }],
-		["../web-games-ach/battleship/game.json", { complete: false, lost: 0, shots: 1, hits: 1, accuracy: 100, sunk: 0 }],
-		["../web-games-ach/liars-dice/game.json", { finished: false, lowest: 1, dice: 5 }],
-		["../web-games-ach/liars-dice/game.json", { finished: false, lowest: 5, dice: 5 }],
+		["web-games/five-in-a-row/game.json", { line: 0, moves: 1 }],
+		["web-games/snakes-and-ladders/game.json", { home: false, rolls: 1, snakes: 0, ladders: 0 }],
+		["web-games/ludo/game.json", { finished: false, lost: 0, captures: 0 }],
+		["web-games/battleship/game.json", { complete: false, lost: 0, shots: 1, hits: 1, accuracy: 100, sunk: 0 }],
+		["web-games/liars-dice/game.json", { finished: false, lowest: 1, dice: 5 }],
+		["web-games/liars-dice/game.json", { finished: false, lowest: 5, dice: 5 }],
 	];
+	// A community game: as pinned (community/, after `just community`; CI's
+	// build job runs this file then, with NEON_REQUIRE_COMMUNITY=1), else a
+	// sibling checkout; the static job has neither and skips, saying so.
+	const where = (file) =>
+		file.startsWith("games/")
+			? [new URL(`../${file}`, import.meta.url)]
+			: [new URL(`../community/lokeshmohanty/${file}`, import.meta.url), new URL(`../../${file.replace(/^web-games\//, "web-games-ach/")}`, import.meta.url)];
 	for (const [file, facts] of games) {
-		const at = new URL(`../${file}`, import.meta.url);
-		if (!existsSync(at)) {
-			console.log(`  skip ${file} (not checked out)`);
+		const at = where(file).find(existsSync);
+		if (!at) {
+			if (process.env.NEON_REQUIRE_COMMUNITY) check(`${file}: the pinned manifest is here`, false, "NEON_REQUIRE_COMMUNITY: run `just community` first");
+			else console.log(`  skip ${file} (not fetched: just community)`);
 			continue;
 		}
 		const m = JSON.parse(readFileSync(at, "utf8"));

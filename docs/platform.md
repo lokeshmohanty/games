@@ -252,7 +252,8 @@ records require that fact — otherwise a forfeit at move three would set a
 `finished`, Five in a Row `line >= 5`, Snakes & Ladders `home`, Ludo
 `finished`, Battleship `complete`, Liar's Dice `finished` (review,
 2026-11-24; test-records checks every such game.json against a flattering
-forfeit).
+forfeit — the pinned community ones in CI's build job, after the fetch,
+with `NEON_REQUIRE_COMMUNITY=1`).
 
 **Where it shows:**
 - a notice (toast) when something unlocks or a record is beaten, over
@@ -275,10 +276,9 @@ checks a fact against the game, and nothing ranks by them.
 **Which games declare them** (2026-11-24): Connect 4, Neon Fission, Neon
 Bid, Neon Survival and Tic Tac Toe (JS, the platform's fields only: it is
 the conformance reference, so its result stays the same in every language)
-here; in lokeshmohanty/web-games (branch `achievements`, until its pin
-moves) Sudoku, Bubble Rush, Light Cycles, Five in a Row, Snakes & Ladders,
-Ludo, Battleship and Liar's Dice; in lokeshmohanty/card-games (branch
-`achievements`, until its pin moves past 7ef5aa2) Glowdown, Guess What and
+here; in lokeshmohanty/web-games (pinned at 7782b67) Sudoku, Bubble Rush, Light Cycles, Five in a Row, Snakes & Ladders,
+Ludo, Battleship and Liar's Dice; in lokeshmohanty/card-games (pinned at
+606480f) Glowdown, Guess What and
 29. Undercover and Draw & Guess cannot be played alone.
 Each game.json is the list; their results' `facts`/`seatFacts` are in each
 game's `result`.
