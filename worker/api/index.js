@@ -15,6 +15,7 @@ import { matchesOf, played, ratingsOf, report, startMatch, summary, sweep, withd
 import { deleteMe, exportMe, getFavs, getMe, link, patchMe, putFavs, signOut, unlink } from "./me.js";
 import { publicProfile, withBoards } from "./people.js";
 import { pushKey, subscribe, unsubscribe } from "./push.js";
+import { getRecords, putRecords } from "./records.js";
 import { ageRun, startRun } from "./runs.js";
 import { runSnapshot } from "./snapshot.js";
 import {
@@ -109,6 +110,11 @@ export async function api(request, env, { gate = async () => true, ctx = null } 
 		if (a === "me" && b === "favs") {
 			if (method === "GET") return send(await getFavs(env, await me()));
 			if (method === "PUT") return send(await putFavs(env, await me(), request));
+		}
+		// Personal records and achievements, synced from each device (records.js).
+		if (a === "me" && b === "records" && !c) {
+			if (method === "GET") return send(await getRecords(env, await me()));
+			if (method === "PUT") return send(await putRecords(env, await me(), request));
 		}
 		if (a === "me" && b === "link" && c && method === "POST") return send(await link(env, await me(), c, request));
 		if (a === "me" && b === "identities" && c && method === "DELETE") return send(await unlink(env, await me(), c));

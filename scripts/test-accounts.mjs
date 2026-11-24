@@ -1706,6 +1706,67 @@ try {
 		check("the other player's history keeps the match, the name shown as deleted", bm.body.matches.some((m) => m.ranking.flat().some((p) => p.name === "(deleted)")), bm.body.matches.map((m) => m.ranking));
 	}
 
+	console.log("\naccounts: records and achievements (0007) — synced from devices, friends only");
+	{
+		const [rae, roy, rik] = [await person("Rae"), await person("Roy"), await person("Rik")];
+		check("nothing yet", JSON.stringify((await call("GET", "/api/me/records", { token: rae.token })).body) === '{"games":{}}');
+		check("signed in only", (await call("GET", "/api/me/records")).status === 401 && (await call("PUT", "/api/me/records", { body: { games: {} } })).status === 401);
+		// The phone: a Sudoku solved, a record, the platform's count.
+		const phone = {
+			"lokeshmohanty/sudoku": { a: { "first-solve": 1000 }, p: { hundred: 3 }, r: { time: { b: "min", v: { easy: 200_000 } } }, s: { played: 3, won: 0, best: 0, last: 50, byBots: { 2: [1, 1] } } },
+			"*": { a: {}, n: 3, ms: 600_000, g: ["lokeshmohanty/sudoku"], d: { last: 20000, cur: 2, best: 2 } },
+		};
+		let r = await call("PUT", "/api/me/records", { token: rae.token, body: { games: phone } });
+		check("a device's records are kept, as sent", r.status === 200 && r.body.games["lokeshmohanty/sudoku"].a["first-solve"] === 1000 && r.body.games["*"].n === 3, r.body);
+		// The tablet: less of some things, more of others.
+		const tablet = {
+			"lokeshmohanty/sudoku": { a: { "first-solve": 4000, "clean-sheet": 5000 }, p: { hundred: 2 }, r: { time: { b: "min", v: { easy: 260_000, hard: 700_000 } } }, s: { played: 1, won: 0, last: 60 } },
+			"*": { a: { regular: 7000 }, n: 1, g: ["neon-fission"], d: { last: 20001, cur: 3, best: 3 } },
+		};
+		r = await call("PUT", "/api/me/records", { token: rae.token, body: { games: tablet } });
+		const su = r.body.games["lokeshmohanty/sudoku"];
+		check("a second device merges, never replaces: unlocks from both at the earlier time", su.a["first-solve"] === 1000 && su.a["clean-sheet"] === 5000, su);
+		check("…the larger count, the better record per level", su.p.hundred === 3 && su.r.time.v.easy === 200_000 && su.r.time.v.hard === 700_000, su);
+		check("…the larger stats", su.s.played === 3 && su.s.byBots["2"].join() === "1,1", su.s);
+		check("…the platform's: every game played, the later run of days", r.body.games["*"].g.sort().join() === "lokeshmohanty/sudoku,neon-fission" && r.body.games["*"].d.cur === 3 && r.body.games["*"].n === 3 && r.body.games["*"].a.regular === 7000, r.body.games["*"]);
+		const got = (await call("GET", "/api/me/records", { token: rae.token })).body.games;
+		check("GET answers the merged copy, every game", JSON.stringify(got["lokeshmohanty/sudoku"]) === JSON.stringify(su) && Object.keys(got).length === 2, got);
+		r = await call("PUT", "/api/me/records", { token: rae.token, body: { games: { "lokeshmohanty/sudoku": { a: {}, r: { time: { b: "min", v: { easy: 999_999 } } } } } } });
+		check("a device with less cannot lower anything", r.body.games["lokeshmohanty/sudoku"].r.time.v.easy === 200_000 && r.body.games["lokeshmohanty/sudoku"].a["first-solve"] === 1000);
+		r = await call("PUT", "/api/me/records", { token: rae.token, body: { games: { "neon-bid": { a: { ok: 1, "BAD ID": 2 }, junk: "x".repeat(100), r: { x: { b: "eval", v: {} } } } } } });
+		check("malformed entries are dropped, not stored", r.status === 200 && JSON.stringify(r.body.games["neon-bid"]) === '{"a":{"ok":1},"p":{},"r":{}}', r.body);
+		check("a bad game id is refused", (await call("PUT", "/api/me/records", { token: rae.token, body: { games: { "../x": {} } } })).status === 400);
+		check("…and dev/ games", (await call("PUT", "/api/me/records", { token: rae.token, body: { games: { "dev/x": {} } } })).status === 400);
+		check("not an object is refused", (await call("PUT", "/api/me/records", { token: rae.token, body: { games: [1] } })).status === 400);
+		const many = Object.fromEntries(Array.from({ length: 65 }, (_, i) => [`g${i}x`, {}]));
+		check("at most 64 games a request", (await call("PUT", "/api/me/records", { token: rae.token, body: { games: many } })).status === 400);
+		const big = { a: Object.fromEntries(Array.from({ length: 64 }, (_, i) => [`a${i}-${"x".repeat(26)}`, 1e12 + i])), p: Object.fromEntries(Array.from({ length: 64 }, (_, i) => [`p${i}-${"x".repeat(26)}`, { d: Array.from({ length: 100 }, (_, j) => `v${j}`) }])) };
+		check("a game's row is at most 8 KB", (await call("PUT", "/api/me/records", { token: rae.token, body: { games: { "neon-bid": big } } })).status === 413);
+
+		// Friends see them; strangers and the signed-out never do.
+		await call("POST", `/api/friends/${roy.id}`, { token: rae.token });
+		await call("POST", `/api/friends/${rae.id}`, { token: roy.token });
+		const asFriend = await call("GET", `/api/u/${rae.id}`, { token: roy.token });
+		check("a friend sees your trophies and best times on your profile", asFriend.body.records?.["lokeshmohanty/sudoku"]?.r?.time?.v?.easy === 200_000 && !!asFriend.body.records["*"], asFriend.body.records);
+		check("…personal, never cached publicly", !/public/.test(asFriend.headers.get("cache-control") ?? ""));
+		check("you see your own", !!(await call("GET", `/api/u/${rae.id}`, { token: rae.token })).body.records);
+		check("a stranger, signed in, does not", (await call("GET", `/api/u/${rae.id}`, { token: rik.token })).body.records === undefined);
+		check("nor anyone signed out", (await call("GET", `/api/u/${rae.id}`)).body.records === undefined);
+		const code = (await call("GET", "/api/me", { token: rae.token })).body.friendCode;
+		check("nor by friend code", (await call("GET", `/api/u/${code}`)).body.records === undefined);
+		await call("PATCH", "/api/me", { token: rae.token, body: { hidePublic: true } });
+		check("hidden from public boards: still for a friend", !!(await call("GET", `/api/u/${rae.id}`, { token: roy.token })).body.records);
+		check("…never for a stranger", (await call("GET", `/api/u/${rae.id}`, { token: rik.token })).body.records === undefined);
+		await call("DELETE", `/api/friends/${rae.id}`, { token: roy.token });
+		check("unfriended: gone", (await call("GET", `/api/u/${rae.id}`, { token: roy.token })).body.records === undefined);
+
+		const ex = await call("GET", "/api/me/export", { token: rae.token });
+		check("export: every game's records, with when they last changed", ex.body.records?.["lokeshmohanty/sudoku"]?.a?.["first-solve"] === 1000 && typeof ex.body.records["*"].at === "number", ex.body.records);
+		await call("DELETE", "/api/me", { token: rae.token });
+		const left = (await w.sql(`SELECT COUNT(*) AS n FROM records WHERE account = '${rae.id}'`))[0][0].n;
+		check("delete: the records go with the account", left === 0, left);
+	}
+
 	console.log("\naccounts: a write limit per address");
 	{
 		const ip = "10.99.0.1";
