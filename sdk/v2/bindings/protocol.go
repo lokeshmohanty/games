@@ -152,6 +152,10 @@ type Member struct {
 	Away *bool `json:"away,omitempty"`
 	// Lost connection at this time (ms); the seat is held.
 	Reconnecting *float64 `json:"reconnecting,omitempty"`
+	// The member's player colour, settled by the host's record (the first to pick
+	// keeps it): an index into the theme's `players` (`--p1`…`--p8`).
+	// docs/sdk-v2.md "Seat colours". 0..7.
+	Color *int `json:"color,omitempty"`
 	// Fields the schema does not name; it allows any.
 	Extra map[string]json.RawMessage `json:"-"`
 }
@@ -185,7 +189,7 @@ func (m *Member) UnmarshalJSON(b []byte) error {
 	if err := json.Unmarshal(b, &all); err != nil {
 		return err
 	}
-	for _, k := range [...]string{"id", "name", "team", "bot", "away", "reconnecting"} {
+	for _, k := range [...]string{"id", "name", "team", "bot", "away", "reconnecting", "color"} {
 		delete(all, k)
 	}
 	m.Extra = nil
@@ -240,9 +244,15 @@ type Theme struct {
 	// ink, ink2, ink3, rule, accent, onAccent, accent2, onAccent2, good, warn,
 	// danger, glow.
 	Tokens map[string]string `json:"tokens"`
-	// Seat colours in seat order, as rgba(). Exactly 8 items.
+	// The eight player colours (`--p1`…`--p8`), as rgba(). A seat's is
+	// `players[color]`, its player's pick (docs/sdk-v2.md "Seat colours"); an
+	// older shell sent no `color`, and seats went in this order. Exactly 8 items.
 	Players []string   `json:"players"`
 	Fonts   ThemeFonts `json:"fonts"`
+	// The eight player colours' names in this theme, in `players` order ("Red",
+	// "Yellow", "Blue"… under Paper; "Cyan" for the third under Neon): a game's
+	// words for a seat's colour. Exactly 8 items.
+	PlayerNames []string `json:"playerNames,omitempty"`
 }
 
 // Phase
@@ -940,6 +950,9 @@ type RulesCallSeatsItem struct {
 	// A bot seat a person on the host's phone plays (the quick table's PERSON);
 	// only for a game with manifest `sameDevice`.
 	Local *bool `json:"local,omitempty"`
+	// init: the seat's player colour, an index into the theme's `players`
+	// (docs/sdk-v2.md "Seat colours"). Absent from an older shell. 0..7.
+	Color *int `json:"color,omitempty"`
 }
 
 // RulesCall: One call into a managed game's rules. `fn` names the rule; the
@@ -1011,6 +1024,10 @@ type View struct {
 	// This view's number on this frame, rising by one per view; a frame echoes the
 	// newest it has shown in `idle`. At least 1.
 	Seq *int `json:"seq,omitempty"`
+	// Each seat's player colour, an index into the theme's `players`, by id
+	// (docs/sdk-v2.md "Seat colours"). On every view, so a colour picked mid-game
+	// reaches the frame. Absent from an older shell.
+	Colors map[string]int `json:"colors,omitempty"`
 }
 
 // Rejected: `rejected`, shell to frame. Layer 2: the host's rules refused this

@@ -62,6 +62,12 @@
         "reconnecting": {
           "type": "number",
           "description": "Lost connection at this time (ms); the seat is held."
+        },
+        "color": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 7,
+          "description": "The member's player colour, settled by the host's record (the first to pick keeps it): an index into the theme's `players` (`--p1`…`--p8`). docs/sdk-v2.md \"Seat colours\"."
         }
       },
       "additionalProperties": true
@@ -132,7 +138,7 @@
           },
           "minItems": 8,
           "maxItems": 8,
-          "description": "Seat colours in seat order, as rgba()."
+          "description": "The eight player colours (`--p1`…`--p8`), as rgba(). A seat's is `players[color]`, its player's pick (docs/sdk-v2.md \"Seat colours\"); an older shell sent no `color`, and seats went in this order."
         },
         "fonts": {
           "type": "object",
@@ -147,6 +153,15 @@
               "type": "string"
             }
           }
+        },
+        "playerNames": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "minItems": 8,
+          "maxItems": 8,
+          "description": "The eight player colours' names in this theme, in `players` order (\"Red\", \"Yellow\", \"Blue\"… under Paper; \"Cyan\" for the third under Neon): a game's words for a seat's colour."
         }
       }
     },
@@ -1481,6 +1496,12 @@
               "local": {
                 "type": "boolean",
                 "description": "A bot seat a person on the host's phone plays (the quick table's PERSON); only for a game with manifest `sameDevice`."
+              },
+              "color": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 7,
+                "description": "init: the seat's player colour, an index into the theme's `players` (docs/sdk-v2.md \"Seat colours\"). Absent from an older shell."
               }
             }
           },
@@ -1600,6 +1621,15 @@
           "type": "integer",
           "minimum": 1,
           "description": "This view's number on this frame, rising by one per view; a frame echoes the newest it has shown in `idle`."
+        },
+        "colors": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 7
+          },
+          "description": "Each seat's player colour, an index into the theme's `players`, by id (docs/sdk-v2.md \"Seat colours\"). On every view, so a colour picked mid-game reaches the frame. Absent from an older shell."
         }
       }
     },

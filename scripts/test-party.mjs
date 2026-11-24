@@ -208,6 +208,58 @@ try {
 		`directPeers=${await host.evaluate(() => window.__party?.room?.directPeers().length ?? -1)}`,
 	);
 
+	console.log("\nparty: player colours (docs/index.md \"Player colours\")");
+	{
+		// By id: the three pages share a device, and so a default name.
+		const idOf = (page) => page.evaluate(() => window.__party.room.selfId);
+		/** The colour `page`'s roster shows for member `id` (its row's dot), or null. */
+		const shown = (page, id) => page.evaluate((id) => document.querySelector(`.party-member[data-member="${id}"] .party-dot`)?.dataset.memberColor ?? null, id);
+		const shows = (page, id, c) =>
+			page
+				.waitForFunction(([id, c]) => document.querySelector(`.party-member[data-member="${id}"] .party-dot`)?.dataset.memberColor === c, [id, String(c)], { timeout: TIMEOUT })
+				.then(() => true, () => false);
+		const [n2, n3] = [await idOf(p2), await idOf(p3)];
+		const start = await Promise.all([host, p2, p3].map((pg) => pg.evaluate(() => window.__party.room.getMembers().map((m) => m.color))));
+		check("everyone has a colour from the start, three different ones, the same on every screen", new Set(start[0]).size === 3 && start.every((c) => JSON.stringify(c) === JSON.stringify(start[0])), JSON.stringify(start));
+		await p2.locator('.color-swatch[data-color="4"]').first().click();
+		check("p2 picks Green (4): the host's screen shows it", await shows(host, n2, 4), await shown(host, n2));
+		check("…and so does p3's, who reached p2 through the mesh", await shows(p3, n2, 4), await shown(p3, n2));
+		check("…and p2's own swatch is pressed, saying so", await p2.waitForFunction(() => document.querySelector('.color-swatch[data-color="4"]')?.getAttribute("aria-pressed") === "true" && /You are Green/.test(document.querySelector(".color-says")?.textContent ?? ""), null, { timeout: TIMEOUT }).then(() => true, () => false));
+		await p3.locator('.color-swatch[data-color="4"]').first().click();
+		check("p3 wants Green too: p2 picked first and keeps it, on every screen", (await shows(host, n3, 5)) && (await shown(host, n2)) === "4" && (await shows(p2, n3, 5)), `${await shown(host, n2)} ${await shown(host, n3)}`);
+		const told = await p3
+			.waitForFunction(() => {
+				const g = document.querySelector('.color-swatch[data-color="4"]');
+				return g?.classList.contains("is-taken") && /taken/.test(g.getAttribute("aria-label")) && /Green is taken by .*: you are Orange/.test(document.querySelector(".color-says")?.textContent ?? "");
+			}, null, { timeout: TIMEOUT })
+			.then(() => true, () => false);
+		check("…and p3's picker shows Green taken, and that p3 has the nearest free one (Orange)", told, await p3.evaluate(() => document.querySelector(".color-says")?.textContent));
+		await p2.locator('.color-swatch[data-color="1"]').first().click();
+		check("p2 moves to Yellow: p3's wish for Green is granted", (await shows(host, n3, 4)) && (await shows(p3, n2, 1)), `${await shown(host, n2)} ${await shown(host, n3)}`);
+		// Pickers beat non-pickers (Lokesh, 2026-11-24): the host never
+		// picked, so a guest who picks the host's Red gets it, and the host
+		// moves to the nearest free colour. Taken is whatever a pick would not
+		// get you: Red now (p2 picked it), not the colour the host was only given.
+		const hostId = await idOf(host);
+		await p2.locator('.color-swatch[data-color="0"]').first().click();
+		check("p2 picks Red, the host's (never picked): p2 gets it on every screen, the host moves to the nearest free (Yellow)", (await shows(host, n2, 0)) && (await shows(p3, n2, 0)) && (await shows(p3, hostId, 1)), `${await shown(p3, n2)} ${await shown(p3, hostId)}`);
+		const struck = await p3
+			.waitForFunction(() => document.querySelector('.color-swatch[data-color="0"]')?.classList.contains("is-taken") && !document.querySelector('.color-swatch[data-color="1"]')?.classList.contains("is-taken"), null, { timeout: TIMEOUT })
+			.then(() => true, () => false);
+		check("…and p3's picker strikes Red (p2 picked it), not Yellow (the host was only given it)", struck, await p3.evaluate(() => [...document.querySelectorAll(".color-swatch.is-taken")].map((b) => b.dataset.color).join()));
+		// The picker on the party screen, on a phone.
+		for (const [w, h] of [
+			[390, 844],
+			[354, 696],
+		]) {
+			await host.setViewportSize({ width: w, height: h });
+			const f = await phoneFloors(host, ".color-pick, .party-member .party-name");
+			const sideways = await host.evaluate(() => document.documentElement.scrollWidth > innerWidth);
+			check(`${w}x${h}: the party's colour picker, eight swatches 44px, its text and the roster's names 12px or more`, f.measured.taps === 8 && !f.taps.length && !f.text.length && !sideways, JSON.stringify(f));
+		}
+		await host.setViewportSize({ width: 390, height: 844 });
+	}
+
 	console.log("\nparty: teams and starting a game");
 	// Team A for the host, Team B for p2, p3 watches.
 	const rows = host.locator(".party-member");
@@ -310,6 +362,14 @@ try {
 		// The word has to be read off the *drawer's* page: everyone else is shown
 		// the masked hint, and the host is not necessarily drawing.
 		const pages = [host, p2, p3];
+		// The drawer is the one page whose input is disabled — once every
+		// page has its first view: an input is enabled before it, so read too
+		// soon no page was the drawer, the host was taken for it, and its
+		// masked word was guessed (a flake seen 2026-11-24, here and in CI).
+		for (const end = Date.now() + TIMEOUT; Date.now() < end; await new Promise((r) => setTimeout(r, 100))) {
+			const n = (await Promise.all(pages.map((page) => F.get(page).evaluate(() => document.querySelector("#chat-input")?.disabled === true)))).filter(Boolean).length;
+			if (n === 1) break;
+		}
 		const disabled = await Promise.all(
 			pages.map((page) => F.get(page).evaluate(() => document.querySelector("#chat-input")?.disabled === true)),
 		);
@@ -326,7 +386,12 @@ try {
 				if (!enabled) continue;
 				await readyToClick(page);
 				await F.get(page).fill("#chat-input", secret);
-				await F.get(page).click("#chat-send");
+				// Enter, not a click on SEND: a click is a point on the page,
+				// taken by anything the shell draws over the frame there (a
+				// passing toast, likely), which Playwright's checks inside the
+				// frame cannot see; the guess stayed in the box (2026-11-24,
+				// here and in CI).
+				await F.get(page).press("#chat-input", "Enter");
 			}
 			// Sixty seconds is the drawing deadline; anything near it means the
 			// early exit did not fire.
@@ -336,8 +401,10 @@ try {
 				null,
 				{ timeout: 20_000 },
 			).catch(() => {});
+			const took = Date.now() - before;
+			const why = took < 15_000 ? "" : JSON.stringify({ word, disabled, pages: await Promise.all(pages.map((page) => F.get(page).evaluate(() => ({ dis: document.querySelector("#chat-input")?.disabled, val: document.querySelector("#chat-input")?.value, ph: document.querySelector("#chat-input")?.placeholder, word: document.querySelector("#word-display")?.textContent, chat: [...document.querySelectorAll("#chat-log > *, #chat > *")].slice(-4).map((n) => n.textContent) })))) });
 			check("everyone guessing right ends the phase early, not at the deadline",
-				Date.now() - before < 15_000, `${Math.round((Date.now() - before) / 1000)}s`);
+				took < 15_000, `${Math.round(took / 1000)}s ${why}`);
 		} else {
 			check("the word was readable to the drawer", false, `word display was "${word}"`);
 		}
@@ -709,6 +776,8 @@ try {
 	for (const page of [host, p2, p3]) await (await gameFrame(page, TIMEOUT)).locator("#gameCanvas").waitFor({ timeout: TIMEOUT });
 	const hostName = await host.evaluate(() => window.__party.room.self().name);
 	const p2Name = await p2.evaluate(() => window.__party.room.self().name);
+	// Everyone's colour but the leaving host's, to hold the heir's record to.
+	const coloursKept = await p3.evaluate((gone) => JSON.stringify(window.__party.room.getMembers().filter((m) => m.id !== gone).map((m) => [m.id, m.color])), await host.evaluate(() => window.__party.room.selfId));
 	// The overflow check above dropped p2–p3's direct link, so the two talked
 	// through the host; the mesh links them again on its own, but on a loaded
 	// runner not always by now (2026-11-16). Closing the host while it is
@@ -758,6 +827,18 @@ try {
 	await p2.evaluate(() => window.__party.room.setGame(null));
 	await p3.waitForFunction(() => window.__party.game === null && !document.getElementById("party").hidden, null, { timeout: TIMEOUT });
 	check("the heir is told the crown is theirs", heirTold);
+	{
+		const ids = JSON.parse(coloursKept).map(([id]) => id);
+		const now = await Promise.all([p2, p3].map((pg) => pg.evaluate((ids) => JSON.stringify(window.__party.room.getMembers().filter((m) => ids.includes(m.id)).map((m) => [m.id, m.color])), ids)));
+		// What the record held, settled again without the host: everyone keeps
+		// theirs, except a wish the host's colour was holding up, now granted.
+		const expected = await p3.evaluate(([kept, ids]) => {
+			const before = JSON.parse(kept);
+			const ms = window.__party.room.getMembers().filter((m) => ids.includes(m.id)).map((m) => ({ ...m, color: before.find(([id]) => id === m.id)[1] }));
+			return JSON.stringify(NeonArcade.assignColors(ms, { live: true }).map((m) => [m.id, m.color]));
+		}, [coloursKept, ids]);
+		check("the handover keeps everyone's colour (the bot's too), on the heir's record and the rest's — but a wish the host's colour held up", now.every((c) => c === expected), `${coloursKept} → ${now.join(" / ")}, expected ${expected}`);
+	}
 	check("the rest are told who holds it now", restTold);
 	check("…and that the host's connection went, not that they chose to leave", dropTold);
 	// p2 joined before p3, so p2 is the heir. The crown passes automatically —

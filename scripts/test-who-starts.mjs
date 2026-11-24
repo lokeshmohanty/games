@@ -112,7 +112,7 @@ console.log("\nConnect 4: a watcher reads whose turn it is");
 			set: () => true,
 		});
 	const page = new Proxy(function () {}, {
-		get: (_, k) => (k === "getElementById" ? (id) => element(id) : k === "createElement" ? () => ({ textContent: "" }) : k === "createTextNode" ? (text) => ({ textContent: text }) : stub()),
+		get: (_, k) => (k === "getElementById" ? (id) => element(id) : k === "createElement" ? () => ({ textContent: "", style: {} }) : k === "createTextNode" ? (text) => ({ textContent: text }) : stub()),
 	});
 	const handlers = {};
 	const was = { document: globalThis.document, arcade: globalThis.arcade };
@@ -127,6 +127,14 @@ console.log("\nConnect 4: a watcher reads whose turn it is");
 	check("…and then Ada (Red)", /Ada \(Red\) to move/.test(shown.hud ?? ""), shown.hud);
 	handlers.view({ state: view(1, 1) });
 	check("a player still reads YOUR TURN", /YOUR TURN/.test(shown.hud ?? ""), shown.hud);
+	// Each side in its player's own colour (docs/sdk-v2.md "Seat colours"), named.
+	globalThis.arcade.seatColors = () => [2, 4];
+	const c = "rgba(1, 2, 3, 1)";
+	globalThis.arcade.theme = { tokens: { glow: "rgba(0, 0, 0, 0)", surface2: c, accent: c, bg: c }, players: Array(8).fill(c), playerNames: ["Red", "Yellow", "Blue", "Magenta", "Green", "Orange", "Purple", "Teal"] };
+	handlers.view({ state: view(1, 0) });
+	check("with picked colours, a watcher reads Ada (Blue) to move", /Ada \(Blue\) to move/.test(shown.hud ?? ""), shown.hud);
+	handlers.view({ state: view(2, 2) });
+	check("…and the player on yellow's side is told GREEN, with its ring mark", /^◎ GREEN/.test(shown.hud ?? ""), shown.hud);
 	Object.assign(globalThis, was);
 }
 

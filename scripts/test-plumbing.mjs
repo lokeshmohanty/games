@@ -2469,5 +2469,107 @@ console.log("\ntwo links for one pair");
 	for (const r of [h, g]) r.leave();
 }
 
+// ---------------------------------------------------------------------------
+console.log("\nplayer colours: the host's record settles them (net.js assignColors)");
+{
+	const A = NeonArcade.assignColors;
+	const m = (id, want, at, color) => ({ id, ...(want === undefined ? {} : { colorWant: want }), ...(at ? { colorAt: { c: want, n: at } } : {}), ...(color === undefined ? {} : { color }) });
+	const colours = (ms) => ms.map((x) => x.color).join();
+	check("nobody picked: party order, 0, 1, 2…", colours(A([m("a"), m("b"), m("bot_1")])) === "0,1,2");
+	check("a pick is granted, and the rest go round it", colours(A([m("a"), m("b", 0), m("bot_1")])) === "1,0,2");
+	check("two want one: the first stamped keeps it, the second gets the nearest free (right first)", colours(A([m("a", 4, 2), m("b", 4, 1)])) === "5,4");
+	check("nearest free falls back leftwards at the end of the row", colours(A([m("a", 7, 1), m("b", 7, 2)])) === "7,6");
+	check("a person's pick beats a bot's colour; the bot moves to the lowest free", colours(A([m("bot_1", undefined, 0, 0), m("a", 0)])) === "1,0");
+	check("nobody's colour moves when someone else leaves", colours(A([m("a", undefined, 0, 0), m("c", undefined, 0, 2)])) === "0,2");
+	check("a bot's wish is no wish", colours(A([m("a"), { id: "bot_1", colorWant: 0 }])) === "0,1");
+	check("out-of-range wishes are ignored", colours(A([m("a", 9), m("b", -1), m("c", 1.5)])) === "0,1,2");
+	const big = A(Array.from({ length: 10 }, (_, i) => m(`p${i}`)));
+	check("past eight members the colours repeat, eight distinct first", new Set(big.slice(0, 8).map((x) => x.color)).size === 8 && big.every((x) => Number.isInteger(x.color)));
+	// Pickers beat non-pickers (Lokesh, 2026-11-24): a colour someone was
+	// only given goes to whoever picks it, mid-game too, and they move to the
+	// nearest free one; someone who picked is never moved by a later pick.
+	const live = { live: true };
+	check("a newcomer picks the colour the host was only given: theirs, and the host moves to the nearest free", colours(A([m("h", undefined, 0, 0), m("bot_1", undefined, 0, 1), m("n", 0)], live)) === "2,1,0");
+	check("…a guest picking it later gets it too, mid-game", colours(A([m("h", undefined, 0, 0), m("g", undefined, 0, 3), m("g2", 0, 1, 4)], live)) === "1,3,0");
+	check("…but a colour the holder picked stays theirs: the later picker gets the nearest free", colours(A([m("h", 0, 1, 0), m("bot_1", undefined, 0, 1), m("n", 0)], live)) === "0,1,2");
+	check("…and the newcomer's wish stays, granted once the colour is free", colours(A([m("bot_1", undefined, 0, 1), m("n", 0, 1, 2)], live)) === "1,0");
+	check("a picker waiting on a colour a non-picker holds gets it at once; the non-picker moves next door; a later picker takes the stand-in freed", colours(A([m("c", undefined, 0, 5), m("a", 5, 1, 4), m("b", 4, 2)])) === "6,5,4");
+	check("a later wish for an earlier picker's stand-in: the nearest free, the holder stays", colours(A([m("c", 5, 1, 5), m("a", 5, 2, 4), m("b", 4, 3)])) === "5,4,3");
+	check("mid-game a bot keeps its colour against a person's wish; the person gets the nearest free", colours(A([m("bot_1", undefined, 0, 0), m("a", 0, 1)], live)) === "0,1");
+	check("…and between games the bot gives it up", colours(A([m("bot_1", undefined, 0, 0), m("a", 0, 1, 1)])) === "1,0");
+	const twice = A(A([m("a", 1, 1, 0), m("b", 0, 2, 1), m("c", undefined, 0, 2)]));
+	check("settling is stable: settled again, nothing moves", colours(twice) === colours(A(twice)), colours(twice));
+	{
+		// Random parties, wishes, comings and goings: never two alike within
+		// eight, and settling again moves nothing.
+		let seed = 7;
+		const rnd = (k) => ((seed = (seed * 1103515245 + 12345) % 2 ** 31), seed % k);
+		let dup = 0;
+		let unstable = 0;
+		let movedPicker = 0;
+		const isBot = (x) => x.id.startsWith("bot_");
+		for (let run = 0; run < 2000; run++) {
+			let ms = [];
+			for (let step = 0; step < 12; step++) {
+				const r = rnd(4);
+				if (r === 0 && ms.length < 8) ms.push({ id: rnd(3) ? `p${run}-${step}` : `bot_${run}-${step}`, ...(rnd(2) ? { colorWant: rnd(8) } : {}) });
+				else if (r === 1 && ms.length) ms.splice(rnd(ms.length), 1);
+				else if (ms.length) ms[rnd(ms.length)].colorWant = rnd(8);
+				const changed = ms.find((x) => !isBot(x) && Number.isInteger(x.colorWant) && x.colorAt?.c !== x.colorWant); // whose wish just changed
+				const before = new Map(ms.map((x) => [x, x.color]));
+				A(ms, { live: !!rnd(2) });
+				// A picker's colour changes only by their own wish: kept, or
+				// their wish granted (as it frees) — never moved by others.
+				for (const x of ms) if (x !== changed && x.colorAt && before.has(x) && Number.isInteger(before.get(x)) && x.color !== before.get(x) && x.color !== x.colorWant) movedPicker++;
+				if (new Set(ms.map((x) => x.color)).size !== ms.length) dup++;
+				const again = JSON.stringify(A(structuredClone(ms), { live: true }).map((x) => x.color));
+				if (again !== JSON.stringify(ms.map((x) => x.color))) unstable++;
+			}
+		}
+		check("2,000 random parties: never two members one colour, and settling again moves nothing", !dup && !unstable, `${dup} duplicates, ${unstable} unstable`);
+		check("…and a picker is never moved by anyone else's arrival, leaving or pick", !movedPicker, `${movedPicker} moved`);
+	}
+	const stamped = A([m("a", 3)]);
+	check("a new wish is stamped (colorAt)", stamped[0].colorAt?.c === 3 && stamped[0].colorAt?.n === 1);
+
+	// Over real rooms: Bo has no link to the host, so his edits are relayed.
+	const [host, ana, bo] = await party(["Host", "Ana", "Bo"], [
+		[0, 1],
+		[1, 2],
+	]);
+	const col = (r, who) => r.getMember(who.selfId)?.color;
+	check("every member has a colour from the start, all different", new Set([host, ana, bo].map((x) => col(bo, x))).size === 3 && Number.isInteger(col(bo, host)));
+	ana.setMeta({ colorWant: 5 });
+	await sleep(60);
+	check("Ana picks 5: the host's record and Bo's copy both say so", col(host, ana) === 5 && col(bo, ana) === 5, `${col(host, ana)} ${col(bo, ana)}`);
+	bo.setMeta({ colorWant: 5 });
+	await sleep(60);
+	check("Bo wants 5 too: Ana picked first and keeps it", col(bo, ana) === 5 && col(ana, ana) === 5);
+	check("…and Bo gets the nearest free one, his wish still on his record", col(bo, bo) === 6 && bo.getMember(bo.selfId).colorWant === 5, `${col(bo, bo)}`);
+	ana.setMeta({ colorWant: 1 });
+	await sleep(60);
+	check("Ana moves to 1: Bo's wish for 5 is granted", col(bo, ana) === 1 && col(bo, bo) === 5 && col(host, bo) === 5, `${col(bo, ana)} ${col(bo, bo)}`);
+	ana.setMeta({ colorWant: 5 });
+	await sleep(60);
+	check("Ana wants 5 back: Bo has it now, so Bo keeps it", col(host, bo) === 5 && col(host, ana) !== 5);
+	ana.setMeta({ colorWant: 1 });
+	await sleep(60);
+	const b1 = host.addBot("B");
+	const b2 = host.addBot("A");
+	await sleep(60);
+	const all = host.getMembers().map((x) => x.color);
+	check("bots fill the gaps: five members, five colours", new Set(all).size === 5, all.join());
+	check("…around the people's picks", col(host, ana) === 1 && col(host, bo) === 5 && ![1, 5].includes(col(host, { selfId: b1 })) && ![1, 5].includes(col(host, { selfId: b2 })));
+	const before = JSON.stringify(host.getMembers().map((x) => [x.id, x.color]));
+	host.transferHost(ana.selfId);
+	await sleep(80);
+	ana.addBot("B"); // the new host commits
+	await sleep(80);
+	const after = JSON.stringify(ana.getMembers().filter((x) => before.includes(x.id)).map((x) => [x.id, x.color]));
+	check("a handover keeps every colour (the heir settles the same from the record)", ana.isHost() && after === before, `${before} → ${after}`);
+	check("Bo still sees his own pick after the handover", col(bo, bo) === 5);
+	for (const r of [host, ana, bo]) r.leave();
+}
+
 console.log(failures ? `\n${failures} failing\n` : "\nall passing\n");
 process.exit(failures ? 1 : 0);

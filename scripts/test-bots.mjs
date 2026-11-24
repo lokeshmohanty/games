@@ -878,6 +878,18 @@ try {
 	await G.waitForFunction(() => window.__game.handle.debug().phase !== "setup", null, { timeout: TIMEOUT });
 	let br = await debug(page);
 	check("START opens on a countdown, not on bubbles", br.phase === "count" || (br.phase === "play" && br.t < 500), JSON.stringify({ phase: br.phase, t: br.t }));
+	// The scoreboard follows a pick at once (review, 2026-11-24): your chip in
+	// your new colour. A pin from before player colours still colours chips
+	// by seat: skipped, saying so, until it moves.
+	if (!(await G.evaluate(() => [...document.scripts].some((x) => x.textContent.includes("colourOf(id), id === mine")))))
+		console.log("  skip Bubble Rush's scoreboard follows no picks yet (the registry's pin predates player colours)");
+	else {
+		const want = await G.evaluate(() => Object.assign(document.createElement("i").style, { color: window.arcade.theme.players[6] }).color); // as the browser writes it
+		await page.evaluate(() => window.__party.room.setMeta({ colorWant: 6 }));
+		const got = await G.waitForFunction((want) => { const c = document.querySelector(".br-chip.is-me")?.style.color; return c && c === want && c; }, want, { timeout: 5000 }).then((h) => h.jsonValue(), () => G.evaluate(() => document.querySelector(".br-chip.is-me")?.style.color ?? null));
+		check("bubble rush: a pick mid-round recolours your scoreboard chip at once", got === want, JSON.stringify({ want, got }));
+		await page.evaluate(() => window.__party.room.setMeta({ colorWant: 0 }));
+	}
 	await G.waitForFunction(() => window.__game.handle.debug().phase === "play", null, { timeout: TIMEOUT });
 	const brFit = await G.evaluate(() => {
 		const canvas = document.querySelector(".br-field canvas");
@@ -2168,6 +2180,17 @@ try {
 		() => Object.keys(window.peers).filter((id) => id.startsWith("bot_")).length,
 	);
 	check("bot ships are published like any other player", published === 2, `${published}`);
+	// Never colour alone (review, 2026-11-24): each ship its own shape, keyed
+	// to its player, so it stays put when someone else leaves mid-run; your
+	// HUD swatch shows yours.
+	const shapes0 = await G.evaluate(() => window.__game.handle.debug());
+	const ids0 = Object.keys(shapes0.shapes ?? {});
+	check("neon survival: three ships, three shapes, and the HUD's You shows yours", ids0.length === 3 && new Set(Object.values(shapes0.shapes)).size === 3 && shapes0.meShape === shapes0.shapes[shapes0.you], JSON.stringify({ shapes: shapes0.shapes, me: shapes0.meShape, you: shapes0.you }));
+	const leaver = ids0.find((id) => id.startsWith("bot_"));
+	await page.evaluate((id) => window.__party.room.removeMember(id), leaver);
+	await G.waitForFunction((id) => !(id in (window.__game.handle.debug().shapes ?? {})), leaver, { timeout: TIMEOUT }).catch(() => {});
+	const shapes1 = (await G.evaluate(() => window.__game.handle.debug())).shapes ?? {};
+	check("…and when a bot leaves mid-run, every other ship keeps its shape", !(leaver in shapes1) && Object.keys(shapes1).length === 2 && Object.entries(shapes1).every(([id, sh]) => shapes0.shapes[id] === sh), JSON.stringify({ before: shapes0.shapes, after: shapes1 }));
 
 	// Touch drags, anywhere (Lokesh, 2026-11-18): on his phone the ship sat
 	// under the thumb that pointed at it. Now the ship moves by as much as the
@@ -2869,6 +2892,99 @@ try {
 	}
 
 	// ------------------------------------------------------- draw & guess
+
+	console.log("\nbots: your colour, picked at the quick table, is your seat's in the game");
+	// Lokesh, 2026-11-21: "every game with colours" (docs/index.md "Player
+	// colours"). The picker on the table, then the game's own drawing: each
+	// game's debug() reports `colors`, the palette index it draws each seat
+	// in. A community pin from before player colours has no `colors`: it
+	// skips, saying so, until the pin moves.
+	{
+		/** The table for `game`, `n` seats, colour `c` picked on it; the game started. */
+		const pickAndStart = async (game, n, c, sizes) => {
+			await page.goto(url(`?game=${encodeURIComponent(game)}&fresh=1`));
+			await page.locator("button", { hasText: "SINGLE PLAYER" }).first().click();
+			await setPlayers(page, n);
+			if (sizes) await tableSizes(sizes);
+			await page.locator(`.quick-table .color-swatch[data-color="${c}"]`).click();
+			await page.waitForFunction((c) => document.querySelector(`.quick-table .color-swatch[data-color="${c}"]`)?.getAttribute("aria-pressed") === "true", c, { timeout: TIMEOUT });
+			const seats = await page.evaluate(() => [...document.querySelectorAll(".quick-seat")].map((li) => li.style.getPropertyValue("--seat")));
+			const saved = await page.evaluate(() => localStorage.getItem("neon.color"));
+			await page.locator(".quick-table button", { hasText: "START GAME" }).first().click();
+			await page.waitForFunction(() => window.__game?.handle, null, { timeout: TIMEOUT });
+			G = await gameScope(page, TIMEOUT);
+			await G.waitForFunction(() => Array.isArray(window.__game.handle.debug()?.colors) || window.__game.handle.debug()?.match != null, null, { timeout: TIMEOUT });
+			return { seats, saved };
+		};
+		const tableSizes = async (label) => {
+			for (const [w, h] of [
+				[390, 844],
+				[354, 696],
+			]) {
+				await page.setViewportSize({ width: w, height: h });
+				const f = await phoneFloors(page, ".quick-table .color-pick");
+				const sideways = await page.evaluate(() => document.documentElement.scrollWidth > innerWidth);
+				check(`${label} at ${w}x${h}: eight swatches, each 44px, text 12px or more, no sideways scroll`, f.measured.taps === 8 && !f.taps.length && !f.text.length && !sideways, JSON.stringify(f));
+			}
+			await page.setViewportSize({ width: 390, height: 844 });
+		};
+		for (const [game, label, n, c] of [
+			["neon-fission", "Neon Fission", 3, 6],
+			["lokeshmohanty/five-in-a-row", "Five in a Row", 3, 4],
+		]) {
+			if (game.includes("/") && !pinned(game.split("/")[1])) continue;
+			const { seats, saved } = await pickAndStart(game, n, c, game === "neon-fission" && "the quick table's colour picker");
+			check(`${label}: the table shows your seat in your pick, the bots in others`, seats[0] === `var(--p${c + 1})` && new Set(seats).size === n, JSON.stringify(seats));
+			check(`${label}: …and the pick is remembered on this device`, saved === String(c), saved);
+			const v = await debug(page);
+			if (!Array.isArray(v.colors)) {
+				console.log(`  skip ${label} draws no seat colours yet (the registry's pin predates player colours)`);
+				continue;
+			}
+			check(`${label}: the game draws your seat in your colour, every seat a different one`, v.colors[v.you] === c && new Set(v.colors).size === v.colors.length && v.colors.length === n, JSON.stringify({ you: v.you, colors: v.colors }));
+			// Never colour alone (review, 2026-11-24): every seat its own shape too.
+			check(`${label}: …and every seat its own shape or mark, so no two read alike without colour`, Array.isArray(v.shapes) && new Set(v.shapes).size === n, JSON.stringify(v.shapes));
+			if (game === "neon-fission") {
+				// The host's own frame follows a pick made mid-game.
+				await page.evaluate(() => window.__party.room.setMeta({ colorWant: 7 }));
+				const now = await G.waitForFunction(() => { const d = window.__game.handle.debug(); return d.colors[d.you] === 7 && d; }, null, { timeout: TIMEOUT }).then((h) => h.jsonValue(), () => debug(page));
+				check("Neon Fission: a colour picked mid-game reaches the host's own board", now.colors?.[now.you] === 7, JSON.stringify({ you: now.you, colors: now.colors }));
+			}
+		}
+		if (pinned("ludo")) {
+			// Picked before (remembered on the device), straight into the game.
+			await page.evaluate(() => localStorage.setItem("neon.color", "3"));
+			G = await openLudo(page, 2);
+			const v = await debug(page);
+			if (!Array.isArray(v.colors)) console.log("  skip Ludo draws no seat colours yet (the registry's pin predates player colours)");
+			else check("Ludo: a colour picked earlier on this device is your seat's (yard, start, home column, tokens), the bot's another", v.colors[v.you] === 3 && v.colors.length === 2 && v.colors[1 - v.you] !== 3, JSON.stringify({ you: v.you, colors: v.colors }));
+		}
+		{
+			// Connect 4's two sides and Light Cycles' riders: told apart by a
+			// mark as well as a colour (review, 2026-11-24: Neon's yellow and
+			// green are 1.4 apart under deuteranopia).
+			await page.goto(url("?game=connect4&fresh=1&mode=bots&start=1"));
+			await page.waitForFunction(() => window.__game?.handle, null, { timeout: TIMEOUT });
+			G = await gameScope(page, TIMEOUT);
+			await G.waitForFunction(() => window.__game.handle.debug()?.started, null, { timeout: TIMEOUT });
+			const c4 = await debug(page);
+			check("Connect 4: each side's discs carry their own mark (solid, ring), not only a colour", Array.isArray(c4.marks) && c4.marks.length === 2 && c4.marks[0] !== c4.marks[1], JSON.stringify(c4.marks));
+		}
+		if (pinned("light-cycles")) {
+			// Three riders, from the table (played alone it is one).
+			await page.goto(url("?game=lokeshmohanty%2Flight-cycles&fresh=1"));
+			await page.locator("button", { hasText: "SINGLE PLAYER" }).first().click();
+			await setPlayers(page, 3);
+			await page.locator(".quick-table button", { hasText: "START GAME" }).first().click();
+			await page.waitForFunction(() => window.__game?.handle, null, { timeout: TIMEOUT });
+			G = await gameScope(page, TIMEOUT);
+			await G.waitForFunction(() => window.__game.handle.debug()?.riders?.length === 3, null, { timeout: TIMEOUT });
+			const lc = await debug(page);
+			if (!Array.isArray(lc.colors)) console.log("  skip Light Cycles draws no seat colours yet (the registry's pin predates player colours)");
+			else check("Light Cycles: every rider's head and trail its own pattern, not only a colour", Array.isArray(lc.patterns) && new Set(lc.patterns).size === lc.riders.length, JSON.stringify(lc.patterns));
+		}
+		await page.evaluate(() => localStorage.removeItem("neon.color"));
+	}
 
 	console.log("\nbots: draw & guess says it needs people");
 	await page.goto(url("?game=lokeshmohanty%2Fdraw-guess&fresh=1"));

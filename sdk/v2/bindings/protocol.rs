@@ -70,6 +70,10 @@ pub struct Member {
     /// Lost connection at this time (ms); the seat is held.
     #[serde(skip_serializing_if = "Option::is_none", default)]
     pub reconnecting: Option<f64>,
+    /// The member's player colour, settled by the host's record (the first to pick keeps it): an
+    /// index into the theme's `players` (`--p1`…`--p8`). docs/sdk-v2.md "Seat colours". 0..7.
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub color: Option<i64>,
     /// Fields the schema does not name; it allows any.
     #[serde(flatten)]
     pub extra: serde_json::Map<String, serde_json::Value>,
@@ -125,9 +129,16 @@ pub struct Theme {
     /// Each colour token as `rgba(r, g, b, a)`, camelCased: bg, surface, surface2, ink, ink2, ink3,
     /// rule, accent, onAccent, accent2, onAccent2, good, warn, danger, glow.
     pub tokens: BTreeMap<String, String>,
-    /// Seat colours in seat order, as rgba(). Exactly 8 items.
+    /// The eight player colours (`--p1`…`--p8`), as rgba(). A seat's is `players[color]`, its
+    /// player's pick (docs/sdk-v2.md "Seat colours"); an older shell sent no `color`, and seats
+    /// went in this order. Exactly 8 items.
     pub players: Vec<String>,
     pub fonts: ThemeFonts,
+    /// The eight player colours' names in this theme, in `players` order ("Red", "Yellow", "Blue"…
+    /// under Paper; "Cyan" for the third under Neon): a game's words for a seat's colour. Exactly 8
+    /// items.
+    #[serde(rename = "playerNames", skip_serializing_if = "Option::is_none", default)]
+    pub player_names: Option<Vec<String>>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -706,6 +717,10 @@ pub struct RulesCallSeatsItem {
     /// with manifest `sameDevice`.
     #[serde(skip_serializing_if = "Option::is_none", default)]
     pub local: Option<bool>,
+    /// init: the seat's player colour, an index into the theme's `players` (docs/sdk-v2.md "Seat
+    /// colours"). Absent from an older shell. 0..7.
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub color: Option<i64>,
 }
 
 /// One call into a managed game's rules. `fn` names the rule; the other fields are its arguments.
@@ -785,6 +800,11 @@ pub struct View {
     /// shown in `idle`. At least 1.
     #[serde(skip_serializing_if = "Option::is_none", default)]
     pub seq: Option<i64>,
+    /// Each seat's player colour, an index into the theme's `players`, by id (docs/sdk-v2.md "Seat
+    /// colours"). On every view, so a colour picked mid-game reaches the frame. Absent from an
+    /// older shell.
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub colors: Option<BTreeMap<String, i64>>,
 }
 
 /// `rejected`, shell to frame. Layer 2: the host's rules refused this player's `act`.
