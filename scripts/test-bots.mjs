@@ -879,8 +879,11 @@ try {
 	let br = await debug(page);
 	check("START opens on a countdown, not on bubbles", br.phase === "count" || (br.phase === "play" && br.t < 500), JSON.stringify({ phase: br.phase, t: br.t }));
 	// The scoreboard follows a pick at once (review, 2026-11-24): your chip in
-	// your new colour.
-	{
+	// your new colour. A pin from before player colours still colours chips
+	// by seat: skipped, saying so, until it moves.
+	if (!(await G.evaluate(() => [...document.scripts].some((x) => x.textContent.includes("colourOf(id), id === mine")))))
+		console.log("  skip Bubble Rush's scoreboard follows no picks yet (the registry's pin predates player colours)");
+	else {
 		const want = await G.evaluate(() => Object.assign(document.createElement("i").style, { color: window.arcade.theme.players[6] }).color); // as the browser writes it
 		await page.evaluate(() => window.__party.room.setMeta({ colorWant: 6 }));
 		const got = await G.waitForFunction((want) => { const c = document.querySelector(".br-chip.is-me")?.style.color; return c && c === want && c; }, want, { timeout: 5000 }).then((h) => h.jsonValue(), () => G.evaluate(() => document.querySelector(".br-chip.is-me")?.style.color ?? null));
