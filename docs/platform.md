@@ -109,8 +109,9 @@ as an index into `--p1`…`--p8` (`color` on the roster's members and managed
 `init` seats, `colors` on every managed `view`), never two alike; the
 theme's names for them are `init.theme.playerNames`. A game that draws its
 seats in colours should use it (sdk/v2/runtime.js `arcade.seatColors(ids)`
-does the work) and keep its shapes and marks, so seats never differ by
-colour alone. A game that ignores it keeps working: its seats go in seat
+does the work) and give each seat a shape or mark as well, since picked
+colours may be close, or alike under colour blindness: a seat must never
+differ by colour alone. A game that ignores it keeps working: its seats go in seat
 order, as before. How the party settles who has which, and how each game
 honours it: [index.md](index.md), "Player colours"; the protocol:
 [sdk-v2.md](sdk-v2.md), "Seat colours".

@@ -265,11 +265,15 @@ How it runs:
   - **Backward compatible.** A game that ignores all this keeps working, its
     seats in seat order as before; an older shell sends none of it.
   - **Never colour alone.** Two seats always get different colours, but
-    picked colours may be close, so keep each seat's shape or mark (Five in
-    a Row's ring, cross, triangle, diamond; Snakes & Ladders' glyphs).
+    picked colours may be close, or the same under colour blindness (the
+    review of 2026-11-24 measured some pairs 1.4–4.2 apart in OKLab ×100
+    under simulation). Give each seat a shape, mark or pattern too (Five in
+    a Row's ring, cross, triangle, diamond; Neon Fission's orb shapes;
+    Connect 4's solid and hollow discs; Light Cycles' trail patterns).
   - **Two fixed sides** (Connect 4's red and yellow): the sides stay the
-    rules' names; each side's discs are drawn in its player's colour, and
-    with nobody picking that is still red and yellow (the first two).
+    rules' names; each side's discs are drawn in its player's colour, with
+    a mark of their own, and with nobody picking that is still red and
+    yellow (the first two).
   - A **team** colour (Bubble Rush's TEAMS, in the accents) is the game's
     own; seat colours are for seats.
   - Every game here honours it (docs/index.md "Player colours", "Each
