@@ -171,6 +171,9 @@
 			match: over.match ?? 1,
 			ranking: places.map((p) => p.ids),
 			scores: Object.fromEntries(over.rows.map((r) => [r.id, r.points])),
+			// What game.json's achievements and records read (docs/platform.md):
+			// each player's credits left and whether they hold a rainbow.
+			seatFacts: Object.fromEntries(over.rows.map((r) => [r.id, { credits: r.credits, rainbow: !!r.rainbow }])),
 		});
 	}
 	let myCommit = null; // { lot, bid, commit }

@@ -68,8 +68,12 @@ if you cannot browse:
 - **Bots** must exist for every seat that can be a bot (`bot({ seat })`),
   and must play sensibly, not randomly.
 - **Results:** `result()` returns `{ kind, ranking: [[winner ids], …],
-  scores?, title?, details? }`. Every phone reports the result, and the
-  platform counts it once.
+  scores?, title?, details?, facts?, seatFacts? }`. Every phone reports the
+  result, and the platform counts it once.
+- **Achievements and records** (a game playable alone): 6–10 achievements
+  and a few records in `game.json`, as conditions on the result (docs/platform.md
+  "Achievements and records"); report what they test in `facts` (the
+  match's) and `seatFacts` (each player's own), e.g. `seatFacts: { [id]: { mistakes: 0 } }`.
 - **Look:** take colours from the theme (`arcade.theme.tokens` and
   `players`, or the CSS variables `var(--accent)` and so on), not literal
   colours. Design for a 390×844 phone first: touch and mouse, nothing

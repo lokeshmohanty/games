@@ -842,6 +842,85 @@ the Worker stops sending to rows of the old key and deletes them, and the
 page deletes its old row, unsubscribes and subscribes with the new key.
 Nothing to clean up by hand.
 
+## Records and achievements
+
+*Built 2026-11-24 (branch `records`; Lokesh, 2026-11-21). The author's side —
+the manifest, the condition language, the platform's own achievements, the
+panels — is [platform.md](platform.md) "Achievements and records".*
+
+Decisions (Lokesh, 2026-11-21):
+- **Storage:** on the device, synced to the account when signed in. No
+  anti-cheat: the device's word is taken (memory casual-not-competitive).
+- **Visibility:** friends see your trophies and best times on your profile
+  and in the party. No global ranking.
+- **Definitions:** in each game's game.json, as conditions on its result;
+  the platform checks, stores and shows them.
+
+How it runs:
+- **The device first.** lib/records.js counts each result lib/stats.js
+  counted (once per run, match and ranking), in localStorage
+  `neon.records` (`{ games: { [game]: state }, dirty: [game], v: { [game]:
+  version }, owner }`), offline and signed out as well.
+- **One device, several accounts** (review, 2026-11-24: switching account
+  on a shared device used to merge A's records into B's account for good).
+  The device's records and lib/stats.js's stats belong to `owner`. A device
+  played on signed out has none, and the first account to sign in takes
+  them. Another account signing in never gets them: they are set aside
+  (localStorage `neon.records.aside`, one copy per account), that account's
+  own set-aside copy comes back (or none), and only then is its account's
+  copy taken. Play while signed out after A counts as A's. Signing out
+  keeps the device's copy as it is (still A's).
+- **Sync.** Signed in (on the page's load, or on signing in): `GET
+  /api/me/records`; each game's copy and the device's become one by taking
+  the best of each, on the device; whatever the account lacks or has worse
+  is sent back with `PUT`, at most 16 games a request. After each counted
+  result the changed games go up 1.5 s later. A game is unmarked only if it
+  did not change while its PUT was in flight (its version is the one sent),
+  or the server refused it (`rejected`, or a 4xx for the whole request): a
+  refused game would be refused again and must not hold up the rest;
+  "busy" (below) is not a refusal and goes again. A game's stats from lib/stats.js ride with it (`s`) and
+  come back the same way (`NeonArcade.stats.mergeIn`). A server from before
+  0007 answers 404: everything stays on the device.
+- **The merge** (lib/achievements.js `merge`, the same code on both sides):
+  an achievement unlocked on either side, at the earlier time; progress the
+  larger (a run of days: the later run, the longer best; Every Level's
+  values: both); a record the better (min/max) or the larger (sum, count);
+  stats each the larger, the win streak from the side played last. Counts
+  from two devices are not added — each device's count is a lower bound,
+  and adding would count a synced game twice. A device with less can never
+  lower anything. A record whose kind changed (an author edited `best`)
+  takes the device's kind on the server (`merge(kept, sent, game, {
+  prefer: "y" })`): the device knows the manifest.
+- **Bounds** (lib/achievements.js `clean`, worker/api/records.js): anything
+  malformed is dropped and every list bounded (64 achievements, 64 progress
+  entries, 16 records of 16 groups, 100 values for a `distinct`, 200 games
+  played). The page trims a game's entry to `RECORD_BYTES` (8 KB) before
+  sending (`fit`: progress first, then record groups; unlocks and stats
+  kept); the Worker refuses a larger one as "too big" rather than trimming
+  it (trimming a crafted 63 KB body cost ~160 ms of CPU; `clean` and
+  `merge` stay linear, ~2 ms for it). The platform's entry is bounded by
+  construction within `PLATFORM_BYTES` (20 KB: it lists every game
+  played). A request refused whole with 413 is halved and sent again; a
+  single game still refused is dropped from the queue. A request body is
+  at most 64 KB (a 193 KB PUT cost 10–20 ms of CPU, the free plan allows
+  10), 64 games, 200 games an account. Ids must be a game's (`GAME_ID`, not
+  `dev/`) or `"*"`; a bad id or a game over the account's limit is refused
+  on its own (`rejected: { [game]: why }`) and the rest are kept. The game
+  need not be in the Worker's table (`GAMES`): nothing ranks by it. A
+  `"__proto__"` group or value is skipped, never assigned.
+- **Races.** A PUT writes a game only if nobody wrote it since it was read
+  (`UPDATE … WHERE at = ?`, `at` moving on with every write; a new row
+  `ON CONFLICT DO NOTHING`); one that lost the race is read, merged and
+  tried again, up to 8 times (each round one writer wins), then answered
+  "busy" in `rejected`, which the page sends again. Six PUTs at once, each
+  with its own unlock, keep all six (test-accounts; twelve at once lost ten
+  before this).
+- **Friends only.** `GET /api/u/<who>` carries `records` for the player and
+  signed-in friends, never for a stranger, a friend code without sign-in,
+  or the publicly cached copy. In the party, **🏆 TROPHIES** beside a
+  friend's ADD FRIEND / FRIENDS ✓ opens theirs (lib/account-ui.js
+  `memberControl`, lib/records.js `friendSheet`).
+
 ## The API
 
 Everything under the room server, `https://neon-arcade-room.lokeshmohanty.workers.dev`
@@ -862,7 +941,8 @@ address per 5-minute window (IpGate `api`).
 | header `X-Test-Now: <ms>` on `POST /api/match/report` | tests only (`AUTH_TEST=1`, loopback host; ignored otherwise) | the server's "now" for that report (http.js `requestNow`): a check at a boundary of a run's age is exact, not as late as the request (test-accounts pins its reports to the run's `at`, so a run aged `ms` is exactly `ms` old) |
 | `GET /api/lb/<game>?scope=global\|friends\|group:<id>` | global: anyone (`&me=1`: signed in) | signed in, also `me`: your row and rank even past the top 100, or `rank: null` with `need` (more games) or `hidden`; null with no ranked game. Global without `me=1` is the one cached publicly. Also `levels`, `unit` and `botsBoard` (the game has a board against bots) when they apply |
 | `GET /api/lb/<game>?vs=bots&scope=…` | as above | the board of wins against bots: `kind: "bots"`, rows `{ rank, id, name, avatar, wins, first, at }`, `perDay`; `me` as above. No offline copy (not in the snapshot) |
-| `GET /api/u/<id or friend code>` | anyone | public profile; hidden: a name to befriend, or all of it for a signed-in friend; by code: charged against guessing |
+| `GET /api/u/<id or friend code>` | anyone | public profile; hidden: a name to befriend, or all of it for a signed-in friend; by code: charged against guessing. `records` (records and achievements, below) only for the player and their signed-in friends, hidden or not |
+| `GET /api/me/records`, `PUT /api/me/records` `{ games: { [game]: state } }` | signed in | records and achievements per game (`"*"`: across games); PUT merges each game with the stored copy, taking the best of each, and answers the merged copies; `rejected: { [game]: why }` for any game it could not keep (the rest are kept); a body of at most 64 KB and 64 games, 8 KB a game (20 KB for `"*"`), 200 games an account (2026-11-24, 0007) |
 | `GET /api/friends`, `GET /api/friends/recent`, `POST/DELETE /api/friends/<id or code>`, `POST/DELETE /api/friends/<id>/block`, `…/mute`, `POST /api/friends/<id>/invite` | signed in | invite `{ code, game? }` → `{ invited: true }`, always the same; `game` is a game's id, named in a notification by its catalog title (an unknown id: no game line) |
 | `GET /api/invites`, `DELETE /api/invites/<sender>` | signed in | invites waiting (10 minutes) |
 | `GET /api/push` | anyone | `{ key }`: the VAPID public key to subscribe with, or null while the server has none |
@@ -894,6 +974,7 @@ or loopback; public reads are open.
 | Reports not yet settled, "I am seated" starts, outcomes waiting to be read | D1 `reports` (15 min; starts 1 h after their last beat) | no; in the export (`reports`); deleted with the account |
 | Solo runs and runs against bots: id, game, seed, start, used, counted, daily, `vs` | D1 `runs`, kept 4 days | no; deleted with the account |
 | Wins against bots: game, count, first win, when the count was reached | D1 `bot_wins` | on the boards against bots, unless hidden; in the export (`winsAgainstBots`); deleted with the account |
+| Records and achievements: per game, unlocked achievements and when, progress, records, the game's stats (played, won, per bot count, time); across games, games played, days in a row | D1 `records` (0007), one row per game, as the devices sent them, merged | to the player's friends only (profile, party); in the export (`records`); deleted with the account |
 | Play counts per game | D1 `plays` | yes (summary, snapshot) |
 | Feedback text | GitHub Discussions | yes, with the display name |
 | Hourly snapshot: counts + top 100 per game | GitHub branch `stats` | yes; hidden players left out |
@@ -1094,9 +1175,46 @@ that reached a device as a notification, and its code). Additive; **migrate
 first, then deploy** — `just deploy-worker` refuses otherwise ("Deploying
 invites by notification" above).
 
+`worker/migrations/0007_records.sql` (branch `records`, 2026-11-24) adds
+`records` (account, game, data JSON, at; one row per account and game).
+Additive: the deployed Worker never reads it. The new Worker reads it on
+every profile a signed-in friend opens, on every records sync and on
+account deletion, so **migrate first, then deploy**, from `worker/`, once
+the branch is merged:
+
+1. `wrangler d1 migrations list arcade --remote` — 0007 pending (0006 must
+   be applied already).
+2. `wrangler d1 migrations apply arcade --remote`.
+3. From the root: `just deploy-worker` (it refuses while a migration is
+   pending; never a bare `wrangler deploy`).
+4. The site (Pages, from CI) in either order: a page from before never
+   asks `/api/me/records`, and a new page on an old Worker gets 404 and
+   keeps everything on the device.
+5. Check, signed in on two devices: win a Neon Fission against a bot on
+   one ("🏆 Unlocked: First Win"); open the profile on the other — Trophies
+   and records lists it after the page loads; a friend's profile shows it,
+   a stranger's view of yours does not.
+
 ## Testing
 
 - `just test-stats` — lib/stats.js in Node.
+- `just test-records` (2026-11-24) — lib/achievements.js and lib/records.js
+  in Node: every condition operator, malformed conditions and declarations
+  refused, each kind of achievement and record, the platform's own, clean
+  and merge, and a result through lib/stats.js unlocking once, a beaten
+  record, and a sync with a stub account taking the best of both.
+- `just test-accounts` also covers records and achievements (0007): two
+  devices' copies merged (earlier unlocks, larger counts, better records per
+  level, stats, the platform's), a device with less lowering nothing,
+  malformed entries dropped, bad ids, sizes and counts refused; a friend
+  sees them on the profile (hidden or not, never cached publicly), a
+  stranger, the signed-out and a friend code do not, unfriending removes
+  them; the export; deletion.
+- `test-bots` plays Neon Fission against a bot to the end and checks the
+  unlocks (Regular as the tenth game; First Win exactly when won), the
+  notice, the record from the result's facts, the time and wins per bot
+  count; then 🏆 YOUR RECORDS from PARTY over the end card, 🏆 in the band with no game running, and the profile's trophies at
+  390×844 and 354×696 (12px text, 44px taps, ✓/🔒 with words).
 - `just test-accounts` — the API under `wrangler dev` with a local D1 and a
   fake GitHub/Google (OAuth, App JWT, GraphQL, Git Data); solo runs (issued,
   reused, expired, forged, too fast, over the ceiling, bad scores, games not

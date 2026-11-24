@@ -110,6 +110,7 @@
 			gone: Array(players).fill(false),
 			winner: null,
 			biggest: { bursts: 0, waves: 0 },
+			chains: Array(players).fill(0), // each seat's biggest chain (bursts), for its records
 		};
 	}
 
@@ -210,7 +211,9 @@
 		g.played[s] = true;
 		const bursts = waves.reduce((n, w) => n + w.length, 0);
 		if (bursts > g.biggest.bursts) g.biggest = { bursts, waves: waves.length };
+		if (g.chains && bursts > (g.chains[s] ?? 0)) g.chains[s] = bursts;
 		settle(g);
+		if (g.winner !== null) g.ended = "play"; // knocked out, for the arcade's records
 		if (g.winner === null) g.turn = nextSeat(g, s);
 		return { cell, seat: s, waves, bursts };
 	}
@@ -236,6 +239,7 @@
 		if (g.winner !== null || !inGame(g, s)) return false;
 		g.gone[s] = true;
 		settle(g);
+		if (g.winner !== null) g.ended = "leave";
 		if (g.winner === null && g.turn === s) g.turn = nextSeat(g, s);
 		return true;
 	}

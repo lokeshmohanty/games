@@ -41,6 +41,7 @@ import { homedir } from "node:os";
 import { dirname, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { COLOUR, validateManifest } from "./manifest.mjs";
+import { isPath } from "../lib/achievements.js";
 import { PORT_OFFSET, gameFrame, serve } from "./serve.mjs";
 import { loadPlaywright } from "./playwright.mjs";
 
@@ -150,6 +151,23 @@ function checkStatic(dir) {
 	for (const [name, text] of [...code, [m.entry, html]]) {
 		const lines = text.split("\n").filter((l) => COLOUR.test(l.replace(/&#\d+;/g, "")) && !l.includes("theme-exempt"));
 		warn(`${name} takes its colours from the theme`, !lines.length, `e.g. "${lines[0]?.trim().slice(0, 60)}" — fine, but it won't follow the player's theme; var(--…) or NeonArcade.palette() would`);
+	}
+	// Achievements and records read `facts.<name>` off the result
+	// (docs/platform.md): a name no script mentions is never reported, so
+	// whatever reads it can never unlock. A hint, not a proof (a compiled
+	// game's names may be elsewhere).
+	// Only where a path can be (`of`, `by`, distinct/total `of`, a `when`'s
+	// keys), only names a condition can test (lib/achievements.js isPath),
+	// and escaped: a description is free text.
+	const reads = new Set();
+	const path = (p) => isPath(p) && p.startsWith("facts.") && reads.add(p.slice(6));
+	for (const x of [...(m.achievements ?? []), ...(m.records ?? [])]) {
+		for (const p of [x?.of, x?.by, x?.distinct?.of, x?.total?.of, ...Object.keys(x?.when ?? {})]) path(p);
+	}
+	const allCode = code.map(([, text]) => text).join("\n");
+	const escape = (t) => t.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+	for (const name of reads) {
+		warn(`game.json reads facts.${name}, which a script reports`, new RegExp(`\\b${escape(name)}\\b`).test(allCode), `no script mentions "${name}" — report it in the result's facts or seatFacts, or the achievements that read it never unlock`);
 	}
 	const remote = [...html.matchAll(/\b(?:src|href)\s*=\s*["'](https?:)?\/\//gi)];
 	check("the entry page names no remote URL", !remote.length);

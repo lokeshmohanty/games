@@ -26,6 +26,114 @@
     "arcade"
   ],
   "preview": "../../assets/neon-survival-mp.webp",
+  "records": [
+    {
+      "id": "survived",
+      "title": "Longest survival",
+      "of": "facts.survived",
+      "best": "max",
+      "format": "time"
+    },
+    {
+      "id": "score",
+      "title": "Most gems in a run",
+      "of": "score",
+      "best": "max",
+      "unit": "gems"
+    },
+    {
+      "id": "gems",
+      "title": "Gems in all",
+      "of": "score",
+      "best": "sum"
+    }
+  ],
+  "achievements": [
+    {
+      "id": "survive-1",
+      "title": "Survive 1 Minute",
+      "description": "Stay alive for a minute.",
+      "glyph": "⏱️",
+      "when": {
+        "facts.survived": {
+          ">=": 60000
+        }
+      }
+    },
+    {
+      "id": "survive-3",
+      "title": "Survive 3 Minutes",
+      "description": "Stay alive for three minutes.",
+      "glyph": "🛡️",
+      "when": {
+        "facts.survived": {
+          ">=": 180000
+        }
+      }
+    },
+    {
+      "id": "survive-5",
+      "title": "Survive 5 Minutes",
+      "description": "Stay alive for five minutes.",
+      "glyph": "🚀",
+      "when": {
+        "facts.survived": {
+          ">=": 300000
+        }
+      }
+    },
+    {
+      "id": "gems-10",
+      "title": "Gem Hunter",
+      "description": "Catch 10 gems in one run.",
+      "glyph": "💚",
+      "when": {
+        "score": {
+          ">=": 10
+        }
+      }
+    },
+    {
+      "id": "gems-25",
+      "title": "Gem Magnet",
+      "description": "Catch 25 gems in one run.",
+      "glyph": "🧲",
+      "when": {
+        "score": {
+          ">=": 25
+        }
+      }
+    },
+    {
+      "id": "gems-250",
+      "title": "Stockpile",
+      "description": "Catch 250 gems in all.",
+      "glyph": "💎",
+      "total": {
+        "of": "score",
+        "atLeast": 250
+      }
+    },
+    {
+      "id": "last-ship",
+      "title": "Last Ship Flying",
+      "description": "Outlast everyone else in a run.",
+      "glyph": "👑",
+      "when": {
+        "won": true,
+        "seats": {
+          ">=": 2
+        }
+      }
+    },
+    {
+      "id": "runs-25",
+      "title": "Frequent Flyer",
+      "description": "Fly 25 runs.",
+      "glyph": "🛸",
+      "count": 25
+    }
+  ],
   "license": "MIT",
   "author": "lokeshmohanty",
   "repo": "https://github.com/lokeshmohanty/games"

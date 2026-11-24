@@ -26,11 +26,27 @@ picked from the seed in all seven lanes (test-conformance still identical).
 web-games `randomness` (PR #3): Light Cycles' spawn shuffle and **Obstacles**
 option, Liar's Dice per-bot slack. To land: review, merge web-games, then move
 `registry/lokeshmohanty/web-games.json` to its main in this branch's PR (until
-then test-taps' Light Cycles setup checks skip, saying so). Records (the other
-branch in flight) overlaps one line in neon-fission.js `result()`: keep both
-the voids in the Grid detail and records' `facts`/`seatFacts`. Found on the
+then test-taps' Light Cycles setup checks skip, saying so). main merged in
+with records (2026-11-25): its one overlap, neon-fission.js `result()`, keeps
+both the voids in the Grid detail and records' `facts`/`seatFacts`. Found on the
 way, not fixed (older than this branch): Neon Bid with eight seats at 354x696
 puts PASS/BID 19px below the screen (715 of 696px), hot colour or not.
+
+**Branch `records` (2026-11-24, PR open; community sides merged):**
+personal records and achievements (Lokesh, 2026-11-21) — game.json
+`achievements`/`records`, data-only conditions on the result
+(lib/achievements.js, shared by the device, manifest.mjs and the Worker);
+lib/records.js on the device, synced to D1 `records` (migration 0007, not
+applied) and shown to friends only; 🏆 Records in the top band (PARTY screen mid-game), the
+profile's trophies, a friend's 🏆 TROPHIES in the party. Declared here for
+Connect 4, Neon Fission, Neon Bid, Neon Survival; web-games branch
+`achievements` (8 games, with the `facts`/`seatFacts` they read) and
+card-games (Glowdown, Guess What, 29): both merged, pins at web-games
+7782b67 and card-games 606480f. Review fixes (2026-11-24): owner
+per account on a shared device, completion facts gate skill achievements,
+per-game refusals, optimistic writes, 29's Comeback, Tic Tac Toe (JS). To land: merge
+this PR; migrate 0007 first, then `just deploy-worker` (docs/accounts.md
+"Migrations").
 
 **Player colours (2026-11-24, landed by PR here; web-games 69c7587 and
 card-games 0d10c1f pinned):** players pick their own colour (Lokesh,

@@ -131,7 +131,7 @@ arcade.managed({
   view({ seat }) { return … },                // what this seat may see; seat null = a spectator
   turn() { return [ids…] },                   // whose move it is: drives bots and the turn-wait banner
   bot({ seat }) { return action },            // a bot's move (null: none)
-  result() { return null | { kind, ranking, scores?, title?, details?, names? } },   // platform.md "Results"; title, details, names: the end card's (below)
+  result() { return null | { kind, ranking, scores?, title?, details?, names?, facts?, seatFacts? } },   // platform.md "Results"; title, details, names: the end card's (below); facts, seatFacts: what achievements read (platform.md "Achievements and records")
   snapshot() { return state },                // for the heir
   restore({ snapshot }) { … },
   skip({ seat }) { … return true },           // optional: the host chose SKIP TURN
@@ -630,6 +630,7 @@ These fields add to the base `game.json` (platform.md, "`game.json`"):
 | `"wasm"` | with `runtime: "wasm"` only: the module's path inside the folder |
 | `"rules"` | a Markdown file in the folder (`"RULES.md"`): the rules, shown by the shell on a first open and behind "?" (below) |
 | `"leaderboard"` | `false`: no online boards for this game (a base field, platform.md "`game.json`"; default `true`) |
+| `"achievements"`, `"records"` | what a player earns and keeps in this game, as data-only conditions on the result (a base field, platform.md "Achievements and records"); the result carries what they read in `facts` and `seatFacts` |
 
 **Rules** (Lokesh, 2026-11-15: "the first time the user opens it, a
 screen with the game rules (with examples) … and a '?' button so that the
