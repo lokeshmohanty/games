@@ -16,6 +16,23 @@ separate `TODO.md`.*
 
 ## Now (2026-11-18)
 
+**Branch `card-games` (2026-11-24, pushed, not merged):** a new
+community repo, lokeshmohanty/card-games (../card-games; main pushed at
+7ef5aa2): Glowdown (an original shedding
+game with house rules), Guess What (a picture clue party game, every phone or
+one phone) and 29. Each asks its settings only before the first match
+(Lokesh, 2026-11-23, as Ludo): PLAY AGAIN keeps them, the end says "Next
+game: … · CHANGE" (host only), a one-tap start uses the host device's last
+settings. Here: their test-taps and test-bots blocks (skipping only while
+the registry does not list them, `registryLists`), preview scenarios
+(`soloTable`). Glowdown's deck was redesigned as our own on 2026-11-24
+(the review found UNO's card set under a new name). This branch carries the
+pin, `registry/lokeshmohanty/card-games.json` (7ef5aa2, all three games), and
+worker/api/games.js from `just games-table`; it lands by PR. test-portal's
+Contributors and Collections checks expect card-games once the catalog has
+it. The card games' rules still play a bot's own follow-up moves in its
+apply, for shells cached before platform-fixes re-asked such bots.
+
 **Branch `ludo` (2026-11-23, both repos, pushed, not merged):** Ludo in
 web-games (`ludo`, 4- and 6-player boards, free-for-all or teams), and here
 its test-taps, test-bots and preview blocks, `make-preview.sh --gif`,

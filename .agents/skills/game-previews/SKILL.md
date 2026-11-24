@@ -23,13 +23,17 @@ scripts/make-preview.sh all               # every game
 scripts/make-preview.sh draw-guess --seconds 20 --width 700
 scripts/make-preview.sh neon-survival --trim-end 3   # drop an unwanted tail
 scripts/make-preview.sh five-in-a-row --gif ../web-games/five-in-a-row/preview.gif
+scripts/make-preview.sh glowdown --gif ../card-games/glowdown/preview.gif
 ```
 
-`--gif FILE` is for a game in an outside repo (web-games): its card is its
-own `preview.gif`, so the gif is written there and nothing in `assets/` is
-touched; commit it in that repo. Build the site with that repo's games first
-(`NEON_LOCAL_REPOS` / `NEON_PIN_OVERRIDE`, scripts/fetch-community.mjs header;
-the override also builds game folders the registry does not list yet).
+`--gif FILE` is for a game in an outside repo (web-games, card-games): its
+card is its own `preview.gif`, so the gif is written there and nothing in
+`assets/` is touched; commit it in that repo. Build the site with that repo's
+games first (`NEON_LOCAL_REPOS` / `NEON_PIN_OVERRIDE`, scripts/fetch-community.mjs
+header; the override also builds game folders the registry does not list yet).
+The card games' scenarios seat the quick table with `soloTable(page, n)` like
+the others; one person with bots goes straight into play (their settings
+screen is only for friends' first game).
 
 That is the whole job: it plays the game, records it, converts it to a gif in
 a temp folder, writes `assets/<game>.webp`, `.webm` and `.mp4` from it
