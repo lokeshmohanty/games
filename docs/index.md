@@ -9,7 +9,7 @@ questions about this project from this folder alone.
 
 - [The portal](#the-portal) — the home screen's sub-tabs (My Games · All Games), sections, PLAY SOMETHING, the phone layout and the search
 - [Connecting players](#connecting-players) — the serverless handshake, paid once per person; `scanQr`; connectivity (relaying, STUN, NAT classification, no TURN); who said it (signed party messages)
-- [Parties](#parties) — the persistent group, teams, switching games, host succession; the party API (`mountParty`, the room controller, lib/lobby.js)
+- [Parties](#parties) — the persistent group, teams, switching games, host succession; [player colours](#player-colours) (the picker, first to pick keeps it, each game's handling); the party API (`mountParty`, the room controller, lib/lobby.js)
 - [Bots](#bots) — why there is no single-player section, and what a bot actually is
 - [Hidden information](#hidden-information) — sealed private state, and commit-reveal
 - [Rounds and phases](#rounds-and-phases) — the shared clock for timed and simultaneous-turn games
@@ -853,6 +853,95 @@ page navigation** — nobody reconnects and nobody re-scans.
   pauses for everyone and says why, takes no input meanwhile (it used to land
   all at once on return), and resumes after a 3-2-1. Lokesh's choices,
   2026-11-13.
+- **Player colours** — each member's own, picked under their name; below.
+
+### Player colours
+
+*Built 2026-11-24 (branch `player-colours`, here and in web-games). Lokesh,
+2026-11-21: "every game with colours" — one picker in the party and on the
+quick table, remembered per device, used by every game that colours its
+players; if two people want the same colour, the first to pick keeps it.*
+
+**The picker** (lib/party.js `colorPicker`). A row of eight swatches, the
+theme's `--p1`…`--p8`, under YOU's name on the party screen (also when it
+is pulled up over a game) and under the seats on the quick table (and the
+fixed-seat bots screen). Each swatch is 44px with its colour's initial on a
+chip of the surface, so it reads in every theme and without colour, and is
+named to a screen reader ("Blue", "Red, taken by Ana"). Two rows of four at
+354px, one row of eight from 440px. A line under it says which colour you
+are, and when your pick is taken, by whom and what you have meanwhile.
+Every roster row has a dot in its member's colour, named the same way.
+
+**Names.** Each theme names its eight colours (lib/theme.js
+`PLAYER_NAMES`, `NeonArcade.theme.playerNames()`): Paper's are Red, Yellow,
+Blue, Magenta, Green, Orange, Purple, Teal; Neon's say Cyan for the third
+and Violet and White for the last two. Eight different initials in each.
+Games get them as `theme.playerNames` (Connect 4's HUD and its "Blue dropped
+in column 3").
+
+**Where the choice lives.** An index, never a colour: themes draw them
+differently. On the device, localStorage `neon.color`. In the party, the
+member's own record field `colorWant`, set with `setMeta`, so a guest's
+travels as its own signed `__i` (Who said it) and `_reassert` says it again
+if it is lost; offered once per room as the member appears on the record.
+
+**Who has which** (lib/net.js `assignColors`, run by the host on every
+commit of the record; `color` and `colorAt` are record fields a member may
+not write, RESERVED_META):
+1. The people who want a colour, in the order their wish reached the host
+   (`colorAt: { c, n }`, stamped as `colorWant` changes): each takes theirs
+   if free, else the free one nearest it, rightwards first. The later
+   picker's wish stays on their record, so they get it once its holder
+   picks another or leaves. A bot never wishes.
+2. Everyone else, people before bots, in party order: the colour they had if
+   still free, else the lowest free one. So bots fill the gaps around the
+   people's picks, and nobody's colour moves because someone else joined
+   or left, mid-game too.
+
+With nobody picking this is 0, 1, 2… in party order, the seat colours games
+used before. Within the party's eight seats no two members share a colour;
+past eight (a room opened wider) they repeat. Everything the rule reads is on
+the record, so an heir — elected or handed the crown — settles the same
+colours: a handover keeps them. Guests do not settle anything: a guest's own
+pick shows once the host's record comes back (a moment).
+
+**The protocol** (sdk-v2.md "Seat colours"): `color` on every roster member
+(Layer 1 and `init.party`), `color` on managed `init` seats, `colors` on every
+managed `view` (so a pick mid-game reaches the frame), and the runtime's
+`arcade.seatColors(ids)`, which maps seats to distinct indices and falls back
+to seat order where the shell sent none. The end card's dots use the same
+colours.
+
+**Each game.** Shapes and marks are unchanged everywhere, so seats never
+differ by colour alone:
+- **Neon Fission** — a seat's orbs, cells, halo and rings in its player's
+  colour; the chips and turn line too.
+- **Connect 4** — two fixed sides, red (Team A) and yellow (Team B), stay the
+  sides in the rules; each side's discs are its player's own colour, and the
+  HUD names it ("BLUE", "Blue to move"). Decided: the full palette rather
+  than a choice between red and yellow, so one picker means the same thing in
+  every game; nobody picking keeps red and yellow; `first` already decides
+  who opens, so nothing in the rules hangs on the hue.
+- **Neon Survival** — each ship its player's colour (it hashed the id
+  before, which could give two ships one colour).
+- **Neon Bid** — the ring around a seat's initial (gems keep their own
+  colours; a seat is never a filled dot, so it cannot read as a gem).
+- **Undercover** — played on one phone, no player colours: untouched.
+- In web-games (branch `player-colours`, its pin to move by PR): **Ludo**
+  (yard, start, home column, tokens, the die's rim), **Five in a Row**
+  (marks, with their four shapes), **Snakes & Ladders** (tokens, with their
+  glyphs), **Light Cycles** (trails and the heads' glow), **Bubble Rush**
+  (free-for-all only; TEAMS keeps the sides' accent colours). Draw & Guess
+  (pens), Sudoku, Battleship and Liar's Dice colour no players.
+
+**Tests.** test-plumbing "player colours" (the rule itself, and over real
+rooms: a pick reaching a relayed member, the conflict, a granted wish, bots
+filling the gaps, a hand-over keeping colours); test-party "player colours"
+(three browsers: a pick on the others' screens, the conflict and the taken
+swatch, a wish granted, 44px and 12px at 390×844 and 354×696; and "losing the
+host": the heir's record keeps every colour); test-bots "your colour" (the
+quick table's picker at both sizes, then Neon Fission, Five in a Row and Ludo
+drawing your seat in your pick, Ludo's remembered from an earlier load).
 
 ### When the host goes
 

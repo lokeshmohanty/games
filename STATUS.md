@@ -16,6 +16,17 @@ separate `TODO.md`.*
 
 ## Now (2026-11-18)
 
+**Branch `player-colours` (2026-11-24, both repos, pushed, not merged):**
+players pick their own colour (Lokesh, 2026-11-21: "every game with
+colours"): the picker under YOU and on the quick table, `neon.color` per
+device, the host's record settles `color` (first to pick keeps it; bots fill
+the gaps), games hear it as `color` / view `colors` (docs/index.md "Player
+colours", docs/sdk-v2.md "Seat colours"). web-games `player-colours` makes
+Ludo, Five in a Row, Snakes & Ladders, Light Cycles and Bubble Rush honour
+it. To land: merge web-games, move `registry/lokeshmohanty/web-games.json`
+to its commit. Until then test-bots' Five in a Row and Ludo colour checks
+skip, saying so.
+
 **Branch `ludo` (2026-11-23, both repos, pushed, not merged):** Ludo in
 web-games (`ludo`, 4- and 6-player boards, free-for-all or teams), and here
 its test-taps, test-bots and preview blocks, `make-preview.sh --gif`,

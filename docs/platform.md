@@ -102,6 +102,19 @@ travels between players is sent as an index (a seat, a pen), so each peer
 draws it in its own theme. Type: `--font-display`, `--font-body`,
 `--font-mono`.
 
+**Player colours** (Lokesh, 2026-11-21: "every game with colours"). Each
+player picks their own colour, once, in the party or at the quick table, and
+it is remembered on the device. The platform tells a game each seat's colour
+as an index into `--p1`…`--p8` (`color` on the roster's members and managed
+`init` seats, `colors` on every managed `view`), never two alike; the
+theme's names for them are `init.theme.playerNames`. A game that draws its
+seats in colours should use it (sdk/v2/runtime.js `arcade.seatColors(ids)`
+does the work) and keep its shapes and marks, so seats never differ by
+colour alone. A game that ignores it keeps working: its seats go in seat
+order, as before. How the party settles who has which, and how each game
+honours it: [index.md](index.md), "Player colours"; the protocol:
+[sdk-v2.md](sdk-v2.md), "Seat colours".
+
 First-party games follow this strictly (`just check-colours` fails on a
 literal colour unless its line says `theme-exempt`). An outside game may keep
 its own colours (Lokesh, 2026-11-14: "allow his own hard-coded colours"):
