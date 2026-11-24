@@ -364,8 +364,16 @@ style.textContent = `
 		padding: 4px 12px; border-radius: 6px; border: 1px solid var(--border); }
 	#score { color: var(--accent); font-weight: bold; text-shadow: 0 0 8px var(--accent-glow); }
 	#alive { color: var(--good); text-shadow: 0 0 8px var(--glow); }
-	#me-color { width: 14px; height: 14px; border-radius: 50%; display: inline-block;
+	#me-color { width: 14px; height: 14px; display: inline-block;
 		vertical-align: middle; margin-left: 8px; box-shadow: 0 0 8px currentColor; }
+	/* Your ship's shape (SHIP_SHAPES), as the canvas draws it. */
+	#me-color[data-shape="triangle"] { clip-path: polygon(50% 0, 100% 80%, 0 80%); }
+	#me-color[data-shape="diamond"] { clip-path: polygon(50% 0, 100% 50%, 50% 100%, 0 50%); }
+	#me-color[data-shape="hexagon"] { clip-path: polygon(50% 0, 100% 25%, 100% 75%, 50% 100%, 0 75%, 0 25%); }
+	#me-color[data-shape="star"] { clip-path: polygon(50% 0, 62% 35%, 100% 38%, 70% 60%, 80% 100%, 50% 76%, 20% 100%, 30% 60%, 0 38%, 38% 35%); }
+	#me-color[data-shape="pentagon"] { clip-path: polygon(50% 0, 100% 38%, 81% 100%, 19% 100%, 0 38%); }
+	#me-color[data-shape="octagon"] { clip-path: polygon(30% 0, 70% 0, 100% 30%, 100% 70%, 70% 100%, 30% 100%, 0 70%, 0 30%); }
+	#me-color[data-shape="kite"] { clip-path: polygon(50% 0, 100% 35%, 50% 100%, 0 35%); }
 	#gameCanvas { border: 2px solid var(--border); box-shadow: 0 0 20px var(--glow);
 		touch-action: none; max-width: 95vw; max-height: 80vh; }
 	.ghost-msg { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
@@ -394,13 +402,28 @@ const glowsOn = () => !/,\s*0\)$/.test(arcade.theme?.tokens.glow ?? ", 0)");
 const colors = new Map(); // "id:pick" -> colour, until the theme changes
 // And each ship its own shape, so two never differ by colour alone (picked
 // colours can be close, or one under colour blindness: review, 2026-11-24).
-// By the ships' ids in order, so every phone agrees; never a dot (the swarm
-// and the gems are dots).
+// Keyed to the player — the same index as their colour, which no one else
+// in the party holds — so every phone agrees and a ship keeps its shape when
+// someone else leaves mid-run; never a dot (the swarm and the gems are dots).
 const SHIP_SHAPES = ["square", "triangle", "diamond", "hexagon", "star", "pentagon", "octagon", "kite"];
 const shipShape = (id) => {
-	const ids = Object.keys(cur?.v.s ?? {}).sort();
-	return SHIP_SHAPES[Math.max(0, ids.indexOf(id)) % SHIP_SHAPES.length];
+	const pick = arcade.colors?.[id];
+	let h = 0;
+	for (const c of id ?? "") h = (h * 31 + c.charCodeAt(0)) >>> 0;
+	return SHIP_SHAPES[(Number.isInteger(pick) ? pick : h) % SHIP_SHAPES.length];
 };
+/** The outline of a ship's shape round (cx, cy), half its size across. */
+function shipPath(x, shape, cx, cy, half) {
+	x.beginPath();
+	if (shape === "square") return x.rect(cx - half, cy - half, half * 2, half * 2);
+	const n = { triangle: 3, diamond: 4, pentagon: 5, hexagon: 6, star: 10, octagon: 8, kite: 4 }[shape] ?? 4;
+	for (let k = 0; k < n; k++) {
+		const a = -Math.PI / 2 + (k * 2 * Math.PI) / n + (shape === "octagon" ? Math.PI / 8 : 0);
+		const r = shape === "star" && k % 2 ? half * 0.5 : shape === "kite" && k === 2 ? half * 1.25 : half * 1.15;
+		x[k ? "lineTo" : "moveTo"](cx + r * Math.cos(a), cy + r * Math.sin(a) * (shape === "kite" && k % 2 ? 0.7 : 1));
+	}
+	x.closePath();
+}
 function colorFor(id) {
 	const pick = arcade.colors?.[id];
 	const key = `${id}:${pick}`;
@@ -458,17 +481,9 @@ function glow(shape, size, color, blur) {
 		x.beginPath();
 		x.arc(pad, pad, size, 0, Math.PI * 2);
 		x.fill();
-	} else if (shape === "square") x.fillRect(pad - half, pad - half, size, size);
-	else {
-		// A ship's own shape (SHIP_SHAPES): a polygon, or a star, round the centre.
-		const n = { triangle: 3, diamond: 4, pentagon: 5, hexagon: 6, star: 10, octagon: 8, kite: 4 }[shape] ?? 4;
-		x.beginPath();
-		for (let k = 0; k < n; k++) {
-			const a = -Math.PI / 2 + (k * 2 * Math.PI) / n + (shape === "octagon" ? Math.PI / 8 : 0);
-			const r = shape === "star" && k % 2 ? half * 0.5 : shape === "kite" && k === 2 ? half * 1.25 : half * 1.15;
-			x[k ? "lineTo" : "moveTo"](pad + r * Math.cos(a), pad + r * Math.sin(a) * (shape === "kite" && k % 2 ? 0.7 : 1));
-		}
-		x.closePath();
+	} else {
+		// A ship's own shape (SHIP_SHAPES).
+		shipPath(x, shape, pad, pad, half);
 		x.fill();
 	}
 	g = { c, pad };
@@ -560,6 +575,7 @@ function hud() {
 	aliveEl.textContent = "Alive: " + n;
 	const myColor = cur.v.you ? colorFor(cur.v.you) : "transparent";
 	meColorEl.style.color = meColorEl.style.background = myColor;
+	if (cur.v.you) meColorEl.dataset.shape = shipShape(cur.v.you);
 	// Everyone down: the shell's card says GAME OVER; the score stays under it.
 	let msg = "";
 	if (n === 0 && Object.keys(cur.v.s).length) msg = (me ? "Your score: " : "Best score: ") + score;
@@ -617,7 +633,8 @@ function draw(now) {
 			c2d.shadowColor = myColor;
 			c2d.strokeStyle = myColor;
 			c2d.lineWidth = 1;
-			c2d.strokeRect(me[0] - PLAYER_SIZE / 2, me[1] - PLAYER_SIZE / 2, PLAYER_SIZE, PLAYER_SIZE);
+			shipPath(c2d, shipShape(v.you), me[0], me[1], PLAYER_SIZE / 2);
+			c2d.stroke();
 			c2d.globalAlpha = 1;
 			c2d.shadowBlur = 0;
 		}
@@ -799,4 +816,4 @@ Object.defineProperties(window, {
 });
 
 /** For the tests: the run as this phone sees it. */
-arcade.debug = () => ({ active: aliveCount() > 0, match: cur?.v.m ?? null, you: cur?.v.you ?? null, score: cur ? (mine()?.[4] ?? 0) : 0, alive: aliveCount(), enemies: live ? s.enemies.length : cur ? cur.v.e.length / 4 : 0, host: live, simMs: live ? Math.round(s.ms) : null, shapes: Object.keys(cur?.v.s ?? {}).sort().map(shipShape) });
+arcade.debug = () => ({ active: aliveCount() > 0, match: cur?.v.m ?? null, you: cur?.v.you ?? null, score: cur ? (mine()?.[4] ?? 0) : 0, alive: aliveCount(), enemies: live ? s.enemies.length : cur ? cur.v.e.length / 4 : 0, host: live, simMs: live ? Math.round(s.ms) : null, shapes: Object.fromEntries(Object.keys(cur?.v.s ?? {}).map((id) => [id, shipShape(id)])), meShape: meColorEl.dataset.shape ?? null });

@@ -878,6 +878,15 @@ try {
 	await G.waitForFunction(() => window.__game.handle.debug().phase !== "setup", null, { timeout: TIMEOUT });
 	let br = await debug(page);
 	check("START opens on a countdown, not on bubbles", br.phase === "count" || (br.phase === "play" && br.t < 500), JSON.stringify({ phase: br.phase, t: br.t }));
+	// The scoreboard follows a pick at once (review, 2026-11-24): your chip in
+	// your new colour.
+	{
+		const want = await G.evaluate(() => Object.assign(document.createElement("i").style, { color: window.arcade.theme.players[6] }).color); // as the browser writes it
+		await page.evaluate(() => window.__party.room.setMeta({ colorWant: 6 }));
+		const got = await G.waitForFunction((want) => { const c = document.querySelector(".br-chip.is-me")?.style.color; return c && c === want && c; }, want, { timeout: 5000 }).then((h) => h.jsonValue(), () => G.evaluate(() => document.querySelector(".br-chip.is-me")?.style.color ?? null));
+		check("bubble rush: a pick mid-round recolours your scoreboard chip at once", got === want, JSON.stringify({ want, got }));
+		await page.evaluate(() => window.__party.room.setMeta({ colorWant: 0 }));
+	}
 	await G.waitForFunction(() => window.__game.handle.debug().phase === "play", null, { timeout: TIMEOUT });
 	const brFit = await G.evaluate(() => {
 		const canvas = document.querySelector(".br-field canvas");
@@ -2168,6 +2177,17 @@ try {
 		() => Object.keys(window.peers).filter((id) => id.startsWith("bot_")).length,
 	);
 	check("bot ships are published like any other player", published === 2, `${published}`);
+	// Never colour alone (review, 2026-11-24): each ship its own shape, keyed
+	// to its player, so it stays put when someone else leaves mid-run; your
+	// HUD swatch shows yours.
+	const shapes0 = await G.evaluate(() => window.__game.handle.debug());
+	const ids0 = Object.keys(shapes0.shapes ?? {});
+	check("neon survival: three ships, three shapes, and the HUD's You shows yours", ids0.length === 3 && new Set(Object.values(shapes0.shapes)).size === 3 && shapes0.meShape === shapes0.shapes[shapes0.you], JSON.stringify({ shapes: shapes0.shapes, me: shapes0.meShape, you: shapes0.you }));
+	const leaver = ids0.find((id) => id.startsWith("bot_"));
+	await page.evaluate((id) => window.__party.room.removeMember(id), leaver);
+	await G.waitForFunction((id) => !(id in (window.__game.handle.debug().shapes ?? {})), leaver, { timeout: TIMEOUT }).catch(() => {});
+	const shapes1 = (await G.evaluate(() => window.__game.handle.debug())).shapes ?? {};
+	check("…and when a bot leaves mid-run, every other ship keeps its shape", !(leaver in shapes1) && Object.keys(shapes1).length === 2 && Object.entries(shapes1).every(([id, sh]) => shapes0.shapes[id] === sh), JSON.stringify({ before: shapes0.shapes, after: shapes1 }));
 
 	// Touch drags, anywhere (Lokesh, 2026-11-18): on his phone the ship sat
 	// under the thumb that pointed at it. Now the ship moves by as much as the

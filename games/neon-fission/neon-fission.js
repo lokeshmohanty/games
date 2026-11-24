@@ -187,7 +187,9 @@ const LAYOUT = [[], [[0, 0]], [[-0.17, 0], [0.17, 0]], [[0, -0.16], [-0.16, 0.12
 // Each seat's orbs have their own shape as well as its colour, so no two
 // seats read alike without colour (review, 2026-11-24: picked colours can be
 // close, or one under colour blindness). The chips' dots match.
-const SHAPES = ["circle", "square", "triangle", "diamond", "hexagon", "star", "plus", "pentagon"];
+// (A ring, not a pentagon: at 1x a pentagon, a hexagon and a circle read
+// alike; review, 2026-11-24.)
+const SHAPES = ["circle", "square", "triangle", "diamond", "hexagon", "star", "plus", "ring"];
 const shapeOf = (seat) => SHAPES[((seat % 8) + 8) % 8];
 /** The path of `shape` round (x, y), about r across from the centre. */
 function shapePath(shape, x, y, r) {
@@ -203,7 +205,12 @@ function shapePath(shape, x, y, r) {
 	else if (shape === "triangle") poly(3, -Math.PI / 2, r * 1.2);
 	else if (shape === "diamond") poly(4, -Math.PI / 2, r * 1.15);
 	else if (shape === "hexagon") poly(6, 0, r * 1.05);
-	else if (shape === "pentagon") poly(5, -Math.PI / 2, r * 1.08);
+	else if (shape === "ring") {
+		// A disc with a hole: the inner circle wound the other way.
+		c2d.arc(x, y, r * 1.05, 0, Math.PI * 2);
+		c2d.moveTo(x + r * 0.5, y);
+		c2d.arc(x, y, r * 0.5, 0, Math.PI * 2, true);
+	}
 	else if (shape === "star") {
 		for (let k = 0; k < 10; k++) {
 			const a = -Math.PI / 2 + (k * Math.PI) / 5;
