@@ -82,7 +82,7 @@ arcade.managed({
 			turn: g.turn,
 			moves: g.moves,
 			winner: g.winner,
-			players: s.ids.map((id, i) => ({ name: s.names[i], kind: s.kinds[i], out: g.out[i] !== null, gone: g.gone[i], cells: cells[i], orbs: orbs[i] })),
+			players: s.ids.map((id, i) => ({ id, name: s.names[i], kind: s.kinds[i], out: g.out[i] !== null, gone: g.gone[i], cells: cells[i], orbs: orbs[i] })),
 			you: seat ? seatOf(seat) : -1,
 			// This phone plays the local seats.
 			setter: !!seat && seat === s.owner,
@@ -157,7 +157,13 @@ let painted = null; // the owners last drawn, for the tests
 // How fast a chain replays is rules.js `pace`. The platform keeps the end
 // card back until `arcade.idle()` says the winning one has been shown.
 
-const seatVar = (i) => `var(--p${(i % 8) + 1})`;
+// Each seat's colour, an index into the theme's players: its player's pick,
+// never two alike (docs/sdk-v2.md "Seat colours"; seat order on an older
+// shell). Shapes do not change with it: orbs, the dashed halo, the rings.
+let seatCols = [];
+const seatIdx = (i) => seatCols[i] ?? i % 8;
+const seatVar = (i) => `var(--p${seatIdx(i) + 1})`;
+const seatColour = (i) => arcade.theme.players[seatIdx(i)];
 const alpha = (rgba, a) => rgba.replace(/,\s*[\d.]+\)$/, `, ${a})`);
 const glows = () => !/,\s*0\)$/.test(arcade.theme?.tokens?.glow ?? ", 0)");
 
@@ -197,7 +203,7 @@ function orb(x, y, colour, r) {
 /** One board: `owner`/`count` arrays; `hide`: cells drawn empty (mid-burst). */
 function board(owner, count, { hide = null, lastCell = -1 } = {}) {
 	painted = owner;
-	const { tokens, players } = arcade.theme;
+	const { tokens } = arcade.theme;
 	const { cols, rows } = view;
 	const W = cols * cell;
 	const H = rows * cell;
@@ -207,7 +213,7 @@ function board(owner, count, { hide = null, lastCell = -1 } = {}) {
 	for (let i = 0; i < owner.length; i++) {
 		const o = owner[i];
 		if (o < 0 || hide?.has(i)) continue;
-		c2d.fillStyle = alpha(players[o % 8], 0.12);
+		c2d.fillStyle = alpha(seatColour(o), 0.12);
 		c2d.fillRect((i % cols) * cell, Math.floor(i / cols) * cell, cell, cell);
 	}
 	c2d.strokeStyle = tokens.rule;
@@ -229,7 +235,7 @@ function board(owner, count, { hide = null, lastCell = -1 } = {}) {
 		if (o < 0 || !n) continue;
 		const cx = (i % cols) * cell + cell / 2;
 		const cy = Math.floor(i / cols) * cell + cell / 2;
-		const colour = players[o % 8];
+		const colour = seatColour(o);
 		// One orb short of bursting: a dashed halo says "unstable".
 		if (n === sh.cap[i] - 1) {
 			c2d.beginPath();
@@ -245,7 +251,7 @@ function board(owner, count, { hide = null, lastCell = -1 } = {}) {
 	if (lastCell >= 0) {
 		const x = (lastCell % cols) * cell;
 		const y = Math.floor(lastCell / cols) * cell;
-		c2d.strokeStyle = alpha(players[(owner[lastCell] >= 0 ? owner[lastCell] : view.last?.seat ?? 0) % 8], 0.9);
+		c2d.strokeStyle = alpha(seatColour(owner[lastCell] >= 0 ? owner[lastCell] : view.last?.seat ?? 0), 0.9);
 		c2d.lineWidth = 2;
 		c2d.strokeRect(x + 2, y + 2, cell - 4, cell - 4);
 	}
@@ -272,7 +278,7 @@ function paint(now = performance.now()) {
 		// The settle: the final board, each cell this move took ringed, fading.
 		board(view.owner, view.count, { lastCell: anim.cell });
 		const p = (t - placeMs - waves.length * waveMs) / settleMs;
-		c2d.strokeStyle = alpha(arcade.theme.players[seat % 8], 0.9 * (1 - p));
+		c2d.strokeStyle = alpha(seatColour(seat), 0.9 * (1 - p));
 		c2d.lineWidth = 3;
 		for (const i of anim.taken) c2d.strokeRect((i % view.cols) * cell + 3.5, Math.floor(i / view.cols) * cell + 3.5, cell - 7, cell - 7);
 		return again();
@@ -281,8 +287,7 @@ function paint(now = performance.now()) {
 	const e = 1 - (1 - p) * (1 - p);
 	const wave = new Set(waves[k]);
 	board(frames[k].owner, frames[k].count, { hide: wave });
-	const { players } = arcade.theme;
-	const colour = players[seat % 8];
+	const colour = seatColour(seat);
 	const sh = R.shape(view.cols, view.rows);
 	for (const i of wave) {
 		const cx = (i % view.cols) * cell + cell / 2;
@@ -429,6 +434,7 @@ arcade.on("view", ({ state }) => {
 	const reshaped = !view || view.cols !== state.cols || view.rows !== state.rows;
 	const fresh = view && state.match !== view.match;
 	view = state;
+	seatCols = arcade.seatColors?.(state.players.map((p) => p.id ?? "")) ?? [];
 	if (fresh) shownMove = -1;
 	const last = state.last;
 	if (last && last.n !== shownMove) {
@@ -454,4 +460,4 @@ arcade.on("rejected", (m) => arcade.toast(m.reason, "warn"));
 arcade.init.then(resize);
 
 /** The game as this phone sees it, for the tests. */
-arcade.debug = () => (view ? { ...view, canPlay: canPlay(), animating: !!anim, replayMs: anim ? Math.round(anim.total) : 0, painted, cell } : { match: null });
+arcade.debug = () => (view ? { ...view, canPlay: canPlay(), animating: !!anim, replayMs: anim ? Math.round(anim.total) : 0, painted, cell, colors: view.players.map((_, i) => seatIdx(i)) } : { match: null });

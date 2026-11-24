@@ -386,16 +386,20 @@ const alpha = (rgba, a) => rgba.replace(/,\s*[\d.]+\)$/, `, ${a})`);
 const glowsOn = () => !/,\s*0\)$/.test(arcade.theme?.tokens.glow ?? ", 0)");
 
 /**
- * A ship's colour: one of the theme's eight player colours, picked from its
- * id — so every phone works it out for itself, in its own theme.
+ * A ship's colour: one of the theme's eight player colours, its player's pick
+ * (docs/sdk-v2.md "Seat colours": the party settles them, no two alike) —
+ * on an older shell, picked from its id, so every phone works it out for
+ * itself, in its own theme.
  */
-const colors = new Map(); // id -> colour, until the theme changes
+const colors = new Map(); // "id:pick" -> colour, until the theme changes
 function colorFor(id) {
-	if (colors.has(id)) return colors.get(id);
+	const pick = arcade.colors?.[id];
+	const key = `${id}:${pick}`;
+	if (colors.has(key)) return colors.get(key);
 	let h = 0;
 	for (const c of id) h = (h * 31 + c.charCodeAt(0)) >>> 0;
-	const color = arcade.theme.players[h % 8];
-	colors.set(id, color);
+	const color = arcade.theme.players[Number.isInteger(pick) ? pick % 8 : h % 8];
+	colors.set(key, color);
 	return color;
 }
 

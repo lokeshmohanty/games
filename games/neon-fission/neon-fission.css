@@ -1,5 +1,5 @@
 /* games/neon-fission — the frame's layout. Colours only from the theme's
-   tokens (lib/theme.css): seats are --p1…--p8 in seat order. */
+   tokens (lib/theme.css): a seat is --p1…--p8, its player's pick (seatVar). */
 
 html, body { margin: 0; height: 100%; overflow: hidden; background: var(--bg); color: var(--ink); }
 

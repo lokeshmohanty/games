@@ -6,7 +6,10 @@
 // card with PLAY AGAIN, and hands the board to the heir if the host leaves.
 // (The v1 version wrote all of that by hand: 576 lines.)
 //
-// Seats come from the party's teams: Team A plays red, Team B yellow.
+// Seats come from the party's teams: Team A plays red, Team B yellow. Those
+// are the sides' names in the rules; each side's discs are drawn in its
+// player's own colour (docs/sdk-v2.md "Seat colours": the party's picker),
+// which is red and yellow for nobody having picked.
 
 const COLS = 7;
 const ROWS = 6;
@@ -256,8 +259,7 @@ style.textContent = `
 		align-items: center; justify-content: center; gap: 12px; padding: 12px; }
 	#hud { font-size: clamp(0.9rem, 3vw, 1.2rem); color: var(--accent);
 		text-shadow: 0 0 8px var(--accent-glow); text-align: center; min-height: 1.5em; }
-	#hud .you-red { color: var(--p1); text-shadow: 0 0 8px var(--glow); }
-	#hud .you-yellow { color: var(--p2); text-shadow: 0 0 8px var(--glow); }
+	#hud .you-side { text-shadow: 0 0 8px var(--glow); }
 	#hud .you-spec { color: var(--muted); }
 	#moved { font-size: clamp(0.8rem, 2.6vw, 1rem); color: var(--muted); min-height: 1.4em; text-align: center; }
 	#board { box-sizing: content-box; border: 3px solid var(--rule); border-radius: 12px;
@@ -312,6 +314,14 @@ function resize() {
 	draw();
 }
 
+// Each side's colour, an index into the theme's players: its player's pick,
+// never the other side's (sdk/v2/runtime.js seatColors); the theme's first
+// two, red and yellow, on an older shell or before anyone picks.
+let sideCols = [0, 1];
+const sideIdx = (v) => sideCols[v === RED ? 0 : 1];
+/** "Red", "Blue"…: a side's colour in this theme's words. */
+const sideName = (v) => arcade.theme?.playerNames?.[sideIdx(v)] ?? (v === RED ? "Red" : "Yellow");
+
 const myTurn = () => view && view.winner === null && view.you && view.turn === view.you;
 
 function draw() {
@@ -340,7 +350,7 @@ function draw() {
 				c2d.fillStyle = tokens.bg;
 				c2d.fill();
 			} else {
-				const colour = players[v === RED ? 0 : 1];
+				const colour = players[sideIdx(v)];
 				c2d.shadowBlur = glows ? 15 * dpr : 0; // backing px: shadowBlur ignores the transform
 				c2d.shadowColor = colour;
 				c2d.fillStyle = colour;
@@ -361,7 +371,7 @@ function draw() {
 		const y = -cell / 2 + (cy + cell / 2) * p * p;
 		c2d.beginPath();
 		c2d.arc(cx, y, cell * 0.4, 0, Math.PI * 2);
-		c2d.fillStyle = players[view.board[row][col] === RED ? 0 : 1];
+		c2d.fillStyle = players[sideIdx(view.board[row][col])];
 		c2d.fill();
 		return again();
 	}
@@ -401,8 +411,9 @@ function updateHud() {
 	if (!view) return;
 	const mine = view.you;
 	const tag = document.createElement("span");
-	tag.className = mine === RED ? "you-red" : mine === YELLOW ? "you-yellow" : "you-spec";
-	tag.textContent = mine === RED ? "RED" : mine === YELLOW ? "YELLOW" : "SPECTATOR";
+	tag.className = mine ? "you-side" : "you-spec";
+	if (mine) tag.style.color = `var(--p${sideIdx(mine) + 1})`;
+	tag.textContent = mine ? sideName(mine).toUpperCase() : "SPECTATOR";
 	let msg = "";
 	if (view.winner !== null) msg = view.winner === 0 ? " — DRAW" : view.winner === mine ? " — YOU WIN!" : mine ? " — YOU LOSE" : "";
 	else if (!view.red || !view.yellow) msg = " — Waiting for opponent…";
@@ -410,7 +421,7 @@ function updateHud() {
 	else {
 		// A watcher: whose turn, by colour and name, as who opens takes turns
 		// between matches (docs/sdk-v2.md "Who starts").
-		const colour = view.turn === RED ? "Red" : "Yellow";
+		const colour = sideName(view.turn);
 		const name = arcade.party?.members?.find((m) => m.id === (view.turn === RED ? view.red : view.yellow))?.name;
 		msg = ` — ${name ? `${name} (${colour})` : colour} to move`;
 	}
@@ -443,16 +454,17 @@ canvas.addEventListener("mouseleave", () => {
 	draw();
 });
 addEventListener("resize", resize);
-arcade.on("theme.set", draw);
+arcade.on("theme.set", () => (draw(), updateHud())); // the HUD names the colour, which a theme renames
 arcade.on("view", ({ state }) => {
 	const before = view;
 	view = state;
+	sideCols = arcade.seatColors?.([state.red ?? "", state.yellow ?? ""]) ?? [0, 1];
 	// One more disc in the same match, seen arrive: it falls. Anything else
 	// (the same move again, a first view, a rematch) stops a fall in flight.
 	const fresh = before && state.last && before.match === state.match && state.moves === (before.moves ?? 0) + 1;
 	if (fresh) {
 		const [row, col] = state.last;
-		movedEl.textContent = `${state.board[row][col] === RED ? "Red" : "Yellow"} dropped in column ${col + 1}`;
+		movedEl.textContent = `${sideName(state.board[row][col])} dropped in column ${col + 1}`;
 	} else if (!before || before.match !== state.match || state.moves !== before.moves) movedEl.textContent = "";
 	if (fresh && !reduced.matches) {
 		drop = { row: state.last[0], col: state.last[1], t0: performance.now(), fall: FALL_MS * Math.sqrt((state.last[0] + 1) / ROWS) };
@@ -470,4 +482,4 @@ arcade.init.then(resize);
  * ringed as the last move, [row, col] or null), `drops` (falls shown) and
  * `px` (the canvas: CSS cell, backing pixels per CSS px, backing size).
  */
-arcade.debug = () => ({ ...(view ?? { started: false, board: [] }), marked, drops, px: { cell, dpr, w: canvas.width, h: canvas.height } });
+arcade.debug = () => ({ ...(view ?? { started: false, board: [] }), marked, drops, colors: [...sideCols], px: { cell, dpr, w: canvas.width, h: canvas.height } });
