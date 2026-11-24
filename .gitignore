@@ -46,3 +46,6 @@ sdk/pyodide/
 node_modules/
 dist/
 dist-*/
+
+# Claude Code personal overrides (.claude -> .agents)
+.agents/settings.local.json
