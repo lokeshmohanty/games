@@ -2662,6 +2662,67 @@ try {
 
 	// ------------------------------------------------------- draw & guess
 
+	console.log("\nbots: your colour, picked at the quick table, is your seat's in the game");
+	// Lokesh, 2026-11-21: "every game with colours" (docs/index.md "Player
+	// colours"). The picker on the table, then the game's own drawing: each
+	// game's debug() reports `colors`, the palette index it draws each seat
+	// in. A community pin from before player colours has no `colors`: it
+	// skips, saying so, until the pin moves.
+	{
+		/** The table for `game`, `n` seats, colour `c` picked on it; the game started. */
+		const pickAndStart = async (game, n, c, sizes) => {
+			await page.goto(url(`?game=${encodeURIComponent(game)}&fresh=1`));
+			await page.locator("button", { hasText: "SINGLE PLAYER" }).first().click();
+			await setPlayers(page, n);
+			if (sizes) await tableSizes(sizes);
+			await page.locator(`.quick-table .color-swatch[data-color="${c}"]`).click();
+			await page.waitForFunction((c) => document.querySelector(`.quick-table .color-swatch[data-color="${c}"]`)?.getAttribute("aria-pressed") === "true", c, { timeout: TIMEOUT });
+			const seats = await page.evaluate(() => [...document.querySelectorAll(".quick-seat")].map((li) => li.style.getPropertyValue("--seat")));
+			const saved = await page.evaluate(() => localStorage.getItem("neon.color"));
+			await page.locator(".quick-table button", { hasText: "START GAME" }).first().click();
+			await page.waitForFunction(() => window.__game?.handle, null, { timeout: TIMEOUT });
+			G = await gameScope(page, TIMEOUT);
+			await G.waitForFunction(() => Array.isArray(window.__game.handle.debug()?.colors) || window.__game.handle.debug()?.match != null, null, { timeout: TIMEOUT });
+			return { seats, saved };
+		};
+		const tableSizes = async (label) => {
+			for (const [w, h] of [
+				[390, 844],
+				[354, 696],
+			]) {
+				await page.setViewportSize({ width: w, height: h });
+				const f = await phoneFloors(page, ".quick-table .color-pick");
+				const sideways = await page.evaluate(() => document.documentElement.scrollWidth > innerWidth);
+				check(`${label} at ${w}x${h}: eight swatches, each 44px, text 12px or more, no sideways scroll`, f.measured.taps === 8 && !f.taps.length && !f.text.length && !sideways, JSON.stringify(f));
+			}
+			await page.setViewportSize({ width: 390, height: 844 });
+		};
+		for (const [game, label, n, c] of [
+			["neon-fission", "Neon Fission", 3, 6],
+			["lokeshmohanty/five-in-a-row", "Five in a Row", 3, 4],
+		]) {
+			if (game.includes("/") && !pinned(game.split("/")[1])) continue;
+			const { seats, saved } = await pickAndStart(game, n, c, game === "neon-fission" && "the quick table's colour picker");
+			check(`${label}: the table shows your seat in your pick, the bots in others`, seats[0] === `var(--p${c + 1})` && new Set(seats).size === n, JSON.stringify(seats));
+			check(`${label}: …and the pick is remembered on this device`, saved === String(c), saved);
+			const v = await debug(page);
+			if (!Array.isArray(v.colors)) {
+				console.log(`  skip ${label} draws no seat colours yet (the registry's pin predates player colours)`);
+				continue;
+			}
+			check(`${label}: the game draws your seat in your colour, every seat a different one`, v.colors[v.you] === c && new Set(v.colors).size === v.colors.length && v.colors.length === n, JSON.stringify({ you: v.you, colors: v.colors }));
+		}
+		if (pinned("ludo")) {
+			// Picked before (remembered on the device), straight into the game.
+			await page.evaluate(() => localStorage.setItem("neon.color", "3"));
+			G = await openLudo(page, 2);
+			const v = await debug(page);
+			if (!Array.isArray(v.colors)) console.log("  skip Ludo draws no seat colours yet (the registry's pin predates player colours)");
+			else check("Ludo: a colour picked earlier on this device is your seat's (yard, start, home column, tokens), the bot's another", v.colors[v.you] === 3 && v.colors.length === 2 && v.colors[1 - v.you] !== 3, JSON.stringify({ you: v.you, colors: v.colors }));
+		}
+		await page.evaluate(() => localStorage.removeItem("neon.color"));
+	}
+
 	console.log("\nbots: draw & guess says it needs people");
 	await page.goto(url("?game=lokeshmohanty%2Fdraw-guess&fresh=1"));
 	await page.locator("button", { hasText: "MULTI-PLAYER" }).first().waitFor();
