@@ -19,8 +19,10 @@
 // multiplayer skill.
 //
 // The lot order is a shuffle the host makes once and publishes before the
-// first bid. That is the only random thing in the game, and once it is public
-// there is nothing left for anybody to know that the others do not.
+// first bid; with the "Hot colour" option, the hot colour is drawn with it and
+// published with it. Those are the only random things in the game, and once
+// they are public there is nothing left for anybody to know that the others
+// do not.
 //
 // ## Rounds
 //
@@ -127,7 +129,21 @@
 
 	// -------------------------------------------------------------- state
 
-	let phase = "waiting"; // waiting | bid | open | show | over
+	let phase = "waiting"; // waiting | setup | bid | open | show | over
+	// The "Hot colour" option, asked before the first game only (Lokesh,
+	// 2026-11-23, as Ludo): friends' first game opens on the setup (`setup`,
+	// the host's to change, and broadcast); NEW GAME goes straight in with the
+	// options picked for it at the end ("Next game: … · CHANGE"), and one
+	// person with bots goes straight in with the options last played on this
+	// phone (`opts` in the game's storage). Like the lot order it is the
+	// host's draw (Math.random): a protocol game has no managed seed.
+	let setup = null; // { hot } while the setup is up
+	let opts = { hot: false }; // host: this game's options
+	let nextOpts = null; // host: picked at the end for NEW GAME
+	let lastOpts = null; // this phone's last played (storage)
+	let choosingNext = false;
+	const cleanOpts = (o) => ({ hot: o?.hot === true });
+	const hotOf = () => game?.hot ?? null;
 	let game = null; // public: { order, lot, players, results } — see newGame
 	let digests = {}; // id -> digest for the lot being bid; published once collected
 	let opened = {}; // host only: id -> { lot, bid, nonce } for this lot
@@ -212,7 +228,7 @@
 	 * freezes (Liar's Dice learned this the hard way).
 	 */
 	function pushState() {
-		if (isHost()) stateCh.send({ game, digests, over });
+		if (isHost()) stateCh.send({ game, digests, over, setup });
 		render();
 	}
 
@@ -266,7 +282,7 @@
 
 	function onFinish() {
 		if (!isHost() || !game) return;
-		over = { ...R.standings(game.players), match: matchNo };
+		over = { ...R.standings(game.players, hotOf()), match: matchNo };
 		phase = "over";
 		pushState();
 		reportOver();
@@ -461,6 +477,9 @@
 	function onState(msg, from) {
 		if (isHost() || from !== hostId()) return;
 		game = msg.game;
+		setup = msg.setup ?? null;
+		if (setup) phase = "setup";
+		else if (phase === "setup") phase = "waiting";
 		digests = msg.digests ?? {};
 		over = msg.over ?? null;
 		if (over) {
@@ -494,12 +513,13 @@
 			...game.order.map((colour, i) => {
 				const result = game.results[i];
 				const slot = el("div", "nb-slot");
+				if (colour === hotOf()) slot.classList.add("hot");
 				if (i === current) slot.classList.add("now");
 				if (result && i !== current) slot.classList.add(result.kind === "won" ? "won" : "lost");
 				const mark = result?.kind === "won" ? seatMark(result.winner) : el("span", "nb-mark none");
 				mark.setAttribute("aria-hidden", "true");
 				slot.append(gem(colour), mark);
-				slot.setAttribute("aria-label", `${gemName(colour)}${result ? (result.kind === "won" ? `, won by ${nameOf(result.winner)}` : ", lost") : ""}`);
+				slot.setAttribute("aria-label", `${gemName(colour)}${colour === hotOf() ? " (hot)" : ""}${result ? (result.kind === "won" ? `, won by ${nameOf(result.winner)}` : ", lost") : ""}`);
 				return slot;
 			}),
 		);
@@ -526,7 +546,7 @@
 					g.append(t, document.createTextNode(String(n)));
 					gems.append(g);
 				});
-				gems.append(el("span", null, `${R.score(p.hand)} pts`));
+				gems.append(el("span", null, `${R.score(p.hand, hotOf())} pts`));
 				box.append(sw, who, cr, gems);
 				return box;
 			}),
@@ -543,9 +563,10 @@
 		big.append(gem(colour));
 		const txt = el("div", "txt");
 		txt.append(el("span", "lotno", `LOT ${i + 1} OF ${LOTS}`), el("span", "name", gemName(colour)));
+		if (hotOf() != null) txt.append(el("span", "nb-hot-line", colour === hotOf() ? `HOT COLOUR: its set scores ${R.HOT_BONUS} more` : `Hot colour: ${gemName(hotOf())}`));
 		const me = mySeat();
 		if (me && phase === "bid") {
-			const w = R.worth(me.hand, colour);
+			const w = R.worth(me.hand, colour, hotOf());
 			const line = el("div", "nb-worth", `+${w.points} point${w.points === 1 ? "" : "s"} to you`);
 			line.append(el("small", null, w.reasons.join(" · ")));
 			txt.append(line);
@@ -679,8 +700,80 @@
 			const again = el("button", "neon-btn nb-go", "NEW GAME");
 			again.type = "button";
 			again.addEventListener("click", startGame);
-			panel.append(again);
+			panel.append(again, nextLine());
 		}
+	}
+
+	// ------------------------------------------------------- setup, next game
+
+	const optsText = (o) => (o.hot ? "hot colour" : "no hot colour");
+	/** NO HOT COLOUR / HOT COLOUR, the one pressed showing which. */
+	function hotButtons(on, pick) {
+		const group = el("div", "nb-choice");
+		group.setAttribute("role", "group");
+		group.setAttribute("aria-label", "Hot colour");
+		for (const [value, label] of [[false, "NO HOT COLOUR"], [true, "HOT COLOUR"]]) {
+			const btn = el("button", "neon-btn", label);
+			btn.type = "button";
+			btn.dataset.hot = String(value);
+			btn.setAttribute("aria-pressed", String(on === value));
+			btn.addEventListener("click", () => pick(value));
+			group.append(btn);
+		}
+		return group;
+	}
+	function keepOpts(o) {
+		if (JSON.stringify(o) === JSON.stringify(lastOpts)) return;
+		lastOpts = { ...o };
+		arcade.send("store.set", { key: "opts", value: lastOpts });
+	}
+	/** Friends' first game: the host picks, everyone sees what is picked. */
+	function renderSetup() {
+		panel.append(el("h2", "nb-setup-title", "NEON BID"));
+		if (isHost()) {
+			panel.append(el("p", "nb-setup-text", `A hot colour: one colour, drawn now and shown all game, whose set scores ${R.HOT_BONUS} more.`));
+			panel.append(hotButtons(setup.hot, (hot) => {
+				setup = { hot };
+				pushState();
+			}));
+			const go = el("button", "neon-btn neon-btn--accent nb-go nb-start", "START");
+			go.type = "button";
+			go.addEventListener("click", () => {
+				opts = cleanOpts(setup);
+				setup = null;
+				startGame();
+			});
+			panel.append(go);
+		} else {
+			const hostName = members().find((m) => m.id === hostId())?.name || "The host";
+			panel.append(el("p", "nb-setup-text", `${hostName} is setting up: ${setup.hot ? "a hot colour" : "no hot colour"}.`));
+		}
+	}
+	/** At the end, the host's: "Next game: … · CHANGE". */
+	function nextLine() {
+		const box = el("div", "nb-next");
+		const n = nextOpts ?? opts;
+		const line = el("div", "nb-next-line");
+		const what = el("span");
+		what.append(document.createTextNode("Next game: "), el("b", null, optsText(n)));
+		const change = el("button", "neon-btn nb-next-change", choosingNext ? "DONE" : "CHANGE");
+		change.type = "button";
+		change.setAttribute("aria-label", choosingNext ? "Done choosing the next game" : "Change the next game's options");
+		change.addEventListener("click", () => {
+			choosingNext = !choosingNext;
+			panelKey = "";
+			renderPanel();
+		});
+		line.append(what, change);
+		box.append(line);
+		if (choosingNext)
+			box.append(hotButtons(n.hot, (hot) => {
+				nextOpts = cleanOpts({ hot });
+				keepOpts(nextOpts);
+				panelKey = "";
+				renderPanel();
+			}));
+		return box;
 	}
 
 	// The panel holds the buttons, and it is redrawn on every clock tick while
@@ -690,11 +783,12 @@
 	let panelKey = "";
 	function renderPanel() {
 		const me = mySeat();
-		const key = JSON.stringify([phase, curLot(), !!over, draft, me?.credits, !!myCommit, committing,
+		const key = JSON.stringify([phase, setup, curLot(), !!over, draft, me?.credits, !!myCommit, committing,
 			phase === "bid" ? stillToBid() : 0, !!game?.results[curLot()], game?.players.length, themeNow(), isHost()]);
 		if (key === panelKey) return;
 		panelKey = key;
 		panel.replaceChildren();
+		if (setup) return renderSetup();
 		if (!game) return;
 		if (over) renderEnd();
 		else if (phase === "bid") renderBidPanel();
@@ -709,9 +803,12 @@
 				? `Shared win: ${w.map(nameOf).join(" & ")}`
 				: w[0] === self() ? "You win" : `${nameOf(w[0])} wins`;
 			parts.push({ key: "s", text });
+		} else if (setup) {
+			parts.push({ key: "s", text: "Setting up", className: "g-muted" });
 		} else if (!game) {
 			parts.push({ key: "s", text: "Laying out the gems…", className: "g-muted" });
 		} else if (phase === "bid") {
+			if (hotOf() != null) parts.push({ key: "h", text: `Hot: ${gemName(hotOf())}`, className: "nb-hot-says" });
 			parts.push({ key: "s", text: myCommit ? "Sealed" : "Bid in secret" });
 			parts.push({ key: "t", text: `${tick.secondsLeft ?? 0}s`, className: "g-muted" });
 		} else if (phase === "open") {
@@ -737,7 +834,11 @@
 	/** Host side. Shuffle the lots once, publish them, then open lot 1. */
 	async function startGame() {
 		if (!isHost()) return;
-		game = R.newGame(players());
+		if (matchNo > 0 && nextOpts) opts = nextOpts;
+		nextOpts = null;
+		choosingNext = false;
+		keepOpts(opts);
+		game = R.newGame(players(), Math.random, opts);
 		matchNo++;
 		over = null;
 		digests = {};
@@ -809,6 +910,8 @@
 
 	arcade.debug = () => ({
 		phase,
+		hot: game?.hot ?? null,
+		setup: setup ? { ...setup } : null,
 		lot: game?.lot ?? null,
 		// The round clock's lot: the one on screen. Equal to `lot` while
 		// bidding; the two drifting apart is how lots got thrown away.
@@ -825,6 +928,8 @@
 
 	arcade.init.then(async (init) => {
 		session = { ...(init.session ?? {}) };
+		const o = init.storage?.opts;
+		if (o && typeof o === "object") lastOpts = cleanOpts(o);
 		render();
 		arcade.ready();
 		// A browser without WebCrypto cannot commit, and then nothing keeps the
@@ -835,6 +940,15 @@
 			setNotice("This browser cannot make a sealed commitment, so there is no way to keep the bids honest here.");
 			return;
 		}
-		if (isHost()) startGame();
+		if (!isHost()) return;
+		// Friends' first game: the setup. One person (with bots): straight in,
+		// on this phone's last options.
+		const people = players().filter((id) => !isBot(id)).length;
+		opts = cleanOpts(lastOpts);
+		if (people > 1) {
+			setup = { ...opts };
+			phase = "setup";
+			pushState();
+		} else startGame();
 	});
 })();

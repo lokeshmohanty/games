@@ -105,3 +105,22 @@
 .nb-table td.pts { font-size: 1rem; color: var(--ink); }
 .nb-table tr.win td.pts { color: var(--accent); }
 .nb-notice { font-size: 0.75rem; color: var(--warn); min-height: 1em; text-align: center; }
+
+/* The hot colour (the setup's option): its three slots underlined in the
+   accent, and said in words under the lot and in the status line — never by
+   colour alone. */
+.nb-slot.hot::after { content: ""; display: block; width: 100%; height: 3px; border-radius: 2px;
+	background: var(--accent); box-shadow: 0 0 6px var(--accent-glow); }
+.nb-hot-line { font-size: 0.8rem; color: var(--accent); letter-spacing: 0.04em; }
+.g-hud .nb-hot-says { color: var(--ink); text-shadow: none; }
+
+/* The setup (friends' first game), and the end's "Next game · CHANGE". */
+.nb-setup-title { margin: 8px 0 0; font-family: var(--font-display); font-size: 1.4rem; letter-spacing: 0.06em; color: var(--accent); }
+.nb-setup-text { margin: 0; max-width: 24em; color: var(--ink-2); line-height: 1.35; font-size: 0.85rem; text-align: center; }
+.nb-choice { display: flex; flex-wrap: wrap; gap: 6px; justify-content: center; }
+.nb-choice .neon-btn, .nb-next .neon-btn { min-height: 44px; min-width: 44px; padding: 8px 12px; font-size: 0.85rem; }
+.nb-choice .neon-btn { border: 2px solid var(--accent); }
+.nb-choice .neon-btn[aria-pressed="false"] { background: transparent; color: var(--accent); }
+.nb-next { display: flex; flex-direction: column; align-items: center; gap: 6px; font-size: 0.85rem; color: var(--ink-2); }
+.nb-next-line { display: flex; align-items: center; justify-content: center; gap: 4px 10px; flex-wrap: wrap; }
+.nb-next b { color: var(--ink); font-weight: 600; }
