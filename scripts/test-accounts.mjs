@@ -1735,13 +1735,23 @@ try {
 		check("a device with less cannot lower anything", r.body.games["lokeshmohanty/sudoku"].r.time.v.easy === 200_000 && r.body.games["lokeshmohanty/sudoku"].a["first-solve"] === 1000);
 		r = await call("PUT", "/api/me/records", { token: rae.token, body: { games: { "neon-bid": { a: { ok: 1, "BAD ID": 2 }, junk: "x".repeat(100), r: { x: { b: "eval", v: {} } } } } } });
 		check("malformed entries are dropped, not stored", r.status === 200 && JSON.stringify(r.body.games["neon-bid"]) === '{"a":{"ok":1},"p":{},"r":{}}', r.body);
-		check("a bad game id is refused", (await call("PUT", "/api/me/records", { token: rae.token, body: { games: { "../x": {} } } })).status === 400);
-		check("…and dev/ games", (await call("PUT", "/api/me/records", { token: rae.token, body: { games: { "dev/x": {} } } })).status === 400);
+		r = await call("PUT", "/api/me/records", { token: rae.token, body: { games: { "../x": {}, "dev/x": {}, "neon-fission": { a: { "beat-3": 2000 } } } } });
+		check("a bad game id is refused per game, and the rest is kept (one bad game never stops a sync)", r.status === 200 && !!r.body.rejected?.["../x"] && !!r.body.rejected?.["dev/x"] && r.body.games["neon-fission"]?.a?.["beat-3"] === 2000 && !("../x" in r.body.games), r.body);
 		check("not an object is refused", (await call("PUT", "/api/me/records", { token: rae.token, body: { games: [1] } })).status === 400);
 		const many = Object.fromEntries(Array.from({ length: 65 }, (_, i) => [`g${i}x`, {}]));
 		check("at most 64 games a request", (await call("PUT", "/api/me/records", { token: rae.token, body: { games: many } })).status === 400);
 		const big = { a: Object.fromEntries(Array.from({ length: 64 }, (_, i) => [`a${i}-${"x".repeat(26)}`, 1e12 + i])), p: Object.fromEntries(Array.from({ length: 64 }, (_, i) => [`p${i}-${"x".repeat(26)}`, { d: Array.from({ length: 100 }, (_, j) => `v${j}`) }])) };
-		check("a game's row is at most 8 KB", (await call("PUT", "/api/me/records", { token: rae.token, body: { games: { "neon-bid": big } } })).status === 413);
+		r = await call("PUT", "/api/me/records", { token: rae.token, body: { games: { "neon-bid": big } } });
+		check("a game sent at over 8 KB is cleaned to fit: progress trimmed, unlocks kept", r.status === 200 && JSON.stringify(r.body.games["neon-bid"]).length <= 8192 && Object.keys(r.body.games["neon-bid"].a).length === 64, { status: r.status, bytes: JSON.stringify(r.body.games?.["neon-bid"] ?? "").length });
+		const huge = Object.fromEntries(Array.from({ length: 20 }, (_, i) => [`h${i}x`, { p: { q: { d: Array.from({ length: 100 }, (_, j) => `${"v".repeat(30)}${j}`) } } }]));
+		check("a body over 64 KB is refused (the Worker's CPU budget)", (await call("PUT", "/api/me/records", { token: rae.token, body: { games: huge } })).status === 413);
+		await call("PUT", "/api/me/records", { token: rae.token, body: { games: { "neon-bid": { r: { pts: { b: "min", v: { "": 3 } } } } } } });
+		r = await call("PUT", "/api/me/records", { token: rae.token, body: { games: { "neon-bid": { r: { pts: { b: "max", v: { "": 9 } } } } } } });
+		check("an author's change of a record's kind takes effect: the device's kind wins on the server", r.body.games["neon-bid"].r.pts.b === "max" && r.body.games["neon-bid"].r.pts.v[""] === 9, r.body.games["neon-bid"].r);
+		const ids = Array.from({ length: 6 }, (_, i) => `race-${i}`);
+		await Promise.all(ids.map((id, i) => call("PUT", "/api/me/records", { token: rae.token, body: { games: { "lokeshmohanty/ludo": { a: { [id]: 1000 + i } } } } })));
+		const raced = (await call("GET", "/api/me/records", { token: rae.token })).body.games["lokeshmohanty/ludo"]?.a ?? {};
+		check("six PUTs at once, each with its own unlock: none is lost (each that lost the race is merged again)", ids.every((id) => id in raced), Object.keys(raced));
 
 		// Friends see them; strangers and the signed-out never do.
 		await call("POST", `/api/friends/${roy.id}`, { token: rae.token });
@@ -1757,6 +1767,11 @@ try {
 		await call("PATCH", "/api/me", { token: rae.token, body: { hidePublic: true } });
 		check("hidden from public boards: still for a friend", !!(await call("GET", `/api/u/${rae.id}`, { token: roy.token })).body.records);
 		check("…never for a stranger", (await call("GET", `/api/u/${rae.id}`, { token: rik.token })).body.records === undefined);
+		// A stray block row beside a friends row (the other way round): the block wins.
+		await w.sql(`INSERT OR REPLACE INTO friends (a, b, state, at) VALUES ('${rae.id}', '${roy.id}', 'blocked', 1); INSERT OR REPLACE INTO friends (a, b, state, at) VALUES ('${roy.id}', '${rae.id}', 'friends', 1);`);
+		check("a block either way hides them, even beside a friends row", (await call("GET", `/api/u/${rae.id}`, { token: roy.token })).body.records === undefined);
+		await w.sql(`DELETE FROM friends WHERE a = '${rae.id}' AND b = '${roy.id}'; INSERT OR REPLACE INTO friends (a, b, state, at) VALUES ('${roy.id}', '${rae.id}', 'friends', 1);`);
+		check("…and with the block gone, a friend sees them again", !!(await call("GET", `/api/u/${rae.id}`, { token: roy.token })).body.records);
 		await call("DELETE", `/api/friends/${rae.id}`, { token: roy.token });
 		check("unfriended: gone", (await call("GET", `/api/u/${rae.id}`, { token: roy.token })).body.records === undefined);
 
