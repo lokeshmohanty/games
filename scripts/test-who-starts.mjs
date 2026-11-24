@@ -51,6 +51,15 @@ function load(path) {
 }
 
 /**
+ * Past a game's setup, where it has one: friends' first match opens on the
+ * host's options (Neon Fission's voids, Lokesh 2026-11-23/24), and START
+ * keeps the opener the platform named.
+ */
+async function started(rules, host) {
+	if ((await rules.view({ seat: null }))?.phase === "setup") await rules.apply({ action: { start: true }, by: host });
+}
+
+/**
  * Four matches of `path` with `seats`: the host runs matches 1 and 2, leaves
  * after one move of match 2 (`move`: a legal one; the bot's by default), and
  * the heir restores its copy and runs 3 and 4.
@@ -74,6 +83,7 @@ async function series(name, path, seats, move = (rules, who) => rules.bot({ seat
 		opener = nextFirst(opener, ids, () => 0.6); // the draw is used for the first match only
 		openers.push(opener.id);
 		await rules.init({ seats: clone(seats), opts: {}, seed: 11 + m, match: m, first: opener.id });
+		await started(rules, ids[0]);
 		const who = (await rules.turn())[0];
 		onTurn.push(who);
 		if (m === 1) {
@@ -87,6 +97,7 @@ async function series(name, path, seats, move = (rules, who) => rules.bot({ seat
 	check("…and in every match that seat is on turn first, the heir's two included", JSON.stringify(onTurn) === JSON.stringify(openers), { onTurn, openers });
 	// An older shell sends no `first`: the game still starts, on its old seat.
 	await host.init({ seats: clone(seats), opts: {}, seed: 1, match: 0 });
+	await started(host, ids[0]);
 	check("with no `first` (an older shell) the game still starts, with a seat on turn", ids.includes((await host.turn())[0]));
 }
 

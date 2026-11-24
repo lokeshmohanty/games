@@ -20,31 +20,73 @@
 	// this; the cap is only there so no bug can hang the host.
 	const MAX_WAVES = 2000;
 
-	/** Per board shape, computed once: each cell's neighbours and capacity. */
+	/**
+	 * Per board shape, computed once: each cell's neighbours and capacity.
+	 * `voids`: cells that are not there (the "Voids" option). A void has no
+	 * neighbours and capacity 0, and is nobody's neighbour, so a cell beside
+	 * one bursts an orb sooner.
+	 */
 	const shapes = new Map();
-	function shape(cols, rows) {
-		const key = `${cols}x${rows}`;
+	function shape(cols, rows, voids = []) {
+		const key = `${cols}x${rows}${voids?.length ? `:${voids.join(",")}` : ""}`;
 		let sh = shapes.get(key);
 		if (sh) return sh;
 		const n = cols * rows;
+		const gone = new Set(voids ?? []);
 		const nbr = [];
 		const cap = new Uint8Array(n);
 		for (let i = 0; i < n; i++) {
 			const r = Math.floor(i / cols);
 			const c = i % cols;
 			const list = [];
-			if (r > 0) list.push(i - cols);
-			if (c < cols - 1) list.push(i + 1);
-			if (r < rows - 1) list.push(i + cols);
-			if (c > 0) list.push(i - 1);
-			nbr.push(list);
-			cap[i] = list.length;
+			if (!gone.has(i)) {
+				if (r > 0) list.push(i - cols);
+				if (c < cols - 1) list.push(i + 1);
+				if (r < rows - 1) list.push(i + cols);
+				if (c > 0) list.push(i - 1);
+			}
+			nbr.push(list.filter((j) => !gone.has(j)));
+			cap[i] = nbr[i].length;
 		}
 		sh = { cols, rows, n, nbr, cap };
 		shapes.set(key, sh);
 		return sh;
 	}
-	const capacity = (cols, rows, i) => shape(cols, rows).cap[i];
+	const capacity = (cols, rows, i, voids) => shape(cols, rows, voids).cap[i];
+	/** The shape of game `g`, voids and all. */
+	const shapeOf = (g) => shape(g.cols, g.rows, g.voids);
+
+	/**
+	 * The "Voids" option (Lokesh, 2026-11-24): one or two pairs of cells taken
+	 * out of the board, each pair turned 180° about the centre (so neither
+	 * side of the board is the better one), dealt from the match's `seed`.
+	 * Never on the border, so no corner is left with one neighbour (every
+	 * cell still bursts at 2 or more), and never touching another void, so
+	 * the board stays one piece.
+	 */
+	function voidsFor(cols, rows, seed) {
+		let a = (seed ^ 0x7015) >>> 0;
+		const next = () => {
+			a = (a + 0x6d2b79f5) >>> 0;
+			let t = a;
+			t = Math.imul(t ^ (t >>> 15), t | 1);
+			t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+			return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+		};
+		const n = cols * rows;
+		const pairs = next() < 0.5 ? 1 : 2;
+		const out = [];
+		const touches = (i) => out.some((j) => Math.abs((i % cols) - (j % cols)) <= 1 && Math.abs(Math.floor(i / cols) - Math.floor(j / cols)) <= 1);
+		for (let tries = 0; out.length < pairs * 2 && tries < 100; tries++) {
+			const c = 1 + Math.floor(next() * (cols - 2));
+			const r = 1 + Math.floor(next() * (rows - 2));
+			const i = r * cols + c;
+			const j = n - 1 - i;
+			if (touches(i) || touches(j) || Math.abs((i % cols) - (j % cols)) <= 1 && Math.abs(Math.floor(i / cols) - Math.floor(j / cols)) <= 1) continue;
+			out.push(i, j);
+		}
+		return out.sort((x, y) => x - y);
+	}
 
 	/**
 	 * A new game for `players` seats. `owner[i]` is the seat owning cell i
@@ -52,11 +94,12 @@
 	 * `out[s]`: the move number that knocked it out (null: still in);
 	 * `gone[s]`: it left the party.
 	 */
-	function newGame(players, size = dims(players)) {
+	function newGame(players, size = dims(players), voids = []) {
 		const n = size.cols * size.rows;
 		return {
 			cols: size.cols,
 			rows: size.rows,
+			voids: [...voids],
 			players,
 			owner: Array(n).fill(-1),
 			count: Array(n).fill(0),
@@ -72,8 +115,9 @@
 
 	const inGame = (g, s) => g.out[s] === null && !g.gone[s];
 	const alive = (g) => [...Array(g.players).keys()].filter((s) => inGame(g, s));
-	const legal = (g, i, s = g.turn) => Number.isInteger(i) && i >= 0 && i < g.owner.length && (g.owner[i] === -1 || g.owner[i] === s);
-	const legalCells = (g, s = g.turn) => g.owner.flatMap((o, i) => (o === -1 || o === s ? [i] : []));
+	const isVoid = (g, i) => !!g.voids?.includes(i);
+	const legal = (g, i, s = g.turn) => Number.isInteger(i) && i >= 0 && i < g.owner.length && !isVoid(g, i) && (g.owner[i] === -1 || g.owner[i] === s);
+	const legalCells = (g, s = g.turn) => g.owner.flatMap((o, i) => ((o === -1 || o === s) && !isVoid(g, i) ? [i] : []));
 
 	/** Cells and orbs per seat. */
 	function holdings(g) {
@@ -158,9 +202,10 @@
 	 */
 	function play(g, cell) {
 		if (g.winner !== null) return "the game is over";
+		if (isVoid(g, cell)) return "there is no cell there";
 		if (!legal(g, cell)) return "that cell is someone else's";
 		const s = g.turn;
-		const waves = react(g.owner, g.count, shape(g.cols, g.rows), cell, s);
+		const waves = react(g.owner, g.count, shapeOf(g), cell, s);
 		g.moves++;
 		g.played[s] = true;
 		const bursts = waves.reduce((n, w) => n + w.length, 0);
@@ -266,7 +311,7 @@
 	/** The cell the seat on turn should play. `rng`: a () => [0, 1) for tie noise. */
 	function botMove(g, rng = Math.random) {
 		const me = g.turn;
-		const sh = shape(g.cols, g.rows);
+		const sh = shapeOf(g);
 		const own0 = Int8Array.from(g.owner);
 		const cnt0 = Uint8Array.from(g.count);
 		const own = new Int8Array(sh.n);
@@ -275,7 +320,7 @@
 		const foe = nextSeat(g, me);
 		const scored = [];
 		for (let i = 0; i < sh.n; i++) {
-			if (own0[i] !== -1 && own0[i] !== me) continue;
+			if ((own0[i] !== -1 && own0[i] !== me) || !sh.cap[i]) continue; // theirs, or a void
 			own.set(own0);
 			cnt.set(cnt0);
 			react(own, cnt, sh, i, me);
@@ -298,7 +343,7 @@
 			// The next player answers, unless this move has knocked them out.
 			if (foe !== me && own.includes(foe)) {
 				for (let j = 0; j < sh.n; j++) {
-					if (own[j] !== -1 && own[j] !== foe) continue;
+					if ((own[j] !== -1 && own[j] !== foe) || !sh.cap[j]) continue;
 					own2.set(own);
 					cnt2.set(cnt);
 					react(own2, cnt2, sh, j, foe);
@@ -338,7 +383,7 @@
 	}
 
 	globalThis.neonFissionRules = {
-		dims, MAX_WAVES, shape, capacity, newGame, inGame, alive, legal, legalCells, holdings,
+		dims, MAX_WAVES, shape, shapeOf, capacity, voidsFor, isVoid, newGame, inGame, alive, legal, legalCells, holdings,
 		react, nextSeat, play, skip, leave, standings, botMove, PACE, pace,
 	};
 })();

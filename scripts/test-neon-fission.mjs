@@ -309,6 +309,72 @@ console.log("\nwhole games, bots only");
 	console.log(`  (the longest took ${longest} moves)`);
 }
 
+
+// ---------------------------------------------------------------------------
+console.log("\nvoids (the setup's option)");
+{
+	// Lokesh, 2026-11-24: "Voids" — 2 to 4 cells that are not there, in
+	// 180° rotational symmetry, dealt from the seed. Their neighbours have one
+	// neighbour fewer, so they burst one orb sooner.
+	const shapes = new Set();
+	let bad = [];
+	for (const players of [2, 5]) {
+		const { cols, rows } = R.dims(players);
+		const n = cols * rows;
+		for (let seed = 1; seed <= 40; seed++) {
+			const v = R.voidsFor(cols, rows, seed);
+			shapes.add(`${players}:${v.join()}`);
+			const set = new Set(v);
+			const border = (i) => i % cols === 0 || i % cols === cols - 1 || i < cols || i >= n - cols;
+			if (v.length < 2 || v.length > 4) bad.push(`${seed}: ${v.length} voids`);
+			if (v.some((i) => !set.has(n - 1 - i))) bad.push(`${seed}: not symmetric`);
+			if (v.some(border)) bad.push(`${seed}: on the border`);
+			if (v.some((i) => v.some((j) => j !== i && Math.abs((i % cols) - (j % cols)) <= 1 && Math.abs(Math.floor(i / cols) - Math.floor(j / cols)) <= 1))) bad.push(`${seed}: two voids touch`);
+		}
+	}
+	check("2 to 4 voids, in 180° symmetry, off the border, none touching (80 deals)", bad.length === 0, bad.slice(0, 4).join("; "));
+	check("…dealt differently by different seeds", shapes.size >= 30, `${shapes.size} of 80`);
+	check("…and the same by the same seed", R.voidsFor(6, 9, 3).join() === R.voidsFor(6, 9, 3).join());
+
+	const voids = [at({ cols: 6 }, 2, 2), at({ cols: 6 }, 3, 6)]; // C3 and its 180° partner D7
+	const g = R.newGame(2, R.dims(2), voids);
+	const sh = R.shape(g.cols, g.rows, g.voids);
+	check("a game carries its voids", same(g.voids, voids));
+	check("a void holds nothing and cannot be played", sh.cap[voids[0]] === 0 && !R.legal(g, voids[0]) && !R.legalCells(g).includes(voids[0]) && typeof R.play(g, voids[0]) === "string");
+	check("its inside neighbour bursts at 3, not 4", sh.cap[at(g, 2, 3)] === 3 && sh.cap[at(g, 1, 2)] === 3, `${sh.cap[at(g, 2, 3)]}`);
+	check("an edge cell beside a void bursts at 2", (() => {
+		const g2 = R.newGame(2, R.dims(2), [at(g, 1, 1), g.cols * g.rows - 1 - at(g, 1, 1)]);
+		return R.shape(g2.cols, g2.rows, g2.voids).cap[at(g2, 1, 0)] === 2;
+	})());
+	check("no void is anyone's neighbour", sh.nbr.every((list) => !list.some((j) => voids.includes(j))));
+	check("the plain board is as before", R.shape(6, 9).cap[at(g, 2, 3)] === 4 && R.shape(6, 9, []).cap[at(g, 2, 3)] === 4);
+	// A burst beside a void sends no orb into it.
+	const g3 = R.newGame(2, R.dims(2), voids);
+	g3.owner[at(g3, 2, 3)] = 0;
+	g3.count[at(g3, 2, 3)] = 2;
+	g3.played = [true, true];
+	g3.owner[at(g3, 5, 8)] = 1;
+	g3.count[at(g3, 5, 8)] = 1;
+	const r = R.play(g3, at(g3, 2, 3));
+	check("a cell beside a void bursts at its new capacity, and the void stays empty", r.waves.length === 1 && g3.count[voids[0]] === 0 && g3.owner[voids[0]] === -1 && g3.count[at(g3, 1, 3)] === 1, JSON.stringify(r.waves));
+	// Whole bot games on void boards end, as on plain ones.
+	let stuck = 0;
+	let onVoid = 0;
+	for (let players = 2; players <= 6; players++)
+		for (let seed = 1; seed <= 10; seed++) {
+			const rng = mulberry32(players * 77 + seed);
+			const d = R.dims(players);
+			const gv = R.newGame(players, d, R.voidsFor(d.cols, d.rows, seed));
+			while (gv.winner === null && gv.moves < 5000) {
+				const c = R.botMove(gv, rng);
+				if (gv.voids.includes(c)) onVoid++;
+				R.play(gv, c);
+			}
+			if (gv.winner === null) stuck++;
+		}
+	check("50 bot games on void boards all end, and no bot plays a void", stuck === 0 && onVoid === 0, `${stuck} stuck, ${onVoid} on a void`);
+}
+
 // ---------------------------------------------------------------------------
 console.log("\nthe replay's pace");
 {
@@ -343,7 +409,7 @@ console.log("\nthe managed layer: one phone, several people");
 	];
 	rules.init({ seats, seed: 5, match: 0 });
 	let v = rules.view({ seat: "host" });
-	check("one person, a person beside them and a bot: play starts at once, no table in the game", v.phase === undefined && same(rules.turn(), ["host"]) && v.moves === 0);
+	check("one person, a person beside them and a bot: play starts at once, no setup", v.phase === "play" && same(rules.turn(), ["host"]) && v.moves === 0);
 	check("…seat 2 is a player on this device, named Player 2, not the bot's name", v.players[1].name === "Player 2" && v.players[1].kind === "local" && v.players[2].kind === "bot");
 	check("…no table-setting moves any more", typeof rules.apply({ action: { seat: 2, local: true }, by: "host" }) === "string" && rules.view({ seat: "host" }).players[2].kind === "bot");
 	check("…the person moves first", same(rules.turn(), ["host"]));
@@ -379,9 +445,46 @@ console.log("\nthe managed layer: one phone, several people");
 	check("if the person leaves, their local seats go back to the bots", v.players[1].kind === "bot" && v.players[1].name === "Bot Ada");
 
 	// Different devices: two people and a bot. A `local` seat means nothing
-	// with two people (no one phone to pass): it is a bot.
-	rules.init({ seats: [seats[0], { id: "sam", name: "Sam", team: "A", bot: false }, seats[1]], seed: 7, match: 0 });
-	check("two people on their own phones: play starts at once", same(rules.turn(), ["host"]));
+	// with two people (no one phone to pass): it is a bot. Friends' first
+	// game opens on the setup (Lokesh, 2026-11-23, as Ludo), the host's.
+	const friends = [seats[0], { id: "sam", name: "Sam", team: "A", bot: false }, seats[1]];
+	globalThis.arcade.party = { host: "host" };
+	rules.init({ seats: friends, seed: 7, match: 0, first: "host" });
+	v = rules.view({ seat: "sam" });
+	check("two people, a first game: the setup, voids off, nobody on turn", v.phase === "setup" && v.voids.length === 0 && v.voidsOn === false && same(rules.turn(), []), JSON.stringify({ phase: v.phase, voids: v.voids }));
+	check("…no move, and no bot, before START", typeof rules.apply({ action: { cell: 0 }, by: "host" }) === "string" && rules.bot({ seat: "bot_a" }) === null);
+	check("…only the host sets it up", typeof rules.apply({ action: { voids: true }, by: "sam" }) === "string");
+	check("…the host turns voids on: they show at once, from the seed", rules.apply({ action: { voids: true }, by: "host" }) === undefined && same(rules.view({ seat: null }).voids, R.voidsFor(6, 9, 7)));
+	check("…START: the seat named first is on turn", rules.apply({ action: { start: true }, by: "host" }) === undefined && rules.view({ seat: null }).phase === "play" && same(rules.turn(), ["host"]));
+	check("…a void cannot be played", typeof rules.apply({ action: { cell: rules.view({ seat: null }).voids[0] }, by: "host" }) === "string");
+	check("…the next game can be changed only at the end", typeof rules.setNext({ voids: false }) === "string");
+	rules.snapshot().g.winner = 0;
+	check("at the end: the next game is this one's (voids)", rules.nextGame().voids === true);
+	check("…CHANGE: no voids next", rules.setNext({ voids: false }) === undefined && rules.nextGame().voids === false);
+	rules.init({ seats: friends, seed: 8, match: 1, first: "sam" });
+	v = rules.view({ seat: null });
+	check("PLAY AGAIN: straight in, on the next game's pick", v.phase === "play" && v.voids.length === 0 && same(rules.turn(), ["sam"]));
+	// One person: straight in, with the options kept on their phone.
+	{
+		// A fresh frame whose storage holds the options last played (init.storage.opts).
+		let kept = null;
+		const was = globalThis.arcade;
+		globalThis.arcade = { ...was, managed: (r) => (kept = r), init: Promise.resolve({ storage: { opts: { voids: true } } }) };
+		new Function(read("../games/neon-fission/neon-fission.js"))();
+		await new Promise((r) => setTimeout(r, 0));
+		kept.init({ seats: [seats[0], seats[2]], seed: 9, match: 0 });
+		v = kept.view({ seat: null });
+		check("one person with a bot: no setup, the phone's last options (voids)", v.phase === "play" && same(v.voids, R.voidsFor(6, 9, 9)), JSON.stringify(v.voids));
+		globalThis.arcade = was;
+	}
+	// The heir keeps a setup in progress.
+	rules.init({ seats: friends, seed: 10, match: 0 });
+	rules.apply({ action: { voids: true }, by: "host" });
+	const snap = JSON.parse(JSON.stringify(rules.snapshot()));
+	rules.restore({ snapshot: snap });
+	check("the heir keeps the setup and its pick", rules.view({ seat: null }).phase === "setup" && rules.view({ seat: null }).voidsOn === true);
+	rules.apply({ action: { start: true }, by: "host" });
+	check("two people on their own phones: play starts after START", same(rules.turn(), ["host"]));
 	check("…and a seat marked local is a bot then, under its own name", rules.view({ seat: "sam" }).players[2].kind === "bot" && rules.view({ seat: "sam" }).players[2].name === "Bot Ada");
 	rules.apply({ action: { cell: 0 }, by: "host" });
 	check("…each plays their own seat only", typeof rules.apply({ action: { cell: 1 }, by: "host" }) === "string" && rules.apply({ action: { cell: 5 }, by: "sam" }) === undefined);

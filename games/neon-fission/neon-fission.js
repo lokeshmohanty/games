@@ -26,25 +26,58 @@ function draw01() {
 	return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
 }
 
-// { match, g, ids, names, kinds: "human"|"bot"|"local", owner, last, rng }
+// The "Voids" option is asked before the first game only (Lokesh,
+// 2026-11-23, as Ludo): friends' first game opens on the setup, the host's to
+// change; PLAY AGAIN goes straight in with it; one person (alone with bots or
+// people on their phone) goes straight in with the options last played on
+// this phone (`opts` in the game's storage). At the end the host's phone
+// offers "Next game: … · CHANGE" (`nextGame` / `setNext`, below).
+let lastOpts = null;
+arcade.init.then((m) => {
+	const o = m?.storage?.opts;
+	if (o && typeof o === "object") lastOpts = o;
+});
+const cleanOpts = (o) => ({ voids: o?.voids === true });
+// Who sets the game up: the party's host (anyone, where there is no party: the tests).
+const isHost = (id) => !arcade.party?.host || id === arcade.party.host;
+
+// { match, g, ids, names, kinds: "human"|"bot"|"local", owner, last, rng,
+//   phase: "setup"|"play", opts: { voids }, seed, next }
 let s = null;
 const seatOf = (id) => (s ? s.ids.indexOf(id) : -1);
 const hasLocal = () => s.kinds.includes("local");
 /** The party id that moves for seat `i`: a local seat's person is the owner. */
 const moverOf = (i) => (s.kinds[i] === "local" ? s.owner : s.ids[i]);
 const nameFor = (kind, seat, name) => (kind === "local" ? `Player ${seat + 1}` : name);
+/** A fresh board for `n` seats: with the Voids option, its voids dealt from the match's seed. */
+function newBoard(n, opts, seed) {
+	const size = R.dims(n);
+	return R.newGame(n, size, opts.voids ? R.voidsFor(size.cols, size.rows, seed | 0) : []);
+}
 
-arcade.managed({
+// The rules, held here too: the host's page calls nextGame / setNext on them.
+const fission = {
 	init({ seats, seed, match, first }) {
+		const prev = s;
 		const humans = seats.filter((p) => !p.bot);
 		// The one person seated plays the seats of the people beside them
 		// (the platform's `local`; it keeps them for PLAY AGAIN). With more
 		// than one person there is no one phone to pass: those are bots.
 		const owner = humans.length === 1 ? humans[0].id : null;
 		const kinds = seats.map((p) => (!p.bot ? "human" : owner && p.local ? "local" : "bot"));
+		let saved = null;
+		try {
+			saved = prev ? (prev.next ?? prev.opts) : lastOpts;
+		} catch {}
+		const opts = cleanOpts(saved);
+		const straight = prev ? match > 0 : humans.length <= 1;
 		s = {
 			match: match + 1,
-			g: R.newGame(seats.length),
+			phase: straight ? "play" : "setup",
+			opts,
+			next: null,
+			seed: seed | 0,
+			g: newBoard(seats.length, opts, seed),
 			ids: seats.map((p) => p.id),
 			bare: seats.map((p) => p.name ?? "Player"),
 			names: seats.map((p, i) => nameFor(kinds[i], i, p.name ?? "Player")),
@@ -59,6 +92,21 @@ arcade.managed({
 	},
 	apply({ action, by }) {
 		if (!action || typeof action !== "object") return "no such move";
+		if (s.phase === "setup") {
+			if (!isHost(by)) return "the host sets up the game";
+			if (typeof action.voids === "boolean") {
+				s.opts = cleanOpts({ voids: action.voids });
+				const turn = s.g.turn;
+				s.g = newBoard(s.ids.length, s.opts, s.seed);
+				s.g.turn = turn;
+				return;
+			}
+			if (action.start === true) {
+				s.phase = "play";
+				return;
+			}
+			return "the game has not started";
+		}
 		const g = s.g;
 		if (g.winner !== null) return "the game is over";
 		if (moverOf(g.turn) !== by) return "not your turn";
@@ -75,6 +123,9 @@ arcade.managed({
 		const { cells, orbs } = R.holdings(g);
 		return {
 			match: s.match,
+			phase: s.phase,
+			voidsOn: s.opts.voids,
+			voids: [...(g.voids ?? [])],
 			cols: g.cols,
 			rows: g.rows,
 			owner: g.owner,
@@ -91,16 +142,16 @@ arcade.managed({
 		};
 	},
 	turn() {
-		if (s.g.winner !== null) return [];
+		if (s.g.winner !== null || s.phase === "setup") return [];
 		return [moverOf(s.g.turn)];
 	},
 	bot({ seat }) {
-		if (s.g.winner !== null || s.ids[s.g.turn] !== seat || s.kinds[s.g.turn] !== "bot") return null;
+		if (s.g.winner !== null || s.phase === "setup" || s.ids[s.g.turn] !== seat || s.kinds[s.g.turn] !== "bot") return null;
 		return { cell: R.botMove(s.g, draw01) };
 	},
 	result() {
 		const g = s.g;
-		if (g.winner === null) return null;
+		if (g.winner === null || s.phase === "setup") return null;
 		const ranking = R.standings(g).map((slot) => slot.map((i) => s.ids[i]));
 		const { cells, orbs } = R.holdings(g);
 		const details = [
@@ -108,7 +159,7 @@ arcade.managed({
 			{ label: "Biggest chain", value: g.biggest.bursts ? `${g.biggest.bursts} bursts in ${g.biggest.waves} waves` : "no bursts" },
 		];
 		if (g.winner >= 0) details.push({ label: "Cells held at the end", value: `${cells[g.winner]} cells, ${orbs[g.winner]} orbs` });
-		details.push({ label: "Grid", value: `${g.cols} × ${g.rows}` });
+		details.push({ label: "Grid", value: `${g.cols} × ${g.rows}${g.voids?.length ? `, ${g.voids.length} voids` : ""}` });
 		const out = { kind: "ffa", ranking, details };
 		// Players on this device are bot seats to the platform: the end card
 		// names them as the game does (lib/sdk-managed.js, result `names`).
@@ -125,6 +176,15 @@ arcade.managed({
 	leave({ seat }) {
 		const i = seatOf(seat);
 		if (i < 0) return false;
+		// Before the start a seat that leaves simply goes: the board is dealt again for the rest.
+		if (s.phase === "setup") {
+			const keep = (_, j) => j !== i;
+			const turnId = s.ids[s.g.turn];
+			for (const k of ["ids", "bare", "names", "kinds"]) s[k] = s[k].filter(keep);
+			s.g = newBoard(s.ids.length, s.opts, s.seed);
+			s.g.turn = Math.max(0, s.ids.indexOf(turnId));
+			return true;
+		}
 		if (seat === s.owner) {
 			// Nobody is left to play the local seats: bots take them over.
 			s.kinds = s.kinds.map((k) => (k === "local" ? "bot" : k));
@@ -136,8 +196,23 @@ arcade.managed({
 	snapshot: () => s,
 	restore({ snapshot }) {
 		s = snapshot;
+		s.phase ??= "play"; // a copy from before the setup
+		s.opts ??= cleanOpts(null);
 	},
-});
+	/** Not a rule: the next game's options, for the host's page at the end ("Next game: … · CHANGE"). */
+	nextGame: () => ({ ...(s.next ?? s.opts) }),
+	/**
+	 * Not a rule: pick the next game's options once this one is over (the
+	 * platform takes no moves after the end, so the host's page calls this on
+	 * its own rules, the live ones). PLAY AGAIN starts with them.
+	 */
+	setNext(o = {}) {
+		if (s.phase !== "play" || s.g.winner === null) return "only once the game is over";
+		if (typeof o.voids !== "boolean") return "no such option";
+		s.next = cleanOpts({ ...(s.next ?? s.opts), ...o });
+	},
+};
+arcade.managed(fission);
 
 // ------------------------------------------------------------- the board
 
@@ -145,6 +220,13 @@ const turnEl = document.getElementById("turn");
 const seatsEl = document.getElementById("seats");
 const wrapEl = document.getElementById("wrap");
 const canvas = document.getElementById("board");
+const setupEl = document.createElement("div");
+setupEl.className = "nf-setup";
+setupEl.hidden = true;
+const nextEl = document.createElement("div");
+nextEl.className = "nf-next";
+nextEl.hidden = true;
+wrapEl.append(setupEl, nextEl);
 const c2d = canvas.getContext("2d");
 const reduced = matchMedia("(prefers-reduced-motion: reduce)");
 
@@ -267,7 +349,22 @@ function board(owner, count, { hide = null, lastCell = -1 } = {}) {
 		c2d.lineTo(W, r * cell + 0.5);
 	}
 	c2d.stroke();
-	const sh = R.shape(cols, rows);
+	// Voids: no cell there — the page's own background, a cross, and no grid lines over it.
+	for (const i of view.voids ?? []) {
+		const x = (i % cols) * cell;
+		const y = Math.floor(i / cols) * cell;
+		c2d.fillStyle = tokens.bg;
+		c2d.fillRect(x, y, cell + 1, cell + 1);
+		c2d.strokeStyle = tokens.rule;
+		c2d.lineWidth = 1.5;
+		c2d.beginPath();
+		c2d.moveTo(x + cell * 0.3, y + cell * 0.3);
+		c2d.lineTo(x + cell * 0.7, y + cell * 0.7);
+		c2d.moveTo(x + cell * 0.7, y + cell * 0.3);
+		c2d.lineTo(x + cell * 0.3, y + cell * 0.7);
+		c2d.stroke();
+	}
+	const sh = R.shape(cols, rows, view.voids);
 	for (let i = 0; i < owner.length; i++) {
 		const o = owner[i];
 		const n = hide?.has(i) ? 0 : count[i];
@@ -327,7 +424,7 @@ function paint(now = performance.now()) {
 	const wave = new Set(waves[k]);
 	board(frames[k].owner, frames[k].count, { hide: wave });
 	const colour = seatColour(seat);
-	const sh = R.shape(view.cols, view.rows);
+	const sh = R.shape(view.cols, view.rows, view.voids);
 	for (const i of wave) {
 		const cx = (i % view.cols) * cell + cell / 2;
 		const cy = Math.floor(i / view.cols) * cell + cell / 2;
@@ -354,6 +451,7 @@ function finish() {
 	if (anim) clearTimeout(anim.timer);
 	anim = null;
 	hud();
+	renderNext();
 	paint();
 	// `?.`: a shell from before `idle` (2026-11-15) has no such call.
 	arcade.idle?.();
@@ -363,7 +461,7 @@ function finish() {
 function animate(last) {
 	if (reduced.matches || !last?.before || !last.waves.length) return;
 	const { cols, rows } = view;
-	const sh = R.shape(cols, rows);
+	const sh = R.shape(cols, rows, view.voids);
 	const o = [...last.before.owner];
 	const c = [...last.before.count];
 	o[last.cell] = last.seat;
@@ -393,7 +491,7 @@ function animate(last) {
 }
 
 const canPlay = () =>
-	!!view && view.winner === null && (view.turn === view.you || (view.setter && view.players[view.turn]?.kind === "local"));
+	!!view && view.winner === null && view.phase !== "setup" && (view.turn === view.you || (view.setter && view.players[view.turn]?.kind === "local"));
 
 function hud() {
 	if (!view) return;
@@ -402,7 +500,8 @@ function hud() {
 	const local = players.some((p) => p.kind === "local");
 	let text = "";
 	let sub = "";
-	if (view.winner !== null) text = view.winner >= 0 ? (view.winner === view.you && !local ? "You win" : `${players[view.winner].name} wins`) : "Game over";
+	if (view.phase === "setup") text = "Setting up";
+	else if (view.winner !== null) text = view.winner >= 0 ? (view.winner === view.you && !local ? "You win" : `${players[view.winner].name} wins`) : "Game over";
 	else if (players[view.turn].kind === "local" && view.setter) {
 		text = players[view.turn].name;
 		sub = "pass the phone";
@@ -446,6 +545,111 @@ function hud() {
 	);
 }
 
+// ---------------------------------------------------------------- setup
+//
+// Friends' first game only: the host picks a plain grid or VOIDS (2 to 4
+// cells taken out, turned 180° about the centre) and STARTs; everyone else
+// sees what is picked. The grid behind shows the voids as they are picked.
+
+const el = (tag, className, text) => {
+	const node = document.createElement(tag);
+	if (className) node.className = className;
+	if (text != null) node.textContent = text;
+	return node;
+};
+const optsText = (o) => (o.voids ? "voids" : "plain grid");
+/** PLAIN GRID / VOIDS, the one pressed showing which. */
+function voidButtons(on, pick) {
+	const group = el("div", "nf-choice");
+	group.setAttribute("role", "group");
+	group.setAttribute("aria-label", "Grid");
+	for (const [value, label] of [[false, "PLAIN GRID"], [true, "VOIDS"]]) {
+		const btn = el("button", "neon-btn", label);
+		btn.type = "button";
+		btn.dataset.voids = String(value);
+		btn.setAttribute("aria-pressed", String(on === value));
+		btn.onclick = () => pick(value);
+		group.append(btn);
+	}
+	return group;
+}
+let lastSetup = "";
+function renderSetup() {
+	const on = view?.phase === "setup";
+	setupEl.hidden = !on;
+	wrapEl.classList.toggle("is-setup", on);
+	if (!on) return void (lastSetup = "");
+	const host = arcade.isHost();
+	const key = JSON.stringify([view.voidsOn, host, arcade.party?.host]);
+	if (key === lastSetup) return;
+	lastSetup = key;
+	const parts = [el("h2", null, "NEON FISSION")];
+	if (host) {
+		parts.push(el("p", null, "Voids take a few cells out of the grid: the cells beside them hold one orb fewer."));
+		parts.push(voidButtons(view.voidsOn, (voids) => arcade.act({ voids })));
+		const start = el("button", "neon-btn neon-btn--accent nf-start", "START");
+		start.type = "button";
+		start.onclick = () => arcade.act({ start: true });
+		parts.push(start);
+	} else {
+		const hostName = arcade.party?.members?.find((p) => p.id === arcade.party?.host)?.name || "The host";
+		parts.push(el("p", null, `${hostName} is setting up: ${view.voidsOn ? "voids" : "a plain grid"}.`));
+	}
+	setupEl.replaceChildren(...parts);
+}
+
+// ------------------------------------------------------------ next game
+//
+// At the end the host's phone says what PLAY AGAIN starts — "Next game:
+// plain grid · CHANGE" — over the top of the grid, clear of the shell's card
+// (SEE THE BOARD tucks it to the bottom). The pick goes to the host's own
+// rules, the live ones, and is kept on this phone.
+
+let choosingNext = false;
+function nextGame() {
+	if (!view || view.phase !== "play" || view.winner === null || anim || !arcade.isHost()) return null;
+	try {
+		return fission.nextGame();
+	} catch {
+		return null;
+	}
+}
+function keepOpts(o) {
+	if (JSON.stringify(o) === JSON.stringify(lastOpts)) return;
+	lastOpts = { ...o };
+	arcade.send("store.set", { key: "opts", value: lastOpts });
+}
+let lastNext = "";
+function renderNext() {
+	const n = nextGame();
+	if (!n) choosingNext = false;
+	const key = JSON.stringify([n, choosingNext]);
+	if (key === lastNext) return;
+	lastNext = key;
+	nextEl.hidden = !n;
+	if (!n) return void nextEl.replaceChildren();
+	const change = el("button", "neon-btn nf-next-change", choosingNext ? "DONE" : "CHANGE");
+	change.type = "button";
+	change.setAttribute("aria-label", choosingNext ? "Done choosing the next game" : "Change the next game's grid");
+	change.onclick = () => {
+		choosingNext = !choosingNext;
+		renderNext();
+	};
+	const what = el("span");
+	what.append(document.createTextNode("Next game: "), el("b", null, optsText(n)));
+	const line = el("div", "nf-next-line");
+	line.append(what, change);
+	if (!choosingNext) return void nextEl.replaceChildren(line);
+	nextEl.replaceChildren(
+		line,
+		voidButtons(n.voids, (voids) => {
+			if (fission.setNext({ voids }) !== undefined) return;
+			keepOpts(fission.nextGame());
+			renderNext();
+		}),
+	);
+}
+
 canvas.addEventListener("click", (e) => {
 	if (anim) {
 		// A tap during a chain skips it to the end; it is not a move.
@@ -457,6 +661,7 @@ canvas.addEventListener("click", (e) => {
 	const r = Math.floor((e.clientY - rect.top) / cell);
 	if (c < 0 || c >= view.cols || r < 0 || r >= view.rows) return;
 	const i = r * view.cols + c;
+	if (view.voids?.includes(i)) return arcade.toast("There is no cell there.", "warn");
 	const o = view.owner[i];
 	if (o !== -1 && o !== view.turn) return arcade.toast("That cell is taken: play an empty one or your own.", "warn");
 	arcade.act({ cell: i, n: view.moves });
@@ -472,7 +677,7 @@ addEventListener("resize", resize);
 arcade.on("theme.set", () => paint());
 arcade.on("view", ({ state }) => {
 	const first = !view;
-	const reshaped = !view || view.cols !== state.cols || view.rows !== state.rows;
+	const reshaped = !view || view.cols !== state.cols || view.rows !== state.rows || String(view.voids) !== String(state.voids);
 	const fresh = view && state.match !== view.match;
 	view = state;
 	seatCols = arcade.seatColors?.(state.players.map((p) => p.id ?? "")) ?? [];
@@ -492,6 +697,10 @@ arcade.on("view", ({ state }) => {
 	// The turn line and chips wait for a winning chain to play out, so they
 	// do not announce the winner over it (finish() draws them).
 	if (!anim?.final) hud();
+	// The options played, kept on the host's phone for its next one-person game.
+	if (state.phase === "play" && arcade.isHost()) keepOpts({ voids: !!state.voidsOn });
+	renderSetup();
+	renderNext();
 	if (reshaped || fresh) resize(); // paints
 	else paint();
 	// Nothing to replay: this view is shown (else finish() says so).
