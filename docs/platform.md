@@ -232,7 +232,9 @@ one seat, not the SDK's examples — played once).
 **Where it shows:**
 - a notice (toast) when something unlocks or a record is beaten, over
   whatever is on screen, the end card included — never a dialog;
-- **🏆 Records** in the party's top band, for the game in hand: its records,
+- **🏆 Records** in the party's top band while no game runs, and **🏆 YOUR
+  RECORDS** on the PARTY screen during one (a phone's band has no room for
+  a sixth button then: ← GAMES would lose its word), for the game in hand: its records,
   the platform's rows and its achievements, each with a shape and a word for
   its state (✓ in a filled disc, UNLOCKED · date; 🔒 in a dashed ring,
   LOCKED · progress), never a colour alone;

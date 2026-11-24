@@ -125,14 +125,15 @@ async function recordsAfter(page, game, won) {
 	]) {
 		await page.setViewportSize({ width: w, height: h });
 		await page.waitForTimeout(150);
-		// The top band keeps one row with 🏆 in it: every button on screen, none over another.
-		const band = await page.evaluate(() => {
-			const bs = [...document.querySelectorAll(".top-band a, .top-band button")].filter((b) => b.getClientRects().length).map((b) => ({ c: b.className, r: b.getBoundingClientRect().toJSON() }));
-			const over = bs.some((x, i) => bs.some((y, j) => i < j && x.r.left < y.r.right - 0.5 && y.r.left < x.r.right - 0.5 && x.r.top < y.r.bottom && y.r.top < x.r.bottom));
-			return { n: bs.length, records: bs.some((b) => /top-records/.test(b.c)), right: Math.max(...bs.map((b) => b.r.right)), left: Math.min(...bs.map((b) => b.r.left)), over, short: bs.filter((b) => b.r.height < 44 || b.r.width < 44).map((b) => b.c) };
-		});
-		check(`${w}x${h}: the top band has 🏆 Records, every button 44px, on screen and apart`, band.records && !band.over && band.right <= w && band.left >= 0 && !band.short.length, JSON.stringify(band));
-		await page.locator(".top-records").click();
+		// Mid-game the band is as it was (no 🏆: ← GAMES keeps its word on a
+		// phone); 🏆 YOUR RECORDS is on the PARTY screen, over the end card.
+		const band = await page.evaluate(() => [...document.querySelectorAll(".top-band .top-records")].filter((b) => b.getClientRects().length).length);
+		check(`${w}x${h}: mid-game the top band has no 🏆 (room for ← GAMES); PARTY has 🏆 YOUR RECORDS, 44px`, band === 0, `${band} shown`);
+		await page.locator(".party-pill").click();
+		const mine = page.locator(".party-records");
+		await mine.waitFor({ timeout: TIMEOUT });
+		check(`${w}x${h}: …🏆 YOUR RECORDS is 44px`, (await mine.boundingBox()).height >= 44);
+		await mine.click();
 		const sheet = page.locator("dialog.records-sheet[open]");
 		await sheet.waitFor({ timeout: TIMEOUT });
 		const s = await page.evaluate(() => {
@@ -141,12 +142,13 @@ async function recordsAfter(page, game, won) {
 			const rows = [...d.querySelectorAll(".trophy")].map((li) => ({ state: li.className, mark: li.querySelector(".trophy-mark").textContent, status: li.querySelector(".trophy-status").textContent }));
 			return { title: d.querySelector("h2").textContent, text: d.textContent, rows, r: r.toJSON(), doc: document.documentElement.scrollWidth };
 		});
-		check(`${w}x${h}: "Your records" opens over the end card: the record, the stats, the achievements counted`, /Neon Fission/.test(s.title) && s.text.includes("Biggest chain") && s.text.includes("Played") && /Achievements \d of 7/.test(s.text), s.text.slice(0, 200));
+		check(`${w}x${h}: "Your records" opens over the game: the record, the stats, the achievements counted`, /Neon Fission/.test(s.title) && s.text.includes("Biggest chain") && s.text.includes("Played") && /Achievements \d of 7/.test(s.text), s.text.slice(0, 200));
 		check(`${w}x${h}: …each trophy says its state in a word and a shape: ✓ UNLOCKED or 🔒 LOCKED`, s.rows.length === 7 && s.rows.every((x) => (x.state.includes("is-unlocked") ? x.mark === "✓" && x.status.startsWith("UNLOCKED") : x.mark === "🔒" && x.status.startsWith("LOCKED"))) && s.rows.some((x) => x.status.includes("/ 10")), JSON.stringify(s.rows));
 		const floors = await phoneFloors(page, "dialog.records-sheet[open]", { hit: true });
 		check(`${w}x${h}: …text at least 12px, taps 44px, inside the screen, no sideways scroll`, !floors.text.length && !floors.taps.length && s.r.left >= 0 && s.r.right <= w && s.r.bottom <= h && s.doc <= w, JSON.stringify({ floors, r: s.r, doc: s.doc }));
 		await page.keyboard.press("Escape");
 		await sheet.waitFor({ state: "detached", timeout: TIMEOUT }).catch(() => {});
+		await page.locator("button", { hasText: "BACK TO GAME" }).click();
 	}
 	await page.setViewportSize({ width: 390, height: 844 });
 }
@@ -1775,6 +1777,24 @@ try {
 		await page.locator(".quick-table").waitFor({ timeout: TIMEOUT }).catch(() => {});
 		const t = await page.evaluate(() => ({ game: window.__party.game, n: Number(document.querySelector(".quick-table .quick-n")?.textContent), friends: !!document.querySelector(".quick-table .party-switch") }));
 		check("CHANGE PLAYERS ends the game and shows its table (Players 2), with Play with friends at its bottom", t.game === null && t.n === 2 && t.friends, JSON.stringify(t));
+		// No game running: the band has room, and 🏆 Records is in it (lib/party.js).
+		for (const [w, h] of [
+			[390, 844],
+			[354, 696],
+		]) {
+			await page.setViewportSize({ width: w, height: h });
+			await page.waitForTimeout(150);
+			const band = await page.evaluate(() => {
+				const bs = [...document.querySelectorAll(".top-band .portal-link, .top-band .top-actions > :not([hidden])")].map((b) => ({ c: b.className, r: b.getBoundingClientRect().toJSON() }));
+				const over = bs.some((x, i) => bs.some((y, j) => i < j && x.r.left < y.r.right - 0.5 && y.r.left < x.r.right - 0.5));
+				return { cs: bs.map((b) => b.c), over, right: Math.max(...bs.map((b) => b.r.right)), short: bs.filter((b) => b.r.height < 44 || b.r.width < 44).length };
+			});
+			check(`${w}x${h}: with no game running the top band has 🏆 Records, every button 44px, on screen and apart`, band.cs.some((c) => /top-records/.test(c)) && !band.over && band.right <= w && !band.short, JSON.stringify(band));
+		}
+		await page.setViewportSize({ width: 390, height: 844 });
+		await page.locator(".top-records").click();
+		check("…and it opens Your records", await page.locator('dialog.records-sheet[open] [data-records="neon-fission"]').waitFor({ timeout: TIMEOUT }).then(() => true, () => false));
+		await page.keyboard.press("Escape");
 		await setPlayers(page, 3);
 		await page.locator(".quick-table button", { hasText: "START GAME" }).click();
 		await page.waitForFunction(() => window.__party.game === "neon-fission", null, { timeout: TIMEOUT }).catch(() => {});

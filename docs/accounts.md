@@ -1183,7 +1183,7 @@ the branch is merged:
 - `test-bots` plays Neon Fission against a bot to the end and checks the
   unlocks (Regular as the tenth game; First Win exactly when won), the
   notice, the record from the result's facts, the time and wins per bot
-  count; then 🏆 Records over the end card and the profile's trophies at
+  count; then 🏆 YOUR RECORDS from PARTY over the end card, 🏆 in the band with no game running, and the profile's trophies at
   390×844 and 354×696 (12px text, 44px taps, ✓/🔒 with words).
 - `just test-accounts` — the API under `wrangler dev` with a local D1 and a
   fake GitHub/Google (OAuth, App JWT, GraphQL, Git Data); solo runs (issued,

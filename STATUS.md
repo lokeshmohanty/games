@@ -21,7 +21,7 @@ personal records and achievements (Lokesh, 2026-11-21) — game.json
 `achievements`/`records`, data-only conditions on the result
 (lib/achievements.js, shared by the device, manifest.mjs and the Worker);
 lib/records.js on the device, synced to D1 `records` (migration 0007, not
-applied) and shown to friends only; 🏆 Records in the top band, the
+applied) and shown to friends only; 🏆 Records in the top band (PARTY screen mid-game), the
 profile's trophies, a friend's 🏆 TROPHIES in the party. Declared here for
 Connect 4, Neon Fission, Neon Bid, Neon Survival; web-games branch
 `achievements` (8 games, with the `facts`/`seatFacts` they read) and
