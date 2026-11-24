@@ -57,6 +57,13 @@ twelfth lot, gems score and the most points wins.
 Plus **4 points** for owning at least one gem of every colour. Ties on points
 break by credits left; still tied → shared win.
 
+**Hot colour** (an option, 2026-11-24): the host may turn it on before the
+first game (the setup shows only for friends' first game; NEW GAME keeps it;
+"Next game: … · CHANGE" at the end). One colour is drawn with the lot order
+and published with it, so it is as public as the order; that colour's set
+scores 1 more (`HOT_BONUS`: 2/4/7). The bot counts it in its valuation, and
+the "worth to you" line says `hot +1` for a first gem of it.
+
 ## Why these rules
 
 - **Second price** rewards bidding what a gem is really worth to you, and

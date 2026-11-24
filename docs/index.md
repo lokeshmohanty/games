@@ -1537,11 +1537,41 @@ Where the brains live:
 
 | Game | Brain | Where |
 |---|---|---|
-| Connect 4 | minimax + alpha-beta, 5 plies, centre-first move ordering | `games/connect4/connect4.js` |
+| Connect 4 | minimax + alpha-beta, 5 plies, centre-first move ordering; a seeded pick among near-best columns (below) | `games/connect4/connect4.js` |
 | Neon Survival | steering: inverse-square flee from enemies, drift to gems, wall push-off, speed-capped | `games/neon-survival-mp/neon-survival-mp.js` |
 | Neon Bid | marginal points (plus a share of the rainbow) + half the leader's gain, scaled by credits per lot it can expect to win, ±15% noise | `games/neon-bid/neon-bid.js` (`NeonArcade.neonBidRules.botBid`) |
 | Neon Fission | every legal cell simulated in full (chains included) and judged (material, safe corners and edges, loaded cells, cells beside an enemy one orb from bursting); the best 8 checked against the next player's strongest reply; takes a win at once | `games/neon-fission/rules.js` (`botMove`) |
 | Draw & Guess | none — `bots: false` in its registration | — |
+
+### Variety, from the seed (2026-11-24)
+
+Lokesh, 2026-11-24, asked for some randomness so games do not all play out
+alike. Each change is dealt from the managed `init`'s `seed` (docs/sdk-v2.md
+"Managed state"), and its generator's state rides in the snapshot, so a run
+replays from its seed and an heir carries on as the host would have. The two
+protocol games (Neon Bid, Liar's Dice) have no managed seed: their host draws
+with `Math.random`, as their deals always did.
+
+| Game | What varies | Where |
+|---|---|---|
+| Connect 4 | the bot picks at random among columns within `MARGIN` (8, one "two in a line") of its best; never among wins or losses | `games/connect4/connect4.js` (`columnFor`, `rng` in the state, not the view) |
+| Tic Tac Toe (all seven lanes) | between equal squares (several wins, several blocks, or any free square once the centre is gone), one picked by `pickOf(seed, marks, n)`: one Park–Miller step, exact in every language, so test-conformance's transcripts still match | `sdk/v2/examples/tic-tac-toe-*/`; the seed is in each lane's snapshot, never its view |
+| Neon Survival | the whole run (spawns, gems, bots' entry points) from `seed`; every 20 s a wave event — a burst from one side, fast drones, a gem rain, slow-mo — with a banner (`ev` in the view) | `games/neon-survival-mp/neon-survival-mp.js` (`rand`, `startEvent`) |
+| Neon Fission | **Voids**, a setup option: 2 or 4 cells out of the grid in 180° symmetry, off the border and apart; their neighbours' capacity drops | `games/neon-fission/rules.js` (`voidsFor`, `shape(cols, rows, voids)`) |
+| Neon Bid | **Hot colour**, a setup option: one colour, drawn at the deal and shown from the start, whose set scores `HOT_BONUS` (1) more | `games/neon-bid/rules.js` (`score(hand, hot)`) |
+| Light Cycles (web-games) | the seats dealt to the n designed spawns in a shuffled order each round; **Obstacles**, a setup option | web-games `light-cycles/light-cycles-rules.js` |
+| Liar's Dice (web-games) | each bot's bluffing slack, drawn per game between 0.9 and 1.4 | web-games `liars-dice/liars-dice-rules.js` (`botSlack`) |
+
+The setup options are asked before the first match only (Lokesh, 2026-11-23,
+as Ludo): friends' first match opens on the host's setup; PLAY AGAIN (NEW GAME
+in Neon Bid) goes straight in; one person (alone, with bots, or with people on
+their phone) goes straight in on the options kept on their phone (`opts` in
+the game's storage); at the end the host's phone says "Next game: … · CHANGE"
+(`nextGame()` / `setNext()` on the host's own rules). Tested by
+scripts/test-randomness.mjs, test-neon-fission.mjs, test-neon-bid.mjs,
+test-conformance.mjs, and on phones by test-taps.mjs (the setups, Neon Fission
+and Light Cycles' next-game line) and test-bots.mjs (Neon Survival's banner,
+Neon Bid's next game and hot colour).
 
 Draw & Guess opts out on purpose. A bot that draws is replaying a canned doodle
 and a bot that guesses is reading the word it was handed; neither is an
