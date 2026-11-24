@@ -236,16 +236,17 @@ try {
 		check("…and p3's picker shows Green taken, and that p3 has the nearest free one (Orange)", told, await p3.evaluate(() => document.querySelector(".color-says")?.textContent));
 		await p2.locator('.color-swatch[data-color="1"]').first().click();
 		check("p2 moves to Yellow: p3's wish for Green is granted", (await shows(host, n3, 4)) && (await shows(p3, n2, 1)), `${await shown(host, n2)} ${await shown(host, n3)}`);
-		// Taken is whatever a pick would not get you (review, 2026-11-24): the
-		// host's colour, though the host never picked, and the stand-in an
-		// earlier picker holds while waiting for theirs.
+		// Pickers beat non-pickers (Lokesh, 2026-11-24): the host never
+		// picked, so a guest who picks the host's Red gets it, and the host
+		// moves to the nearest free colour. Taken is whatever a pick would not
+		// get you: Red now (p2 picked it), not the colour the host was only given.
+		const hostId = await idOf(host);
 		await p2.locator('.color-swatch[data-color="0"]').first().click();
-		await p2.waitForFunction(() => window.__party.room.self().colorWant === 0, null, { timeout: TIMEOUT });
-		check("p2 wants Red, the host's: the host keeps it (nobody holding a colour is moved), p2 keeps Yellow meanwhile", (await shows(host, n2, 1)) && (await shown(host, await idOf(host))) === "0");
+		check("p2 picks Red, the host's (never picked): p2 gets it on every screen, the host moves to the nearest free (Yellow)", (await shows(host, n2, 0)) && (await shows(p3, n2, 0)) && (await shows(p3, hostId, 1)), `${await shown(p3, n2)} ${await shown(p3, hostId)}`);
 		const struck = await p3
-			.waitForFunction(() => ["0", "1"].every((c) => document.querySelector(`.color-swatch[data-color="${c}"]`)?.classList.contains("is-taken")) && !document.querySelector('.color-swatch[data-color="2"]')?.classList.contains("is-taken"), null, { timeout: TIMEOUT })
+			.waitForFunction(() => document.querySelector('.color-swatch[data-color="0"]')?.classList.contains("is-taken") && !document.querySelector('.color-swatch[data-color="1"]')?.classList.contains("is-taken"), null, { timeout: TIMEOUT })
 			.then(() => true, () => false);
-		check("…and p3's picker strikes both Red (the host's) and Yellow (p2's stand-in), not a free one", struck, await p3.evaluate(() => [...document.querySelectorAll(".color-swatch.is-taken")].map((b) => b.dataset.color).join()));
+		check("…and p3's picker strikes Red (p2 picked it), not Yellow (the host was only given it)", struck, await p3.evaluate(() => [...document.querySelectorAll(".color-swatch.is-taken")].map((b) => b.dataset.color).join()));
 		// The picker on the party screen, on a phone.
 		for (const [w, h] of [
 			[390, 844],
