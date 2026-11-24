@@ -6,7 +6,7 @@ Lokesh chose pnpm.*
 ## Why
 
 Until Phase 4 every view was its own HTML page. Moving between them
-(portal → party → leaderboard → profile) reloaded the page, which dropped
+(portal → party → profile) reloaded the page, which dropped
 the party's WebRTC connections. The framework re-measure of 2026-11-14
 found that the shell's DOM-from-state code had grown to 35–40% of it (the
 `webdev` skill's memory `solidjs-vs-vanilla`). And Phase 1 had found the
@@ -27,11 +27,11 @@ GitHub Pages has no rewrites, and the hash already carries invites (`#i=`,
 |---|---|
 | `./` | the portal, on the sub-tab the router picks (below) |
 | `./?page=games&tab=mine`, `./?page=games&tab=all` (with `&q=…`, a search; `&genre=<id>`, a genre's page) | the portal's sub-tabs, My Games and All Games |
-| `./?page=leaderboard` (or `profile`, `contribute`, `contributors`, `collections`) | that view; its own query parameters ride along |
+| `./?page=profile` (or `contribute`, `contributors`, `collections`) | that view; its own query parameters ride along. `./?page=leaderboard` (gone 2026-11-25) is replaced by `./?page=profile` as it is entered (`legacyAddress`) |
 | `./?game=connect4`, `?mode`, `?fresh`, `?dev`, `?party`, or an invite or code hash (`./?party#i=…`) | the party |
 
 These are the only addresses. The old pages (`party.html`,
-`leaderboard.html`, `connect4.html`, …) were redirect stubs into them until
+`connect4.html`, …) were redirect stubs into them until
 2026-11-15, when they were deleted (Lokesh's decision): every link in the
 shell, the manifest's `start_url` (`./`) and shortcut (`./?party`), and the
 dev kit's printed links use the addresses above. **Every `party.html` link
@@ -228,8 +228,8 @@ contribute, contributors; collections is new (no old page: the nav links
   weigh against lib/styles.css exactly as they did on their own page. A plain `.view-x a` prefix outranked
   `.neon-btn--accent` and turned button text the colour of its background.
 - **The site nav** is lib/nav.js, drawn into `nav[data-nav]` in `onMount`.
-  It is one row on phone and desktop: the tabs Games · Leaderboards ·
-  Community, and a ☰ menu at the right holding Add your game, Theme, sign in
+  It is one row on phone and desktop: the tabs Games · Community (no
+  Leaderboards since 2026-11-25), and a ☰ menu at the right holding Add your game, Theme, sign in
   or the profile, and the source on GitHub. Games has its own sub-tabs, My
   Games · All Games (the portal sets `data-page="mine|all"`), and Community
   Collections · Contributors, opening on Collections; the sub-tab row sits

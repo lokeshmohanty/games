@@ -4,7 +4,7 @@
 //   GET    /api/friends              { friends: [{id,name,avatar,online,game,muted}],
 //                                      incoming, outgoing, blocked }
 //   GET    /api/friends/recent       { players: [{id,name,avatar,game,at}] } —
-//                                      people from your recent ranked matches
+//                                      people from your recent matches
 //                                      who are not friends, blocked or hidden
 //   POST   /api/friends/<who>        ask — or accept, if they asked first.
 //                                    <who> is an account id or a friend code
@@ -25,8 +25,8 @@
 //
 // The friend code (0005): eight letters and digits without look-alikes,
 // given lazily, rotatable. A friend link or QR carries it (./?page=profile&u=
-// <code>); a link by account id still works (the id is public on boards
-// anyway — block is the answer to someone who uses it). Looking a code up is
+// <code>); a link by account id still works (the id is public in match
+// histories anyway — block is the answer to someone who uses it). Looking a code up is
 // charged to the sender's address like a write, so codes cannot be walked.
 // Online means a page of theirs holds the live socket (live.js) and they have
 // not chosen "appear offline"; `game` is what that page is playing.
@@ -310,8 +310,8 @@ export async function mute(env, me, other, on) {
 }
 
 /**
- * People from your most recent ranked matches you might add: not you, not a
- * friend, nobody blocked either way, nobody hidden from public boards.
+ * People from your most recent matches you might add: not you, not a
+ * friend, nobody blocked either way, nobody hidden (hide_public).
  * Bounded: the last 50 matches, a dozen people.
  */
 export async function recentPlayers(env, me) {
@@ -493,18 +493,10 @@ export async function getGroup(env, me, id) {
 		env.DB.prepare("SELECT a.id, a.name, a.avatar, gm.joined FROM group_members gm JOIN accounts a ON a.id = gm.account WHERE gm.grp = ? ORDER BY gm.joined, a.id").bind(id),
 	);
 	if (!members.some((m) => m.id === me.id)) throw new HttpError(403, "you are not in that group");
-	// The games its members are ranked in: the boards worth a link (the
-	// group's board then counts only their games against each other).
-	const games = (
-		await all(
-			env.DB.prepare(
-				`SELECT r.game, COUNT(*) AS n FROM ratings r JOIN group_members gm ON gm.account = r.account
-				 WHERE gm.grp = ? GROUP BY r.game ORDER BY n DESC, r.game LIMIT 24`,
-			).bind(id),
-		)
-	).map((r) => r.game);
+	// No group boards since 2026-11-25 (casual, not competitive): a group is
+	// its members, to find and invite.
 	const mine = g.owner === me.id;
-	const out = { ...g, mine, members, games };
+	const out = { ...g, mine, members };
 	if (mine) {
 		out.bans = await all(env.DB.prepare("SELECT a.id, a.name, b.at FROM group_bans b JOIN accounts a ON a.id = b.account WHERE b.grp = ? ORDER BY b.at DESC LIMIT 100").bind(id));
 	}

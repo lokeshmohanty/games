@@ -1,0 +1,29 @@
+<!doctype html>
+<!-- leaderboard.html — gone (2026-11-25: no boards; party standings and
+     head-to-head only, docs/accounts.md "No boards"). A bookmark of the old
+     page lands on the profile, where head-to-head lives; ?rs= rides along
+     (src/router.ts legacyAddress does the same for ./?page=leaderboard). -->
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="robots" content="noindex" />
+    <title>Arcade Games</title>
+    <meta http-equiv="refresh" content="0; url=./?page=profile" />
+    <script>
+      (() => {
+        const q = new URLSearchParams(location.search);
+        const out = new URLSearchParams([["page", "profile"]]);
+        for (const k of ["rs", "mockroom"]) if (q.has(k)) out.set(k, q.get(k));
+        location.replace(`./?${out}`);
+      })();
+    </script>
+    <style>
+      body { margin: 0; padding: 16px; font: 16px/1.5 system-ui, sans-serif; }
+      a { display: inline-block; min-height: 44px; line-height: 44px; }
+    </style>
+  </head>
+  <body>
+    <p>The leaderboards are gone. <a href="./?page=profile">Your profile</a> shows how you do against the people you play.</p>
+  </body>
+</html>

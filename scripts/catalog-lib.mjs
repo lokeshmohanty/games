@@ -59,8 +59,6 @@ export function catalogEntries(files, root) {
 			// Bot seats may be people on the host's phone (the quick table's PERSON); omitted when not.
 			...(m.sameDevice === true && m.bots !== false ? { sameDevice: true } : {}),
 			kind: m.kind,
-			// No online boards for it (game.json "leaderboard": false); omitted when it has them.
-			...(m.leaderboard === false ? { leaderboard: false } : {}),
 			tags: m.tags ?? [],
 			categories: categoriesOf(m),
 			// The rules (Markdown, in the folder): shown on a first visit and behind "?".

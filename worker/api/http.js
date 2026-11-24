@@ -5,7 +5,7 @@
 // makes the browser ask first (a preflight). So: an allowlist of origins
 // (ALLOWED_ORIGINS, comma-separated, plus any loopback origin), answered with
 // that origin, never `*`, on anything that needs a sign-in. Public reads
-// (counts, leaderboards, a public profile, feedback) are open to every origin.
+// (counts, a public profile, feedback) are open to every origin.
 
 export const DEFAULT_ORIGINS = "https://www.lokeshmohanty.in,https://lokeshmohanty.github.io";
 

@@ -962,7 +962,8 @@ canvas {
   letter-spacing: 0.06em;
   text-transform: uppercase;
 }
-/* The rating change under the ranking (lib/account.js endCard). */
+/* The head-to-head under the ranking, "You 5–3 Asha" (lib/account.js
+   endCard; the class keeps its old name). */
 .managed-over p.managed-rating {
   align-self: center;
   font-family: var(--font-mono);
@@ -1633,7 +1634,7 @@ canvas {
   cursor: pointer;
 }
 
-/* lib/nav.js: one row, the tabs (Games · Leaderboards · Community) and the
+/* lib/nav.js: one row, the tabs (Games · Community) and the
    ☰ menu (Add your game, Theme, account, GitHub); the sub-tabs of Games
    (My Games · All Games) or Community under it. The row's height is held
    so the static first frame (index.html) does not jump when the nav is

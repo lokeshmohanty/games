@@ -2038,7 +2038,7 @@ try {
 			console.log(`  FAIL page error: ${err.message}`);
 			failures++;
 		});
-		/** Fission's table at 3, seat 2 a PERSON or a BOT; record the runs asked for (lib/account.js startRun); START. */
+		/** Fission's table at 3, seat 2 a PERSON or a BOT; record any run asked for (there are none since 2026-11-25: no boards); START. */
 		const startWithPerson = async (personHere) => {
 			await r.goto(url("?game=neon-fission&fresh=1&mode=bots"));
 			await setPlayers(r, 3);
@@ -2060,7 +2060,7 @@ try {
 		let got = await startWithPerson(true);
 		check("with a PERSON at the table, the game seats them (local) and no run against bots is asked for", got.kinds === "human,local,bot" && !got.runs.some((x) => x.vs === "bots"), JSON.stringify(got));
 		got = await startWithPerson(false);
-		check("…the same table with that seat a BOT: the run against bots is asked for", !got.local && got.kinds === "human,bot,bot" && got.runs.some((x) => x.vs === "bots" && x.game === "neon-fission"), JSON.stringify(got));
+		check("…the same table with that seat a BOT: seated as a bot, and still no run asked for (no boards)", !got.local && got.kinds === "human,bot,bot" && got.runs.length === 0, JSON.stringify(got));
 		// A tap (start=1) plays the table last played, PERSON seats included
 		// (Lokesh, 2026-11-22: "Yes, reuse the table"): a group passing one
 		// phone just taps and plays.

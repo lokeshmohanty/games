@@ -201,7 +201,7 @@ console.log("\npwa: every page is part of the app");
 for (const p of [
 	"./?party",
 	"./?page=profile",
-	"./?page=leaderboard",
+	"./?page=collections",
 	"./?page=contributors",
 	"./?page=contribute",
 	"./?game=connect4&fresh=1",

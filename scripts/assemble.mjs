@@ -50,9 +50,11 @@ for (const dir of ["lib", "sdk", "games", "assets", "registry", "community"]) {
 	if (!existsSync(from)) continue;
 	cpSync(from, join(DIST, dir), { recursive: true, filter: (src) => keep(relative(ROOT, src).split("\\").join("/")) });
 }
-// …and any other root file sw.js names (CONTRIBUTING.md: the contribute view renders it).
+// …and any other root file sw.js names (CONTRIBUTING.md: the contribute view
+// renders it). leaderboard.html: a stub that sends an old bookmark to the
+// profile (the boards went on 2026-11-25, src/router.ts legacyAddress).
 const rootListed = [...readFileSync(join(ROOT, "sw.js"), "utf8").matchAll(/"\.\/([^"/]+\.[a-z]+)"/g)].map((m) => m[1]).filter((f) => f !== "index.html");
-for (const f of new Set(["manifest.webmanifest", "contributor.json", ...rootListed])) if (existsSync(join(ROOT, f))) cpSync(join(ROOT, f), join(DIST, f));
+for (const f of new Set(["manifest.webmanifest", "contributor.json", "leaderboard.html", ...rootListed])) if (existsSync(join(ROOT, f))) cpSync(join(ROOT, f), join(DIST, f));
 // The dev kit's old public address, for authors who fetched it from there
 // (CONTRIBUTING.md once said so). A copy of sdk/dev-server.mjs, not kept in
 // the source tree. Transition only: remove on 2027-02-15 (docs/platform.md).

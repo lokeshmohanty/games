@@ -23,7 +23,7 @@
  *   --p1 … --p8                    player colours, in seat order
  *
  * Type, three roles (the ui skill): --font-display (titles), --font-body
- * (text), --font-mono (values: counts, codes, ratings, tags). Self-hosted in
+ * (text), --font-mono (values: counts, codes, records, tags). Self-hosted in
  * assets/fonts (SIL OFL 1.1, see LICENSES.txt), latin subset.
  */
 

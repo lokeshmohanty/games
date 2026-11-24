@@ -679,10 +679,10 @@ try {
 	fx.stop();
 
 	// ---------------------------------------------------------------- 4
-	console.log("\nmanaged: PLAY AGAIN alone while the server's run is slow");
-	// Signed in and alone, a rematch waits for the server's run (lib/account.js
-	// startRun). The finished match must not tick meanwhile: it re-reported its
-	// result into the new match and froze it (review, 2026-11-15).
+	console.log("\nmanaged: PLAY AGAIN alone: the old match stays finished");
+	// A rematch waits for the rules' init (until 2026-11-25 also for a
+	// server-issued run). The finished match must not tick meanwhile: it
+	// re-reported its result into the new match and froze it (review, 2026-11-15).
 	{
 		const solo = await devServer("scripts/fixtures", 5197, "tick-game");
 		const S = await party(solo.base, 1);
@@ -696,11 +696,6 @@ try {
 		await sf.evaluate(() => window.arcade.input(150)); // over 200 in two ticks
 		const ended = await sp.locator(".managed-over button", { hasText: "PLAY AGAIN" }).waitFor({ timeout: TIMEOUT }).then(() => true, () => false);
 		check("(a solo run ends)", ended);
-		// The server's run answers in 0.8 s from now on.
-		await sp.evaluate(() => {
-			NeonArcade.account = NeonArcade.account ?? {};
-			NeonArcade.account.startRun = () => new Promise((done) => setTimeout(() => done(null), 800));
-		});
 		await sf.evaluate(() => window.arcade.input(0)); // the new run: no score
 		await sp.locator(".managed-over button", { hasText: "PLAY AGAIN" }).click();
 		await new Promise((r) => setTimeout(r, 2000));

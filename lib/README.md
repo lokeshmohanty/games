@@ -39,7 +39,7 @@ mesh — once per person, never per pair.
 
 - **`portal.js`** — the home screen's sections and game cards, genre pages, search; a card's one tap (`tapLink`).
 - **`names.js`** — friendly random player names ("Brave Otter"): the first visit's suggestion (`src/NamePrompt.tsx`) and `defaultName()`.
-- **`leaderboard.js`**, **`profile.js`**, **`collections.js`**, **`contributors.js`** — the logic behind those views (`src/views/`).
+- **`profile.js`**, **`collections.js`**, **`contributors.js`** — the logic behind those views (`src/views/`).
 - **`nav.js`** — the tab row and ☰ menu on the arcade's own views.
 - **`markdown.js`** — just enough Markdown for CONTRIBUTING.md (the Add your game view) and rules.
 - **`propose.js`** — opens GitHub's page for proposing games, filled in (as `scripts/propose.mjs`).
@@ -73,7 +73,7 @@ Elsewhere:
 - [docs/platform.md](../docs/platform.md) — the sandbox, the manifest, results, registry and pins, the dev kit, web apps (`bridge.js`, `py-server.js`).
 - [docs/spa.md](../docs/spa.md) — how the shell is built and served.
 - [docs/room-server.md](../docs/room-server.md) — the room server, join by code, rejoin, who offers to whom (`room-join.js`).
-- [docs/accounts.md](../docs/accounts.md) — sign-in, leaderboards and the social layer (`account.js`, `leaderboard.js`, `profile.js`).
+- [docs/accounts.md](../docs/accounts.md) — sign-in, head-to-head and the social layer (`account.js`, `profile.js`).
 - [docs/network-testing.md](../docs/network-testing.md) — the NAT lab.
 - The `multiplayer` skill (`.agents/skills/multiplayer/`) — the P2P layer's traps and decisions.
 - Tests: `just test` runs every suite ([docs/development.md](../docs/development.md), "Tests").

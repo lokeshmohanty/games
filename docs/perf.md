@@ -42,8 +42,10 @@ full run takes a few minutes.
     - It times the START GAME button appearing, taps it if needed (and
       records that a tap was needed), then times until the game's sandboxed
       frame is up (`gameFrame()`: `window.__game.handle` exists).
-  - **leaderboard**: `./?page=leaderboard` until `load` (`leaderboard.html`,
-    its own page, in the measurements before 2026-11-15).
+  - **profile**: `./?page=profile` until `load`. Until 2026-11-25 this was
+    **leaderboard** (`./?page=leaderboard`; `leaderboard.html`, its own page,
+    before 2026-11-15) — the tables below keep that name: they were
+    measured then.
 - **Columns:** medians of N runs. FCP and LCP come from the Performance API.
   *to START* and *to frame* are wall-clock times from navigation start.
   *transferred* sums the `transferSize` of the navigation and every resource.

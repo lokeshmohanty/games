@@ -199,23 +199,29 @@
   margin-bottom: 8px;
   color: var(--accent);
 }
-.view-profile .boards {
-  display: grid;
-  gap: 10px;
-}
-.view-profile .chip {
-  display: inline-flex;
-  align-items: center;
-  min-height: 40px;
-  padding: 0 12px;
-  border: 1px solid var(--border);
-  border-radius: 999px;
+/* Head-to-head (lib/profile.js): a person you played, a row to tap through
+   to their profile; your record against someone, large. */
+.view-profile a.item.rival {
+  min-height: 44px;
   color: var(--ink);
   text-decoration: none;
-  font-size: 0.85rem;
 }
-.view-profile .chip:hover {
-  border-color: var(--accent);
+.view-profile a.item.rival:hover .grow {
+  color: var(--accent);
+}
+.view-profile .item .n {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+.view-profile .vs-total {
+  margin: 0;
+  font-size: 1.1rem;
+  overflow-wrap: anywhere;
+}
+.view-profile .vs-score {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 1.6rem;
   color: var(--accent);
 }
 .view-profile .won {

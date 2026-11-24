@@ -16,6 +16,20 @@ separate `TODO.md`.*
 
 ## Now (2026-11-18)
 
+**Branch `standings` (2026-11-25, PR open, not merged):** no boards
+(Lokesh, memory `casual-not-competitive`): leaderboards, friends'/group
+boards, boards against bots, Elo ratings, solo runs, Sudoku's server check
+and bot-win checks removed; `/api/lb/…` and `/api/run/start` answer 410;
+`./?page=leaderboard` and `leaderboard.html` land on the profile.
+Head-to-head instead, read from `match_players` (profile `vs`, `/api/me/
+matches` `rivals`, the end card's "You 5–3 Asha"); the manifest's
+`leaderboard` field is retired (Connect 4 etc. now count). Party standings
+unchanged. No migration; after merge: `just deploy-worker`. **Later,
+explicit step:** a migration dropping the dead tables `ratings`, `runs`,
+`bot_wins` (still read by the export, deleted with an account; remove
+those reads in the same change). VERIFY with Lokesh: whether groups
+(now only a member list) should go too.
+
 **Branch `records` (2026-11-24, PR open; community sides merged):**
 personal records and achievements (Lokesh, 2026-11-21) — game.json
 `achievements`/`records`, data-only conditions on the result

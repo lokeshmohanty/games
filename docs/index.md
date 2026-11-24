@@ -14,7 +14,7 @@ questions about this project from this folder alone.
 - [Hidden information](#hidden-information) — sealed private state, and commit-reveal
 - [Rounds and phases](#rounds-and-phases) — the shared clock for timed and simultaneous-turn games
 - [Adding a game](#adding-a-game) — where the author's guide and the protocol live
-- [Accounts and the social layer](accounts.md) — sign-in, ranked matches, leaderboards (ranked, solo runs, and wins against bots kept apart), friends, invites, groups, feedback, the public snapshot; what is stored; the one-time setup
+- [Accounts and the social layer](accounts.md) — sign-in, confirmed matches and head-to-head (no boards or ratings since 2026-11-25), friends, invites, groups, feedback, the public snapshot; what is stored; the one-time setup
 - [A prompt for contributors' AI](contributor-prompt.md) — paste into an AI assistant to adapt or write a game for the platform
 - [Suggestions](suggestions.md) — formalising and improving the platform: contract, contributors, quality, trust, players, operations
 - [Developing the arcade](development.md) — running it, where the code is, the stack and why, tests, the service worker, previews and icons
@@ -249,8 +249,7 @@ fixed 2026-11-19, branch `phone-shell`)**, asserted with computed sizes
   from a 48px pad), its pencil notes 11px at 354; Battleship's squares
   under 390px wide (44px from 390).
 
-Not covered by that pass: the leaderboard view still scrolls sideways at
-200% text, and it and Contributors keep a few labels under 12px
+Not covered by that pass: Contributors keeps a few labels under 12px
 (9.6–11.5px); iOS remains unverified. **UNSURE:** the long press that shows
 a card's two buttons on a touch screen is the browser's `contextmenu`,
 tested only as that event: unverified on a real Android phone, and Safari

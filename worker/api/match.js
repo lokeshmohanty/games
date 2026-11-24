@@ -1,15 +1,20 @@
 // worker/api/match.js — results: anonymous play counts, confirmed matches,
-// ratings, match history, public profiles.
+// match history and head-to-head records.
 //
 // Counts (no sign-in): the host reports each finished match once —
 //   POST /api/stats/played { game, bots }   → plays[game].count++
 //   GET  /api/stats/summary                 → { games: { id: { played } } }
 //
 // A game is known by the generated table only (worker/api/games.js, from the
-// catalogs the site lists): any other id is refused — counts, results,
-// boards — and a result must be of its game's kind (kindFits).
+// catalogs the site lists): any other id is refused, and a result must be of
+// its game's kind (kindFits).
 //
-// Leaderboard matches (signed in): every signed-in player in a match reports
+// No boards, no ratings (Lokesh, 2026-11-25: casual, not competitive — party
+// standings and head-to-head only). What is kept of a match is who played it
+// and in what place, so two people can see how they do against each other
+// (headToHead, below; worker/api/people.js, lib/profile.js).
+//
+// Matches among people (signed in): every signed-in player in a match reports
 // it — POST /api/match/report { game, run, match, kind, ranking, scores?,
 // roster, seats, left? } — where `roster` maps the party ids in `ranking`
 // and `left` to account ids (party members publish theirs, lib/account.js),
@@ -19,28 +24,11 @@
 // keeps the report. A match **counts** when accounts that played in it have
 // sent the *same* result — for those accounts only (below); a different
 // result from anyone in it voids the match; a report nobody confirms within
-// 15 minutes is dropped. Bots never count (Lokesh, 2026-11-13: leaderboards
-// are human-only), nor does a match with fewer than two accounts, nor "local"
-// (one-phone) games — except a SOLO run (one player, no bots, `seats` 1, in a
-// game listed in runs.js SOLO: Sudoku, Neon Survival alone), which counts on
-// its player's own report (Lokesh, 2026-11-15). Nobody can confirm
-// it, so the server takes part instead: a solo report's `run` must be one the
-// server issued as the game began (POST /api/run/start), unused, the
-// reporter's own and for this game, and the score must be plausible for the
-// time since — or, for Sudoku, the solved grid checks out (worker/api/runs.js,
-// worker/api/sudoku.js). It is recorded as a run (games, best score; for a
-// "time" board the lowest; Sudoku on one board per difficulty), never a win
-// over anybody, and never Elo.
-//
-// A ranking with a bot in it never reaches the ratings either. If its one
-// person won, under a run the server issued for a match against bots, the
-// win goes to the game's separate board of wins against bots
-// (worker/api/bots.js; Lokesh, 2026-11-15) — and nowhere else.
-//
-// Ratings, per account per game: duel, free-for-all and teams → a skill
-// rating in `elo` (pairwise Elo, ratingDeltas; K 48 for an account's first 10
-// rated games of a game — "provisional" — then 32; from 1200); every kind →
-// games and wins (first place); coop → best score.
+// 15 minutes is dropped. This is what keeps one player from writing another's
+// head-to-head record alone; it is not anti-cheat beyond that. A match with a
+// bot in it, with fewer than two accounts, or a "local" (one-phone) game is
+// not recorded: head-to-head is between people (the device keeps its own
+// stats and records either way, lib/stats.js, lib/records.js).
 //
 // Who a confirmed match is recorded for (an audit, 2026-11-15: two accounts
 // could record a match for a third that never reported it; account ids are
@@ -51,8 +39,8 @@
 //   - else after MATCH_GRACE_MS from the first report (at the next report, or
 //     when the reports expire, worker sweep), with only the reporters, when at
 //     least two agree.
-// A named account that did not report gets nothing: no row in the match, no
-// rating, no game counted — except under the leaver rule.
+// A named account that did not report gets nothing: no row in the match —
+// except under the leaver rule.
 //
 // Leaving is a loss (Lokesh, 2026-11-16). A report's `left` names the party
 // ids seated when the match began (lib/account.js matchStart) that left the
@@ -74,9 +62,7 @@
 //   4. its seated page has stopped beating: a page in a match re-posts its
 //      start every 60 s (lib/account.js), and a departure needs the start's
 //      last beat older than MATCH_STALE_MS (4.5 min) — whatever any
-//      other page of that account says (a review, 2026-11-16: presence was
-//      one row per account, so a second page on the home screen made a
-//      player still in the match look gone).
+//      other page of that account says.
 // A colluder therefore cannot name an account that never sat down with them
 // in that very match (1), nor one still playing it (3, 4). A report from an
 // account recorded as having left is told the match counted against it. Only managed
@@ -84,14 +70,18 @@
 // they send starts; in a game that runs its own matches a departure is never
 // recorded (the leaver simply gets nothing).
 //
-// The report's answer carries the reporter's new rating and its change
-// (`rating`: { elo, delta, provisional, rated }), so the end card can say
-// "+12 → 1534" (lib/account.js endCard); so does a repeat after it counted.
+// The report's answer carries the reporter's head-to-head record against
+// each other account in the match, in this game (`vs`: [{ id, name, wins,
+// losses, draws }]), so the end card can say "You 5–3 Asha" (lib/account.js
+// endCard); so does a repeat after it counted.
+//
+// The old ranked surfaces answer 410 (worker/api/index.js): the boards
+// (/api/lb/…) and server-issued runs (/api/run/start). Their tables —
+// ratings, runs, bot_wins — are no longer written; dropping them is a later,
+// explicit step (STATUS.md).
 
-import { reportBotsWin } from "./bots.js";
-import { GAMES, KINDS as RESULT_KINDS, NO_BOARD } from "./games.js";
-import { HttpError, body, now, randomId, requestNow, sha256 } from "./http.js";
-import { SOLO_PER_DAY, boardKind, checkSoloRun, claimRun } from "./runs.js";
+import { GAMES, KINDS as RESULT_KINDS } from "./games.js";
+import { HttpError, body, now, requestNow, sha256 } from "./http.js";
 
 export const REPORT_TTL_MS = 15 * 60_000;
 /** How long a match waits for every named account before it counts with the reporters only (env MATCH_GRACE_MS). */
@@ -112,70 +102,12 @@ export const START_MAX_MS = 2 * 3600_000;
 export const START_LIVE = 3;
 /** A voided match stays void this long (kv `void:<match>`), then the row goes. */
 export const VOID_TTL_MS = 3600_000;
-export const ELO_START = 1200;
-export const ELO_K = 32;
-/** K for an account's first PROVISIONAL_GAMES rated games of a game: a new player finds their level sooner. */
-export const ELO_K_PROVISIONAL = 48;
-export const PROVISIONAL_GAMES = 10;
 const KINDS = ["duel", "ffa", "teams", "coop"];
-/**
- * Teams: a player's share of their side's change is scaled by the mean side
- * size over their side's size (zero-sum with uneven sides), but never by
- * more than this — 1 against 7 would otherwise swing ±4 × K.
- */
-const SCALE_MAX = 2;
-/** The kinds with a winner, rated, and with the leaver rule. */
+/** The kinds with a winner, and with the leaver rule. */
 export const RATED = ["duel", "ffa", "teams"];
 
 const all = async (stmt) => (await stmt.all()).results ?? [];
 const startKey = (game, run, match) => sha256(`start|${game}|${run}|${match}`);
-
-/**
- * Rating changes for one match: `places` of accounts (an empty place is a
- * guest's or someone not recorded: it keeps the order, and rates nobody),
- * `cur` account → { elo, rated } (rated: rated games so far). Pure.
- *
- * Pairwise Elo: every two players in different places are a game, the one
- * ahead winning it (the same place: a draw), and each player's change is the
- * sum over their opponents of K × (score − expected), divided by the number
- * of opponents — so beating a stronger player counts more, and a duel is
- * plain Elo. Teams: each place is a side rated at its members' mean, the
- * sides are the players, and every member moves by their side's sum (with
- * their own K). K is ELO_K_PROVISIONAL for a player's first
- * PROVISIONAL_GAMES rated games, then ELO_K.
- */
-export function ratingDeltas(kind, places, cur) {
-	const out = new Map();
-	// Plain loops over arrays, no closures: a group board runs this for up to
-	// GROUP_REPLAY matches in one request (worker/api/lb.js, docs "CPU").
-	const units = []; // [members, rating, place] — a side's change is shared by its members, scaled (zeroSum)
-	for (let i = 0; i < places.length; i++) {
-		const slot = places[i];
-		if (!slot.length) continue;
-		if (kind === "teams") {
-			let sum = 0;
-			for (const a of slot) sum += cur.get(a)?.elo ?? ELO_START;
-			units.push([slot, sum / slot.length, i]);
-		} else for (const a of slot) units.push([[a], cur.get(a)?.elo ?? ELO_START, i]);
-	}
-	const n = units.length;
-	if (n < 2 || (kind === "teams" && units.every((u) => u[2] === units[0][2]))) return out;
-	for (let x = 0; x < n; x++) {
-		const [members, rx, px] = units[x];
-		let sum = 0;
-		for (let y = 0; y < n; y++) {
-			if (y === x) continue;
-			const py = units[y][2];
-			sum += (px < py ? 1 : px === py ? 0.5 : 0) - 1 / (1 + 10 ** ((units[y][1] - rx) / 400));
-		}
-		// Teams: a side's change is its members' to share — each moves by it
-		// times the mean side size over their own side's size, so uneven sides
-		// (3 against 1) still sum to zero (a review, 2026-11-16).
-		const scale = kind === "teams" ? Math.min(SCALE_MAX, units.reduce((t, u) => t + u[0].length, 0) / n / members.length) : 1;
-		for (const a of members) out.set(a, (((cur.get(a)?.rated ?? 0) < PROVISIONAL_GAMES ? ELO_K_PROVISIONAL : ELO_K) * sum * scale) / (n - 1));
-	}
-	return out;
-}
 
 /**
  * A result of `kind` for `game`: one of its kinds — the manifest's, or the
@@ -183,20 +115,6 @@ export function ratingDeltas(kind, places, cur) {
  * or a scored free-for-all of a co-op game (Neon Survival's multi-ship runs).
  */
 export const kindFits = (game, kind) => (RESULT_KINDS[game] ?? [GAMES[game]]).includes(kind) || (GAMES[game] === "coop" && kind === "ffa");
-
-/**
- * A ratings row as the API shows it: `rated`, the games behind its rating,
- * and `provisional` while that is under PROVISIONAL_GAMES — on a rated board.
- * A free-for-all or teams board keeps that count in `best` (it has no best
- * score; no migration), so `best` is shown only where it is a score.
- */
-export function shownRating(row, kind = boardKind(row.game)) {
-	const counter = kind === "ffa" || kind === "teams";
-	const rated = kind === "duel" ? row.games : counter ? (row.best ?? 0) : null;
-	const out = { ...row, best: counter ? null : (row.best ?? null) };
-	if (rated != null) Object.assign(out, { rated, provisional: rated < PROVISIONAL_GAMES });
-	return out;
-}
 
 /**
  * The result in accounts: `ranking` of party ids → of account ids (via
@@ -213,12 +131,12 @@ export function shownRating(row, kind = boardKind(row.game)) {
  *     all of whose players left forfeits as a side, in a last place; a
  *     player who left a team that plays on stays in their side's place —
  *     unless that side won, then in a last place alone — so the others'
- *     outcome is the game's: a draw stays a draw. Their loss is rated against
- *     the opposing teams only, never their own (`sides`, `forfeits`, rated
- *     by sideDeltas). Without `teams` (an older page): as free-for-all.
+ *     outcome is the game's: a draw stays a draw (`sides`, `forfeits`: part
+ *     of the canonical result every reporter must agree on). Without `teams`
+ *     (an older page): as free-for-all.
  */
 export function toAccounts({ kind, ranking, roster, scores, left, teams }) {
-	if (!KINDS.includes(kind)) throw new HttpError(400, "this kind of game is not ranked");
+	if (!KINDS.includes(kind)) throw new HttpError(400, "this kind of game is not recorded");
 	if (!Array.isArray(ranking) || !ranking.length || ranking.length > 16 || !ranking.every(Array.isArray)) throw new HttpError(400, "ranking is a list of places");
 	if (!roster || typeof roster !== "object") throw new HttpError(400, "roster maps players to accounts");
 	const ids = ranking.flat();
@@ -270,10 +188,10 @@ export function toAccounts({ kind, ranking, roster, scores, left, teams }) {
 		for (const t of goneTeams) places.push(departed.filter((a) => teamOf.get(a) === t));
 		if (tail.length) places.push(tail);
 		places = places.map((slot) => slot.sort());
-		// Rated as teams: each team still here at its place; each team that left, last.
+		// By team: each team still here at its place; each team that left, last.
 		// `size`: the team's players as the match began — those still here and
-		// its leavers — so a teammate who stays shares the side's change with
-		// the one who left instead of carrying it alone.
+		// its leavers. Part of the canonical result (report), so every
+		// reporter must agree on who played for whom.
 		sides = [
 			...[...at].map(([t, i]) => ({ members: kept[i].filter((a) => teamOf.get(a) === t), size: [...kept[i], ...departed].filter((a) => teamOf.get(a) === t).length, at: i })),
 			...goneTeams.map((t) => ({ members: departed.filter((a) => teamOf.get(a) === t), size: departed.filter((a) => teamOf.get(a) === t).length, at: kept.length })),
@@ -292,37 +210,6 @@ export function toAccounts({ kind, ranking, roster, scores, left, teams }) {
 		if (accounts.includes(a) && typeof v === "number" && Number.isFinite(v)) s[a] = v;
 	}
 	return { places, accounts, departed, scores: Object.keys(s).length ? s : null, ...(sides ? { sides, forfeits } : {}) };
-}
-
-/**
- * Rating changes from teams as sides (toAccounts `sides`: { members, at },
- * a lower `at` ahead, equal a draw) and leavers' forfeits ({ a, against }):
- * each side rated at its members' mean, pairwise Elo between sides; a
- * player who left a team that played on loses one game against the mean of
- * `against` — the opposing teams — and moves nobody else. Pure.
- */
-export function sideDeltas(sides, forfeits, cur) {
-	const out = new Map();
-	const r = (a) => cur.get(a)?.elo ?? ELO_START;
-	const k = (a) => ((cur.get(a)?.rated ?? 0) < PROVISIONAL_GAMES ? ELO_K_PROVISIONAL : ELO_K);
-	const mean = (xs) => xs.reduce((t, a) => t + r(a), 0) / xs.length;
-	const live = sides.filter((x) => x.members.length);
-	if (live.length > 1) {
-		const m = live.map((x) => mean(x.members));
-		const sizeOf = (x) => x.size ?? x.members.length; // its players as the match began
-		const size = live.reduce((t, x) => t + sizeOf(x), 0) / live.length; // the mean side size
-		live.forEach((x, i) => {
-			let sum = 0;
-			for (let j = 0; j < live.length; j++) if (j !== i) sum += (x.at < live[j].at ? 1 : x.at === live[j].at ? 0.5 : 0) - 1 / (1 + 10 ** ((m[j] - m[i]) / 400));
-			// Shared by the side, scaled so uneven sides still sum to zero —
-			// up to SCALE_MAX, so one against many never swings past 2 × K.
-			for (const a of x.members) out.set(a, (k(a) * sum * Math.min(SCALE_MAX, size / sizeOf(x))) / (live.length - 1));
-		});
-	}
-	for (const { a, against } of forfeits ?? []) {
-		if (against.length) out.set(a, k(a) * (0 - 1 / (1 + 10 ** ((mean(against) - r(a)) / 400))));
-	}
-	return out;
 }
 
 /** POST /api/stats/played — the host's count of a finished match (a game in the table only). */
@@ -346,13 +233,13 @@ export async function summary(env) {
 /**
  * POST /api/match/start { game, run, match } — "I am seated in this match":
  * the evidence a departure needs (the leaver rule, above). The page sends it
- * as a ranked match with people begins (lib/account.js matchStart) and again
+ * as a match among signed-in people begins (lib/account.js matchStart) and again
  * every 2 minutes while the match runs — its heartbeat. One row per account
  * and match: `payload` keeps when it was first said, `at` the last beat.
  */
 export async function startMatch(env, me, request, { gate = async () => true } = {}) {
 	const b = await body(request);
-	if (typeof b.game !== "string" || !RATED.includes(GAMES[b.game]) || NO_BOARD.has(b.game)) throw new HttpError(400, "only a ranked game with a winner records who began it");
+	if (typeof b.game !== "string" || !RATED.includes(GAMES[b.game])) throw new HttpError(400, "only a game with a winner records who began it");
 	if (typeof b.run !== "string" || !b.run || b.run.length > 40) throw new HttpError(400, "run is the party's run id");
 	if (!Number.isInteger(b.match) || b.match < 0) throw new HttpError(400, "match is the match's number in its run");
 	const t = now();
@@ -408,39 +295,22 @@ export async function report(env, me, request) {
 	const t = requestNow(env, request);
 	const b = await body(request);
 	if (typeof b.game !== "string" || !GAMES[b.game]) throw new HttpError(400, "unknown game");
-	// "leaderboard": false in its manifest: nothing of it is ranked (the page does not send this).
-	if (NO_BOARD.has(b.game)) return { counted: false, why: "this game has no leaderboard", code: "no-board" };
-	if (typeof b.run !== "string" || !b.run || b.run.length > 40) throw new HttpError(400, "run is the party's run id (played alone: the server's, POST /api/run/start)");
+	if (typeof b.run !== "string" || !b.run || b.run.length > 40) throw new HttpError(400, "run is the party's run id");
 	const match = Number.isInteger(b.match) ? b.match : 1;
-	if (b.kind === "local") return { counted: false, why: "one-phone games are not ranked" };
+	if (b.kind === "local") return { counted: false, why: "one-phone games are not recorded" };
 	const r = toAccounts(b);
-	// Never ranked: at most a win on the game's board against bots.
-	if (r.bots) return reportBotsWin(env, me, b, t);
+	// Head-to-head is between people: a match with a bot in it is the device's alone.
+	if (r.bots) return { counted: false, why: "matches with bots are not recorded", code: "bots" };
 	if (!r.accounts.includes(me.id)) throw new HttpError(400, "you can only report a match you played");
-	// Alone only when the match *began* with one seat (`seats`, lib/account.js):
-	// a match whose other players all left also ends with one id in it, and is
-	// not a run played alone (review, 2026-11-16).
-	const solo = b.seats === 1 && b.ranking.flat().length === 1 && r.accounts.length === 1 && !r.departed.length;
 	const key = await sha256(`${b.game}|${b.run}|${match}`);
 	// Reporting a match is being there: our own start of it is used up (rule
 	// 1) whatever becomes of this report — refused, voided, or too late.
-	if (!solo) await env.DB.prepare("DELETE FROM reports WHERE match = ? AND account = ? AND digest = 'start'").bind(await startKey(b.game, b.run, match), me.id).run();
+	await env.DB.prepare("DELETE FROM reports WHERE match = ? AND account = ? AND digest = 'start'").bind(await startKey(b.game, b.run, match), me.id).run();
 	await sweep(env, t);
 	const done = await countedFor(env, key, me.id);
 	if (done) return done;
-	if (solo) {
-		// Nobody confirms a run played alone: its server-issued run does. All
-		// the checks first, then the run is claimed (once), then committed —
-		// to the board the check names (Sudoku: one per difficulty), with the
-		// score it names (Sudoku's: raised to the server's clock).
-		const v = await checkSoloRun(env, me, b, r.scores?.[me.id], t);
-		if (!v.ok) return { counted: false, why: v.why, ...(v.code ? { code: v.code } : {}) };
-		const claimed = await claimRun(env, { run: b.run, t, daily: v.daily, account: me.id, game: b.game, perDay: Number(env.SOLO_PER_DAY ?? SOLO_PER_DAY) });
-		if (claimed !== true) return { counted: false, why: claimed };
-		return commit(env, { id: key, game: v.game, kind: "coop", places: [[me.id]], scores: { [me.id]: v.score }, recorded: [me.id], t, low: v.low, solo: true, who: me.id });
-	}
 	if (!kindFits(b.game, b.kind)) throw new HttpError(400, `${b.game} is a ${GAMES[b.game]} game; a ${b.kind} result for it does not count`);
-	if (r.accounts.length < 2) return { counted: false, why: "a ranked match needs two signed-in players" };
+	if (r.accounts.length < 2) return { counted: false, why: "a match is recorded with two signed-in players" };
 	if (await env.DB.prepare("SELECT 1 FROM kv WHERE k = ?").bind(`void:${key}`).first()) {
 		return { counted: false, why: "the players disagreed about this match, so it does not count" };
 	}
@@ -471,10 +341,10 @@ async function countedFor(env, key, who) {
 	try {
 		outcome = m.outcome ? JSON.parse(m.outcome) : null;
 	} catch {}
-	const rating = outcome?.elo != null ? { rating: { elo: outcome.elo, delta: outcome.delta, rated: outcome.rated, provisional: outcome.provisional } } : {};
+	const vs = await versusIn(env, key, who);
 	// Recorded as having left it: not "counted" — counted against you.
-	if (outcome?.left) return { counted: false, left: true, why: "this match counted against you: the others reported that you left it", ...rating };
-	return { counted: true, already: true, ...rating };
+	if (outcome?.left) return { counted: false, left: true, why: "this match counted against you: the others reported that you left it", vs };
+	return { counted: true, already: true, vs };
 }
 
 /**
@@ -508,7 +378,7 @@ async function settle(env, key, who, t) {
 	const left = P.left ?? [];
 	const present = P.places.flat().filter((a) => !left.includes(a));
 	const first = Math.min(...rows.map((x) => x.at));
-	const base = { id: key, game: P.game, kind: P.kind, places: P.places, scores: P.scores, sides: P.sides ?? null, forfeits: P.forfeits ?? null, t, who };
+	const base = { id: key, game: P.game, kind: P.kind, places: P.places, scores: P.scores, t, who };
 	if (!left.length && agreeing.length >= 2 && present.every((a) => agreeing.includes(a))) return commit(env, { ...base, recorded: agreeing });
 	if (t < first + grace) return { counted: false, pending: true, settleAt: first + grace };
 	const confirmed = agreeing.length >= 2 || (present.length === 1 && agreeing.length === 1);
@@ -539,78 +409,35 @@ async function departures(env, P, left, first, t) {
 }
 
 /**
- * Record a match for `recorded` (and nobody else) and move their ratings, in
- * one batch — one transaction. Its first statement is a plain INSERT of the
- * match, so a second commit of the same match (two last reports at once)
- * fails on the primary key and the whole batch rolls back: a match counts
- * once, and an account that is missing (deleted since) makes nothing half
- * written. Ratings change by increments (`games + 1`, `elo + delta`, MAX/MIN
- * of best), so two matches committing at once for one account both count.
- * `low`: the scores are times, and the best is the lowest (a "time" board,
- * worker/api/runs.js). Resolves `who`'s answer.
+ * Record a match for `recorded` (and nobody else), in one batch — one
+ * transaction. Its first statement is a plain INSERT of the match, so a
+ * second commit of the same match (two last reports at once) fails on the
+ * primary key and the whole batch rolls back: a match counts once, and an
+ * account that is missing (deleted since) makes nothing half written.
+ * Resolves `who`'s answer, with their head-to-head against the others.
  */
-async function commit(env, { id, game, kind, places, scores, sides = null, forfeits = null, recorded, departed = [], startOf = null, t, low = false, solo = false, who }) {
+async function commit(env, { id, game, kind, places, scores, recorded, departed = [], startOf = null, t, who }) {
 	const exist = new Set(
 		(await all(env.DB.prepare("SELECT id FROM accounts WHERE id IN (SELECT value FROM json_each(?))").bind(JSON.stringify(recorded)))).map((x) => x.id),
 	);
 	const keep = new Set(recorded.filter((a) => exist.has(a)));
-	if (keep.size < (solo ? 1 : 2)) return { counted: false, why: "a ranked match needs two signed-in players" };
+	if (keep.size < 2) return { counted: false, why: "a match is recorded with two signed-in players" };
 	const ranked = places.map((s) => s.filter((a) => keep.has(a)));
 	while (ranked.length && !ranked.at(-1).length) ranked.pop();
 	const kept = scores ? Object.fromEntries(Object.entries(scores).filter(([a]) => keep.has(a))) : null;
 	const score = kept && Object.keys(kept).length ? kept : null;
-	const board = boardKind(game);
-	const rated = RATED.includes(board) && RATED.includes(kind);
-	const counter = board === "ffa" || board === "teams"; // `best` counts rated games (shownRating)
 	const accounts = [...keep];
-	const cur = new Map();
-	if (rated) {
-		const rows = await all(
-			env.DB.prepare("SELECT account, elo, games, best FROM ratings WHERE game = ? AND account IN (SELECT value FROM json_each(?))").bind(game, JSON.stringify(accounts)),
-		);
-		for (const x of rows) cur.set(x.account, { elo: x.elo, rated: counter ? (x.best ?? 0) : x.games });
-	}
-	// Teams with a leaver: by team (toAccounts `sides`), only those recorded.
-	const deltas = !rated
-		? new Map()
-		: sides
-			? sideDeltas(
-					sides.map((x) => ({ ...x, members: x.members.filter((a) => keep.has(a)) })),
-					(forfeits ?? []).filter((f) => keep.has(f.a)).map((f) => ({ a: f.a, against: f.against.filter((b) => keep.has(b)) })),
-					cur,
-				)
-			: ratingDeltas(kind, ranked, cur);
-	// First place is a win, unless everyone shares it (a draw, or co-op).
-	const winners = new Set(ranked.length > 1 ? ranked[0] : []);
-	const bestScores = !!score && (kind === "coop" || board === "coop");
-	const bestSql = rated && counter ? "COALESCE(best, 0) + 1" : bestScores ? `CASE WHEN excluded.best IS NULL THEN best WHEN best IS NULL THEN excluded.best ELSE ${low ? "MIN" : "MAX"}(best, excluded.best) END` : "best";
-	const outcome = new Map(
-		accounts.map((a) => {
-			if (!rated) return [a, {}];
-			const was = cur.get(a) ?? { elo: ELO_START, rated: 0 };
-			const delta = deltas.get(a) ?? 0;
-			return [a, { elo: Math.round(was.elo + delta), delta: Math.round(delta), rated: was.rated + 1, provisional: was.rated + 1 < PROVISIONAL_GAMES }];
-		}),
-	);
 	const stmts = [
 		env.DB.prepare("INSERT INTO matches (id, game, kind, ranking, scores, at) VALUES (?, ?, ?, ?, ?, ?)").bind(id, game, kind, JSON.stringify(ranked), score ? JSON.stringify(score) : null, t),
 		...ranked.flatMap((slot, place) => slot.map((a) => env.DB.prepare("INSERT INTO match_players (match, account, place) VALUES (?, ?, ?)").bind(id, a, place))),
-		...accounts.map((a) => {
-			const d = deltas.get(a) ?? 0;
-			const b = rated && counter ? 1 : bestScores ? (score[a] ?? null) : null;
-			return env.DB.prepare(
-				`INSERT INTO ratings (account, game, elo, games, wins, best) VALUES (?, ?, ?, 1, ?, ?)
-				 ON CONFLICT (account, game) DO UPDATE SET elo = elo + ?, games = games + 1, wins = wins + excluded.wins, best = ${bestSql}`,
-			).bind(a, game, ELO_START + d, winners.has(a) ? 1 : 0, b, d);
-		}),
 		// Each player's outcome waits in a report row for a repeat to read
-		// (countedFor) — a leaver's too, marked, so a late report of theirs is
-		// told the match counted against them.
+		// (countedFor) — a leaver's marked, so a late report of theirs is told
+		// the match counted against them.
 		...accounts.map((a) =>
 			env.DB.prepare("INSERT OR REPLACE INTO reports (match, account, digest, payload, at) VALUES (?, ?, 'counted', ?, ?)").bind(
 				id,
 				a,
-				JSON.stringify(departed.includes(a) ? { ...outcome.get(a), left: true } : outcome.get(a)),
+				JSON.stringify(departed.includes(a) ? { left: true } : {}),
 				t,
 			),
 		),
@@ -627,8 +454,7 @@ async function commit(env, { id, game, kind, places, scores, sides = null, forfe
 	}
 	if (!who) return { counted: true };
 	if (!keep.has(who)) return { counted: false, why: "this match counted without your report" };
-	const mine = outcome.get(who);
-	return { counted: true, ...(mine?.elo != null ? { rating: mine } : {}) };
+	return { counted: true, vs: await versusIn(env, id, who) };
 }
 
 /**
@@ -688,10 +514,58 @@ export async function matchesOf(env, account, limit = 30) {
 	}));
 }
 
-/** An account's ratings, as shown (shownRating: `rated`, `provisional`); boards of games no longer listed are left out. */
-export async function ratingsOf(env, account) {
-	const rows = await all(env.DB.prepare("SELECT game, elo, games, wins, best FROM ratings WHERE account = ? ORDER BY games DESC").bind(account));
-	return rows.filter((r) => boardKind(r.game)).map((r) => shownRating(r));
+// ------------------------------------------------------------ head-to-head
+
+/**
+ * How `a` did against each other account, from the matches both are
+ * recorded in: a place ahead is a win, behind a loss, the same place a draw —
+ * except in a team game, where the same place is the same side (or two
+ * sides level) and counts as neither. Co-op matches are played together and
+ * never count. Grouped by opponent (`by` "other") or by game for one
+ * opponent (`other` set). Never a rating, never a ranking of anybody.
+ */
+const H2H_SQL = (filter, group) => `SELECT q.account AS other, ${group === "game" ? "m.game AS game," : ""}
+	SUM(p.place < q.place) AS wins, SUM(p.place > q.place) AS losses,
+	SUM(p.place = q.place) AS draws, MAX(m.at) AS last
+	FROM match_players p JOIN match_players q ON q.match = p.match AND q.account <> p.account
+	JOIN matches m ON m.id = p.match
+	WHERE p.account = ? ${filter} AND m.kind <> 'coop' AND NOT (m.kind = 'teams' AND p.place = q.place)
+	GROUP BY q.account${group === "game" ? ", m.game" : ""}`;
+
+const tally = (x) => ({ wins: x.wins ?? 0, losses: x.losses ?? 0, draws: x.draws ?? 0 });
+
+/** `a`'s record against `b`: { wins, losses, draws, games: { <game>: { wins, losses, draws } } }. */
+export async function headToHead(env, a, b) {
+	const rows = await all(env.DB.prepare(H2H_SQL("AND q.account = ?", "game")).bind(a, b));
+	const out = { wins: 0, losses: 0, draws: 0, games: {} };
+	for (const r of rows) {
+		if (!GAMES[r.game]) continue;
+		const t = tally(r);
+		out.games[r.game] = t;
+		out.wins += t.wins;
+		out.losses += t.losses;
+		out.draws += t.draws;
+	}
+	return out;
 }
 
-export const newRun = () => randomId(8);
+/** Everyone `a` has a record against, most recently played first: [{ id, name, wins, losses, draws, last }]. */
+export async function rivalsOf(env, a, limit = 50) {
+	const rows = await all(
+		env.DB.prepare(
+			`SELECT h.*, acc.name FROM (${H2H_SQL("", "other")}) h JOIN accounts acc ON acc.id = h.other ORDER BY h.last DESC LIMIT ?`,
+		).bind(a, limit),
+	);
+	return rows.map((r) => ({ id: r.other, name: r.name, ...tally(r), last: r.last }));
+}
+
+/** `who`'s record in match `id`'s game against each other account in it (its end card): [{ id, name, wins, losses, draws }]. */
+async function versusIn(env, id, who) {
+	const rows = await all(
+		env.DB.prepare(
+			`SELECT h.*, acc.name FROM (${H2H_SQL("AND q.account IN (SELECT account FROM match_players WHERE match = ?) AND m.game = (SELECT game FROM matches WHERE id = ?)", "other")}) h
+			 JOIN accounts acc ON acc.id = h.other ORDER BY acc.name`,
+		).bind(who, id, id),
+	);
+	return rows.map((r) => ({ id: r.other, name: r.name, ...tally(r) }));
+}
