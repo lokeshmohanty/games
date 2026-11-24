@@ -109,9 +109,10 @@
 /* The hot colour (the setup's option): its three slots underlined in the
    accent, and said in words under the lot and in the status line — never by
    colour alone. */
-.nb-slot.hot::after { content: ""; display: block; width: 100%; height: 3px; border-radius: 2px;
+/* Out of flow: the underline takes no height from the row. */
+.nb-slot.hot { position: relative; }
+.nb-slot.hot::after { content: ""; position: absolute; left: 0; right: 0; bottom: -3px; height: 3px; border-radius: 2px;
 	background: var(--accent); box-shadow: 0 0 6px var(--accent-glow); }
-.nb-hot-line { font-size: 0.8rem; color: var(--accent); letter-spacing: 0.04em; }
 .g-hud .nb-hot-says { color: var(--ink); text-shadow: none; }
 
 /* The setup (friends' first game), and the end's "Next game · CHANGE". */

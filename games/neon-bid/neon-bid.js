@@ -526,7 +526,10 @@
 	}
 
 	function renderSeats() {
-		if (!game) {
+		// At the end the table says all the seats did (hands, credits,
+		// points): the seats give it their room, so NEW GAME and the next
+		// game's choices stay on a 354x696 phone with eight players.
+		if (!game || over) {
 			seatsEl.replaceChildren();
 			return;
 		}
@@ -562,8 +565,10 @@
 		const big = el("div", "nb-big");
 		big.append(gem(colour));
 		const txt = el("div", "txt");
-		txt.append(el("span", "lotno", `LOT ${i + 1} OF ${LOTS}`), el("span", "name", gemName(colour)));
-		if (hotOf() != null) txt.append(el("span", "nb-hot-line", colour === hotOf() ? `HOT COLOUR: its set scores ${R.HOT_BONUS} more` : `Hot colour: ${gemName(hotOf())}`));
+		// The hot colour in words on the lot's own line, not a line of its own:
+		// at 354x696 with eight seats the bid buttons have no height to spare.
+		const hot = colour === hotOf() ? ` · HOT +${R.HOT_BONUS}` : "";
+		txt.append(el("span", "lotno", `LOT ${i + 1} OF ${LOTS}${hot}`), el("span", "name", gemName(colour)));
 		const me = mySeat();
 		if (me && phase === "bid") {
 			const w = R.worth(me.hand, colour, hotOf());

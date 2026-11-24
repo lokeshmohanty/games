@@ -614,8 +614,12 @@ try {
 		check("neon bid · CHANGE, HOT COLOUR, DONE: the line says so", (await nextText()).startsWith("Next game: hot colour"), await nextText());
 		await G.evaluate(() => document.querySelector(".nb-go").click());
 		await G.waitForFunction(() => window.__game.handle.debug().phase === "bid" && window.__game.handle.debug().hot != null, null, { timeout: TIMEOUT });
-		const hot = await G.evaluate(() => ({ hot: window.__game.handle.debug().hot, slots: document.querySelectorAll(".nb-slot.hot").length, line: document.querySelector(".nb-hot-line")?.textContent ?? "", hud: document.getElementById("hud").textContent }));
-		check("neon bid · NEW GAME: a hot colour, its three slots marked, said under the lot and in the status line", hot.slots === 3 && /hot colour/i.test(hot.line) && /Hot: /.test(hot.hud), JSON.stringify(hot));
+		// A hot lot says so on its LOT line; any lot, in the status line.
+		const hot = await G.evaluate(() => {
+			const d = window.__game.handle.debug();
+			return { hot: d.hot, lotHot: d.order[d.round] === d.hot, slots: document.querySelectorAll(".nb-slot.hot").length, line: document.querySelector(".nb-lot .lotno")?.textContent ?? "", hud: document.getElementById("hud").textContent };
+		});
+		check("neon bid · NEW GAME: a hot colour, its three slots marked, named in the status line (and on a hot lot's LOT line)", hot.slots === 3 && /Hot: /.test(hot.hud) && /HOT \+1/.test(hot.line) === hot.lotHot, JSON.stringify(hot));
 		await floorsAt("bidding with a hot colour");
 	}
 

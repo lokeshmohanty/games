@@ -16,6 +16,20 @@ separate `TODO.md`.*
 
 ## Now (2026-11-18)
 
+**Branch `randomness` (2026-11-25, both repos, pushed, not merged):** the
+variety Lokesh picked on 2026-11-24 (docs/index.md "Variety, from the seed").
+Here: Connect 4's seeded pick among near-best columns; Neon Survival's run
+from the seed and a wave event every 20 s with a banner; Neon Fission's
+**Voids** and Neon Bid's **Hot colour** options (setup before friends' first
+game only, "Next game · CHANGE" at the end); Tic Tac Toe's equal squares
+picked from the seed in all seven lanes (test-conformance still identical).
+web-games `randomness` (PR #3): Light Cycles' spawn shuffle and **Obstacles**
+option, Liar's Dice per-bot slack. To land: review, merge web-games, then move
+`registry/lokeshmohanty/web-games.json` to its main in this branch's PR (until
+then test-taps' Light Cycles setup checks skip, saying so). Records (the other
+branch in flight) overlaps one line in neon-fission.js `result()`: keep both
+the voids in the Grid detail and records' `facts`/`seatFacts`.
+
 **Player colours (2026-11-24, landed by PR here; web-games 69c7587 and
 card-games 0d10c1f pinned):** players pick their own colour (Lokesh,
 2026-11-21: "every game with colours"): the picker under YOU and on the quick
