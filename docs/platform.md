@@ -227,7 +227,18 @@ played, won (and the rate), the best win streak, the wins against each
 number of bots and the time played (lib/stats.js); and across games,
 **Regular** (10 games), **Veteran** (100), **Seven Days** (a game on 7 days
 in a row) and **Explorer** (every listed game you can play alone — bots or
-one seat, not the SDK's examples — played once).
+one seat, whatever its section, so Tic Tac Toe (JS) counts; the SDK
+example's other language lanes are unlisted and do not — played once).
+
+**A win because the others left** is still a win (stats, First Win, the
+streaks), but it shows no skill: a game whose leaves end it reports
+whether the win was played out, and its skill achievements and min/max
+records require that fact — otherwise a forfeit at move three would set a
+"fewest" record no real game could beat. Connect 4 `four`, Neon Fission
+`finished`, Five in a Row `line >= 5`, Snakes & Ladders `home`, Ludo
+`finished`, Battleship `complete`, Liar's Dice `finished` (review,
+2026-11-24; test-records checks every such game.json against a flattering
+forfeit).
 
 **Where it shows:**
 - a notice (toast) when something unlocks or a record is beaten, over
@@ -248,11 +259,13 @@ The device's word is taken (UX > performance >>> anti-cheat): nothing
 checks a fact against the game, and nothing ranks by them.
 
 **Which games declare them** (2026-11-24): Connect 4, Neon Fission, Neon
-Bid and Neon Survival here; in lokeshmohanty/web-games (branch
-`achievements`, until its pin moves) Sudoku, Bubble Rush, Light Cycles, Five
-in a Row, Snakes & Ladders, Ludo, Battleship and Liar's Dice; in
-lokeshmohanty/card-games (branch `achievements`; the repo is not registered
-yet) Glowdown and 29. Undercover and Draw & Guess cannot be played alone.
+Bid, Neon Survival and Tic Tac Toe (JS, the platform's fields only: it is
+the conformance reference, so its result stays the same in every language)
+here; in lokeshmohanty/web-games (branch `achievements`, until its pin
+moves) Sudoku, Bubble Rush, Light Cycles, Five in a Row, Snakes & Ladders,
+Ludo, Battleship and Liar's Dice; in lokeshmohanty/card-games (branch
+`achievements`, until its pin moves past 7ef5aa2) Glowdown, Guess What and
+29. Undercover and Draw & Guess cannot be played alone.
 Each game.json is the list; their results' `facts`/`seatFacts` are in each
 game's `result`.
 

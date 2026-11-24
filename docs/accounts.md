@@ -859,13 +859,26 @@ Decisions (Lokesh, 2026-11-21):
 How it runs:
 - **The device first.** lib/records.js counts each result lib/stats.js
   counted (once per run, match and ranking), in localStorage
-  `neon.records` (`{ games: { [game]: state }, dirty: [game] }`), offline
-  and signed out as well.
+  `neon.records` (`{ games: { [game]: state }, dirty: [game], v: { [game]:
+  version }, owner }`), offline and signed out as well.
+- **One device, several accounts** (review, 2026-11-24: switching account
+  on a shared device used to merge A's records into B's account for good).
+  The device's records and lib/stats.js's stats belong to `owner`. A device
+  played on signed out has none, and the first account to sign in takes
+  them. Another account signing in never gets them: they are set aside
+  (localStorage `neon.records.aside`, one copy per account), that account's
+  own set-aside copy comes back (or none), and only then is its account's
+  copy taken. Play while signed out after A counts as A's. Signing out
+  keeps the device's copy as it is (still A's).
 - **Sync.** Signed in (on the page's load, or on signing in): `GET
   /api/me/records`; each game's copy and the device's become one by taking
   the best of each, on the device; whatever the account lacks or has worse
-  is sent back with `PUT`. After each counted result the changed games go
-  up 1.5 s later. A game's stats from lib/stats.js ride with it (`s`) and
+  is sent back with `PUT`, at most 16 games a request. After each counted
+  result the changed games go up 1.5 s later. A game is unmarked only if it
+  did not change while its PUT was in flight (its version is the one sent),
+  or the server refused it (`rejected`, or a 4xx for the whole request): a
+  refused game would be refused again and must not hold up the rest;
+  "busy" (below) is not a refusal and goes again. A game's stats from lib/stats.js ride with it (`s`) and
   come back the same way (`NeonArcade.stats.mergeIn`). A server from before
   0007 answers 404: everything stays on the device.
 - **The merge** (lib/achievements.js `merge`, the same code on both sides):
@@ -875,16 +888,28 @@ How it runs:
   stats each the larger, the win streak from the side played last. Counts
   from two devices are not added — each device's count is a lower bound,
   and adding would count a synced game twice. A device with less can never
-  lower anything.
-- **Bounds** (worker/api/records.js): `clean` drops anything malformed and
-  bounds every list (64 achievements, 64 progress entries, 16 records of 16
-  groups, 100 values for a `distinct`); 8 KB a game, 64 games a request, 200
-  games an account; ids must be a game's (`GAME_ID`, not `dev/`) or `"*"`.
-  The game need not be in the Worker's table (`GAMES`): nothing ranks by it.
-- **Races.** A PUT reads, merges and writes; two at once from two devices
-  can lose one side's newest values in the account's copy until that device
-  next syncs (each keeps its own, and sends what the account lacks). Not
-  worth a transaction for casual records.
+  lower anything. A record whose kind changed (an author edited `best`)
+  takes the device's kind on the server (`merge(kept, sent, game, {
+  prefer: "y" })`): the device knows the manifest.
+- **Bounds** (lib/achievements.js `clean`, worker/api/records.js): anything
+  malformed is dropped and every list bounded (64 achievements, 64 progress
+  entries, 16 records of 16 groups, 100 values for a `distinct`, 200 games
+  played), and a game's entry is trimmed to `RECORD_BYTES` (8 KB: progress
+  first, then record groups; unlocks and stats kept), the platform's to
+  `PLATFORM_BYTES` (20 KB: it lists every game played). A request body is
+  at most 64 KB (a 193 KB PUT cost 10–20 ms of CPU, the free plan allows
+  10), 64 games, 200 games an account. Ids must be a game's (`GAME_ID`, not
+  `dev/`) or `"*"`; a bad id or a game over the account's limit is refused
+  on its own (`rejected: { [game]: why }`) and the rest are kept. The game
+  need not be in the Worker's table (`GAMES`): nothing ranks by it. A
+  `"__proto__"` group or value is skipped, never assigned.
+- **Races.** A PUT writes a game only if nobody wrote it since it was read
+  (`UPDATE … WHERE at = ?`, `at` moving on with every write; a new row
+  `ON CONFLICT DO NOTHING`); one that lost the race is read, merged and
+  tried again, up to 8 times (each round one writer wins), then answered
+  "busy" in `rejected`, which the page sends again. Six PUTs at once, each
+  with its own unlock, keep all six (test-accounts; twelve at once lost ten
+  before this).
 - **Friends only.** `GET /api/u/<who>` carries `records` for the player and
   signed-in friends, never for a stranger, a friend code without sign-in,
   or the publicly cached copy. In the party, **🏆 TROPHIES** beside a
@@ -912,7 +937,7 @@ address per 5-minute window (IpGate `api`).
 | `GET /api/lb/<game>?scope=global\|friends\|group:<id>` | global: anyone (`&me=1`: signed in) | signed in, also `me`: your row and rank even past the top 100, or `rank: null` with `need` (more games) or `hidden`; null with no ranked game. Global without `me=1` is the one cached publicly. Also `levels`, `unit` and `botsBoard` (the game has a board against bots) when they apply |
 | `GET /api/lb/<game>?vs=bots&scope=…` | as above | the board of wins against bots: `kind: "bots"`, rows `{ rank, id, name, avatar, wins, first, at }`, `perDay`; `me` as above. No offline copy (not in the snapshot) |
 | `GET /api/u/<id or friend code>` | anyone | public profile; hidden: a name to befriend, or all of it for a signed-in friend; by code: charged against guessing. `records` (records and achievements, below) only for the player and their signed-in friends, hidden or not |
-| `GET /api/me/records`, `PUT /api/me/records` `{ games: { [game]: state } }` | signed in | records and achievements per game (`"*"`: across games); PUT merges each game with the stored copy, taking the best of each, and answers the merged copies; at most 64 games a request, 8 KB a game, 200 games an account (2026-11-24, 0007) |
+| `GET /api/me/records`, `PUT /api/me/records` `{ games: { [game]: state } }` | signed in | records and achievements per game (`"*"`: across games); PUT merges each game with the stored copy, taking the best of each, and answers the merged copies; `rejected: { [game]: why }` for any game it could not keep (the rest are kept); a body of at most 64 KB and 64 games, 8 KB a game (20 KB for `"*"`), 200 games an account (2026-11-24, 0007) |
 | `GET /api/friends`, `GET /api/friends/recent`, `POST/DELETE /api/friends/<id or code>`, `POST/DELETE /api/friends/<id>/block`, `…/mute`, `POST /api/friends/<id>/invite` | signed in | invite `{ code, game? }` → `{ invited: true }`, always the same; `game` is a game's id, named in a notification by its catalog title (an unknown id: no game line) |
 | `GET /api/invites`, `DELETE /api/invites/<sender>` | signed in | invites waiting (10 minutes) |
 | `GET /api/push` | anyone | `{ key }`: the VAPID public key to subscribe with, or null while the server has none |

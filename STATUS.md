@@ -25,7 +25,10 @@ applied) and shown to friends only; 🏆 Records in the top band (PARTY screen m
 profile's trophies, a friend's 🏆 TROPHIES in the party. Declared here for
 Connect 4, Neon Fission, Neon Bid, Neon Survival; web-games branch
 `achievements` (8 games, with the `facts`/`seatFacts` they read) and
-card-games branch `achievements` (Glowdown, 29). To land: merge web-games,
+card-games branch `achievements` (Glowdown, Guess What, 29; on card-games
+main 7ef5aa2, so its pin can move to it). Review fixes (2026-11-24): owner
+per account on a shared device, completion facts gate skill achievements,
+per-game refusals, optimistic writes, 29's Comeback, Tic Tac Toe (JS). To land: merge web-games,
 move its pin here; migrate 0007 first, then `just deploy-worker`
 (docs/accounts.md "Migrations"). Until the pin moves, the web-games games
 show only the platform's rows (played, won, per bot count, time).
