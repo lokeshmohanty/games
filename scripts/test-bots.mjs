@@ -2726,9 +2726,12 @@ try {
 			await sleep(400);
 		}
 		check("bot clue-givers typed clues", botClue);
-		// A picture this phone cannot draw is named instead (review, 2026-11-24: empty boxes on old Android).
-		const draws = await G.evaluate(() => ({ dog: drawable("🐶"), none: drawable("\u{10FFFD}") }));
-		check("the page can tell a picture it draws (🐶) from one it cannot (an unassigned character)", draws.dog === true && draws.none === false, JSON.stringify(draws));
+		// A picture this phone cannot draw is named instead (review, 2026-11-24:
+		// empty boxes on old Android). Every picture draws in this Chrome, black,
+		// white and grey ones too (re-review: a colour test named 18 of them), and
+		// an unassigned character does not.
+		const draws = await G.evaluate(() => ({ named: guessWhatPictures.ALL.filter((p) => !drawable(p.e)).map((p) => `${p.e} ${p.name}`), all: guessWhatPictures.ALL.length, none: drawable("\u{10FFFD}") }));
+		check(`every one of the ${draws.all} pictures draws here (none named instead), and an unassigned character does not`, draws.all > 300 && !draws.named.length && draws.none === false, JSON.stringify(draws));
 		check("a bot took its turn to guess, to the answer", botGuessed);
 		check("the game ends after a turn each", v.phase === "over");
 		const r = await page.waitForFunction(() => JSON.parse(localStorage.getItem("neon.stats") ?? "{}")["lokeshmohanty/guess-what"]?.played >= 1, null, { timeout: 5000 }).then(() => true).catch(() => false);
