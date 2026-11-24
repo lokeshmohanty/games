@@ -589,6 +589,36 @@ try {
 	const meNb = await selfOf(page);
 	await resultReached(page, "neon-bid", nb.over.winners.length === nb.over.rows.length ? "drawn" : nb.over.winners.includes(meNb) ? "won" : "lost");
 
+	// The hot colour (Lokesh, 2026-11-24): one person goes straight in, so it is
+	// picked at the end — "Next game: no hot colour · CHANGE" under NEW GAME —
+	// and NEW GAME deals one, shown from the start: its slots underlined, said
+	// in words. Both screens at 390x844 and 354x696.
+	{
+		const nextText = () => G.evaluate(() => document.querySelector(".nb-next-line")?.textContent ?? "");
+		check("neon bid · the end: the host's next game line, no hot colour, with CHANGE", (await nextText()).startsWith("Next game: no hot colour"), await nextText());
+		await G.evaluate(() => document.querySelector(".nb-next-change").click());
+		await G.waitForFunction(() => document.querySelector('.nb-next button[data-hot="true"]'), null, { timeout: TIMEOUT });
+		const floorsAt = async (what) => {
+			for (const [w, h] of [[390, 844], [354, 696]]) {
+				await page.setViewportSize({ width: w, height: h });
+				await sleep(200);
+				const f = await phoneFloors(G, "body", { hit: true });
+				const wide = await G.evaluate(() => document.documentElement.scrollWidth > innerWidth);
+				check(`neon bid · ${what} at ${w}x${h}: taps 44px, text 12px, no sideways scroll`, !f.text.length && !f.taps.length && !wide, JSON.stringify({ text: f.text, taps: f.taps, wide }));
+			}
+			await page.setViewportSize({ width: 390, height: 844 });
+		};
+		await floorsAt("choosing the next game");
+		await G.evaluate(() => document.querySelector('.nb-next button[data-hot="true"]').click());
+		await G.evaluate(() => document.querySelector(".nb-next-change").click());
+		check("neon bid · CHANGE, HOT COLOUR, DONE: the line says so", (await nextText()).startsWith("Next game: hot colour"), await nextText());
+		await G.evaluate(() => document.querySelector(".nb-go").click());
+		await G.waitForFunction(() => window.__game.handle.debug().phase === "bid" && window.__game.handle.debug().hot != null, null, { timeout: TIMEOUT });
+		const hot = await G.evaluate(() => ({ hot: window.__game.handle.debug().hot, slots: document.querySelectorAll(".nb-slot.hot").length, line: document.querySelector(".nb-hot-line")?.textContent ?? "", hud: document.getElementById("hud").textContent }));
+		check("neon bid · NEW GAME: a hot colour, its three slots marked, said under the lot and in the status line", hot.slots === 3 && /hot colour/i.test(hot.line) && /Hot: /.test(hot.hud), JSON.stringify(hot));
+		await floorsAt("bidding with a hot colour");
+	}
+
 	// ------------------------------------------------------------ battleship
 	//
 	// The game the plumbing exists for. What is checked here is the whole chain
@@ -2289,6 +2319,25 @@ try {
 		await fire("touchend", [[8, 130, 350]], []);
 		const floors = await phoneFloors(F, "body");
 		check("354x696: neon survival's text at least 12px", !floors.text.length && !floors.taps.length && floors.measured.text > 0, JSON.stringify(floors));
+		// A wave event's banner (Lokesh, 2026-11-24), its longest words: on
+		// screen, under the stats, 12px and more, no sideways scroll, and no
+		// target to catch a finger (the whole screen steers).
+		for (const [w, h] of [[354, 696], [390, 844]]) {
+			await p.setViewportSize({ width: w, height: h });
+			await F.evaluate(() => (s.event = { kind: "burst", side: "bottom", at: s.ms }));
+			await F.waitForFunction(() => window.__game.handle.debug().banner, null, { timeout: TIMEOUT });
+			const b = await F.evaluate(() => {
+				const el = document.getElementById("event");
+				const r = el.getBoundingClientRect();
+				const ui = document.getElementById("ui").getBoundingClientRect();
+				return { text: el.textContent, px: parseFloat(getComputedStyle(el).fontSize), left: r.left, right: r.right, top: r.top, uiBottom: ui.bottom, vw: innerWidth, scroll: document.documentElement.scrollWidth, events: getComputedStyle(el).pointerEvents };
+			});
+			const fl = await phoneFloors(F, "body");
+			check(`${w}x${h}: a wave event's banner says it, readable, on screen, under the stats, nothing to tap`, b.text === "SWARM FROM THE BOTTOM!" && b.px >= 12 && b.left >= 0 && b.right <= b.vw && b.top >= b.uiBottom && b.scroll <= b.vw && b.events === "none" && !fl.text.length && !fl.taps.length, JSON.stringify(b));
+			await F.evaluate(() => (s.event.at = s.ms - 10000));
+			await F.waitForFunction(() => !window.__game.handle.debug().banner, null, { timeout: TIMEOUT });
+			check(`${w}x${h}: …and it goes once the event is under way`, true);
+		}
 		await ctx.close();
 	}
 
