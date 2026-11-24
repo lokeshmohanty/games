@@ -9,7 +9,9 @@ import {
 	AGGREGATES,
 	FIELDS,
 	OPS,
+	PLATFORM_BYTES,
 	PLATFORM_ID,
+	RECORD_BYTES,
 	clean,
 	cleanFacts,
 	contextOf,
@@ -348,6 +350,196 @@ console.log("\nrecords.js: sync with the account (the best of both)");
 	check("…in one PUT, and nothing is left marked", puts.length === 1 && JSON.parse(store.get("neon.records")).dirty.length === 0, puts.length);
 	await R.sync();
 	check("a second sync with nothing new sends nothing", puts.length === 1, puts.length);
+}
+
+console.log("\nreview fixes (2026-11-24): merge prefers, prototype keys, the platform's size");
+{
+	const u = { r: { t: { b: "min", v: { "": 5 } } } };
+	const v = { r: { t: { b: "max", v: { "": 9 } } } };
+	check("a record whose kind changed: merge keeps this side's by default", merge(u, v).r.t.b === "min");
+	check("…and the other's with prefer: 'y' (the Worker: the device knows the manifest)", merge(u, v, "", { prefer: "y" }).r.t.b === "max" && merge(u, v, "", { prefer: "y" }).r.t.v[""] === 9);
+	const evil = JSON.parse('{"r":{"x":{"b":"max","v":{"__proto__":{"polluted":1},"ok":2}}},"p":{"q":{"d":["__proto__"]}}}');
+	const c = clean(evil);
+	check("clean skips a __proto__ group: no prototype set, nothing polluted", Object.getPrototypeOf(c.r.x.v) === Object.prototype && !("polluted" in c.r.x.v) && JSON.stringify(c.r.x.v) === '{"ok":2}' && ({}).polluted === undefined, JSON.stringify(c.r.x.v));
+	const st = step({}, { records: [{ id: "x", title: "X", of: "score", best: "max", by: "facts.g" }] }, C({ score: 3 }, { g: "__proto__" }), day0).state;
+	check("step skips a __proto__ group from a fact", !st.r.x && ({}).score === undefined, JSON.stringify(st.r));
+	const big = { a: Object.fromEntries(Array.from({ length: 64 }, (_, i) => [`a${i}-${"x".repeat(26)}`, 1e12 + i])), n: 1e9, ms: 1e12, g: Array.from({ length: 300 }, (_, i) => `${"o".repeat(39)}/${String(i).padStart(3, "0")}${"g".repeat(29)}`), d: { last: 20000, cur: 400, best: 400 } };
+	const bytes = JSON.stringify(clean(big, PLATFORM_ID)).length;
+	check(`the platform's entry, at its largest, fits PLATFORM_BYTES (${bytes} bytes)`, bytes <= PLATFORM_BYTES, bytes);
+	const fat = clean({ a: big.a, p: Object.fromEntries(Array.from({ length: 64 }, (_, i) => [`p${i}-${"x".repeat(26)}`, { d: Array.from({ length: 100 }, (_, j) => `${"v".repeat(36)}${j}`) }])), r: Object.fromEntries(Array.from({ length: 16 }, (_, i) => [`r${i}-${"x".repeat(26)}`, { b: "max", v: Object.fromEntries(Array.from({ length: 16 }, (_, j) => [`${"g".repeat(36)}${j}`, 1e12 + j])) }])) });
+	check("…and a game's entry, however large it was sent, is cleaned to fit RECORD_BYTES: progress trimmed first, unlocks kept", JSON.stringify(fat).length <= RECORD_BYTES && Object.keys(fat.a).length === 64, JSON.stringify(fat).length);
+}
+
+console.log("\nreview fixes: validate-game reads only fact names it can test");
+{
+	const { mkdtempSync, cpSync, writeFileSync } = await import("node:fs");
+	const { tmpdir } = await import("node:os");
+	const { join } = await import("node:path");
+	const { spawnSync } = await import("node:child_process");
+	const dir = join(mkdtempSync(join(tmpdir(), "neon-val-")), "connect4");
+	cpSync(new URL("../games/connect4/", import.meta.url), dir, { recursive: true });
+	const gm = JSON.parse(readFileSync(join(dir, "game.json"), "utf8"));
+	delete gm.preview; // a path outside the copied folder
+	gm.achievements[0].description = "facts.(oops [a regex would choke";
+	gm.achievements[1].when["facts.nowhere"] = 1;
+	writeFileSync(join(dir, "game.json"), JSON.stringify(gm));
+	const run = spawnSync(process.execPath, [new URL("./validate-game.mjs", import.meta.url).pathname, "--static", dir], { encoding: "utf8" });
+	const out = run.stdout + run.stderr;
+	check("a description that starts with facts.( does not crash it", !/SyntaxError|Invalid regular expression/.test(out) && run.status === 0, out.slice(-400));
+	check("…a fact no script mentions is still warned about", /facts\.nowhere/.test(out) && !/facts\.\(oops/.test(out), out.split("\n").filter((l) => l.includes("facts.")).join(" | "));
+}
+
+console.log("\nreview fixes: a shared device, a sync in flight, a refused game");
+{
+	// Two accounts on one browser (swap.mjs): A's play must never reach B's account.
+	const server = { A: {}, B: {} };
+	let me = null;
+	const ears = new Set();
+	const hold = { gate: null };
+	NeonArcade.account = {
+		get me() {
+			return me;
+		},
+		onChange: (fn) => ears.add(fn),
+		async api(path, { method = "GET", body } = {}) {
+			const acc = server[me.id];
+			if (method === "PUT") {
+				if (hold.gate) await hold.gate;
+				const rejected = {};
+				for (const [g, st] of Object.entries(body.games)) {
+					if (g === "bad-game") rejected[g] = "too large";
+					else acc[g] = merge(acc[g], st, g, { prefer: "y" });
+				}
+				return { games: Object.fromEntries(Object.keys(body.games).filter((g) => !rejected[g]).map((g) => [g, structuredClone(acc[g])])), ...(Object.keys(rejected).length ? { rejected } : {}) };
+			}
+			return { games: structuredClone(acc) };
+		},
+	};
+	store.clear();
+	const solve = (who) => S.record("puzzle", { kind: "ffa", match: 0, ranking: [[who], ["bot_1", "bot_2", "bot_3"]], seatFacts: { [who]: { solved: true } } }, { me: who, key: `k-${who}-${Math.random()}` });
+	me = { id: "A" };
+	await R.sync();
+	solve("pA");
+	await R.push();
+	check("A's unlocks reach A's account", !!server.A.puzzle?.a?.first);
+	me = null; // A signs out: the device keeps A's copy, owned by A
+	me = { id: "B" };
+	await R.sync();
+	check("B signs in on the same device: A's records do not go to B's account", !server.B.puzzle?.a?.first && !server.B["*"]?.n, JSON.stringify(server.B));
+	check("…and the device now shows B's (none), not A's", !R.read().puzzle?.a?.first && !S.read().puzzle?.played, JSON.stringify({ r: R.read().puzzle, s: S.read().puzzle }));
+	solve("pB");
+	await R.push();
+	check("…B's own play goes to B", server.B["*"]?.n === 1 && server.A["*"].n === 1);
+	me = { id: "A" };
+	await R.sync();
+	check("A back on this device: A's copy again, B's set aside", !!R.read().puzzle?.a?.first && R.read()["*"].n === 1 && S.read().puzzle?.played === 1, JSON.stringify(R.read()["*"]));
+
+	// A game counted while a PUT is in flight stays marked, so it goes next time.
+	let open;
+	hold.gate = new Promise((r) => (open = r));
+	solve("pA");
+	const flying = R.push();
+	await new Promise((r) => setTimeout(r, 10));
+	solve("pA");
+	open();
+	await flying;
+	hold.gate = null;
+	const left = JSON.parse(store.get("neon.records")).dirty;
+	check("a game counted while its PUT was in flight stays marked for the next", left.includes("puzzle") && left.includes("*"), JSON.stringify(left));
+	await R.push();
+	check("…and goes up then", server.A["*"].n === 3 && JSON.parse(store.get("neon.records")).dirty.length === 0, server.A["*"].n);
+
+	// One game the server refuses does not hold up the rest.
+	const all = JSON.parse(store.get("neon.records"));
+	all.games["bad-game"] = { a: { x: 1 } };
+	all.dirty = ["bad-game", "puzzle"];
+	all.v = { ...(all.v ?? {}), puzzle: (all.v?.puzzle ?? 0) + 1 };
+	store.set("neon.records", JSON.stringify(all));
+	await R.push();
+	check("a game the server refuses is dropped from the queue; the rest went", JSON.parse(store.get("neon.records")).dirty.length === 0, store.get("neon.records"));
+}
+
+console.log("\nreview fixes: Explorer counts every listed game you can play alone");
+{
+	NeonArcade.CATALOG.push({ id: "ttt", title: "TTT", kind: "duel", bots: true, seats: { min: 2, max: 2 }, categories: ["examples"] });
+	NeonArcade.UNLISTED = [{ id: "ttt-go", title: "TTT Go", kind: "duel", bots: true, seats: { min: 2, max: 2 }, categories: ["examples"] }];
+	check("a listed game counts whatever its section (tic-tac-toe-js); the unlisted language lanes do not", R.soloGames().includes("ttt") && !R.soloGames().includes("ttt-go"), R.soloGames().join());
+	NeonArcade.CATALOG.pop();
+	delete NeonArcade.UNLISTED;
+	const ttt = JSON.parse(readFileSync(new URL("../sdk/v2/examples/tic-tac-toe-js/game.json", import.meta.url), "utf8"));
+	check("tic-tac-toe-js declares achievements and records (Lokesh: every game playable alone)", (ttt.achievements?.length ?? 0) >= 6 && (ttt.records?.length ?? 0) >= 1, JSON.stringify({ a: ttt.achievements?.length, r: ttt.records?.length }));
+}
+
+console.log("\nreview fixes: a win because the others left unlocks no skill achievement, sets no gated record");
+{
+	const { existsSync } = await import("node:fs");
+	// Each game: its manifest, and a forfeit win at its most flattering —
+	// the completion fact false, every other fact the best it could be.
+	const games = [
+		["games/connect4/game.json", { four: false, moves: 3 }],
+		["games/neon-fission/game.json", { finished: false, turns: 2, chain: 0 }],
+		["../web-games-ach/five-in-a-row/game.json", { line: 0, moves: 1 }],
+		["../web-games-ach/snakes-and-ladders/game.json", { home: false, rolls: 1, snakes: 0, ladders: 0 }],
+		["../web-games-ach/ludo/game.json", { finished: false, lost: 0, captures: 0 }],
+		["../web-games-ach/battleship/game.json", { complete: false, lost: 0, shots: 1, hits: 1, accuracy: 100, sunk: 0 }],
+		["../web-games-ach/liars-dice/game.json", { finished: false, lowest: 1, dice: 5 }],
+		["../web-games-ach/liars-dice/game.json", { finished: false, lowest: 5, dice: 5 }],
+	];
+	for (const [file, facts] of games) {
+		const at = new URL(`../${file}`, import.meta.url);
+		if (!existsSync(at)) {
+			console.log(`  skip ${file} (not checked out)`);
+			continue;
+		}
+		const m = JSON.parse(readFileSync(at, "utf8"));
+		for (const kind of ["duel", "teams"]) {
+			const c = contextOf({ kind, ranking: [["me"], ["bot_1"]], match: 0, seatFacts: { me: facts } }, { me: "me", outcome: "won", ms: 1000 });
+			const r = step({}, m, c, day0);
+			const got = r.unlocked.map((x) => x.id).filter((id) => id !== "first-win");
+			const gated = Object.keys(r.state.r).filter((id) => /fewest|fastest|accuracy|dice|longest/.test(id));
+			check(`${m.id} (${kind}): a forfeit win unlocks only First Win, sets no gated record`, !got.length && !gated.length, JSON.stringify({ got, gated }));
+		}
+	}
+}
+
+console.log("\nreview fixes: Connect 4 and Neon Fission say whether a win was played out");
+{
+	const stub = () => new Proxy(function () {}, { get: (_, k) => (k === Symbol.toPrimitive ? () => "" : stub()), apply: () => stub(), set: () => true });
+	const saved = { document: globalThis.document, arcade: globalThis.arcade };
+	globalThis.document = stub();
+	globalThis.matchMedia = () => ({ matches: true, addEventListener() {} });
+	globalThis.addEventListener ??= () => {};
+	globalThis.requestAnimationFrame = () => 0;
+	let rules = null;
+	globalThis.arcade = { managed: (x) => (rules = x), on() {}, answer() {}, init: new Promise(() => {}), toast() {}, act() {}, idle() {}, theme: null, party: null };
+	const load = (...files) => {
+		for (const f of files) new Function(readFileSync(new URL(`../${f}`, import.meta.url), "utf8"))();
+		return rules;
+	};
+	const seats = [{ id: "a", name: "A", team: "A" }, { id: "b", name: "B", team: "B" }];
+	const c4 = load("games/connect4/connect4.js");
+	c4.init({ seats, opts: {}, seed: 1, match: 0, first: "a" });
+	c4.apply({ action: { col: 0 }, by: "a" });
+	c4.leave({ seat: "b" });
+	check("Connect 4, won because the other left: facts.four is false", c4.result()?.facts?.four === false, JSON.stringify(c4.result()?.facts));
+	const c5 = load("games/connect4/connect4.js");
+	c5.init({ seats, opts: {}, seed: 1, match: 0, first: "a" });
+	for (let i = 0; i < 7; i++) c5.apply({ action: { col: i % 2 }, by: i % 2 ? "b" : "a" });
+	check("…four in a row played: true", c5.result()?.facts?.four === true, JSON.stringify(c5.result()));
+	const nf = load("games/neon-fission/rules.js", "games/neon-fission/neon-fission.js");
+	nf.init({ seats: [{ id: "a", name: "A" }, { id: "b", name: "B", bot: true }], opts: {}, seed: 1, match: 0, first: "a" });
+	nf.leave({ seat: "b" });
+	check("Neon Fission, won because the other left: facts.finished is false", nf.result()?.facts?.finished === false, JSON.stringify(nf.result()?.facts));
+	const nf2 = load("games/neon-fission/rules.js", "games/neon-fission/neon-fission.js");
+	nf2.init({ seats: [{ id: "a", name: "A", bot: true }, { id: "b", name: "B", bot: true }], opts: {}, seed: 1, match: 0, first: "a" });
+	for (let k = 0; k < 500 && !nf2.result(); k++) {
+		const [who] = nf2.turn();
+		const act = who && nf2.bot({ seat: who });
+		if (!act || nf2.apply({ action: act, by: who }) != null) break;
+	}
+	check("…knocked out to the end by bots: true", nf2.result()?.facts?.finished === true, JSON.stringify(nf2.result()?.facts));
+	globalThis.document = saved.document;
+	globalThis.arcade = saved.arcade;
 }
 
 console.log(failures ? `\n${failures} records check(s) failed` : "\nall records checks passed");

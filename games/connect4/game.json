@@ -32,7 +32,8 @@
       "of": "facts.moves",
       "best": "min",
       "when": {
-        "won": true
+        "won": true,
+        "facts.four": true
       }
     },
     {
@@ -41,7 +42,8 @@
       "of": "facts.moves",
       "best": "max",
       "when": {
-        "won": true
+        "won": true,
+        "facts.four": true
       },
       "unit": "discs"
     }
@@ -63,6 +65,7 @@
       "glyph": "⚡",
       "when": {
         "won": true,
+        "facts.four": true,
         "facts.moves": {
           "<=": 14
         }
@@ -75,6 +78,7 @@
       "glyph": "🧱",
       "when": {
         "won": true,
+        "facts.four": true,
         "facts.moves": {
           ">=": 36
         }

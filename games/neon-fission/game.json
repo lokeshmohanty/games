@@ -42,7 +42,8 @@
       "best": "min",
       "by": "seats",
       "when": {
-        "won": true
+        "won": true,
+        "facts.finished": true
       }
     }
   ],

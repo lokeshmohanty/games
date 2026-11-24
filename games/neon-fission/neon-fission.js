@@ -111,7 +111,7 @@ arcade.managed({
 		details.push({ label: "Grid", value: `${g.cols} × ${g.rows}` });
 		// `facts` / `seatFacts`: what game.json's achievements and records read
 		// (docs/platform.md): the turns, and each seat's biggest chain.
-		const out = { kind: "ffa", ranking, details, facts: { turns: g.moves }, seatFacts: Object.fromEntries(s.ids.map((id, i) => [id, { chain: g.chains?.[i] ?? 0 }])) };
+		const out = { kind: "ffa", ranking, details, facts: { turns: g.moves, finished: g.ended === "play" }, seatFacts: Object.fromEntries(s.ids.map((id, i) => [id, { chain: g.chains?.[i] ?? 0 }])) };
 		// Players on this device are bot seats to the platform: the end card
 		// names them as the game does (lib/sdk-managed.js, result `names`).
 		if (hasLocal()) {

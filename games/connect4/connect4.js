@@ -230,7 +230,8 @@ arcade.managed({
 		const details = [{ label: "Moves played", value: s.moves ?? 0 }];
 		if (s.line) details.push({ label: "Winning line", value: s.line.join(" ") });
 		// `facts`: what game.json's achievements and records read (docs/platform.md).
-		return { kind: "duel", ranking, details, facts: { moves: s.moves ?? 0 } };
+		// four: won with four in a row (not because the other left).
+		return { kind: "duel", ranking, details, facts: { moves: s.moves ?? 0, four: !!s.line } };
 	},
 	skip() {
 		s.turn = s.turn === RED ? YELLOW : RED;

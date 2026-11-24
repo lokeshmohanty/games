@@ -41,6 +41,7 @@ import { homedir } from "node:os";
 import { dirname, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { COLOUR, validateManifest } from "./manifest.mjs";
+import { isPath } from "../lib/achievements.js";
 import { PORT_OFFSET, gameFrame, serve } from "./serve.mjs";
 import { loadPlaywright } from "./playwright.mjs";
 
@@ -155,18 +156,18 @@ function checkStatic(dir) {
 	// (docs/platform.md): a name no script mentions is never reported, so
 	// whatever reads it can never unlock. A hint, not a proof (a compiled
 	// game's names may be elsewhere).
+	// Only where a path can be (`of`, `by`, distinct/total `of`, a `when`'s
+	// keys), only names a condition can test (lib/achievements.js isPath),
+	// and escaped: a description is free text.
 	const reads = new Set();
-	const collect = (o) => {
-		if (!o || typeof o !== "object") return;
-		for (const [k, v] of Object.entries(o)) {
-			for (const p of [k, typeof v === "string" ? v : null]) if (p?.startsWith("facts.")) reads.add(p.slice(6));
-			collect(v);
-		}
-	};
-	collect([m.achievements ?? [], m.records ?? []]);
+	const path = (p) => isPath(p) && p.startsWith("facts.") && reads.add(p.slice(6));
+	for (const x of [...(m.achievements ?? []), ...(m.records ?? [])]) {
+		for (const p of [x?.of, x?.by, x?.distinct?.of, x?.total?.of, ...Object.keys(x?.when ?? {})]) path(p);
+	}
 	const allCode = code.map(([, text]) => text).join("\n");
+	const escape = (t) => t.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 	for (const name of reads) {
-		warn(`game.json reads facts.${name}, which a script reports`, new RegExp(`\\b${name}\\b`).test(allCode), `no script mentions "${name}" — report it in the result's facts or seatFacts, or the achievements that read it never unlock`);
+		warn(`game.json reads facts.${name}, which a script reports`, new RegExp(`\\b${escape(name)}\\b`).test(allCode), `no script mentions "${name}" — report it in the result's facts or seatFacts, or the achievements that read it never unlock`);
 	}
 	const remote = [...html.matchAll(/\b(?:src|href)\s*=\s*["'](https?:)?\/\//gi)];
 	check("the entry page names no remote URL", !remote.length);
