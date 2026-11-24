@@ -16,18 +16,13 @@ separate `TODO.md`.*
 
 ## Now (2026-11-18)
 
-**Branch `player-colours` (2026-11-24, here, web-games and card-games; PRs open — web-games #1, card-games #1 — not merged):**
-players pick their own colour (Lokesh, 2026-11-21: "every game with
-colours"): the picker under YOU and on the quick table, `neon.color` per
-device, the host's record settles `color` (first to pick keeps it; bots fill
-the gaps), games hear it as `color` / view `colors` (docs/index.md "Player
-colours", docs/sdk-v2.md "Seat colours"). web-games `player-colours` makes
-Ludo, Five in a Row, Snakes & Ladders, Light Cycles and Bubble Rush honour
-it, card-games `player-colours` Glowdown, Guess What and 29's seat marks;
-pickers beat non-pickers, and no seat differs by colour alone. To land: merge
-both community PRs, move both registry pins to their new mains, `just
-games-table`. Until then test-bots' Five in a Row, Ludo and Light Cycles
-colour checks skip, saying so.
+**Player colours (2026-11-24, landed by PR here; web-games 69c7587 and
+card-games 0d10c1f pinned):** players pick their own colour (Lokesh,
+2026-11-21: "every game with colours"): the picker under YOU and on the quick
+table, `neon.color` per device, the host's record settles `color` (pickers
+beat non-pickers, the first picker keeps it, bots fill the gaps), games hear
+it as `color` / view `colors` (docs/index.md "Player colours", docs/sdk-v2.md
+"Seat colours"), and no seat differs by colour alone.
 
 **Branch `card-games` (2026-11-24, pushed, not merged):** a new
 community repo, lokeshmohanty/card-games (../card-games; main pushed at
