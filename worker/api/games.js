@@ -15,6 +15,7 @@ export const GAMES = Object.assign(Object.create(null), {
 	"lokeshmohanty/five-in-a-row": "ffa",
 	"lokeshmohanty/liars-dice": "ffa",
 	"lokeshmohanty/light-cycles": "ffa",
+	"lokeshmohanty/ludo": "ffa",
 	"lokeshmohanty/snakes-and-ladders": "ffa",
 	"lokeshmohanty/sudoku": "ffa",
 	"neon-bid": "ffa",
@@ -52,6 +53,10 @@ export const KINDS = Object.assign(Object.create(null), {
 	"lokeshmohanty/bubble-rush": [
 		"ffa",
 		"teams"
+	],
+	"lokeshmohanty/ludo": [
+		"ffa",
+		"teams"
 	]
 });
 
@@ -65,6 +70,7 @@ export const TITLES = Object.assign(Object.create(null), {
 	"lokeshmohanty/five-in-a-row": "Five in a Row",
 	"lokeshmohanty/liars-dice": "Liar's Dice",
 	"lokeshmohanty/light-cycles": "Light Cycles",
+	"lokeshmohanty/ludo": "Ludo",
 	"lokeshmohanty/snakes-and-ladders": "Snakes & Ladders",
 	"lokeshmohanty/sudoku": "Sudoku",
 	"neon-bid": "Neon Bid",

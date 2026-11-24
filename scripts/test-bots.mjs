@@ -2538,6 +2538,128 @@ try {
 		await resultReached(page, "lokeshmohanty/snakes-and-ladders", v.winner === v.you);
 	}
 
+	// --------------------------------------------------------------- ludo
+	//
+	// Bots on both boards: each bot's move is its whole turn (a 6 rolls again
+	// inside it). The setup only the first time (Lokesh, 2026-11-23): a fresh
+	// phone's card tap goes straight in, PLAY AGAIN too; a different table
+	// brings the setup; the same table again goes straight in on its board
+	// and teams. Until the registry's pin has Ludo these skip, saying so.
+
+	/** Ludo with bots, `n` at the quick table, through to its first view. */
+	async function openLudo(p, n) {
+		await p.goto(url("?game=lokeshmohanty%2Fludo&fresh=1&mode=bots"));
+		const which = await (
+			await p.waitForFunction(() => {
+				const go = document.querySelector(".quick-table .quick-go button");
+				return go && go.getClientRects().length ? "table" : window.__party?.game ? "game" : null;
+			}, null, { timeout: TIMEOUT })
+		).jsonValue();
+		if (which === "table") {
+			await setPlayers(p, n);
+			await p.locator(".quick-table .quick-go button").click();
+		}
+		await p.waitForFunction(() => window.__game?.handle, null, { timeout: TIMEOUT });
+		const F = await gameScope(p, TIMEOUT);
+		await F.waitForFunction((n) => window.__game.handle.debug().seats?.length === n, n, { timeout: TIMEOUT });
+		await readyToClick(p);
+		return F;
+	}
+	/** Roll and pick (the first ring) as a thumb would, until `done(view)`; every event seen, in order. */
+	async function ludoDrive(F, done, ms) {
+		const seen = new Map();
+		const end = Date.now() + ms;
+		let v = await F.evaluate(() => window.__game.handle.debug());
+		for (; !done(v, seen) && Date.now() < end; v = await F.evaluate(() => window.__game.handle.debug())) {
+			for (const e of v.log ?? []) seen.set(e.n, e);
+			if (v.myTurn && v.stage === "roll" && !v.tumbling && !v.busy) await F.evaluate(() => document.querySelector(".lu-die:not(:disabled)")?.click());
+			else if (v.targets?.length && !v.picking) await F.evaluate(() => document.querySelector(".lu-pick")?.click());
+			await sleep(150);
+		}
+		for (const e of v.log ?? []) seen.set(e.n, e);
+		return { v, seen: [...seen.values()].sort((a, b) => a.n - b.n) };
+	}
+
+	console.log("\nbots: ludo, one person and one bot: straight in, to the end, PLAY AGAIN straight in");
+	if (pinned("ludo")) {
+		G = await openLudo(page, 2);
+		let v = await debug(page);
+		check("a fresh phone's tap: straight into play (no setup), the 4-player board, free-for-all, the two opposite", v.phase === "play" && v.board === 4 && v.mode === "ffa" && v.arms.join() === "0,2", JSON.stringify({ phase: v.phase, board: v.board, arms: v.arms }));
+		const opener = v.opener;
+		// The game, without its animations: the bot waits for none.
+		await page.emulateMedia({ reducedMotion: "reduce" });
+		({ v } = await ludoDrive(G, (v) => v.over, 300_000));
+		check("the game ends: the winner has all four tokens home", v.over && v.winner != null && v.tokens[v.winner].every((p) => p === v.home), JSON.stringify({ winner: v.winner, tokens: v.tokens }));
+		await resultReached(page, "lokeshmohanty/ludo", v.winner === v.you);
+		await page.emulateMedia({ reducedMotion: null });
+		// "Next game: … · CHANGE" (Lokesh, 2026-11-23), on the game's end screen behind SEE THE BOARD.
+		await page.locator(".managed-over button", { hasText: "SEE THE BOARD" }).first().click({ timeout: TIMEOUT });
+		await G.waitForFunction(() => !!document.querySelector(".lu-next:not([hidden]) .lu-next-change"), null, { timeout: TIMEOUT });
+		await G.locator(".lu-next-change").click();
+		await G.locator('.lu-next button[data-board="6"]').click({ timeout: TIMEOUT });
+		await G.locator(".lu-next-change").click();
+		const said = await G.evaluate(() => document.querySelector(".lu-next").textContent);
+		check("CHANGE at the end: the next game on the 6-player board", said.startsWith("Next game: 6-player board, free-for-all"), said);
+		await page.locator(".managed-over button", { hasText: "PLAY AGAIN" }).first().click({ timeout: TIMEOUT });
+		await G.waitForFunction(() => window.__game.handle.debug().match === 2, null, { timeout: TIMEOUT });
+		v = await debug(page);
+		check("PLAY AGAIN: straight into play on the board picked for it, the next seat to open (who starts goes round)", v.phase === "play" && v.board === 6 && v.arms.join() === "0,3" && v.opener === (opener + 1) % 2 && v.turn === v.opener, JSON.stringify({ phase: v.phase, board: v.board, opener, now: v.opener }));
+	}
+
+	console.log("\nbots: ludo, one person and three bots: a different table brings the setup; 2 v 2; bots' whole turns");
+	if (pinned("ludo")) {
+		G = await openLudo(page, 4);
+		let v = await debug(page);
+		const self = await selfOf(page);
+		check("four at the table (last time two): the setup, the last board (6) still picked, free-for-all", v.seats[v.you] === self && v.seats.filter((id) => id.startsWith("bot_")).length === 3 && v.phase === "setup" && v.board === 6 && v.mode === "ffa", JSON.stringify({ seats: v.seats, phase: v.phase, board: v.board }));
+		await G.locator('.lu-setup button[data-board="4"]').click();
+		await G.waitForFunction(() => window.__game.handle.debug().board === 4, null, { timeout: TIMEOUT });
+		// Each seat's chip carries its token's own mark, not only a colour.
+		const glyphs = await G.evaluate(() => [...document.querySelectorAll(".lu-player svg")].map((s) => s.dataset.glyph));
+		check(`each seat's chip shows its token's own mark (${glyphs.join(", ")})`, glyphs.length === 4 && new Set(glyphs).size === 4 && glyphs.every(Boolean), JSON.stringify(glyphs));
+		await G.locator('.lu-setup button[data-mode="pairs"]').click();
+		await G.waitForFunction(() => window.__game.handle.debug().mode === "pairs", null, { timeout: TIMEOUT });
+		v = await debug(page);
+		check("2 v 2: partners sit opposite (arms two apart, the same team)", [0, 1].every((i) => v.teams[i] === v.teams[i + 2] && Math.abs(v.arms[i] - v.arms[i + 2]) === 2) && v.teams[0] !== v.teams[1], JSON.stringify({ arms: v.arms, teams: v.teams }));
+		await phoneSizes(page, G, "ludo, setting up 2 v 2");
+		await G.locator(".lu-start").click();
+		await G.waitForFunction(() => window.__game.handle.debug().phase === "play", null, { timeout: TIMEOUT });
+		v = await debug(page);
+		check("START: every token in its yard, the opener on turn", v.tokens.every((t) => t.every((p) => p === -1)) && v.turn === v.opener);
+		await phoneSizes(page, G, "ludo, 2 v 2 on the 4-player board");
+		// Bot seats roll for themselves; a bot's 6 rolls again within its one move.
+		const bots = new Set(v.seats.map((id, i) => (id.startsWith("bot_") ? i : -1)).filter((i) => i >= 0));
+		const twice = (seen) => seen.some((e, k) => k && bots.has(e.seat) && seen[k - 1].seat === e.seat && seen[k - 1].roll === 6 && !e.picked);
+		const run = await ludoDrive(G, (v, seen) => [...bots].every((b) => [...seen.values()].some((e) => e.seat === b)) && twice([...seen.values()].sort((a, b) => a.n - b.n)), 150_000);
+		check("every bot rolls its own turns", [...bots].every((b) => run.seen.some((e) => e.seat === b)), JSON.stringify([...new Set(run.seen.map((e) => e.seat))]));
+		check("a bot's 6 rolls again, inside its turn (the game never waits on a bot still on turn)", twice(run.seen), `${run.seen.length} events`);
+		check("no event lost: every one from the first, in order", run.seen.every((e, k) => e.n === k + 1), run.seen.map((e) => e.n).join());
+	}
+
+	console.log("\nbots: ludo on the 6-player board, two teams of three; the same table again goes straight in");
+	if (pinned("ludo")) {
+		G = await openLudo(page, 6);
+		let v = await debug(page);
+		const four = await G.locator('.lu-setup button[data-board="4"]').isDisabled();
+		check("six at the table: the setup, the 6-player board, the 4-player board not on offer", v.phase === "setup" && v.board === 6 && four);
+		await G.locator('.lu-setup button[data-mode="trios"]').click();
+		await G.waitForFunction(() => window.__game.handle.debug().mode === "trios", null, { timeout: TIMEOUT });
+		v = await debug(page);
+		check("two teams of three, on every other arm", v.teams.join() === "0,1,0,1,0,1" && v.arms.join() === "0,1,2,3,4,5", JSON.stringify({ teams: v.teams, arms: v.arms }));
+		await G.locator(".lu-start").click();
+		await G.waitForFunction(() => window.__game.handle.debug().phase === "play", null, { timeout: TIMEOUT });
+		await phoneSizes(page, G, "ludo, the 6-player board");
+		const run = await ludoDrive(G, (v, seen) => seen.size >= 40, 150_000);
+		const movers = new Set(run.seen.map((e) => e.seat));
+		check(`all six seats take their turns (${movers.size} seen in ${run.seen.length} events)`, movers.size === 6);
+		check("tokens have come out onto the board", run.v.tokens.flat().some((p) => p >= 0), JSON.stringify(run.v.tokens));
+		// The card again, the same six: no setup, two teams of three as before.
+		G = await openLudo(page, 6);
+		await G.waitForFunction(() => window.__game.handle.debug().phase, null, { timeout: TIMEOUT });
+		v = await debug(page);
+		check("the same table again (a card's tap): straight into play, 6-player board, two teams of three", v.phase === "play" && v.board === 6 && v.mode === "trios" && v.teams.join() === "0,1,0,1,0,1", JSON.stringify({ phase: v.phase, board: v.board, mode: v.mode }));
+	}
+
 	// --------------------------------------------- card games: glowdown
 	//
 	// lokeshmohanty/card-games, a repository of its own. Until the registry

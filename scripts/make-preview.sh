@@ -44,6 +44,8 @@ profile_for() {
     snakes-and-ladders) echo "360 12 medium" ;;
     # A wide light board with fine lines: 2 MB at the default profile.
     five-in-a-row) echo "520 10 low" ;;
+    # An upright 460x760 frame, still between moves.
+    ludo) echo "360 12 medium" ;;
     # The card games (lokeshmohanty/card-games): upright 420x760 phone frames.
     # Glowdown's and 29's many card faces made 2 MB gifs at 360px/10fps/medium.
     glowdown|twenty-nine) echo "320 8 low" ;;

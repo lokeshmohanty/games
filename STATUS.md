@@ -16,9 +16,9 @@ separate `TODO.md`.*
 
 ## Now (2026-11-18)
 
-**Branch `card-games` (2026-11-23, not pushed, not merged):** a new
-community repo, lokeshmohanty/card-games (../card-games, local commits on
-`main`; GitHub repo exists, nothing pushed): Glowdown (an original shedding
+**Branch `card-games` (2026-11-24, pushed, not merged):** a new
+community repo, lokeshmohanty/card-games (../card-games; main pushed at
+7ef5aa2): Glowdown (an original shedding
 game with house rules), Guess What (a picture clue party game, every phone or
 one phone) and 29. Each asks its settings only before the first match
 (Lokesh, 2026-11-23, as Ludo): PLAY AGAIN keeps them, the end says "Next
@@ -26,12 +26,37 @@ game: … · CHANGE" (host only), a one-tap start uses the host device's last
 settings. Here: their test-taps and test-bots blocks (skipping only while
 the registry does not list them, `registryLists`), preview scenarios
 (`soloTable`). Glowdown's deck was redesigned as our own on 2026-11-24
-(the review found UNO's card set under a new name). No registry pin is committed:
-`registry/lokeshmohanty/card-games.json` moves by PR, with `just
-games-table` (worker/api/games.js) in the same PR. test-portal's
+(the review found UNO's card set under a new name). This branch carries the
+pin, `registry/lokeshmohanty/card-games.json` (7ef5aa2, all three games), and
+worker/api/games.js from `just games-table`; it lands by PR. test-portal's
 Contributors and Collections checks expect card-games once the catalog has
 it. The card games' rules still play a bot's own follow-up moves in its
 apply, for shells cached before platform-fixes re-asked such bots.
+
+**Branch `ludo` (2026-11-23, both repos, pushed, not merged):** Ludo in
+web-games (`ludo`, 4- and 6-player boards, free-for-all or teams), and here
+its test-taps, test-bots and preview blocks, `make-preview.sh --gif`,
+and `EXTRA_KINDS` for its `teams` results. Until the pin has Ludo its blocks skip,
+saying so. To land: merge web-games, move `registry/lokeshmohanty/web-games.json`
+(commit and `ludo`), run `just games-table`. Found on the way: lib/sdk-managed.js
+`botMove` never asks again a bot still on turn after its own move (its entry
+is deleted only after `refresh` tried to reschedule), so Ludo's bot plays its
+whole turn in one move; and validate-game's browser check skips the play
+check ("needs people") for every game since quick-start (its SINGLE PLAYER
+lookup). Both fixed on main since (platform-fixes). Review fixes (2026-11-23): test-taps holds
+players sharing a star (a crafted turn, both boards) to 7px tokens, none
+over another, counts clear of them, see-through pushed rings; Lokesh's
+calls — a free-for-all ends once only bots race, and the setup only the
+first time (PLAY AGAIN and a card's tap at the same table go straight in;
+a different table, CHANGE PLAYERS to another count, brings it) — are in the
+rules and in test-bots. CHANGE PLAYERS back to the same count goes straight
+in too: the game cannot tell it from a card's tap (no signal in `init`).
+Re-review (2026-11-23): a crowded safe square's tokens stand clear of every
+other token and the yards (test-taps checks every drawn token, six on a
+star too); "Next game: … · CHANGE" at the end (Lokesh) — on the game's end
+screen, reached by SEE THE BOARD, since the shell's card takes no game
+content. main merged in, with platform-fixes (both findings above) and
+PR #15 (Five in a Row, Snakes & Ladders, `registryLists`).
 
 **Branch `new-games` (2026-11-22, both repos, pushed, not merged):** Five in
 a Row and Snakes & Ladders in web-games (`new-games`), and here test-taps,

@@ -9,7 +9,7 @@
  * A real-device pass on Lokesh's Android phone (2026-11-18: 354x696 CSS px at
  * DPR 3.5) found tap targets under 44px and text under 12px inside games —
  * which no suite caught, because each checked the few controls it knew of.
- * This plays each of lokeshmohanty/web-games' eight games and
+ * This plays each of lokeshmohanty/web-games' games and
  * lokeshmohanty/card-games' three (registry pins, or NEON_PIN_OVERRIDE)
  * through its setup, play and end, and at each step holds
  * the whole game frame to scripts/serve.mjs `phoneSizes` — at 390x844 and at
@@ -71,6 +71,7 @@ const EXEMPT = {
 	"draw-guess": [],
 	"five-in-a-row": [],
 	"snakes-and-ladders": [],
+	ludo: [],
 	glowdown: [],
 	"twenty-nine": [],
 	"guess-what": [],
@@ -290,6 +291,87 @@ async function audit(page, F, game, step, { canvas = false, min, under = null, f
 }
 const exemptions = new Set();
 
+/**
+ * Ludo, a crafted turn (reviews, 2026-11-23): on `board`, every player on
+ * the star 8 squares (6 on the 6-player board) on from this phone's start —
+ * this phone and the next seat with stacks of two, the others one each —
+ * and this phone's two other tokens just behind it, its roll a 2. Every
+ * token on the star at least 7px across; no token drawn over another
+ * anywhere on the board (a crowded square's ring spilling onto the next
+ * square, or a yard, counts), and no stack's count over another token; the
+ * rings, pushed apart, see-through, the stack's ring showing its count; then
+ * the floors at both sizes.
+ */
+async function ludoSharedStar(page, G, board, fit, who = "four players") {
+	await G.evaluate((board) => {
+		const R = window.ludoRules;
+		const s = rules.snapshot();
+		const geo = R.geometry(board);
+		const n = s.seats.length;
+		const me = window.__game.handle.debug().you;
+		Object.assign(s, { board, mode: "ffa", arms: [...R.ARMS[board][n]] });
+		const star = geo.stars[s.arms[me]];
+		const at = (j) => (star - s.arms[j] * geo.STEP + 2 * geo.T) % geo.T;
+		s.tokens = s.seats.map(() => [-1, -1, -1, -1]);
+		s.tokens[me] = [at(me), at(me), at(me) - 2, at(me) - 1];
+		s.seats.forEach((_, j) => {
+			if (j === me) return;
+			s.tokens[j][0] = at(j);
+			if (j === (me + 1) % n) s.tokens[j][1] = at(j);
+		});
+		let seed = 1;
+		while (R.rng(seed).int(1, 6) !== 2) seed++;
+		Object.assign(s, { dice: seed, turn: me, stage: "roll", roll: 0, sixes: 0, done: [], over: false });
+		rules.restore({ snapshot: s });
+		arcade.act({ roll: true });
+	}, board);
+	await until(G, (b) => {
+		const d = window.__game.handle.debug();
+		return d.board === b && d.stage === "move" && d.targets.length === 3 && !d.busy;
+	}, board);
+	/** The tokens on the star, as drawn now: what falls short, or null. */
+	const shared = () =>
+		G.evaluate(() => {
+			const d = window.__game.handle.debug();
+			const bySquare = new Map();
+			for (const t of d.drawn) bySquare.set(t.square, [...(bySquare.get(t.square) ?? []), t]);
+			const star = [...bySquare.values()].find((g) => g.length === d.seats.length);
+			if (!star) return { star: "no square with every seat on it", drawn: d.drawn };
+			const bad = [];
+			for (const a of star) {
+				if (a.r < 7) bad.push(`seat ${a.seat} drawn ${a.r.toFixed(1)}px across the radius`);
+				if (a.count > 1 && a.marks.length !== a.count) bad.push(`seat ${a.seat}: ${a.marks.length} notches for ${a.count}`);
+			}
+			// Every token drawn, yards included, against every other: across squares too.
+			const name = (t) => `seat ${t.seat}${t.square ? ` (${t.square === star[0].square ? "the star" : t.square})` : ""}`;
+			d.drawn.forEach((a, i) => {
+				d.drawn.forEach((b, j) => {
+					if (i === j) return;
+					const gap = Math.hypot(a.x - b.x, a.y - b.y) - a.r - b.r;
+					if (i < j && gap < -0.05) bad.push(`${name(a)} and ${name(b)} overlap by ${(-gap).toFixed(1)}px`);
+					for (const [mx, my] of a.marks) if (Math.hypot(mx - b.x, my - b.y) < b.r + 1) bad.push(`${name(a)}'s count is over ${name(b)}`);
+				});
+			});
+			const rings = [...document.querySelectorAll(".lu-pick")];
+			// What a ring holds (its count, a token's mark when pushed far off) covers no token.
+			const box = document.querySelector(".lu-board").getBoundingClientRect();
+			for (const el of document.querySelectorAll(".lu-pick b, .lu-pick svg")) {
+				const b = el.getBoundingClientRect();
+				const [x, y, rad] = [b.left + b.width / 2 - box.left, b.top + b.height / 2 - box.top, Math.max(b.width, b.height) / 2];
+				for (const tk of d.drawn) if (Math.hypot(x - tk.x, y - tk.y) < tk.r + rad - 1) bad.push(`a ring's ${el.tagName === "B" ? "count" : "mark"} covers ${name(tk)}`);
+			}
+			const stack = rings.find((r) => r.dataset.stack === "2");
+			if (!stack || stack.querySelector("b")?.textContent !== "2") bad.push("the stack's ring does not show 2");
+			for (const r of rings.filter((r) => r.classList.contains("away"))) {
+				const a = Number(/rgba?\([^)]*?,\s*([\d.]+)\)$/.exec(getComputedStyle(r).backgroundColor)?.[1] ?? 1);
+				if (getComputedStyle(r).backgroundColor !== "rgba(0, 0, 0, 0)" && a > 0.35) bad.push(`a pushed-apart ring is not see-through (${getComputedStyle(r).backgroundColor})`);
+			}
+			if (!rings.some((r) => r.classList.contains("away"))) bad.push("no ring was pushed apart (the crafted rings should crowd)");
+			return bad.length ? { bad, star } : null;
+		});
+	await audit(page, G, "ludo", `${who} sharing a star, ${board}-player board`, { min: 3, canvas: true, fit, extra: shared });
+}
+
 // ------------------------------------------------------------------ games
 
 const GAMES = {
@@ -304,6 +386,20 @@ const GAMES = {
 			return d.phase === "play" && d.selected >= 0;
 		});
 		await audit(page, G, "sudoku", "the race", { min: 81 });
+		// A row with no digit in it is as tall as the rest. A random puzzle may
+		// deal a row with no givens, and the rows were sized by their digits:
+		// that row shrank to 13px of a 40px board (CI, 2026-11-23, now and
+		// then). Emptied here, so the check does not wait on the dealer.
+		const rows = await G.evaluate(() => {
+			const cells = [...document.querySelectorAll(".su-cell")];
+			const row = cells.slice(36, 45);
+			const kept = row.map((c) => c.innerHTML);
+			for (const c of row) c.textContent = "";
+			const h = Array.from({ length: 9 }, (_, r) => Math.round(cells[r * 9].getBoundingClientRect().height * 10) / 10);
+			row.forEach((c, k) => (c.innerHTML = kept[k]));
+			return h;
+		});
+		check("sudoku · a row with no digit in it is as tall as the rest", Math.max(...rows) - Math.min(...rows) <= 1.5, rows);
 		// Pencil notes in the selected cell.
 		await G.locator(".su-pad button", { hasText: "NOTES" }).click();
 		for (const d of ["1", "5", "9"]) await G.locator(".su-pad button", { hasText: new RegExp(`^${d}$`) }).click();
@@ -501,6 +597,107 @@ const GAMES = {
 		check("snakes-and-ladders reached its end", last.over, { home: last.home, rolls: last.rolls });
 		await until(G, () => !window.__game.handle.debug().busy);
 		await audit(page, G, "snakes-and-ladders", "the end", { min: 0, canvas: true, fit });
+	},
+
+	/**
+	 * A card's tap goes straight into play on the 4-player board: your roll,
+	 * a move playing, a choice of tokens (its rings), played to the end. Then
+	 * CHANGE PLAYERS to four, which brings the setup (both boards), and on the
+	 * 6-player board your roll and players sharing a star — stacks among them
+	 * and pushed-apart rings — then the same on the 4-player board.
+	 */
+	async ludo(page) {
+		let G = await solo(page, "ludo", 2);
+		const fit = [".lu-status, .lu-players, .lu-board, .lu-bar", 4];
+		/** Roll and pick (the first ring) as a thumb would, until `done(debug)`. */
+		const drive = async (done, ms) => {
+			const end = Date.now() + ms;
+			for (let d = await debug(G); !done(d) && Date.now() < end; d = await debug(G)) {
+				if (d.myTurn && d.stage === "roll" && !d.tumbling && !d.busy) await G.evaluate(() => document.querySelector(".lu-die:not(:disabled)")?.click());
+				else if (d.targets.length && !d.picking) await G.evaluate(() => document.querySelector(".lu-pick")?.click());
+				await sleep(150);
+			}
+			return debug(G);
+		};
+		const choice = (d) => d.myTurn && d.stage === "move" && !d.busy && d.targets.length >= 2;
+		await until(G, () => window.__game.handle.debug().phase);
+		let d = await debug(G);
+		check("ludo · a card's tap on a fresh phone: straight into play, the 4-player board, no setup", d.phase === "play" && d.board === 4 && d.mode === "ffa", { phase: d.phase, board: d.board });
+		await drive((d) => d.myTurn && d.stage === "roll" && !d.busy, 60_000);
+		await audit(page, G, "ludo", "your roll, 4-player board", { min: 1, canvas: true, fit });
+		await G.evaluate(() => document.querySelector(".lu-die").click());
+		await until(G, () => window.__game.handle.debug().busy);
+		await audit(page, G, "ludo", "a move playing", { min: 0, canvas: true, fit });
+		d = await drive(choice, 180_000);
+		check("ludo · a choice of tokens came up on the 4-player board", choice(d), { targets: d.targets, tokens: d.tokens });
+		if (choice(d)) await audit(page, G, "ludo", "a choice of tokens, 4-player board", { min: 2, canvas: true, fit });
+		// The rest of the game without the animations (bots wait for none).
+		await page.emulateMedia({ reducedMotion: "reduce" });
+		d = await drive((d) => d.over, 300_000);
+		check("ludo reached its end", d.over, { done: d.done, tokens: d.tokens });
+		await until(G, () => !window.__game.handle.debug().busy);
+		await audit(page, G, "ludo", "the end", { min: 0, canvas: true, fit });
+		// SEE THE BOARD: the game's end screen, "Next game: … · CHANGE" (Lokesh, 2026-11-23).
+		await page.locator(".managed-over button", { hasText: "SEE THE BOARD" }).first().click({ timeout: TIMEOUT });
+		await until(G, () => !!document.querySelector(".lu-next:not([hidden]) .lu-next-change"));
+		const line = () => G.evaluate(() => document.querySelector(".lu-next").textContent);
+		check("ludo · the end: the next game is this one (4-player board, free-for-all), with CHANGE", (await line()).startsWith("Next game: 4-player board, free-for-all"), await line());
+		await audit(page, G, "ludo", "the end, the next game line", { min: 1, canvas: true });
+		await G.locator(".lu-next-change").click();
+		await until(G, () => !!document.querySelector(".lu-next button[data-board]"));
+		// Two players: both boards, free-for-all only (teams need every seat), and DONE —
+		// all above the shell's end card, tucked to the bottom (a thumb reaches them).
+		const aboveCard = async () => {
+			const card = await page.locator(".managed-over > div").first().boundingBox();
+			const frame = await page.locator("iframe.game-frame, iframe").first().boundingBox();
+			const bottom = await G.evaluate(() => Math.max(...[...document.querySelectorAll(".lu-next button")].map((b) => b.getBoundingClientRect().bottom)));
+			return card && frame && frame.y + bottom <= card.y ? null : { cardTop: card?.y, controlsBottom: frame && frame.y + bottom };
+		};
+		await audit(page, G, "ludo", "choosing the next game", { min: 4, extra: aboveCard });
+		check("ludo · the next game's teams are not on offer to two", await G.locator('.lu-next button[data-mode="pairs"]').isDisabled());
+		await G.locator('.lu-next button[data-board="6"]').click();
+		await G.locator(".lu-next-change").click();
+		await until(G, () => !document.querySelector(".lu-next button[data-board]"));
+		check("ludo · CHANGE, the 6-player board, DONE: the line says so", (await line()).startsWith("Next game: 6-player board, free-for-all"), await line());
+		// CHANGE PLAYERS: four at the table, a different table, so the setup.
+		await page.locator(".managed-over .managed-seats").first().click({ timeout: TIMEOUT });
+		await page.locator(".quick-table .quick-go button").waitFor({ timeout: TIMEOUT });
+		for (let k = 0; k < 10 && Number(await page.locator(".quick-table .quick-n").textContent()) !== 4; k++) {
+			await page.locator('.quick-table [data-qt="plus"]').click();
+			await sleep(150);
+		}
+		await page.locator(".quick-table .quick-go button").click();
+		await page.waitForFunction(() => window.__game?.handle, null, { timeout: TIMEOUT });
+		G = await gameScope(page, TIMEOUT);
+		await until(G, () => window.__game.handle.debug().seats?.length === 4);
+		await readyToClick(page);
+		await page.emulateMedia({ reducedMotion: null });
+		d = await debug(G);
+		check("ludo · CHANGE PLAYERS to four: the setup, the board picked for next game still picked", d.phase === "setup" && d.board === 6, { phase: d.phase, board: d.board });
+		// Four players on the 4-player board: both boards, free-for-all and 2 v 2, START.
+		await G.locator('.lu-setup button[data-board="4"]').click();
+		await until(G, () => window.__game.handle.debug().board === 4);
+		await audit(page, G, "ludo", "setting up", { min: 5 });
+		await G.locator('.lu-setup button[data-board="6"]').click();
+		await until(G, () => window.__game.handle.debug().board === 6);
+		await audit(page, G, "ludo", "setting up, 6-player board", { min: 4 });
+		await G.locator(".lu-start").click();
+		await until(G, () => window.__game.handle.debug().phase === "play");
+		await drive((d) => d.myTurn && d.stage === "roll" && !d.busy, 60_000);
+		await audit(page, G, "ludo", "your roll, 6-player board", { min: 1, canvas: true, fit });
+		await page.emulateMedia({ reducedMotion: "reduce" });
+		for (const board of [6, 4]) await ludoSharedStar(page, G, board, fit);
+		// Six on one star: a fresh phone, six at the table, straight in on the 6-player board.
+		const six = await phone();
+		const P6 = watch(await six.newPage());
+		try {
+			const G6 = await solo(P6, "ludo", 6);
+			await until(G6, () => window.__game.handle.debug().phase === "play" && window.__game.handle.debug().seats.length === 6);
+			await P6.emulateMedia({ reducedMotion: "reduce" });
+			await ludoSharedStar(P6, G6, 6, fit, "six players");
+		} finally {
+			await six.close();
+		}
 	},
 
 	/** Two phones (friends' first game): the house rules; one with bots: straight in, your turn, a pick, a long hand fanned in rows, the end, the next game's rules. */
@@ -762,11 +959,10 @@ async function floorsItself() {
 	await ctx.close();
 }
 
-// Games a games repo adds before the registry's pin has them (web-games'
-// newest; lokeshmohanty/card-games, a repo of its own): with the pin's build
-// they are not in community/catalog.js, and their blocks skip (said, not
-// silent) so main stays green until the pin moves.
-const AWAITING_PIN = new Set(["five-in-a-row", "snakes-and-ladders", "glowdown", "twenty-nine", "guess-what"]);
+// Games a web-games branch adds before the registry's pin has them: with the
+// pin's build they are not in community/catalog.js, and their blocks skip
+// (said, not silent) so main stays green until the pin moves.
+const AWAITING_PIN = new Set(["five-in-a-row", "snakes-and-ladders", "ludo", "glowdown", "twenty-nine", "guess-what"]);
 
 const only = process.argv.slice(2);
 try {

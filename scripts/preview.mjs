@@ -245,6 +245,29 @@ function tttPick(board, me) {
 	return [4, 0, 2, 6, 8, 1, 3, 5, 7].find((i) => !board[i]) ?? 0;
 }
 
+/**
+ * Ludo: roll on this phone's turn and pick a token (a capture or the token
+ * furthest on, like its bot), for `seconds` or until `done(view)`.
+ */
+async function ludoTurns(page, seconds, done) {
+	const G = await gameScope(page, 20_000);
+	const end = Date.now() + seconds * 1000;
+	while (Date.now() < end) {
+		const v = await G.evaluate(() => window.__game.handle.debug()).catch(() => null);
+		if (!v || done(v)) break;
+		if (v.myTurn && v.stage === "roll" && !v.tumbling && !v.busy) {
+			await sleep(250);
+			// The die and the rings pulse, so never "stable": a forced click, where a finger would land.
+			await G.locator(".lu-die").click({ timeout: 2000, force: true }).catch(() => {});
+		} else if (v.targets?.length && !v.picking && !v.busy) {
+			await sleep(450);
+			const best = v.targets.reduce((a, b) => (v.tokens[b.owner][b.token] > v.tokens[a.owner][a.token] ? b : a));
+			await G.locator(`.lu-pick[data-owner="${best.owner}"][data-token="${best.token}"]`).click({ timeout: 2000, force: true }).catch(() => {});
+		}
+		await sleep(200);
+	}
+}
+
 /** A button in the game's frame, pressed (`element.click()`); false when there is none. */
 const press = (G, sel) =>
 	G.evaluate((sel) => {
@@ -792,6 +815,40 @@ const GAMES = {
 		async play([page], seconds) {
 			await slRolls(page, seconds, (v) => v.over);
 			await sleep(1200);
+		},
+	},
+
+	ludo: {
+		file: "?game=lokeshmohanty%2Fludo&fresh=1&mode=bots",
+		// One phone and three bots on the 4-player board, upright like the
+		// phone it is made for.
+		peers: 1,
+		seconds: 14,
+		width: 460,
+		height: 760,
+		async beforeStart([page]) {
+			// The quick table: four players, START GAME, then the host's START.
+			const table = page.locator(".quick-table");
+			if (await table.waitFor({ timeout: 8000 }).then(() => true, () => false)) {
+				for (let i = 0; i < 10 && Number(await page.locator(".quick-n").textContent()) !== 4; i++) {
+					const now = Number(await page.locator(".quick-n").textContent());
+					await page.locator(`.quick-table [data-qt="${now < 4 ? "plus" : "minus"}"]`).click();
+					await sleep(120);
+				}
+				await page.locator(".quick-table .quick-go button").click();
+			}
+			await page.waitForFunction(() => window.__game?.handle, null, { timeout: 20_000 });
+			const G = await gameScope(page, 20_000);
+			await readyToClick(page);
+			// A fresh phone's tap goes straight in; a setup shows only for a different table.
+			await G.waitForFunction(() => window.__game.handle.debug().phase, null, { timeout: 20_000 });
+			if ((await G.evaluate(() => window.__game.handle.debug().phase)) === "setup") await G.locator(".lu-start").click({ timeout: 20_000 });
+			// The opening off camera: the clip starts with tokens out round the board.
+			await ludoTurns(page, 90, (v) => v.tokens.flat().filter((p) => p >= 0).length >= 6 && !v.busy);
+		},
+		async play([page], seconds) {
+			await ludoTurns(page, seconds, (v) => v.over);
+			await sleep(1000);
 		},
 	},
 
