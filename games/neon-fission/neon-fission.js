@@ -184,10 +184,42 @@ function resize() {
 /** Orb offsets inside a cell, for 1…4 orbs (more draw as four). */
 const LAYOUT = [[], [[0, 0]], [[-0.17, 0], [0.17, 0]], [[0, -0.16], [-0.16, 0.12], [0.16, 0.12]], [[-0.16, -0.16], [0.16, -0.16], [-0.16, 0.16], [0.16, 0.16]]];
 
-function orb(x, y, colour, r) {
-	const { tokens } = arcade.theme;
+// Each seat's orbs have their own shape as well as its colour, so no two
+// seats read alike without colour (review, 2026-11-24: picked colours can be
+// close, or one under colour blindness). The chips' dots match.
+const SHAPES = ["circle", "square", "triangle", "diamond", "hexagon", "star", "plus", "pentagon"];
+const shapeOf = (seat) => SHAPES[((seat % 8) + 8) % 8];
+/** The path of `shape` round (x, y), about r across from the centre. */
+function shapePath(shape, x, y, r) {
+	const poly = (n, rot = -Math.PI / 2, rr = r) => {
+		for (let k = 0; k < n; k++) {
+			const a = rot + (k * 2 * Math.PI) / n;
+			c2d[k ? "lineTo" : "moveTo"](x + rr * Math.cos(a), y + rr * Math.sin(a));
+		}
+		c2d.closePath();
+	};
 	c2d.beginPath();
-	c2d.arc(x, y, r, 0, Math.PI * 2);
+	if (shape === "square") c2d.rect(x - r * 0.85, y - r * 0.85, r * 1.7, r * 1.7);
+	else if (shape === "triangle") poly(3, -Math.PI / 2, r * 1.2);
+	else if (shape === "diamond") poly(4, -Math.PI / 2, r * 1.15);
+	else if (shape === "hexagon") poly(6, 0, r * 1.05);
+	else if (shape === "pentagon") poly(5, -Math.PI / 2, r * 1.08);
+	else if (shape === "star") {
+		for (let k = 0; k < 10; k++) {
+			const a = -Math.PI / 2 + (k * Math.PI) / 5;
+			const rr = k % 2 ? r * 0.55 : r * 1.25;
+			c2d[k ? "lineTo" : "moveTo"](x + rr * Math.cos(a), y + rr * Math.sin(a));
+		}
+		c2d.closePath();
+	} else if (shape === "plus") {
+		const t = r * 0.42;
+		c2d.rect(x - r * 1.1, y - t, r * 2.2, t * 2);
+		c2d.rect(x - t, y - r * 1.1, t * 2, r * 2.2);
+	} else c2d.arc(x, y, r, 0, Math.PI * 2);
+}
+function orb(x, y, colour, r, seat = 0) {
+	const { tokens } = arcade.theme;
+	shapePath(shapeOf(seat), x, y, r);
 	c2d.fillStyle = colour;
 	c2d.shadowBlur = glows() ? r * 1.6 : 0;
 	c2d.shadowColor = colour;
@@ -246,7 +278,7 @@ function board(owner, count, { hide = null, lastCell = -1 } = {}) {
 			c2d.stroke();
 			c2d.setLineDash([]);
 		}
-		for (const [dx, dy] of LAYOUT[Math.min(n, 4)]) orb(cx + dx * cell, cy + dy * cell, colour, cell * 0.14);
+		for (const [dx, dy] of LAYOUT[Math.min(n, 4)]) orb(cx + dx * cell, cy + dy * cell, colour, cell * 0.14, o);
 	}
 	if (lastCell >= 0) {
 		const x = (lastCell % cols) * cell;
@@ -301,7 +333,7 @@ function paint(now = performance.now()) {
 		for (const j of sh.nbr[i]) {
 			const nx = (j % view.cols) * cell + cell / 2;
 			const ny = Math.floor(j / view.cols) * cell + cell / 2;
-			orb(cx + (nx - cx) * e, cy + (ny - cy) * e, colour, cell * 0.13);
+			orb(cx + (nx - cx) * e, cy + (ny - cy) * e, colour, cell * 0.13, seat);
 		}
 	}
 	again();
@@ -373,6 +405,7 @@ function hud() {
 	} else text = `${players[view.turn].name}'s turn`;
 	const dot = document.createElement("span");
 	dot.className = "dot";
+	if (turnSeat >= 0) dot.dataset.shape = shapeOf(turnSeat);
 	const label = document.createElement("span");
 	label.className = "label";
 	label.textContent = text;
@@ -393,6 +426,7 @@ function hud() {
 			chip.title = p.name;
 			const d = document.createElement("span");
 			d.className = "dot";
+			d.dataset.shape = shapeOf(i);
 			const nm = document.createElement("span");
 			nm.className = "name";
 			nm.textContent = i === view.you ? "You" : p.name;
@@ -460,4 +494,4 @@ arcade.on("rejected", (m) => arcade.toast(m.reason, "warn"));
 arcade.init.then(resize);
 
 /** The game as this phone sees it, for the tests. */
-arcade.debug = () => (view ? { ...view, canPlay: canPlay(), animating: !!anim, replayMs: anim ? Math.round(anim.total) : 0, painted, cell, colors: view.players.map((_, i) => seatIdx(i)) } : { match: null });
+arcade.debug = () => (view ? { ...view, canPlay: canPlay(), animating: !!anim, replayMs: anim ? Math.round(anim.total) : 0, painted, cell, colors: view.players.map((_, i) => seatIdx(i)), shapes: view.players.map((_, i) => shapeOf(i)) } : { match: null });

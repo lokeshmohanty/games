@@ -134,7 +134,7 @@ console.log("\nConnect 4: a watcher reads whose turn it is");
 	handlers.view({ state: view(1, 0) });
 	check("with picked colours, a watcher reads Ada (Blue) to move", /Ada \(Blue\) to move/.test(shown.hud ?? ""), shown.hud);
 	handlers.view({ state: view(2, 2) });
-	check("…and the player on yellow's side is told GREEN", /^GREEN/.test(shown.hud ?? ""), shown.hud);
+	check("…and the player on yellow's side is told GREEN, with its ring mark", /^◎ GREEN/.test(shown.hud ?? ""), shown.hud);
 	Object.assign(globalThis, was);
 }
 

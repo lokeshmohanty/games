@@ -319,6 +319,19 @@ function resize() {
 // two, red and yellow, on an older shell or before anyone picks.
 let sideCols = [0, 1];
 const sideIdx = (v) => sideCols[v === RED ? 0 : 1];
+// And each side's mark, so the two never differ by colour alone (picked
+// colours can be close, or one under colour blindness: review, 2026-11-24):
+// red's discs are solid, yellow's have a hollow centre.
+const MARKS = ["solid", "ring"];
+const GLYPHS = ["●", "◎"];
+/** Punch yellow's hollow into the disc just filled at (x, y). */
+function mark(v, x, y, tokens) {
+	if (v !== YELLOW) return;
+	c2d.beginPath();
+	c2d.arc(x, y, cell * 0.17, 0, Math.PI * 2);
+	c2d.fillStyle = tokens.bg;
+	c2d.fill();
+}
 /** "Red", "Blue"…: a side's colour in this theme's words. */
 const sideName = (v) => arcade.theme?.playerNames?.[sideIdx(v)] ?? (v === RED ? "Red" : "Yellow");
 
@@ -356,6 +369,7 @@ function draw() {
 				c2d.fillStyle = colour;
 				c2d.fill();
 				c2d.shadowBlur = 0;
+				mark(v, c * cell + cell / 2, r * cell + cell / 2, tokens);
 			}
 		}
 	}
@@ -373,6 +387,7 @@ function draw() {
 		c2d.arc(cx, y, cell * 0.4, 0, Math.PI * 2);
 		c2d.fillStyle = players[sideIdx(view.board[row][col])];
 		c2d.fill();
+		mark(view.board[row][col], cx, y, tokens);
 		return again();
 	}
 	marked = [row, col];
@@ -413,7 +428,7 @@ function updateHud() {
 	const tag = document.createElement("span");
 	tag.className = mine ? "you-side" : "you-spec";
 	if (mine) tag.style.color = `var(--p${sideIdx(mine) + 1})`;
-	tag.textContent = mine ? sideName(mine).toUpperCase() : "SPECTATOR";
+	tag.textContent = mine ? `${GLYPHS[mine - 1]} ${sideName(mine).toUpperCase()}` : "SPECTATOR";
 	let msg = "";
 	if (view.winner !== null) msg = view.winner === 0 ? " — DRAW" : view.winner === mine ? " — YOU WIN!" : mine ? " — YOU LOSE" : "";
 	else if (!view.red || !view.yellow) msg = " — Waiting for opponent…";
@@ -482,4 +497,4 @@ arcade.init.then(resize);
  * ringed as the last move, [row, col] or null), `drops` (falls shown) and
  * `px` (the canvas: CSS cell, backing pixels per CSS px, backing size).
  */
-arcade.debug = () => ({ ...(view ?? { started: false, board: [] }), marked, drops, colors: [...sideCols], px: { cell, dpr, w: canvas.width, h: canvas.height } });
+arcade.debug = () => ({ ...(view ?? { started: false, board: [] }), marked, drops, colors: [...sideCols], marks: [...MARKS], px: { cell, dpr, w: canvas.width, h: canvas.height } });

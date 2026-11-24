@@ -2711,6 +2711,14 @@ try {
 				continue;
 			}
 			check(`${label}: the game draws your seat in your colour, every seat a different one`, v.colors[v.you] === c && new Set(v.colors).size === v.colors.length && v.colors.length === n, JSON.stringify({ you: v.you, colors: v.colors }));
+			// Never colour alone (review, 2026-11-24): every seat its own shape too.
+			check(`${label}: …and every seat its own shape or mark, so no two read alike without colour`, Array.isArray(v.shapes) && new Set(v.shapes).size === n, JSON.stringify(v.shapes));
+			if (game === "neon-fission") {
+				// The host's own frame follows a pick made mid-game.
+				await page.evaluate(() => window.__party.room.setMeta({ colorWant: 7 }));
+				const now = await G.waitForFunction(() => { const d = window.__game.handle.debug(); return d.colors[d.you] === 7 && d; }, null, { timeout: TIMEOUT }).then((h) => h.jsonValue(), () => debug(page));
+				check("Neon Fission: a colour picked mid-game reaches the host's own board", now.colors?.[now.you] === 7, JSON.stringify({ you: now.you, colors: now.colors }));
+			}
 		}
 		if (pinned("ludo")) {
 			// Picked before (remembered on the device), straight into the game.
@@ -2719,6 +2727,30 @@ try {
 			const v = await debug(page);
 			if (!Array.isArray(v.colors)) console.log("  skip Ludo draws no seat colours yet (the registry's pin predates player colours)");
 			else check("Ludo: a colour picked earlier on this device is your seat's (yard, start, home column, tokens), the bot's another", v.colors[v.you] === 3 && v.colors.length === 2 && v.colors[1 - v.you] !== 3, JSON.stringify({ you: v.you, colors: v.colors }));
+		}
+		{
+			// Connect 4's two sides and Light Cycles' riders: told apart by a
+			// mark as well as a colour (review, 2026-11-24: Neon's yellow and
+			// green are 1.4 apart under deuteranopia).
+			await page.goto(url("?game=connect4&fresh=1&mode=bots&start=1"));
+			await page.waitForFunction(() => window.__game?.handle, null, { timeout: TIMEOUT });
+			G = await gameScope(page, TIMEOUT);
+			await G.waitForFunction(() => window.__game.handle.debug()?.started, null, { timeout: TIMEOUT });
+			const c4 = await debug(page);
+			check("Connect 4: each side's discs carry their own mark (solid, ring), not only a colour", Array.isArray(c4.marks) && c4.marks.length === 2 && c4.marks[0] !== c4.marks[1], JSON.stringify(c4.marks));
+		}
+		if (pinned("light-cycles")) {
+			// Three riders, from the table (played alone it is one).
+			await page.goto(url("?game=lokeshmohanty%2Flight-cycles&fresh=1"));
+			await page.locator("button", { hasText: "SINGLE PLAYER" }).first().click();
+			await setPlayers(page, 3);
+			await page.locator(".quick-table button", { hasText: "START GAME" }).first().click();
+			await page.waitForFunction(() => window.__game?.handle, null, { timeout: TIMEOUT });
+			G = await gameScope(page, TIMEOUT);
+			await G.waitForFunction(() => window.__game.handle.debug()?.riders?.length === 3, null, { timeout: TIMEOUT });
+			const lc = await debug(page);
+			if (!Array.isArray(lc.colors)) console.log("  skip Light Cycles draws no seat colours yet (the registry's pin predates player colours)");
+			else check("Light Cycles: every rider's head and trail its own pattern, not only a colour", Array.isArray(lc.patterns) && new Set(lc.patterns).size === lc.riders.length, JSON.stringify(lc.patterns));
 		}
 		await page.evaluate(() => localStorage.removeItem("neon.color"));
 	}

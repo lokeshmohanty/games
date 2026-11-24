@@ -392,6 +392,15 @@ const glowsOn = () => !/,\s*0\)$/.test(arcade.theme?.tokens.glow ?? ", 0)");
  * itself, in its own theme.
  */
 const colors = new Map(); // "id:pick" -> colour, until the theme changes
+// And each ship its own shape, so two never differ by colour alone (picked
+// colours can be close, or one under colour blindness: review, 2026-11-24).
+// By the ships' ids in order, so every phone agrees; never a dot (the swarm
+// and the gems are dots).
+const SHIP_SHAPES = ["square", "triangle", "diamond", "hexagon", "star", "pentagon", "octagon", "kite"];
+const shipShape = (id) => {
+	const ids = Object.keys(cur?.v.s ?? {}).sort();
+	return SHIP_SHAPES[Math.max(0, ids.indexOf(id)) % SHIP_SHAPES.length];
+};
 function colorFor(id) {
 	const pick = arcade.colors?.[id];
 	const key = `${id}:${pick}`;
@@ -449,7 +458,19 @@ function glow(shape, size, color, blur) {
 		x.beginPath();
 		x.arc(pad, pad, size, 0, Math.PI * 2);
 		x.fill();
-	} else x.fillRect(pad - half, pad - half, size, size);
+	} else if (shape === "square") x.fillRect(pad - half, pad - half, size, size);
+	else {
+		// A ship's own shape (SHIP_SHAPES): a polygon, or a star, round the centre.
+		const n = { triangle: 3, diamond: 4, pentagon: 5, hexagon: 6, star: 10, octagon: 8, kite: 4 }[shape] ?? 4;
+		x.beginPath();
+		for (let k = 0; k < n; k++) {
+			const a = -Math.PI / 2 + (k * 2 * Math.PI) / n + (shape === "octagon" ? Math.PI / 8 : 0);
+			const r = shape === "star" && k % 2 ? half * 0.5 : shape === "kite" && k === 2 ? half * 1.25 : half * 1.15;
+			x[k ? "lineTo" : "moveTo"](pad + r * Math.cos(a), pad + r * Math.sin(a) * (shape === "kite" && k % 2 ? 0.7 : 1));
+		}
+		x.closePath();
+		x.fill();
+	}
 	g = { c, pad };
 	if (glows.size > 256) glows.clear();
 	glows.set(key, g);
@@ -579,7 +600,7 @@ function draw(now) {
 		if (id === v.you) continue;
 		const [x, y] = shipAt(id, p, now);
 		c2d.globalAlpha = p[2] ? 1 : 0.3;
-		stamp(glow("square", PLAYER_SIZE, colorFor(id), blur), x, y);
+		stamp(glow(shipShape(id), PLAYER_SIZE, colorFor(id), blur), x, y);
 		c2d.globalAlpha = 1;
 	}
 
@@ -588,7 +609,7 @@ function draw(now) {
 		const myColor = colorFor(v.you);
 		if (me[2]) {
 			const [x, y] = pointer ? [pointer.x, pointer.y] : shipAt(v.you, me, now);
-			stamp(glow("square", PLAYER_SIZE, myColor, blur), x, y);
+			stamp(glow(shipShape(v.you), PLAYER_SIZE, myColor, blur), x, y);
 		} else {
 			// ghost: dim outline
 			c2d.globalAlpha = 0.3;
@@ -778,4 +799,4 @@ Object.defineProperties(window, {
 });
 
 /** For the tests: the run as this phone sees it. */
-arcade.debug = () => ({ active: aliveCount() > 0, match: cur?.v.m ?? null, you: cur?.v.you ?? null, score: cur ? (mine()?.[4] ?? 0) : 0, alive: aliveCount(), enemies: live ? s.enemies.length : cur ? cur.v.e.length / 4 : 0, host: live, simMs: live ? Math.round(s.ms) : null });
+arcade.debug = () => ({ active: aliveCount() > 0, match: cur?.v.m ?? null, you: cur?.v.you ?? null, score: cur ? (mine()?.[4] ?? 0) : 0, alive: aliveCount(), enemies: live ? s.enemies.length : cur ? cur.v.e.length / 4 : 0, host: live, simMs: live ? Math.round(s.ms) : null, shapes: Object.keys(cur?.v.s ?? {}).sort().map(shipShape) });
