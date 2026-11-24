@@ -326,7 +326,10 @@ arcade.managed({
 		];
 		// Alone it is a run you played (lib/stats.js counts it, best score kept),
 		// not a win over nobody.
-		return { kind: ids.length > 1 ? "ffa" : "coop", ranking, scores: Object.fromEntries(ids.map((id) => [id, s.ships[id].score ?? 0])), details };
+		// `seatFacts`: each ship's time survived, which game.json's achievements
+		// and records read (docs/platform.md).
+		const seatFacts = Object.fromEntries(ids.map((id) => [id, { survived: Math.round(s.ships[id].died ?? s.ms) }]));
+		return { kind: ids.length > 1 ? "ffa" : "coop", ranking, scores: Object.fromEntries(ids.map((id) => [id, s.ships[id].score ?? 0])), details, seatFacts };
 	},
 	// A seated player left the party for good: their ship goes with them.
 	leave({ seat }) {

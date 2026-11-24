@@ -112,5 +112,19 @@ console.log("\nmanifest: \"sameDevice\" (PERSON seats at the quick table, 2026-1
 	check("the catalog carries it for Neon Fission, and for no other game", fission?.sameDevice === true && (NeonArcade.CATALOG ?? []).filter((g) => g.sameDevice).length === 1);
 }
 
+console.log("\nmanifest: \"achievements\" and \"records\" (lib/achievements.js; every operator is in test-records)");
+{
+	const managed = { ...good, app: undefined, kind: "ffa", state: "managed", seats: { min: 1, max: 8 }, bots: true };
+	const achievements = [{ id: "first-win", title: "First Win", when: { won: true } }];
+	const records = [{ id: "time", title: "Best time", of: "ms", best: "min", format: "time" }];
+	check("a game's achievements and records are accepted", validateManifest({ ...managed, achievements, records }).length === 0, validateManifest({ ...managed, achievements, records }));
+	check("…a malformed condition is refused, naming it", validateManifest({ ...managed, achievements: [{ ...achievements[0], when: { won: { "<": true } } }] }).some((p) => p.includes('achievement "first-win": when."won"."<" must be a number')));
+	check("…and a web app may not declare them", validateManifest({ ...good, achievements }).some((p) => p.includes("need a game that reports results")));
+	const carried = (NeonArcade.CATALOG ?? []).filter((g) => g.achievements?.length).map((g) => g.id).sort();
+	check("the catalog carries them: Connect 4, Neon Bid, Neon Fission, Neon Survival", carried.join() === "connect4,neon-bid,neon-fission,neon-survival-mp", carried);
+	check("…and their records", ["connect4", "neon-bid", "neon-fission", "neon-survival-mp"].every((id) => NeonArcade.CATALOG.find((g) => g.id === id)?.records?.length));
+	check("…and a game without them carries neither key", (NeonArcade.CATALOG ?? []).filter((g) => !g.achievements).every((g) => !("records" in g) && !("achievements" in g)));
+}
+
 console.log(failures ? `\n${failures} submission check(s) failed` : "\nall submission checks passed");
 process.exit(failures ? 1 : 0);
