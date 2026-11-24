@@ -14,6 +14,7 @@ import {
 	RECORD_BYTES,
 	clean,
 	cleanFacts,
+	fit,
 	contextOf,
 	dayOf,
 	merge,
@@ -366,8 +367,18 @@ console.log("\nreview fixes (2026-11-24): merge prefers, prototype keys, the pla
 	const big = { a: Object.fromEntries(Array.from({ length: 64 }, (_, i) => [`a${i}-${"x".repeat(26)}`, 1e12 + i])), n: 1e9, ms: 1e12, g: Array.from({ length: 300 }, (_, i) => `${"o".repeat(39)}/${String(i).padStart(3, "0")}${"g".repeat(29)}`), d: { last: 20000, cur: 400, best: 400 } };
 	const bytes = JSON.stringify(clean(big, PLATFORM_ID)).length;
 	check(`the platform's entry, at its largest, fits PLATFORM_BYTES (${bytes} bytes)`, bytes <= PLATFORM_BYTES, bytes);
-	const fat = clean({ a: big.a, p: Object.fromEntries(Array.from({ length: 64 }, (_, i) => [`p${i}-${"x".repeat(26)}`, { d: Array.from({ length: 100 }, (_, j) => `${"v".repeat(36)}${j}`) }])), r: Object.fromEntries(Array.from({ length: 16 }, (_, i) => [`r${i}-${"x".repeat(26)}`, { b: "max", v: Object.fromEntries(Array.from({ length: 16 }, (_, j) => [`${"g".repeat(36)}${j}`, 1e12 + j])) }])) });
-	check("…and a game's entry, however large it was sent, is cleaned to fit RECORD_BYTES: progress trimmed first, unlocks kept", JSON.stringify(fat).length <= RECORD_BYTES && Object.keys(fat.a).length === 64, JSON.stringify(fat).length);
+	const fat = fit(clean({ a: big.a, p: Object.fromEntries(Array.from({ length: 64 }, (_, i) => [`p${i}-${"x".repeat(26)}`, { d: Array.from({ length: 100 }, (_, j) => `${"v".repeat(36)}${j}`) }])), r: Object.fromEntries(Array.from({ length: 16 }, (_, i) => [`r${i}-${"x".repeat(26)}`, { b: "max", v: Object.fromEntries(Array.from({ length: 16 }, (_, j) => [`${"g".repeat(36)}${j}`, 1e12 + j])) }])) }));
+	check("…and the device trims a game to RECORD_BYTES before sending (fit): progress first, unlocks kept", JSON.stringify(fat).length <= RECORD_BYTES && Object.keys(fat.a).length === 64, JSON.stringify(fat).length);
+	// The Worker's path on the worst body under 64 KB (the reviewer's bench4): clean and merge only, linear.
+	const mkR = () => ({ a: {}, p: {}, r: Object.fromEntries(Array.from({ length: 16 }, (_, i) => [`r${i}`, { b: "max", v: Object.fromEntries(Array.from({ length: 16 }, (_, j) => [("g" + j).padEnd(40, "y"), 123456789.123456 + j])) }])) });
+	const body = JSON.stringify({ games: Object.fromEntries(Array.from({ length: 4 }, (_, i) => [`g${i}x`, mkR()])) });
+	let best = Infinity;
+	for (let rep = 0; rep < 5; rep++) {
+		const t = performance.now();
+		for (const [g, st] of Object.entries(JSON.parse(body).games)) JSON.stringify(merge(clean(JSON.parse(JSON.stringify(st)), g), st, g, { prefer: "y" }));
+		best = Math.min(best, performance.now() - t);
+	}
+	check(`the Worker's merge of a crafted ${body.length}-byte body is linear: ${best.toFixed(1)} ms (under 20)`, body.length < 65536 && best < 20, best);
 }
 
 console.log("\nreview fixes: validate-game reads only fact names it can test");
@@ -457,6 +468,30 @@ console.log("\nreview fixes: a shared device, a sync in flight, a refused game")
 	store.set("neon.records", JSON.stringify(all));
 	await R.push();
 	check("a game the server refuses is dropped from the queue; the rest went", JSON.parse(store.get("neon.records")).dirty.length === 0, store.get("neon.records"));
+
+	// A whole request refused as too large (413): halved and sent again, and
+	// only a game that is still refused on its own is dropped.
+	const api = NeonArcade.account.api;
+	const sizes = [];
+	NeonArcade.account.api = async (path, opts = {}) => {
+		if (opts.method === "PUT") {
+			const n = Object.keys(opts.body.games).length;
+			sizes.push(n);
+			if (n > 2 || "huge-game" in opts.body.games) throw Object.assign(new Error("request too large"), { status: 413 });
+		}
+		return api(path, opts);
+	};
+	const more = JSON.parse(store.get("neon.records"));
+	for (const g of ["g1", "g2", "g3", "g4", "huge-game"]) {
+		more.games[g] = { a: { x: 1 } };
+		more.v[g] = 1;
+	}
+	more.dirty = ["g1", "g2", "g3", "g4", "huge-game"];
+	store.set("neon.records", JSON.stringify(more));
+	await R.push();
+	NeonArcade.account.api = api;
+	check("a 413 halves the batch and retries: every game but the one still too large on its own goes up", ["g1", "g2", "g3", "g4"].every((g) => server.A[g]?.a?.x === 1) && !server.A["huge-game"], JSON.stringify({ sizes, got: Object.keys(server.A) }));
+	check("…and that one alone is dropped from the queue", JSON.parse(store.get("neon.records")).dirty.length === 0, store.get("neon.records"));
 }
 
 console.log("\nreview fixes: Explorer counts every listed game you can play alone");

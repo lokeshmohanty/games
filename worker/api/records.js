@@ -81,8 +81,10 @@ export async function putRecords(env, me, request) {
 			const row = kept.get(g);
 			const merged = merge(row ? parse(row.data) : undefined, games[g], g, { prefer: "y" });
 			const data = JSON.stringify(merged);
+			// A page trims its own to fit (lib/achievements.js fit); a larger one
+			// is a crafted request, refused rather than trimmed (trimming costs CPU).
 			if (data.length > (g === PLATFORM_ID ? PLATFORM_BYTES : RECORD_BYTES)) {
-				rejected[g] = "too large";
+				rejected[g] = "too big";
 				continue;
 			}
 			out[g] = merged;

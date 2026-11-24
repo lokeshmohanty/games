@@ -894,9 +894,14 @@ How it runs:
 - **Bounds** (lib/achievements.js `clean`, worker/api/records.js): anything
   malformed is dropped and every list bounded (64 achievements, 64 progress
   entries, 16 records of 16 groups, 100 values for a `distinct`, 200 games
-  played), and a game's entry is trimmed to `RECORD_BYTES` (8 KB: progress
-  first, then record groups; unlocks and stats kept), the platform's to
-  `PLATFORM_BYTES` (20 KB: it lists every game played). A request body is
+  played). The page trims a game's entry to `RECORD_BYTES` (8 KB) before
+  sending (`fit`: progress first, then record groups; unlocks and stats
+  kept); the Worker refuses a larger one as "too big" rather than trimming
+  it (trimming a crafted 63 KB body cost ~160 ms of CPU; `clean` and
+  `merge` stay linear, ~2 ms for it). The platform's entry is bounded by
+  construction within `PLATFORM_BYTES` (20 KB: it lists every game
+  played). A request refused whole with 413 is halved and sent again; a
+  single game still refused is dropped from the queue. A request body is
   at most 64 KB (a 193 KB PUT cost 10–20 ms of CPU, the free plan allows
   10), 64 games, 200 games an account. Ids must be a game's (`GAME_ID`, not
   `dev/`) or `"*"`; a bad id or a game over the account's limit is refused

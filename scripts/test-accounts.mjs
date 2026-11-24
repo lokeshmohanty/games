@@ -1742,7 +1742,7 @@ try {
 		check("at most 64 games a request", (await call("PUT", "/api/me/records", { token: rae.token, body: { games: many } })).status === 400);
 		const big = { a: Object.fromEntries(Array.from({ length: 64 }, (_, i) => [`a${i}-${"x".repeat(26)}`, 1e12 + i])), p: Object.fromEntries(Array.from({ length: 64 }, (_, i) => [`p${i}-${"x".repeat(26)}`, { d: Array.from({ length: 100 }, (_, j) => `v${j}`) }])) };
 		r = await call("PUT", "/api/me/records", { token: rae.token, body: { games: { "neon-bid": big } } });
-		check("a game sent at over 8 KB is cleaned to fit: progress trimmed, unlocks kept", r.status === 200 && JSON.stringify(r.body.games["neon-bid"]).length <= 8192 && Object.keys(r.body.games["neon-bid"].a).length === 64, { status: r.status, bytes: JSON.stringify(r.body.games?.["neon-bid"] ?? "").length });
+		check("a game over 8 KB (a page trims its own first: only a crafted request) is refused on its own as too big, the rest kept", r.status === 200 && r.body.rejected?.["neon-bid"] === "too big" && !("neon-bid" in r.body.games), r.body.rejected);
 		const huge = Object.fromEntries(Array.from({ length: 20 }, (_, i) => [`h${i}x`, { p: { q: { d: Array.from({ length: 100 }, (_, j) => `${"v".repeat(30)}${j}`) } } }]));
 		check("a body over 64 KB is refused (the Worker's CPU budget)", (await call("PUT", "/api/me/records", { token: rae.token, body: { games: huge } })).status === 413);
 		await call("PUT", "/api/me/records", { token: rae.token, body: { games: { "neon-bid": { r: { pts: { b: "min", v: { "": 3 } } } } } } });
