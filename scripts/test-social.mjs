@@ -255,6 +255,9 @@ try {
 		const nf = await gameFrame(ana.p, TIMEOUT);
 		await gameFrame(bo.p, TIMEOUT);
 		await nf.waitForFunction(() => window.__game?.handle?.debug?.()?.match != null, null, { timeout: TIMEOUT });
+		// Friends' first game opens on the setup (Voids, 2026-11-24): Ana, the host, STARTs.
+		if ((await nf.evaluate(() => window.__game.handle.debug().phase)) === "setup") await nf.locator(".nf-start").evaluate((b) => b.click());
+		await nf.waitForFunction(() => window.__game.handle.debug().phase === "play", null, { timeout: TIMEOUT });
 		// Every state the end card's rating line takes, on the node first drawn:
 		// the answer lands after the card (the grace), and must fill it in place.
 		await ana.p.evaluate(() => {

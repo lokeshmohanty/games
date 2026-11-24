@@ -104,6 +104,28 @@ const gameMounted = (page, game) =>
  * own process, and on a background page a raw click lands on the <iframe>.
  */
 const tap = (locator) => locator.evaluate((b) => b.click());
+/**
+ * Past a game's setup on friends' first match (Light Cycles, Neon Fission and
+ * Neon Bid ask their options then; Lokesh, 2026-11-24): the host STARTs on
+ * the defaults. A game, or a pinned version of one, with no setup: nothing.
+ */
+async function pastSetup(page, ...others) {
+	const F = await inGame(page);
+	// Decided as soon as the game says where it is, so a game with no setup
+	// loses no time (a race left alone ends in seconds).
+	const phase = await F.waitForFunction(() => {
+		const d = window.__game?.handle?.debug?.();
+		if (!d || (d.match === null && !("phase" in d))) return null; // no view yet
+		if (!("phase" in d)) return "none"; // no setup in this version
+		return d.phase == null || d.phase === "waiting" ? null : d.phase;
+	}, null, { timeout: 15_000 }).then((h) => h.jsonValue(), () => null);
+	if (phase !== "setup") return;
+	const start = F.locator(".lc-start, .nf-start, .nb-start").first();
+	await start.waitFor({ timeout: TIMEOUT });
+	await tap(start);
+	// Started on every phone named (an heir's copy too) before anything else happens.
+	for (const p of [page, ...others]) await (await inGame(p)).waitForFunction(() => window.__game.handle.debug().phase !== "setup", null, { timeout: TIMEOUT });
+}
 const TIMEOUT = 40_000;
 // room-join's JOIN_ANSWER_MS (30s) plus the reconnect's own dial and margin.
 const NO_ANSWER_WAIT = 50_000;
@@ -976,6 +998,7 @@ try {
 
 		// Neon bid: the guest seals a bid, reloads, and the lot settles after.
 		check("neon bid: both mount it", await play("neon-bid"));
+		await pastSetup(h, g);
 		r = await until((a, b) => a.phase === "bid" && b.phase === "bid");
 		check("neon bid: the first lot is open", r.ok, show(r));
 		await tap((await inGame(g)).locator(".nb-chips button", { hasText: /^5$/ }));
@@ -994,6 +1017,7 @@ try {
 
 		// Light cycles: mid-race, the walls so far must come back with the guest.
 		check("light cycles: both mount it", await play("light-cycles"));
+		await pastSetup(h, g);
 		r = await until((a) => a.racing && a.walls > 12);
 		check("light cycles: the race is on", r.ok, show(r));
 		await reloadGuest("light cycles", "light-cycles");
@@ -1300,9 +1324,14 @@ try {
 		// Light cycles: the round restarts under the heir, wins carried.
 		t = await trio("light-cycles", everyone);
 		check("light cycles: (three in, the game up)", t.up);
+		await pastSetup(t.h, t.a, t.b);
+		// The heir's copy of a ticking game is up to a second old
+		// (lib/sdk-managed.js SNAP_EVERY_MS): the host goes once the countdown
+		// has run past it, or the heir would get the setup back.
+		await (await inGame(t.b)).waitForFunction(() => window.__game.handle.debug().countdown <= 2, null, { timeout: TIMEOUT });
 		await goes(t, "light-cycles", "light cycles");
 		const racing = await (await inGame(t.b)).waitForFunction(() => window.__game.handle.debug().racing, null, { timeout: 20_000 }).then(() => true, () => false);
-		check("light cycles: a new round races under the heir", racing);
+		check("light cycles: a new round races under the heir", racing, racing ? "" : JSON.stringify(await dbgOf(t.b)).slice(0, 300));
 		await done(t);
 
 		// Neon survival: the swarm keeps coming.
@@ -1370,6 +1399,7 @@ try {
 		// Neon bid: the lot under way opens again; nothing settled is lost.
 		t = await trio("neon-bid", everyone);
 		check("neon bid: (three in, the game up)", t.up);
+		await pastSetup(t.h, t.a, t.b);
 		await (await inGame(t.b)).waitForFunction(() => window.__game.handle.debug().phase === "bid", null, { timeout: TIMEOUT });
 		await tap((await inGame(t.b)).locator(".nb-go"));
 		await goes(t, "neon-bid", "neon bid");
