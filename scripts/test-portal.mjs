@@ -4,7 +4,7 @@
 // 390x844 (and Lokesh's phone, 354x696).
 
 import { existsSync, readFileSync } from "node:fs";
-import { PHONE_SIZES, phoneFloors, serve, settled } from "./serve.mjs";
+import { PHONE_SIZES, communityHas, phoneFloors, serve, settled } from "./serve.mjs";
 import { launchFirefox, loadPlaywright } from "./playwright.mjs";
 
 const TIMEOUT = 20_000;
@@ -1160,7 +1160,7 @@ console.log("\nportal: My Games · All Games");
 	await ctx.route("**/api/stats/summary", (route) =>
 		route.fulfill({ status: 200, contentType: "application/json", headers: { "Access-Control-Allow-Origin": "*" }, body: JSON.stringify({ games: Object.fromEntries(Object.entries(PLAYS).map(([g, played]) => [g, { played }])) }) }),
 	);
-	const repoGames = await p.evaluate(() => Object.fromEntries(["lokeshmohanty/games", "lokeshmohanty/web-games"].map((r) => [r, NeonArcade.CATALOG.filter((g) => g.repo === `https://github.com/${r}`).length])));
+	const repoGames = await p.evaluate(() => Object.fromEntries(["lokeshmohanty/games", "lokeshmohanty/web-games", "lokeshmohanty/card-games"].map((r) => [r, NeonArcade.CATALOG.filter((g) => g.repo === `https://github.com/${r}`).length])));
 	await p.goto(site.url("?page=contributors"));
 	await p.locator(".person").first().waitFor({ timeout: TIMEOUT });
 	await p.waitForFunction(() => !document.querySelector(".person-plays")?.textContent.startsWith("…"), null, { timeout: TIMEOUT });
@@ -1185,12 +1185,16 @@ console.log("\nportal: My Games · All Games");
 	const person = await readPerson();
 	const games = repoGames["lokeshmohanty/games"];
 	const arcadeGames = repoGames["lokeshmohanty/web-games"];
+	// lokeshmohanty/card-games once the registry pins it (or a build with
+	// NEON_PIN_OVERRIDE): a third collection, unplayed here, so last.
+	const cards = communityHas("lokeshmohanty/glowdown") ? repoGames["lokeshmohanty/card-games"] : 0;
+	const theirRepos = `lokeshmohanty/games,lokeshmohanty/web-games${cards ? ",lokeshmohanty/card-games" : ""}`;
 	check("a card from contributor.json: name and bio", person.name === "Lokesh Mohanty" && !!person.bio, person);
-	check("…one person, both collections (games repos), most played first", person.cols.map((c) => c.repo).join() === "lokeshmohanty/games,lokeshmohanty/web-games", person.cols);
+	check("…one person, every collection of theirs (games repos), most played first", person.cols.map((c) => c.repo).join() === theirRepos, person.cols);
 	check("…each with its games and plays", person.cols[0]?.meta === `${games} games · 501 plays` && person.cols[1]?.meta === `${arcadeGames} games · 100 plays`, person.cols);
 	check("…linking to its games in the portal, and to GitHub", person.cols[1]?.href === "./?q=from%3Alokeshmohanty%2Fweb-games" && person.cols[1]?.gh === "https://github.com/lokeshmohanty/web-games", person.cols[1]);
 	check("…CHECK FOR UPDATES on a pinned collection only (the arcade's own has no pin)", !person.cols[0]?.update && person.cols[1]?.update, person.cols);
-	check("…and their games' total plays", person.facts === `${games + arcadeGames} games · 601 plays · 2 collections`, person.facts);
+	check("…and their games' total plays", person.facts === `${games + arcadeGames + cards} games · 601 plays · ${cards ? 3 : 2} collections`, person.facts);
 	check("…SEE THEIR GAMES opens the portal searched by author", person.see === "./?q=author%3Alokeshmohanty", person.see);
 	check("…fits the phone", await p.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
 	await p.locator('.person[data-login="lokeshmohanty"] .fav-star').click();
@@ -1233,7 +1237,7 @@ console.log("\nportal: My Games · All Games");
 			})),
 		);
 	let cols = await readCols();
-	check("every collection, most played first (the summary's counts)", cols.map((c) => c.repo).join() === "lokeshmohanty/games,lokeshmohanty/web-games", cols.map((c) => c.repo));
+	check("every collection, most played first (the summary's counts)", cols.map((c) => c.repo).join() === theirRepos, cols.map((c) => c.repo));
 	check("…each: its name, owner, games and plays", cols[1]?.name === "web-games" && cols[1]?.owner === "@lokeshmohanty" && cols[1]?.meta === `${arcadeGames} games · 100 plays` && cols[0]?.meta === `${games} games · 501 plays`, cols);
 	check("…a few posters and game names", cols.every((c) => c.previews > 0 && c.previews <= 3) && cols[1]?.names.includes("Battleship"), cols);
 	check("…and a link to its games: the portal searched by from:owner/repo", cols[1]?.see === "./?q=from%3Alokeshmohanty%2Fweb-games", cols[1]?.see);
