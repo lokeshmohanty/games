@@ -2469,5 +2469,63 @@ console.log("\ntwo links for one pair");
 	for (const r of [h, g]) r.leave();
 }
 
+// ---------------------------------------------------------------------------
+console.log("\nplayer colours: the host's record settles them (net.js assignColors)");
+{
+	const A = NeonArcade.assignColors;
+	const m = (id, want, at, color) => ({ id, ...(want === undefined ? {} : { colorWant: want }), ...(at ? { colorAt: { c: want, n: at } } : {}), ...(color === undefined ? {} : { color }) });
+	const colours = (ms) => ms.map((x) => x.color).join();
+	check("nobody picked: party order, 0, 1, 2…", colours(A([m("a"), m("b"), m("bot_1")])) === "0,1,2");
+	check("a pick is granted, and the rest go round it", colours(A([m("a"), m("b", 0), m("bot_1")])) === "1,0,2");
+	check("two want one: the first stamped keeps it, the second gets the nearest free (right first)", colours(A([m("a", 4, 2), m("b", 4, 1)])) === "5,4");
+	check("nearest free falls back leftwards at the end of the row", colours(A([m("a", 7, 1), m("b", 7, 2)])) === "7,6");
+	check("a person's pick beats a bot's colour; the bot moves to the lowest free", colours(A([m("bot_1", undefined, 0, 0), m("a", 0)])) === "1,0");
+	check("nobody's colour moves when someone else leaves", colours(A([m("a", undefined, 0, 0), m("c", undefined, 0, 2)])) === "0,2");
+	check("a bot's wish is no wish", colours(A([m("a"), { id: "bot_1", colorWant: 0 }])) === "0,1");
+	check("out-of-range wishes are ignored", colours(A([m("a", 9), m("b", -1), m("c", 1.5)])) === "0,1,2");
+	const big = A(Array.from({ length: 10 }, (_, i) => m(`p${i}`)));
+	check("past eight members the colours repeat, eight distinct first", new Set(big.slice(0, 8).map((x) => x.color)).size === 8 && big.every((x) => Number.isInteger(x.color)));
+	const stamped = A([m("a", 3)]);
+	check("a new wish is stamped (colorAt)", stamped[0].colorAt?.c === 3 && stamped[0].colorAt?.n === 1);
+
+	// Over real rooms: Bo has no link to the host, so his edits are relayed.
+	const [host, ana, bo] = await party(["Host", "Ana", "Bo"], [
+		[0, 1],
+		[1, 2],
+	]);
+	const col = (r, who) => r.getMember(who.selfId)?.color;
+	check("every member has a colour from the start, all different", new Set([host, ana, bo].map((x) => col(bo, x))).size === 3 && Number.isInteger(col(bo, host)));
+	ana.setMeta({ colorWant: 5 });
+	await sleep(60);
+	check("Ana picks 5: the host's record and Bo's copy both say so", col(host, ana) === 5 && col(bo, ana) === 5, `${col(host, ana)} ${col(bo, ana)}`);
+	bo.setMeta({ colorWant: 5 });
+	await sleep(60);
+	check("Bo wants 5 too: Ana picked first and keeps it", col(bo, ana) === 5 && col(ana, ana) === 5);
+	check("…and Bo gets the nearest free one, his wish still on his record", col(bo, bo) === 6 && bo.getMember(bo.selfId).colorWant === 5, `${col(bo, bo)}`);
+	ana.setMeta({ colorWant: 1 });
+	await sleep(60);
+	check("Ana moves to 1: Bo's wish for 5 is granted", col(bo, ana) === 1 && col(bo, bo) === 5 && col(host, bo) === 5, `${col(bo, ana)} ${col(bo, bo)}`);
+	ana.setMeta({ colorWant: 5 });
+	await sleep(60);
+	check("Ana wants 5 back: Bo has it now, so Bo keeps it", col(host, bo) === 5 && col(host, ana) !== 5);
+	ana.setMeta({ colorWant: 1 });
+	await sleep(60);
+	const b1 = host.addBot("B");
+	const b2 = host.addBot("A");
+	await sleep(60);
+	const all = host.getMembers().map((x) => x.color);
+	check("bots fill the gaps: five members, five colours", new Set(all).size === 5, all.join());
+	check("…around the people's picks", col(host, ana) === 1 && col(host, bo) === 5 && ![1, 5].includes(col(host, { selfId: b1 })) && ![1, 5].includes(col(host, { selfId: b2 })));
+	const before = JSON.stringify(host.getMembers().map((x) => [x.id, x.color]));
+	host.transferHost(ana.selfId);
+	await sleep(80);
+	ana.addBot("B"); // the new host commits
+	await sleep(80);
+	const after = JSON.stringify(ana.getMembers().filter((x) => before.includes(x.id)).map((x) => [x.id, x.color]));
+	check("a handover keeps every colour (the heir settles the same from the record)", ana.isHost() && after === before, `${before} → ${after}`);
+	check("Bo still sees his own pick after the handover", col(bo, bo) === 5);
+	for (const r of [host, ana, bo]) r.leave();
+}
+
 console.log(failures ? `\n${failures} failing\n` : "\nall passing\n");
 process.exit(failures ? 1 : 0);

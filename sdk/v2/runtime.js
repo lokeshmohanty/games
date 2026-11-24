@@ -19,6 +19,8 @@
 //   arcade.wasm                           a WASM game's module bytes (also init.wasm)
 //   await arcade.init                     the `init` message
 //   arcade.party                          { self, host, members }, kept current
+//   arcade.seatColors(ids)                each seat's player colour, an index into
+//                                         theme.players: their pick, never two alike
 //
 // and a few one-liners over the same wire, for the commonest needs:
 //
@@ -87,12 +89,17 @@
 			case "init":
 				initMsg = m;
 				arcade.party = m.party;
+				takeColors(m.party);
 				arcade.wasm = m.wasm ?? null;
 				applyTheme(m.theme);
 				resolveInit(m);
 				break;
 			case "roster":
 				arcade.party = m.party;
+				takeColors(m.party);
+				break;
+			case "view":
+				if (m.colors && typeof m.colors === "object") Object.assign(arcade.colors, m.colors);
 				break;
 			case "theme.set":
 				applyTheme(m.theme);
@@ -116,9 +123,39 @@
 		emit(m);
 	}
 
+	// Each player's colour, as the party settled it (docs/sdk-v2.md "Seat
+	// colours"): `color` on the roster's members, `colors` on a managed view.
+	const takeColors = (party) => {
+		for (const m of party?.members ?? []) if (Number.isInteger(m?.color)) arcade.colors[m.id] = m.color;
+	};
 	const arcade = {
 		version: V,
 		party: null,
+		/** id → player colour (an index into `theme.players`), kept current. */
+		colors: {},
+		/**
+		 * The colours to draw `ids` (seats, in order) in, as indices into
+		 * `theme.players`: each player's own where the party sent one, and
+		 * no two alike — a seat without one (an older shell, a seat the
+		 * party does not know) takes its own place's, or the next free.
+		 */
+		seatColors(ids, size = 8) {
+			const out = [];
+			const used = new Set();
+			ids.forEach((id) => {
+				const c = arcade.colors[id];
+				const ok = Number.isInteger(c) && c >= 0 && c < size && !used.has(c);
+				out.push(ok ? c : null);
+				if (ok) used.add(c);
+			});
+			return out.map((c, i) => {
+				if (c !== null) return c;
+				let k = i % size;
+				for (let n = 0; used.has(k) && n < size; n++) k = (k + 1) % size;
+				used.add(k);
+				return k;
+			});
+		},
 		wasm: null,
 		/** The page's theme as values (protocol.json `theme`), kept current. */
 		theme: null,
