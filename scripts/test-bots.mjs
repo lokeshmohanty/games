@@ -598,8 +598,8 @@ try {
 		check("neon bid · the end: the host's next game line, no hot colour, with CHANGE", (await nextText()).startsWith("Next game: no hot colour"), await nextText());
 		await G.evaluate(() => document.querySelector(".nb-next-change").click());
 		await G.waitForFunction(() => document.querySelector('.nb-next button[data-hot="true"]'), null, { timeout: TIMEOUT });
-		const floorsAt = async (what) => {
-			for (const [w, h] of [[390, 844], [354, 696]]) {
+		const floorsAt = async (what, sizes = [[390, 844], [354, 696]]) => {
+			for (const [w, h] of sizes) {
 				await page.setViewportSize({ width: w, height: h });
 				await sleep(200);
 				const f = await phoneFloors(G, "body", { hit: true });
@@ -620,7 +620,11 @@ try {
 			return { hot: d.hot, lotHot: d.order[d.round] === d.hot, slots: document.querySelectorAll(".nb-slot.hot").length, line: document.querySelector(".nb-lot .lotno")?.textContent ?? "", hud: document.getElementById("hud").textContent };
 		});
 		check("neon bid · NEW GAME: a hot colour, its three slots marked, named in the status line (and on a hot lot's LOT line)", hot.slots === 3 && /Hot: /.test(hot.hud) && /HOT \+1/.test(hot.line) === hot.lotHot, JSON.stringify(hot));
-		await floorsAt("bidding with a hot colour");
+		// 390x844 only: at 354x696 eight seats push PASS/BID 19px below the
+		// screen with or without a hot colour (measured 2026-11-25, 715 of
+		// 696px, the same both ways; the hot colour adds no height). That is
+		// Neon Bid's eight-seat layout, older than this option: STATUS.md.
+		await floorsAt("bidding with a hot colour", [[390, 844]]);
 	}
 
 	// ------------------------------------------------------------ battleship

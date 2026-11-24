@@ -28,7 +28,9 @@ option, Liar's Dice per-bot slack. To land: review, merge web-games, then move
 `registry/lokeshmohanty/web-games.json` to its main in this branch's PR (until
 then test-taps' Light Cycles setup checks skip, saying so). Records (the other
 branch in flight) overlaps one line in neon-fission.js `result()`: keep both
-the voids in the Grid detail and records' `facts`/`seatFacts`.
+the voids in the Grid detail and records' `facts`/`seatFacts`. Found on the
+way, not fixed (older than this branch): Neon Bid with eight seats at 354x696
+puts PASS/BID 19px below the screen (715 of 696px), hot colour or not.
 
 **Player colours (2026-11-24, landed by PR here; web-games 69c7587 and
 card-games 0d10c1f pinned):** players pick their own colour (Lokesh,
