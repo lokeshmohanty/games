@@ -15,15 +15,19 @@ const winnerOf = (b) => {
 	for (const [x, y, z] of LINES) if (b[x] && b[x] === b[y] && b[x] === b[z]) return b[x];
 	return b.every(Boolean) ? 0 : null; // 0: a draw; null: still going
 };
+// Which of `n` equal squares the bot takes: one Park–Miller step over the
+// match's seed and the marks on the board — the same in every lane, and
+// exact in a double (the product stays under 2^53).
+const pickOf = (seed, marks, n) => ((((Math.abs(seed) % 2147483647) + marks + 1) * 48271) % 2147483647) % n;
 
-let s = null; // { board, turn, winner, x, o }
+let s = null; // { board, turn, winner, x, o, seed } — the seed is the bot's, not in the view
 const markOf = (id) => (id === s.x ? 1 : id === s.o ? 2 : 0);
 const idOf = (mark) => (mark === 1 ? s.x : s.o);
 
 arcade.managed({
-	init({ seats, first }) {
+	init({ seats, seed, first }) {
 		const team = (t, i) => (seats.find((p) => p.team === t) ?? seats[i])?.id ?? null;
-		s = { board: Array(9).fill(0), turn: 1, winner: null, x: team("A", 0), o: team("B", 1) };
+		s = { board: Array(9).fill(0), turn: 1, winner: null, x: team("A", 0), o: team("B", 1), seed: Number(seed) || 0 };
 		// The platform's `first` moves first: it takes turns between rematches
 		// (docs/sdk-v2.md "Who starts"). X otherwise, as from an older shell.
 		if (first && first === s.o) s.turn = 2;
@@ -37,14 +41,18 @@ arcade.managed({
 		s.turn = 3 - s.turn;
 		s.winner = winnerOf(s.board);
 	},
-	view: ({ seat }) => ({ ...s, board: [...s.board], you: seat ? markOf(seat) : 0 }),
+	view: ({ seat }) => {
+		const { seed, ...shown } = s;
+		return { ...shown, board: [...s.board], you: seat ? markOf(seat) : 0 };
+	},
 	turn: () => (s.winner === null ? [idOf(s.turn)] : []),
 	bot() {
-		// Win if it can, block if it must, else the centre, else the first free.
+		// Win if it can, block if it must, else the centre, else any free
+		// square; between equal squares, one picked from the seed (pickOf).
 		const free = s.board.flatMap((m, i) => (m ? [] : [i]));
-		const wins = (mark) => free.find((i) => winnerOf(s.board.map((m, j) => (j === i ? mark : m))) === mark);
-		const i = wins(s.turn) ?? wins(3 - s.turn) ?? (free.includes(4) ? 4 : free[0]);
-		return i === undefined ? null : { i };
+		const wins = (mark) => free.filter((i) => winnerOf(s.board.map((m, j) => (j === i ? mark : m))) === mark);
+		const take = [wins(s.turn), wins(3 - s.turn), free.includes(4) ? [4] : [], free].find((c) => c.length);
+		return take ? { i: take[pickOf(s.seed ?? 0, 9 - free.length, take.length)] } : null;
 	},
 	result() {
 		if (s.winner === null) return null;

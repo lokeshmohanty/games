@@ -79,6 +79,16 @@ const SCRIPT = [
 	[{ fn: "bot", seat: O }],
 	"BOT",
 	[{ fn: "init", seats: SEATS, opts: {}, seed: 9, match: 2 }, ...views()], // no `first` (an older shell): X starts
+	// The bot's equal squares come from the seed, the same way in every lane
+	// (Lokesh, 2026-11-24: "a random choice among equal moves"): with the
+	// centre gone, seed 7 above answered on one square; a seed past 2^31
+	// answers on another, through every lane's integer arithmetic.
+	[{ fn: "init", seats: SEATS, opts: {}, seed: 4294967295, match: 3, first: X }],
+	[{ fn: "apply", action: { i: 4 }, by: X }],
+	[{ fn: "bot", seat: O }],
+	"BOT",
+	[{ fn: "apply", action: { i: 0 }, by: X }],
+	[{ fn: "bot", seat: O }], // a block: one square, whatever the seed
 ];
 
 function chromePath() {

@@ -26,6 +26,12 @@ fn winner_of(b: &[u8; 9]) -> Option<u8> {
     b.iter().all(|&m| m != 0).then_some(0)
 }
 
+/// Which of `n` equal squares the bot takes: one Park–Miller step over the
+/// match's seed and the marks on the board, the same in every lane.
+fn pick_of(seed: i64, marks: usize, n: usize) -> usize {
+    ((((seed.unsigned_abs() % 2147483647) + marks as u64 + 1) * 48271 % 2147483647) % n as u64) as usize
+}
+
 /// The whole state, and the heir's snapshot. Marks: 0 empty, 1 X, 2 O.
 #[derive(Clone, Serialize, Deserialize)]
 pub struct TicTacToe {
@@ -34,6 +40,14 @@ pub struct TicTacToe {
     winner: Option<u8>,
     x: Option<String>,
     o: Option<String>,
+    /// The bot's, for equal squares: in the snapshot, never in the view
+    /// (`view` zeroes it, and a zero is left out).
+    #[serde(default, skip_serializing_if = "is_zero")]
+    seed: i64,
+}
+
+fn is_zero(n: &i64) -> bool {
+    *n == 0
 }
 
 /// A move, `{"i": 0..8}`. Anything else is kept, to be refused in the
@@ -73,9 +87,9 @@ impl Game for TicTacToe {
     type View = View;
     type Snapshot = TicTacToe;
 
-    fn init(seats: Vec<Seat>, _opts: Value, _seed: i64, _match_no: i64) -> Self {
+    fn init(seats: Vec<Seat>, _opts: Value, seed: i64, _match_no: i64) -> Self {
         let team = |t: &str, i: usize| seats.iter().find(|s| s.team.as_deref() == Some(t)).or(seats.get(i)).map(|s| s.id.clone());
-        TicTacToe { board: [0; 9], turn: 1, winner: None, x: team("A", 0), o: team("B", 1) }
+        TicTacToe { board: [0; 9], turn: 1, winner: None, x: team("A", 0), o: team("B", 1), seed }
     }
 
     // The platform's `first` moves first: it takes turns between rematches
@@ -104,28 +118,30 @@ impl Game for TicTacToe {
     }
 
     fn view(&self, seat: Option<&str>) -> View {
-        View { state: self.clone(), you: seat.map_or(0, |s| self.mark_of(s)) }
+        View { state: TicTacToe { seed: 0, ..self.clone() }, you: seat.map_or(0, |s| self.mark_of(s)) }
     }
 
     fn turn(&self) -> Vec<String> {
         if self.winner.is_none() { self.id_of(self.turn) } else { vec![] }
     }
 
-    /// Win if it can, block if it must, else the centre, else the first free.
+    /// Win if it can, block if it must, else the centre, else any free
+    /// square; between equal squares, one picked from the seed (`pick_of`).
     fn bot(&self, _seat: &str) -> Option<Move> {
         let free: Vec<usize> = (0..9).filter(|&i| self.board[i] == 0).collect();
-        let wins = |mark: u8| {
-            free.iter().copied().find(|&i| {
-                let mut b = self.board;
-                b[i] = mark;
-                winner_of(&b) == Some(mark)
-            })
+        let wins = |mark: u8| -> Vec<usize> {
+            free.iter()
+                .copied()
+                .filter(|&i| {
+                    let mut b = self.board;
+                    b[i] = mark;
+                    winner_of(&b) == Some(mark)
+                })
+                .collect()
         };
-        let i = wins(self.turn)
-            .or_else(|| wins(3 - self.turn))
-            .or_else(|| free.contains(&4).then_some(4))
-            .or_else(|| free.first().copied());
-        i.map(|i| Move::Square { i: i as i64 })
+        let centre = if free.contains(&4) { vec![4] } else { vec![] };
+        let take = [wins(self.turn), wins(3 - self.turn), centre, free.clone()].into_iter().find(|c| !c.is_empty())?;
+        Some(Move::Square { i: take[pick_of(self.seed, 9 - free.len(), take.len())] as i64 })
     }
 
     fn result(&self) -> Option<Outcome> {
@@ -170,7 +186,8 @@ mod tests {
         assert_eq!(run(r#"{"fn":"apply","action":{"i":4},"by":"pX"}"#), r#"{"v":null}"#);
         assert_eq!(run(r#"{"fn":"apply","action":{"i":9},"by":"bot_O"}"#), r#"{"v":"that square is taken"}"#);
         assert_eq!(run(r#"{"fn":"turn"}"#), r#"{"v":["bot_O"]}"#);
-        assert_eq!(run(r#"{"fn":"bot","seat":"bot_O"}"#), r#"{"v":{"i":0}}"#);
+        // Seed 7, one mark down: of the eight free squares, pick_of gives the last.
+        assert_eq!(run(r#"{"fn":"bot","seat":"bot_O"}"#), r#"{"v":{"i":8}}"#);
         assert_eq!(run(r#"{"fn":"view","seat":"bot_O"}"#), r#"{"v":{"board":[0,0,0,0,1,0,0,0,0],"turn":2,"winner":null,"x":"pX","o":"bot_O","you":2}}"#);
         assert_eq!(run(r#"{"fn":"result"}"#), r#"{"v":null}"#);
         assert_eq!(run(r#"{"fn":"skip","seat":"bot_O"}"#), r#"{"v":true}"#);

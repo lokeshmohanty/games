@@ -20,6 +20,12 @@ def winner_of(b):
     return 0 if all(b) else None
 
 
+def pick_of(seed, marks, n):
+    """Which of `n` equal squares the bot takes: one Park-Miller step over the
+    match's seed and the marks on the board, the same in every lane."""
+    return (((abs(seed) % 2147483647) + marks + 1) * 48271) % 2147483647 % n
+
+
 def square(action):
     """The square an action names, or None when it names none on the board."""
     i = action.get("i") if isinstance(action, dict) else None
@@ -39,6 +45,7 @@ class TicTacToe(arcade.Game):
         self.winner = None
         self.x = team("A", 0)
         self.o = team("B", 1)
+        self.seed = int(seed or 0)  # the bot's, for equal squares; not in the view
         # The platform's `first` moves first: it takes turns between rematches
         # (docs/sdk-v2.md "Who starts"). X otherwise, as from an older shell.
         if first is not None and first == self.o:
@@ -77,18 +84,17 @@ class TicTacToe(arcade.Game):
         return [self.id_of(self.turn_mark)] if self.winner is None else []
 
     def bot(self, seat):
-        # Win if it can, block if it must, else the centre, else the first free.
+        # Win if it can, block if it must, else the centre, else any free
+        # square; between equal squares, one picked from the seed (pick_of).
         free = [i for i, m in enumerate(self.board) if not m]
 
         def wins(mark):
-            return next((i for i in free if winner_of([mark if j == i else m for j, m in enumerate(self.board)]) == mark), None)
+            return [i for i in free if winner_of([mark if j == i else m for j, m in enumerate(self.board)]) == mark]
 
-        i = wins(self.turn_mark)
-        if i is None:
-            i = wins(3 - self.turn_mark)
-        if i is None:
-            i = 4 if 4 in free else free[0] if free else None
-        return None if i is None else {"i": i}
+        take = next((c for c in (wins(self.turn_mark), wins(3 - self.turn_mark), [4] if 4 in free else [], free) if c), None)
+        if take is None:
+            return None
+        return {"i": take[pick_of(getattr(self, "seed", 0), 9 - len(free), len(take))]}
 
     def result(self):
         if self.winner is None:
