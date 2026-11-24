@@ -362,6 +362,14 @@ try {
 		// The word has to be read off the *drawer's* page: everyone else is shown
 		// the masked hint, and the host is not necessarily drawing.
 		const pages = [host, p2, p3];
+		// The drawer is the one page whose input is disabled — once every
+		// page has its first view: an input is enabled before it, so read too
+		// soon no page was the drawer, the host was taken for it, and its
+		// masked word was guessed (a flake seen 2026-11-24, here and in CI).
+		for (const end = Date.now() + TIMEOUT; Date.now() < end; await new Promise((r) => setTimeout(r, 100))) {
+			const n = (await Promise.all(pages.map((page) => F.get(page).evaluate(() => document.querySelector("#chat-input")?.disabled === true)))).filter(Boolean).length;
+			if (n === 1) break;
+		}
 		const disabled = await Promise.all(
 			pages.map((page) => F.get(page).evaluate(() => document.querySelector("#chat-input")?.disabled === true)),
 		);
@@ -378,7 +386,12 @@ try {
 				if (!enabled) continue;
 				await readyToClick(page);
 				await F.get(page).fill("#chat-input", secret);
-				await F.get(page).click("#chat-send");
+				// Enter, not a click on SEND: a click is a point on the page,
+				// taken by anything the shell draws over the frame there (a
+				// passing toast, likely), which Playwright's checks inside the
+				// frame cannot see; the guess stayed in the box (2026-11-24,
+				// here and in CI).
+				await F.get(page).press("#chat-input", "Enter");
 			}
 			// Sixty seconds is the drawing deadline; anything near it means the
 			// early exit did not fire.
@@ -388,8 +401,10 @@ try {
 				null,
 				{ timeout: 20_000 },
 			).catch(() => {});
+			const took = Date.now() - before;
+			const why = took < 15_000 ? "" : JSON.stringify({ word, disabled, pages: await Promise.all(pages.map((page) => F.get(page).evaluate(() => ({ dis: document.querySelector("#chat-input")?.disabled, val: document.querySelector("#chat-input")?.value, ph: document.querySelector("#chat-input")?.placeholder, word: document.querySelector("#word-display")?.textContent, chat: [...document.querySelectorAll("#chat-log > *, #chat > *")].slice(-4).map((n) => n.textContent) })))) });
 			check("everyone guessing right ends the phase early, not at the deadline",
-				Date.now() - before < 15_000, `${Math.round((Date.now() - before) / 1000)}s`);
+				took < 15_000, `${Math.round(took / 1000)}s ${why}`);
 		} else {
 			check("the word was readable to the drawer", false, `word display was "${word}"`);
 		}
