@@ -701,7 +701,7 @@ canvas {
 /* The colour picker (party.js colorPicker): on the party screen under your
    name, and on the quick table. A swatch per player colour, 44px, with its
    name's letter on a chip of the surface (readable on every swatch in every
-   theme); yours ringed in ink, one a person picked first struck through. Two
+   theme); yours ringed in ink, one a pick would not get you struck through. Two
    rows of four at 354px, one row of eight where it fits. */
 .color-pick {
   margin-top: 10px;
@@ -760,6 +760,9 @@ canvas {
   margin-left: -1.5px;
   background: var(--ink);
   border-radius: 2px;
+  /* outlined in the surface, so it shows on a light swatch too (Neon's
+     yellow and white, review 2026-11-24) */
+  box-shadow: 0 0 0 1.5px var(--surface);
   transform: rotate(45deg);
 }
 .color-swatch:focus-visible {

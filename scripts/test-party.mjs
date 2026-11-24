@@ -236,6 +236,16 @@ try {
 		check("…and p3's picker shows Green taken, and that p3 has the nearest free one (Orange)", told, await p3.evaluate(() => document.querySelector(".color-says")?.textContent));
 		await p2.locator('.color-swatch[data-color="1"]').first().click();
 		check("p2 moves to Yellow: p3's wish for Green is granted", (await shows(host, n3, 4)) && (await shows(p3, n2, 1)), `${await shown(host, n2)} ${await shown(host, n3)}`);
+		// Taken is whatever a pick would not get you (review, 2026-11-24): the
+		// host's colour, though the host never picked, and the stand-in an
+		// earlier picker holds while waiting for theirs.
+		await p2.locator('.color-swatch[data-color="0"]').first().click();
+		await p2.waitForFunction(() => window.__party.room.self().colorWant === 0, null, { timeout: TIMEOUT });
+		check("p2 wants Red, the host's: the host keeps it (nobody holding a colour is moved), p2 keeps Yellow meanwhile", (await shows(host, n2, 1)) && (await shown(host, await idOf(host))) === "0");
+		const struck = await p3
+			.waitForFunction(() => ["0", "1"].every((c) => document.querySelector(`.color-swatch[data-color="${c}"]`)?.classList.contains("is-taken")) && !document.querySelector('.color-swatch[data-color="2"]')?.classList.contains("is-taken"), null, { timeout: TIMEOUT })
+			.then(() => true, () => false);
+		check("…and p3's picker strikes both Red (the host's) and Yellow (p2's stand-in), not a free one", struck, await p3.evaluate(() => [...document.querySelectorAll(".color-swatch.is-taken")].map((b) => b.dataset.color).join()));
 		// The picker on the party screen, on a phone.
 		for (const [w, h] of [
 			[390, 844],
@@ -804,7 +814,14 @@ try {
 	{
 		const ids = JSON.parse(coloursKept).map(([id]) => id);
 		const now = await Promise.all([p2, p3].map((pg) => pg.evaluate((ids) => JSON.stringify(window.__party.room.getMembers().filter((m) => ids.includes(m.id)).map((m) => [m.id, m.color])), ids)));
-		check("the handover keeps everyone's colour (the bot's too), on the heir's record and the rest's", now.every((c) => c === coloursKept), `${coloursKept} → ${now.join(" / ")}`);
+		// What the record held, settled again without the host: everyone keeps
+		// theirs, except a wish the host's colour was holding up, now granted.
+		const expected = await p3.evaluate(([kept, ids]) => {
+			const before = JSON.parse(kept);
+			const ms = window.__party.room.getMembers().filter((m) => ids.includes(m.id)).map((m) => ({ ...m, color: before.find(([id]) => id === m.id)[1] }));
+			return JSON.stringify(NeonArcade.assignColors(ms, { live: true }).map((m) => [m.id, m.color]));
+		}, [coloursKept, ids]);
+		check("the handover keeps everyone's colour (the bot's too), on the heir's record and the rest's — but a wish the host's colour held up", now.every((c) => c === expected), `${coloursKept} → ${now.join(" / ")}, expected ${expected}`);
 	}
 	check("the rest are told who holds it now", restTold);
 	check("…and that the host's connection went, not that they chose to leave", dropTold);
