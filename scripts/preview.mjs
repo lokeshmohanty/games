@@ -268,6 +268,45 @@ async function ludoTurns(page, seconds, done) {
 	}
 }
 
+/** A button in the game's frame, pressed (`element.click()`); false when there is none. */
+const press = (G, sel) =>
+	G.evaluate((sel) => {
+		const b = document.querySelector(sel);
+		b?.click();
+		return !!b;
+	}, sel).catch(() => false);
+const view = (G) => G.evaluate(() => window.__game.handle.debug()).catch(() => null);
+
+/** Glowdown as a person plays it: the first card that plays (a PRISM names the suit it is asked), else draw, else pass. */
+async function glowdownMove(G) {
+	const v = await view(G);
+	if (!v || v.phase !== "play" || !v.myTurn) return v;
+	await sleep(450);
+	if (v.legal.length) {
+		await press(G, `.gd-card[data-card="${v.legal[0]}"]`);
+		await sleep(450);
+		if ((await view(G))?.picking) await press(G, ".gd-pick");
+	} else if (v.drawn != null) await press(G, ".gd-btn:not(.go)");
+	else await press(G, ".gd-draw");
+	return v;
+}
+/** 29 as a person plays it: the lowest bid, the first card offered for the trump, the first card that may be played. */
+async function twentyNineMove(G) {
+	const v = await view(G);
+	if (!v) return v;
+	if (v.phase === "hand-over") {
+		await press(G, ".tn-bar .tn-btn");
+		return v;
+	}
+	if (!v.myTurn) return v;
+	await sleep(500);
+	// Bid the lowest while the bidding is low; past 18, pass (the last button), unless made to bid.
+	if (v.phase === "bid") await press(G, v.mustBid || v.high < 18 ? ".tn-bids .tn-btn" : ".tn-bids .tn-btn:last-child");
+	else if (v.phase === "trump") await press(G, ".tn-card:not(:disabled)");
+	else if (v.phase === "play") await press(G, `.tn-card[data-card="${v.legal[0]}"]`);
+	return v;
+}
+
 // ---------------------------------------------------------------- scenarios
 
 const GAMES = {
@@ -810,6 +849,101 @@ const GAMES = {
 		async play([page], seconds) {
 			await ludoTurns(page, seconds, (v) => v.over);
 			await sleep(1000);
+		},
+	},
+
+	// The card games (lokeshmohanty/card-games): record with --gif into that
+	// repo's folder. Upright, like the phones they are made for.
+	glowdown: {
+		file: "?game=lokeshmohanty%2Fglowdown&fresh=1",
+		peers: 1,
+		seconds: 14,
+		width: 420,
+		height: 760,
+		async beforeStart([page]) {
+			// One person with bots: dealt at once (the settings only the first time, and only for friends).
+			await soloTable(page, 4);
+			const G = await gameScope(page, 20_000);
+			await G.waitForFunction(() => window.__game.handle.debug().phase === "play", null, { timeout: 20_000 });
+			// A few turns off camera: the clip opens on a game under way.
+			for (let i = 0, end = Date.now() + 20_000; i < 2 && Date.now() < end; ) {
+				const v = await glowdownMove(G);
+				if (v?.myTurn) i++;
+				await sleep(200);
+			}
+		},
+		async play([page], seconds) {
+			const G = await gameScope(page, 20_000);
+			for (const end = Date.now() + seconds * 1000; Date.now() < end; ) {
+				const v = await glowdownMove(G);
+				if (!v || v.phase === "over") break;
+				await sleep(200);
+			}
+			await sleep(1200);
+		},
+	},
+
+	"twenty-nine": {
+		file: "?game=lokeshmohanty%2Ftwenty-nine&fresh=1",
+		peers: 1,
+		seconds: 16,
+		width: 420,
+		height: 760,
+		async beforeStart([page]) {
+			await soloTable(page, 4);
+			const G = await gameScope(page, 20_000);
+			// The bidding and the trump off camera: the clip opens on the tricks.
+			for (const end = Date.now() + 30_000; Date.now() < end; ) {
+				const v = await twentyNineMove(G);
+				if (v?.phase === "play" && v.trick.length >= 1) break;
+				await sleep(200);
+			}
+		},
+		async play([page], seconds) {
+			const G = await gameScope(page, 20_000);
+			for (const end = Date.now() + seconds * 1000; Date.now() < end; ) {
+				const v = await twentyNineMove(G);
+				if (!v || v.phase === "over") break;
+				await sleep(200);
+			}
+			await sleep(1200);
+		},
+	},
+
+	"guess-what": {
+		file: "?game=lokeshmohanty%2Fguess-what&fresh=1",
+		peers: 1,
+		seconds: 16,
+		width: 420,
+		height: 760,
+		async beforeStart([page]) {
+			await soloTable(page, 3);
+			const G = await gameScope(page, 20_000);
+			// Wait for a round this phone gives clues in: the picture shows.
+			for (const end = Date.now() + 60_000; Date.now() < end; ) {
+				const v = await view(G);
+				if (v?.phase === "ready" && !v.iGuess) break;
+				if (v?.phase === "guess" && v.iGuess && v.clues.length >= 2) await press(G, `.gw-tile[data-pick="${v.choices.findIndex((_, k) => !v.struck.includes(k))}"]`);
+				await sleep(300);
+			}
+		},
+		async play([page], seconds) {
+			const G = await gameScope(page, 20_000);
+			let typed = false;
+			for (const end = Date.now() + seconds * 1000; Date.now() < end; ) {
+				const v = await view(G);
+				if (!v || v.phase === "over") break;
+				if (v.phase === "guess" && !v.iGuess && !typed && v.clues.length >= 1) {
+					typed = true;
+					await G.locator(".gw-say input").pressSequentially("not a car", { delay: 90 }).catch(() => {});
+					await press(G, ".gw-say button");
+				}
+				if (v.phase === "reveal") {
+					await sleep(2500);
+					break;
+				}
+				await sleep(300);
+			}
 		},
 	},
 

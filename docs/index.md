@@ -39,7 +39,7 @@ questions about this project from this folder alone.
 | Test the room hub (codes, claims, TTLs) | `node scripts/test-hub.mjs` — pure hub logic against the real rules, no browser, no Cloudflare account needed |
 | Test the join-by-code path | `node scripts/test-room.mjs` — the real client (lib/room-join.js, net.js, the party and lobby screens) against the in-page mock room server; WebRTC handshake itself is real |
 | Test across real (simulated) networks | `just test-nat` — NAT routers built from network namespaces (cone, full cone, symmetric), netem loss/latency, a network switch mid-party, a blocked room server; real Chrome per device and the real worker under `wrangler dev`. Needs `nix shell`, so not in `just test`. See [network-testing.md](network-testing.md) |
-| Regenerate a portal preview | `scripts/make-preview.sh <game>` (or `all`) — plays the game headless and writes `assets/<game>.webp` (poster), `.webm` and `.mp4`; no gif is kept. A web-games game: `--gif ../web-games/<game>/preview.gif` (its card is its own gif) |
+| Regenerate a portal preview | `scripts/make-preview.sh <game>` (or `all`) — plays the game headless and writes `assets/<game>.webp` (poster), `.webm` and `.mp4`; no gif is kept. An outside repo's game (web-games, card-games): `--gif ../<repo>/<game>/preview.gif` (its card is its own gif) |
 | Serve it locally | `just run` — http://127.0.0.1:8000. `just serve-lan` binds every interface for phone testing, but a plain LAN http:// address is not a secure context, so SCAN REPLY will not work there (use PASTE) |
 | Run everything | `just test`, or `just --list` for the rest |
 | Check the offline precache | `just build` — `scripts/assemble.mjs` derives the precache list from what it built and copied, and fails if a listed file is missing; `just test-pwa` then plays every game offline |
@@ -227,6 +227,17 @@ fixed 2026-11-19, branch `phone-shell`)**, asserted with computed sizes
   block for a game the registry's pin does not have yet skips, saying so
   (`scripts/serve.mjs` `communityHas`), so main stays green between the
   games repo's merge and the pin's.
+  The three games of lokeshmohanty/card-games joined them (branch
+  `card-games`, 2026-11-23): each one's settings screen at friends' first
+  game (host and guest), a one-tap start straight into play on the
+  settings kept on the phone (the settings only the first time, Lokesh
+  2026-11-23, as Ludo), Glowdown's turn, a pick, a hand of 9 fanned in
+  rows and eight players with a hand of 30; 29's bid, trump pick, asking for the trump and turn;
+  Guess What's clue-giver, guesser, answer and one-phone screens; and each
+  end's "Next game: … · CHANGE" with its choices above the tucked end card.
+  Their blocks (and test-bots') skip, saying so, only while the registry
+  does not list them (`scripts/serve.mjs` `registryLists`); listed but
+  missing fails.
   `just test-taps` (CI shard 5) plays every phase of each and holds the
   whole frame to `phoneSizes` (390x844 and 354x696, in `scripts/serve.mjs`)
   with `phoneFloors`' `hit: true`: box and hit area, every enabled control

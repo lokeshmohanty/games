@@ -2769,6 +2769,214 @@ try {
 		check("the same table again (a card's tap): straight into play, 6-player board, two teams of three", v.phase === "play" && v.board === 6 && v.mode === "trios" && v.teams.join() === "0,1,0,1,0,1", JSON.stringify({ phase: v.phase, board: v.board, mode: v.mode }));
 	}
 
+	// --------------------------------------------- card games: glowdown
+	//
+	// lokeshmohanty/card-games, a repository of its own. Until the registry
+	// lists a game, its block skips, saying so (`pinned`, above).
+
+	/** A card game's SINGLE PLAYER with `n` at the quick table (seats in `people` PERSON), started; its frame once the first view is in. */
+	async function openCards(p, id, n, people = []) {
+		await p.goto(url(`?game=lokeshmohanty%2F${id}&fresh=1&mode=bots`));
+		const which = await (
+			await p.waitForFunction(() => {
+				const go = document.querySelector(".quick-table .quick-go button");
+				return go && go.getClientRects().length ? "table" : window.__party?.game ? "game" : null;
+			}, null, { timeout: TIMEOUT })
+		).jsonValue();
+		if (which === "table") {
+			await setPlayers(p, n);
+			for (let i = 1; i < n; i++) {
+				const q = `.quick-table [data-qt="seat${i}-${people.includes(i) ? "person" : "bot"}"]`;
+				if (!(await p.locator(q).count())) continue;
+				if ((await p.locator(q).getAttribute("aria-pressed")) !== "true") await p.locator(q).click();
+				await p.waitForFunction((q) => document.querySelector(q)?.getAttribute("aria-pressed") === "true", q, { timeout: TIMEOUT });
+			}
+			await p.locator(".quick-table .quick-go button").click();
+		}
+		await p.waitForFunction(() => window.__game?.handle, null, { timeout: TIMEOUT });
+		const F = await gameScope(p, TIMEOUT);
+		await F.waitForFunction((n) => window.__game.handle.debug()?.seats?.length === n, n, { timeout: TIMEOUT });
+		await readyToClick(p);
+		return F;
+	}
+	/** Press a button in a game's frame (`element.click()`, as a tap lands). */
+	const press = (F, sel) => F.evaluate((sel) => document.querySelector(sel).click(), sel);
+	const cardView = (F) => F.evaluate(() => window.__game.handle.debug());
+
+	/** Play Glowdown on this phone as a careless person would, to the end; every event seen is kept in `v.seen` (a view keeps only the last 12). */
+	async function glowdownToEnd(F, ms = 300_000) {
+		let v = await cardView(F);
+		const seen = new Map();
+		for (const end = Date.now() + ms; v.phase !== "over" && Date.now() < end; v = await cardView(F)) {
+			for (const e of v.log) seen.set(e.n, e);
+			if (!v.myTurn) {
+				await sleep(150);
+				continue;
+			}
+			if (v.legal.length) {
+				await press(F, `.gd-card[data-card="${v.legal[0]}"]`);
+				const pick = (await cardView(F)).picking;
+				if (pick) await press(F, ".gd-pick");
+			} else if (v.drawn != null) await press(F, ".gd-btn:not(.go)");
+			else await press(F, ".gd-draw");
+			await F.waitForFunction((n) => window.__game.handle.debug().last?.n !== n, v.last?.n, { timeout: TIMEOUT }).catch(() => {});
+		}
+		for (const e of v.log) seen.set(e.n, e);
+		v.seen = [...seen.values()].sort((a, b) => a.n - b.n);
+		return v;
+	}
+
+	/** Keep `value` in a community game's storage on this phone (what it reads in `init.storage`), before it opens. */
+	const keepOnPhone = async (p, id, value) => {
+		if (!p.url().startsWith(SITE.base)) await p.goto(url("./"));
+		await p.evaluate(([k, v]) => localStorage.setItem(k, JSON.stringify(v)), [`neon.g.lokeshmohanty/${id}`, value]);
+	};
+	/** What a community game keeps on this phone; `until(kept)` waits (up to 5 s) for a store.set still crossing from the frame. */
+	const keptOnPhone = async (p, id, until = () => true) => {
+		const read = () => p.evaluate((k) => JSON.parse(localStorage.getItem(k) ?? "{}"), `neon.g.lokeshmohanty/${id}`);
+		let kept = await read();
+		for (const end = Date.now() + 5000; !until(kept) && Date.now() < end; kept = await read()) await sleep(100);
+		return kept;
+	};
+	/** At the end: SEE THE BOARD, CHANGE, the picks, DONE; what the line says then. */
+	async function changeNext(p, F, { line, change, picks }) {
+		await p.locator(".managed-over button", { hasText: "SEE THE BOARD" }).first().click({ timeout: TIMEOUT });
+		await F.waitForFunction((sel) => !!document.querySelector(`${sel}:not([hidden])`), line, { timeout: TIMEOUT });
+		await press(F, change);
+		for (const sel of picks) {
+			await F.waitForFunction((sel) => !!document.querySelector(sel), sel, { timeout: TIMEOUT });
+			await press(F, sel);
+		}
+		await press(F, change);
+		return F.evaluate((sel) => document.querySelector(sel).textContent, line);
+	}
+
+	console.log("\nbots: glowdown, one person and three bots: straight in, to the end, CHANGE the next game's rules, PLAY AGAIN on them");
+	if (pinned("glowdown")) {
+		G = await openCards(page, "glowdown", 4);
+		let v = await cardView(G);
+		const self = await selfOf(page);
+		check("four seats: this phone and three bots; no setup (only the first time, and only for friends): dealt at once, no house rules", v.seats.length === 4 && v.seats[v.you] === self && v.seats.filter((id) => id.startsWith("bot_")).length === 3 && v.phase === "play" && Object.values(v.house).every((x) => x === false), JSON.stringify({ seats: v.seats, phase: v.phase, house: v.house }));
+		const opener = v.opener;
+		const up = await G.evaluate((id) => /^\d$/.test(window.glowdownRules.DECK[id].f), v.top);
+		check("the deal: five each from our own deck, a number turned up, this phone's own hand only", v.counts.every((n) => n === 5) && v.hand.length === 5 && up && v.hands === null);
+		await phoneSizes(page, G, "glowdown, the table");
+		v = await glowdownToEnd(G);
+		check("the game ends", v.phase === "over", JSON.stringify(v.counts));
+		const plays = v.seen.filter((e) => (e.kind === "play" || e.kind === "jump") && e.seat !== v.you);
+		check("the bots played their own cards", plays.length > 0 || v.winner === v.you, JSON.stringify(v.seen.slice(-4)));
+		await resultReached(page, "lokeshmohanty/glowdown", v.winner === v.you);
+		const said = await changeNext(page, G, { line: ".gd-next", change: ".gd-next-change", picks: ['.gd-next button[data-rule="stack"]', '.gd-next button[data-rule="snap"]'] });
+		check("CHANGE at the end: the next game with Stack sparks and Snap", said.startsWith("Next game: Stack sparks, Snap"), said);
+		const kept = await keptOnPhone(page, "glowdown", (k) => k.house?.stack === true);
+		check("…kept on this phone for a one-tap start", kept.house?.stack === true && kept.house?.snap === true, JSON.stringify(kept));
+		await page.locator(".managed-over button", { hasText: "PLAY AGAIN" }).first().click({ timeout: TIMEOUT });
+		await G.waitForFunction(() => window.__game.handle.debug().match === 2, null, { timeout: TIMEOUT });
+		v = await cardView(G);
+		check("PLAY AGAIN: dealt at once on the rules picked for it, the next seat opens", v.phase === "play" && v.house.stack && v.house.snap && !v.house.pass && v.opener === (opener + 1) % 4, JSON.stringify({ phase: v.phase, house: v.house, opener, now: v.opener }));
+	}
+
+	console.log("\nbots: glowdown, one person and one bot, on the rules kept on the phone: a bot left on turn by its own card plays on");
+	if (pinned("glowdown")) {
+		const ctx = await newContext();
+		const p = await ctx.newPage();
+		await keepOnPhone(p, "glowdown", { house: { drawUntil: true, stack: false, snap: false, pass: false } });
+		const F = await openCards(p, "glowdown", 2);
+		const first = await cardView(F);
+		check("a one-tap start deals at once with the rules kept on the phone (draw until you can play)", first.phase === "play" && first.house.drawUntil === true && !first.house.stack, JSON.stringify(first.house));
+		// An ECHO gives the bot another go, and a drawn card that plays keeps it on turn.
+		const v = await glowdownToEnd(F);
+		// The bot's own moves, in order (a penalty is the victim's, not a move).
+		const moves = v.seen.filter((e) => e.kind !== "penalty" && e.kind !== "deal");
+		const again = moves.some((e, i) => i && e.seat !== v.you && e.seat === moves[i - 1].seat);
+		check("the game ends, the bot never stuck on its turn", v.phase === "over", JSON.stringify({ counts: v.counts, turn: v.turn, last: v.last }));
+		check(`the bot moved twice running (a drawn card played, or an ECHO) at least once in ${moves.length} moves, or the game was short`, again || moves.length < 20, JSON.stringify(moves.slice(-8)));
+		await ctx.close();
+	}
+
+	// ------------------------------------------------- card games: 29
+
+	console.log("\nbots: 29, one person and three bots: straight in on the rules kept on the phone, bidding, a hidden trump, CHANGE, PLAY AGAIN");
+	if (pinned("twenty-nine")) {
+		await keepOnPhone(page, "twenty-nine", { house: { pair: true, goal: 1 } });
+		G = await openCards(page, "twenty-nine", 4);
+		let v = await cardView(G);
+		check("four seats, three of them bots; no setup: straight into the bidding, one hand to win (kept on the phone)", v.seats.filter((id) => id.startsWith("bot_")).length === 3 && v.phase === "bid" && v.house.goal === 1 && v.house.pair === true, JSON.stringify({ phase: v.phase, house: v.house }));
+		const firstBidder = v.turn;
+		check("four cards each, the auction from the player after the dealer", v.counts.every((n) => n === 4) && firstBidder === (v.dealer + 1) % 4);
+		await phoneSizes(page, G, "29, the auction");
+		let hidden = null;
+		let botBid = false;
+		for (const end = Date.now() + 300_000; v.phase !== "over" && Date.now() < end; v = await cardView(G)) {
+			if (v.bids.some((b) => b.seat !== v.you)) botBid = true;
+			if (v.phase === "play" && hidden === null && !v.revealed) hidden = v.bidder === v.you ? v.trump != null : v.trump === null && v.aside === -1;
+			if (v.phase === "hand-over") {
+				await press(G, ".tn-bar .tn-btn");
+				await sleep(300);
+				continue;
+			}
+			if (!v.myTurn) {
+				await sleep(150);
+				continue;
+			}
+			if (v.phase === "bid") await press(G, v.mustBid ? ".tn-bids .tn-btn" : ".tn-bids .tn-btn:last-child");
+			else if (v.phase === "trump") await press(G, ".tn-card:not(:disabled)");
+			else await press(G, `.tn-card[data-card="${v.legal[0]}"]`);
+			await G.waitForFunction((n) => window.__game.handle.debug().log.at(-1)?.n !== n, v.log.at(-1)?.n, { timeout: TIMEOUT }).catch(() => {});
+		}
+		check("the bots bid or passed for themselves", botBid);
+		check("the trump stayed the bidder's secret until shown", hidden === true, String(hidden));
+		check("the game ends: one side reached its target", v.phase === "over" && Math.max(...v.score) === 1, JSON.stringify({ score: v.score, history: v.history }));
+		const mySide = v.you % 2;
+		await resultReached(page, "lokeshmohanty/twenty-nine", v.score[mySide] > v.score[1 - mySide]);
+		const said = await changeNext(page, G, { line: ".tn-next", change: ".tn-next-change", picks: ['.tn-next .tn-goal[data-goal="3"]', '.tn-next .tn-opt[data-rule="pair"]'] });
+		check("CHANGE at the end: the next game to 3 hands, without the pair", said.startsWith("Next game: first to 3 hands, pair rule off"), said);
+		await page.locator(".managed-over button", { hasText: "PLAY AGAIN" }).first().click({ timeout: TIMEOUT });
+		await G.waitForFunction(() => window.__game.handle.debug().match === 2, null, { timeout: TIMEOUT });
+		v = await cardView(G);
+		check("PLAY AGAIN: straight into the bidding on the rules picked for it, the next seat bids first", v.phase === "bid" && v.house.goal === 3 && v.house.pair === false && v.turn === (firstBidder + 1) % 4, JSON.stringify({ phase: v.phase, house: v.house, firstBidder, now: v.turn }));
+	}
+
+	// ------------------------------------------ card games: guess what
+
+	console.log("\nbots: guess what, one person and two bots: straight in, bots give clues and guess, pictures kept, CHANGE, PLAY AGAIN");
+	if (pinned("guess-what")) {
+		await keepOnPhone(page, "guess-what", { opts: { cats: ["animals", "food", "things", "play", "travel", "nature"], secs: 30, turns: 1 } });
+		G = await openCards(page, "guess-what", 3);
+		let v = await cardView(G);
+		check("three seats, every phone (no PERSON seats); no setup: straight into the first round, on the options kept on the phone", v.phase === "ready" && v.mode === "phones" && v.total === 3 && v.opts.secs === 30 && v.seats.filter((id) => id.startsWith("bot_")).length === 2, JSON.stringify({ phase: v.phase, opts: v.opts }));
+		let botClue = false;
+		let botGuessed = false;
+		for (const end = Date.now() + 240_000; v.phase !== "over" && Date.now() < end; v = await cardView(G)) {
+			if (v.clues.some((c) => v.bots[c.by])) botClue = true;
+			if (v.phase === "reveal" && v.bots[v.guesser]) botGuessed = true;
+			if (v.phase === "guess" && v.iGuess && v.clues.length >= 2) {
+				const k = v.choices.findIndex((_, i) => !v.struck.includes(i));
+				await press(G, `.gw-tile[data-pick="${k}"]`);
+			}
+			await sleep(400);
+		}
+		check("bot clue-givers typed clues", botClue);
+		// A picture this phone cannot draw is named instead (review, 2026-11-24:
+		// empty boxes on old Android). Every picture draws in this Chrome, black,
+		// white and grey ones too (re-review: a colour test named 18 of them), and
+		// an unassigned character does not.
+		const draws = await G.evaluate(() => ({ named: guessWhatPictures.ALL.filter((p) => !drawable(p.e)).map((p) => `${p.e} ${p.name}`), all: guessWhatPictures.ALL.length, none: drawable("\u{10FFFD}") }));
+		check(`every one of the ${draws.all} pictures draws here (none named instead), and an unassigned character does not`, draws.all > 300 && !draws.named.length && draws.none === false, JSON.stringify(draws));
+		check("a bot took its turn to guess, to the answer", botGuessed);
+		check("the game ends after a turn each", v.phase === "over");
+		const r = await page.waitForFunction(() => JSON.parse(localStorage.getItem("neon.stats") ?? "{}")["lokeshmohanty/guess-what"]?.played >= 1, null, { timeout: 5000 }).then(() => true).catch(() => false);
+		check("its result reached this device's stats", r);
+		const kept = await keptOnPhone(page, "guess-what", (k) => (k.seen?.length ?? 0) >= 3);
+		check(`the pictures dealt are kept on this device (${kept.seen?.length ?? 0}), so the next game deals others`, (kept.seen?.length ?? 0) >= 3, JSON.stringify(kept.seen));
+		const said = await changeNext(page, G, { line: ".gw-next", change: ".gw-next-change", picks: ['.gw-next button[data-cat="food"]', '.gw-next button[data-cat="things"]', '.gw-next button[data-cat="play"]', '.gw-next button[data-cat="travel"]', '.gw-next button[data-cat="nature"]', '.gw-next button[data-turns="2"]'] });
+		check("CHANGE at the end: the next game Animals only, two turns each", said.startsWith("Next game: Animals · 30 s · 2 turns each"), said);
+		await page.locator(".managed-over button", { hasText: "PLAY AGAIN" }).first().click({ timeout: TIMEOUT });
+		await G.waitForFunction(() => window.__game.handle.debug().match === 2, null, { timeout: TIMEOUT });
+		v = await cardView(G);
+		check("PLAY AGAIN: straight into the first round on the options picked for it, animals", v.phase === "ready" && v.opts.cats.join() === "animals" && v.opts.turns === 2 && v.total === 6 && v.category === "animals", JSON.stringify({ phase: v.phase, opts: v.opts, category: v.category }));
+	}
+
 	// ------------------------------------------------------- draw & guess
 
 	console.log("\nbots: draw & guess says it needs people");
