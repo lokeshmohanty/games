@@ -97,6 +97,61 @@ async function resultReached(page, game, how) {
 	check(`${game}: its result reached this device's stats, once, against bots`, rec?.played === 1 && rec.vsBots === 1, JSON.stringify(rec));
 	check(`${game}: …${how}, as the game itself ended`, rec && rec[how] === 1, JSON.stringify(rec));
 }
+/**
+ * Records and achievements after a real game against bots (lib/records.js,
+ * game.json "achievements"/"records"): the unlocks, the notice, the record
+ * set from the result's facts, the time played; then "Your records" (🏆 in
+ * the top band, over the end card) and the profile's trophies, at 390x844
+ * and 354x696 — text 12px, taps 44px, nothing off screen, a trophy's state
+ * said in words and a shape, not a colour alone.
+ */
+async function recordsAfter(page, game, won) {
+	const all = await page
+		.waitForFunction(() => JSON.parse(localStorage.getItem("neon.records") ?? "{}").games?.["*"]?.n >= 10, null, { timeout: 5000 })
+		.then(() => page.evaluate(() => JSON.parse(localStorage.getItem("neon.records")).games))
+		.catch(() => page.evaluate(() => localStorage.getItem("neon.records")));
+	check(`${game}: the result unlocked Regular (the tenth game on this device)`, typeof all?.["*"]?.a?.regular === "number" && all["*"].g.includes(game), JSON.stringify(all?.["*"] ?? all));
+	check(`${game}: …First Win exactly when we won`, !!all?.[game]?.a?.["first-win"] === won, JSON.stringify(all?.[game]?.a));
+	check(`${game}: …its biggest chain is a record, from the result's facts`, typeof all?.[game]?.r?.chain?.v?.[""] === "number" && all[game].r.chain.b === "max", JSON.stringify(all?.[game]?.r));
+	const toasts = await page.evaluate(() => window.__toasts ?? []);
+	const unlock = toasts.filter((t) => t.startsWith("🏆 Unlocked:"));
+	check(`${game}: …one notice named the unlocks, never a dialog`, unlock.length === 1 && unlock[0].includes("Regular") && unlock[0].includes("First Win") === won && !(await page.locator("dialog[open]").count()), JSON.stringify(toasts));
+	const st = await page.evaluate((id) => JSON.parse(localStorage.getItem("neon.stats"))[id], game);
+	check(`${game}: …and the time it took is in its stats (the host's clock), with the win per bot count`, st?.ms > 1000 && st.byBots?.["1"]?.[0] === 1 && st.byBots["1"][1] === (won ? 1 : 0), JSON.stringify(st));
+
+	for (const [w, h] of [
+		[390, 844],
+		[354, 696],
+	]) {
+		await page.setViewportSize({ width: w, height: h });
+		await page.waitForTimeout(150);
+		// Mid-game the band is as it was (no 🏆: ← GAMES keeps its word on a
+		// phone); 🏆 YOUR RECORDS is on the PARTY screen, over the end card.
+		const band = await page.evaluate(() => [...document.querySelectorAll(".top-band .top-records")].filter((b) => b.getClientRects().length).length);
+		check(`${w}x${h}: mid-game the top band has no 🏆 (room for ← GAMES); PARTY has 🏆 YOUR RECORDS, 44px`, band === 0, `${band} shown`);
+		await page.locator(".party-pill").click();
+		const mine = page.locator(".party-records");
+		await mine.waitFor({ timeout: TIMEOUT });
+		check(`${w}x${h}: …🏆 YOUR RECORDS is 44px`, (await mine.boundingBox()).height >= 44);
+		await mine.click();
+		const sheet = page.locator("dialog.records-sheet[open]");
+		await sheet.waitFor({ timeout: TIMEOUT });
+		const s = await page.evaluate(() => {
+			const d = document.querySelector("dialog.records-sheet[open]");
+			const r = d.getBoundingClientRect();
+			const rows = [...d.querySelectorAll(".trophy")].map((li) => ({ state: li.className, mark: li.querySelector(".trophy-mark").textContent, status: li.querySelector(".trophy-status").textContent }));
+			return { title: d.querySelector("h2").textContent, text: d.textContent, rows, r: r.toJSON(), doc: document.documentElement.scrollWidth };
+		});
+		check(`${w}x${h}: "Your records" opens over the game: the record, the stats, the achievements counted`, /Neon Fission/.test(s.title) && s.text.includes("Biggest chain") && s.text.includes("Played") && /Achievements \d of 7/.test(s.text), s.text.slice(0, 200));
+		check(`${w}x${h}: …each trophy says its state in a word and a shape: ✓ UNLOCKED or 🔒 LOCKED`, s.rows.length === 7 && s.rows.every((x) => (x.state.includes("is-unlocked") ? x.mark === "✓" && x.status.startsWith("UNLOCKED") : x.mark === "🔒" && x.status.startsWith("LOCKED"))) && s.rows.some((x) => x.status.includes("/ 10")), JSON.stringify(s.rows));
+		const floors = await phoneFloors(page, "dialog.records-sheet[open]", { hit: true });
+		check(`${w}x${h}: …text at least 12px, taps 44px, inside the screen, no sideways scroll`, !floors.text.length && !floors.taps.length && s.r.left >= 0 && s.r.right <= w && s.r.bottom <= h && s.doc <= w, JSON.stringify({ floors, r: s.r, doc: s.doc }));
+		await page.keyboard.press("Escape");
+		await sheet.waitFor({ state: "detached", timeout: TIMEOUT }).catch(() => {});
+		await page.locator("button", { hasText: "BACK TO GAME" }).click();
+	}
+	await page.setViewportSize({ width: 390, height: 844 });
+}
 /** serve.mjs phoneSizes (390x844 and 354x696), through this suite's check. */
 const phoneSizes = (p, F, label) => onPhones(p, F, label, check, { timeout: TIMEOUT });
 const selfOf = (page) => page.evaluate(() => window.__party.room.selfId);
@@ -1659,7 +1714,15 @@ try {
 
 	console.log("\nbots: neon fission, single player against a bot, to the end");
 	{
+		// Records and achievements (lib/records.js): nine games already played
+		// on this device, so this one's result unlocks Regular, whoever wins.
+		await page.evaluate(() => localStorage.setItem("neon.records", JSON.stringify({ games: { "*": { a: {}, n: 9, g: [] } }, dirty: [] })));
 		const { F, label } = await openFission(page, 2);
+		// Every notice shown from here, however briefly (a toast lasts 4.5 s).
+		await page.evaluate(() => {
+			window.__toasts = [];
+			new MutationObserver((ms) => ms.forEach((m) => m.addedNodes.forEach((n) => n.classList?.contains("neon-toast") && window.__toasts.push(n.textContent)))).observe(document.body, { childList: true, subtree: true });
+		});
 		check("the party offers SINGLE PLAYER / SAME DEVICE (its seats can be people here)", label.trim() === "SINGLE PLAYER / SAME DEVICE", label);
 		let v = await fission(F);
 		check("the game opens on play, not a table of its own: our move, the board empty", (await F.locator("#setup").count()) === 0 && v.turn === 0 && v.moves === 0 && v.canPlay && v.players.map((p) => p.kind).join() === "human,bot", JSON.stringify({ turn: v.turn, moves: v.moves, kinds: v.players.map((p) => p.kind) }));
@@ -1699,6 +1762,7 @@ try {
 		const card = await page.locator(".managed-over").first().textContent({ timeout: TIMEOUT }).catch(() => "");
 		check("the end card shows, with the bot and us ranked", /YOU|WIN/.test(card) && card.includes("DETAILS"), card);
 		await resultReached(page, "neon-fission", v.winner === 0);
+		await recordsAfter(page, "neon-fission", v.winner === 0);
 
 		// CHANGE PLAYERS and PLAY WITH FRIENDS on the end card (Lokesh,
 		// 2026-11-21 and 2026-11-22, "Bottom, between rounds"): the quick
@@ -1725,6 +1789,24 @@ try {
 		await page.locator(".quick-table").waitFor({ timeout: TIMEOUT }).catch(() => {});
 		const t = await page.evaluate(() => ({ game: window.__party.game, n: Number(document.querySelector(".quick-table .quick-n")?.textContent), friends: !!document.querySelector(".quick-table .party-switch") }));
 		check("CHANGE PLAYERS ends the game and shows its table (Players 2), with Play with friends at its bottom", t.game === null && t.n === 2 && t.friends, JSON.stringify(t));
+		// No game running: the band has room, and 🏆 Records is in it (lib/party.js).
+		for (const [w, h] of [
+			[390, 844],
+			[354, 696],
+		]) {
+			await page.setViewportSize({ width: w, height: h });
+			await page.waitForTimeout(150);
+			const band = await page.evaluate(() => {
+				const bs = [...document.querySelectorAll(".top-band .portal-link, .top-band .top-actions > :not([hidden])")].map((b) => ({ c: b.className, r: b.getBoundingClientRect().toJSON() }));
+				const over = bs.some((x, i) => bs.some((y, j) => i < j && x.r.left < y.r.right - 0.5 && y.r.left < x.r.right - 0.5));
+				return { cs: bs.map((b) => b.c), over, right: Math.max(...bs.map((b) => b.r.right)), short: bs.filter((b) => b.r.height < 44 || b.r.width < 44).length };
+			});
+			check(`${w}x${h}: with no game running the top band has 🏆 Records, every button 44px, on screen and apart`, band.cs.some((c) => /top-records/.test(c)) && !band.over && band.right <= w && !band.short, JSON.stringify(band));
+		}
+		await page.setViewportSize({ width: 390, height: 844 });
+		await page.locator(".top-records").click();
+		check("…and it opens Your records", await page.locator('dialog.records-sheet[open] [data-records="neon-fission"]').waitFor({ timeout: TIMEOUT }).then(() => true, () => false));
+		await page.keyboard.press("Escape");
 		await setPlayers(page, 3);
 		await page.locator(".quick-table button", { hasText: "START GAME" }).click();
 		await page.waitForFunction(() => window.__party.game === "neon-fission", null, { timeout: TIMEOUT }).catch(() => {});
@@ -1732,6 +1814,33 @@ try {
 		check("…START GAME plays the next round at the new table (3 players), remembered for the game", next.members === 3 && next.saved === 3, JSON.stringify(next));
 		// Back to two for the suites below, which assume a fresh table.
 		await page.evaluate(() => localStorage.removeItem("neon.table"));
+	}
+
+	console.log("\nrecords: the profile's trophies, signed out, at 390x844 and 354x696");
+	{
+		await page.goto(url("index.html?page=profile"));
+		const sec = page.locator('[data-section="trophies"]');
+		await sec.waitFor({ timeout: TIMEOUT });
+		for (const [w, h] of [
+			[390, 844],
+			[354, 696],
+		]) {
+			await page.setViewportSize({ width: w, height: h });
+			await page.waitForTimeout(150);
+			const t = await page.evaluate(() => {
+				const s = document.querySelector('[data-section="trophies"]');
+				return { text: s.textContent, games: [...s.querySelectorAll(".records-game")].map((b) => b.dataset.game), platform: [...s.querySelectorAll(":scope .records-trophies > .trophies .trophy")].map((li) => li.dataset.trophy + ":" + li.querySelector(".trophy-status").textContent), doc: document.documentElement.scrollWidth };
+			});
+			check(`${w}x${h}: the profile lists the platform's trophies (Regular unlocked) and each game played`, t.platform.some((x) => x.startsWith("regular:UNLOCKED")) && t.platform.some((x) => x.startsWith("explorer:LOCKED")) && t.games.includes("neon-fission"), JSON.stringify(t));
+			// The section runs below the fold: sizes measured as boxes (a hit test needs it on screen).
+			const floors = await phoneFloors(page, '[data-section="trophies"]');
+			check(`${w}x${h}: …text at least 12px, taps 44px, no sideways scroll`, !floors.text.length && !floors.taps.length && t.doc <= w, JSON.stringify(floors));
+		}
+		await page.locator('.records-game[data-game="neon-fission"]').click();
+		const panel = page.locator('dialog.records-sheet[open] [data-records="neon-fission"]');
+		check("a game there opens its records", await panel.waitFor({ timeout: TIMEOUT }).then(() => true, () => false));
+		await page.keyboard.press("Escape");
+		await page.setViewportSize({ width: 390, height: 844 });
 	}
 
 	console.log("\nlocal: neon fission on one phone, two people and a bot, set at the quick table");

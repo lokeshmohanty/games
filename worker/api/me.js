@@ -9,7 +9,8 @@
 //                              favourites, ratings, wins against bots, runs,
 //                              matches (paged), pending reports, friends,
 //                              groups, sessions, feedback posts, presence,
-//                              devices getting invites as notifications (no keys)
+//                              devices getting invites as notifications (no keys),
+//                              records and achievements
 //   GET    /api/me/favs        { favs: [id] }
 //   PUT    /api/me/favs        { favs: [id] } — replaces (the page merges first);
 //                              an id is a game's, "contributor:<login>" or
@@ -126,6 +127,7 @@ export async function deleteMe(env, me) {
 		env.DB.prepare("DELETE FROM push_subs WHERE account = ?").bind(id),
 		env.DB.prepare("DELETE FROM invite_notices WHERE recipient = ? OR sender = ?").bind(id, id),
 		env.DB.prepare("DELETE FROM feedback_log WHERE account = ?").bind(id),
+		env.DB.prepare("DELETE FROM records WHERE account = ?").bind(id),
 		env.DB.prepare("DELETE FROM accounts WHERE id = ?").bind(id),
 	]);
 	return { deleted: true };
@@ -191,6 +193,9 @@ export async function exportMe(env, me, page = 0) {
 		// is a file people keep and pass around.
 		// When a friend's invite last reached one of our devices as a notification.
 		inviteNotices: await q("SELECT sender, code, at FROM invite_notices WHERE recipient = ?", me.id),
+		// Personal records and achievements, per game ("*": across games), as
+		// the devices sent them (worker/api/records.js).
+		records: Object.fromEntries((await q("SELECT game, data, at FROM records WHERE account = ? ORDER BY game", me.id)).map((r) => [r.game, { ...parse(r.data), at: r.at }])),
 		pushDevices: (await q("SELECT endpoint, created, at FROM push_subs WHERE account = ? ORDER BY at DESC", me.id)).map((r) => ({
 			service: new URL(r.endpoint).host,
 			created: r.created,

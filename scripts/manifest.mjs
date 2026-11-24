@@ -1,6 +1,10 @@
 // scripts/manifest.mjs — what a game.json must say. Shared by the catalog
 // build, `just validate-game` and the PR check, so all three agree.
 
+// Achievements and records (docs/platform.md): the condition language lives
+// in lib/achievements.js, which the device and the Worker run too.
+import { validateRules } from "../lib/achievements.js";
+
 // "shared": a web app (`app` below) — one screen every phone runs; no seats,
 // bots or results.
 export const KINDS = ["duel", "ffa", "teams", "coop", "local", "shared"];
@@ -129,6 +133,9 @@ export function validateManifest(m) {
 		p.push('"sameDevice" needs "state": "managed" and bots, and is not for a "local" or "shared" game');
 	}
 	if (m.app != null) p.push(...validateApp(m.app));
+	// Achievements and records are read off a result: a web app reports none.
+	if ((m.achievements != null || m.records != null) && m.kind === "shared") p.push('"achievements" and "records" need a game that reports results (not "kind": "shared")');
+	p.push(...validateRules(m));
 	if ((m.kind === "shared") !== (m.app != null)) p.push('"kind": "shared" goes with "app", and only with it');
 	return p;
 }

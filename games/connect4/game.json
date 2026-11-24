@@ -25,6 +25,105 @@
     "strategy"
   ],
   "preview": "../../assets/connect4.webp",
+  "records": [
+    {
+      "id": "fewest",
+      "title": "Fewest discs to win",
+      "of": "facts.moves",
+      "best": "min",
+      "when": {
+        "won": true,
+        "facts.four": true
+      }
+    },
+    {
+      "id": "longest",
+      "title": "Longest win",
+      "of": "facts.moves",
+      "best": "max",
+      "when": {
+        "won": true,
+        "facts.four": true
+      },
+      "unit": "discs"
+    }
+  ],
+  "achievements": [
+    {
+      "id": "first-win",
+      "title": "First Win",
+      "description": "Win a game of Connect 4.",
+      "glyph": "🏁",
+      "when": {
+        "won": true
+      }
+    },
+    {
+      "id": "speed-four",
+      "title": "Speed Four",
+      "description": "Win with 14 discs or fewer on the board.",
+      "glyph": "⚡",
+      "when": {
+        "won": true,
+        "facts.four": true,
+        "facts.moves": {
+          "<=": 14
+        }
+      }
+    },
+    {
+      "id": "marathon",
+      "title": "Marathon",
+      "description": "Win a game that filled 36 holes or more.",
+      "glyph": "🧱",
+      "when": {
+        "won": true,
+        "facts.four": true,
+        "facts.moves": {
+          ">=": 36
+        }
+      }
+    },
+    {
+      "id": "deadlock",
+      "title": "Deadlock",
+      "description": "Fill the whole board with no winner.",
+      "glyph": "🤝",
+      "when": {
+        "outcome": "drawn"
+      }
+    },
+    {
+      "id": "hat-trick",
+      "title": "Hat Trick",
+      "description": "Win 3 games in a row.",
+      "glyph": "🎩",
+      "when": {
+        "won": true
+      },
+      "streak": 3
+    },
+    {
+      "id": "five-in-a-row",
+      "title": "5 in a Row",
+      "description": "Win 5 games in a row.",
+      "glyph": "🔥",
+      "when": {
+        "won": true
+      },
+      "streak": 5
+    },
+    {
+      "id": "ten-wins",
+      "title": "Ten Wins",
+      "description": "Win 10 games.",
+      "glyph": "🏆",
+      "when": {
+        "won": true
+      },
+      "count": 10
+    }
+  ],
   "license": "MIT",
   "author": "lokeshmohanty",
   "repo": "https://github.com/lokeshmohanty/games"

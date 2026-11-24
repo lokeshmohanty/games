@@ -81,7 +81,7 @@ serve-lan: install
 test: test-static pyodide community check-games build test-room test-party test-scan test-pwa test-bots test-rules-screen test-devkit test-protocol test-managed test-conformance test-webapp test-theme test-portal test-taps
 
 # The cheap checks: no build, no browser, seconds. CI's first job, which gates the shards.
-test-static: check-bindings check-colours (catalog "--check") test-stats test-submission test-codec test-just test-hub test-worker-do test-plumbing test-rules
+test-static: check-bindings check-colours (catalog "--check") test-stats test-records test-submission test-codec test-just test-hub test-worker-do test-plumbing test-rules
 
 # CI runs the slow suites in parallel shards (.github/workflows/test.yml),
 # grouped by time so they take about as long as each other: these are the
@@ -307,6 +307,10 @@ validate-game *args: (_not-recipes "validate-game" args "paths")
 # lib/stats.js with no browser: outcomes per kind, counting once, rematches.
 test-stats:
     node scripts/test-stats.mjs
+
+# Achievements and records with no browser: every condition operator, malformed declarations refused, unlocking, records, merging, sync.
+test-records:
+    node scripts/test-records.mjs
 
 # The account API (worker/api/) under wrangler dev with a throwaway local D1,
 # against a fake GitHub and Google. Not part of `test`: it needs wrangler

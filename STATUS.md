@@ -16,6 +16,21 @@ separate `TODO.md`.*
 
 ## Now (2026-11-18)
 
+**Branch `records` (2026-11-24, PR open; community sides merged):**
+personal records and achievements (Lokesh, 2026-11-21) — game.json
+`achievements`/`records`, data-only conditions on the result
+(lib/achievements.js, shared by the device, manifest.mjs and the Worker);
+lib/records.js on the device, synced to D1 `records` (migration 0007, not
+applied) and shown to friends only; 🏆 Records in the top band (PARTY screen mid-game), the
+profile's trophies, a friend's 🏆 TROPHIES in the party. Declared here for
+Connect 4, Neon Fission, Neon Bid, Neon Survival; web-games branch
+`achievements` (8 games, with the `facts`/`seatFacts` they read) and
+card-games (Glowdown, Guess What, 29): both merged, pins at web-games
+7782b67 and card-games 606480f. Review fixes (2026-11-24): owner
+per account on a shared device, completion facts gate skill achievements,
+per-game refusals, optimistic writes, 29's Comeback, Tic Tac Toe (JS). To land: merge
+this PR; migrate 0007 first, then `just deploy-worker` (docs/accounts.md
+"Migrations").
 **Player colours (2026-11-24, landed by PR here; web-games 69c7587 and
 card-games 0d10c1f pinned):** players pick their own colour (Lokesh,
 2026-11-21: "every game with colours"): the picker under YOU and on the quick

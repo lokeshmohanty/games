@@ -19,6 +19,81 @@
     "duel",
     "quick"
   ],
+  "records": [
+    {
+      "id": "draws",
+      "title": "Draws",
+      "best": "count",
+      "when": {
+        "outcome": "drawn"
+      }
+    }
+  ],
+  "achievements": [
+    {
+      "id": "first-win",
+      "title": "First Win",
+      "description": "Beat the other side at Tic Tac Toe.",
+      "glyph": "🏁",
+      "when": {
+        "won": true
+      }
+    },
+    {
+      "id": "stalemate",
+      "title": "Stalemate",
+      "description": "Fill the grid with no winner.",
+      "glyph": "🤝",
+      "when": {
+        "outcome": "drawn"
+      }
+    },
+    {
+      "id": "hat-trick",
+      "title": "Hat Trick",
+      "description": "Win 3 games in a row.",
+      "glyph": "🎩",
+      "when": {
+        "won": true
+      },
+      "streak": 3
+    },
+    {
+      "id": "unbeaten",
+      "title": "Unbeaten",
+      "description": "Play 10 games in a row without a loss.",
+      "glyph": "🛡️",
+      "when": {
+        "outcome": {
+          "in": [
+            "won",
+            "drawn"
+          ]
+        }
+      },
+      "streak": 10
+    },
+    {
+      "id": "ten-draws",
+      "title": "Ten Draws",
+      "description": "Draw 10 games.",
+      "glyph": "⚖️",
+      "when": {
+        "outcome": "drawn"
+      },
+      "count": 10
+    },
+    {
+      "id": "ten-wins",
+      "title": "Ten Wins",
+      "description": "Win 10 games.",
+      "glyph": "🏆",
+      "when": {
+        "won": true
+      },
+      "count": 10
+    }
+  ],
   "license": "MIT",
   "author": "lokeshmohanty",
   "repo": "https://github.com/lokeshmohanty/games",

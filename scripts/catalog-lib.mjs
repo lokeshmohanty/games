@@ -65,6 +65,10 @@ export function catalogEntries(files, root) {
 			categories: categoriesOf(m),
 			// The rules (Markdown, in the folder): shown on a first visit and behind "?".
 			...(m.rules ? { rules: m.rules } : {}),
+			// Achievements and records, checked on this device after each result
+			// (lib/records.js; docs/platform.md "Achievements and records").
+			...(m.achievements?.length ? { achievements: m.achievements } : {}),
+			...(m.records?.length ? { records: m.records } : {}),
 			preview: m.preview ? dir + m.preview : null,
 			// Its poster and video twins (scripts/preview-media.mjs), when made.
 			...previewTwins(file, dir, m.preview),

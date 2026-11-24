@@ -4,6 +4,10 @@
 //   GET /api/u/<who>   <who>: an account id, or a friend code (worker/api/social.js)
 //
 //   - Not hidden: { id, name, avatar, since, hidden: false, ratings, matches, botWins }.
+//   - `records` besides (personal records and achievements, records.js) for
+//     the player and their signed-in friends only, hidden or not (Lokesh,
+//     2026-11-21: "friends can see your trophies and best times"); anyone
+//     else never gets the field.
 //   - Hidden from public boards (accounts.hide_public): a signed-in friend (or
 //     the player) gets the same, with `hidden: true`; anyone else only
 //     { id, name, hidden: true } — enough for ADD FRIEND from a friend link or
@@ -19,6 +23,7 @@
 import { botWinsOf } from "./bots.js";
 import { HttpError } from "./http.js";
 import { ratingsOf } from "./match.js";
+import { recordsOf } from "./records.js";
 import { boardKind, unitOf } from "./runs.js";
 import { areFriends, findAccount } from "./social.js";
 
@@ -88,9 +93,8 @@ export async function publicProfile(env, who, { viewer = null, gate = null } = {
 	const a = await findAccount(env, who, gate);
 	if (!a) throw new HttpError(404, "no such player");
 	const hidden = !!a.hide_public;
-	if (hidden && !(viewer && (viewer.id === a.id || (await areFriends(env, viewer.id, a.id))))) {
-		return { id: a.id, name: a.name, hidden: true };
-	}
+	const close = !!viewer && (viewer.id === a.id || (await areFriends(env, viewer.id, a.id)));
+	if (hidden && !close) return { id: a.id, name: a.name, hidden: true };
 	return {
 		id: a.id,
 		name: a.name,
@@ -100,5 +104,6 @@ export async function publicProfile(env, who, { viewer = null, gate = null } = {
 		ratings: withBoards(await ratingsOf(env, a.id)),
 		matches: await publicMatches(env, a.id, viewer?.id ?? null, 20),
 		botWins: await botWinsOf(env, a.id),
+		...(close ? { records: await recordsOf(env, a.id) } : {}),
 	};
 }

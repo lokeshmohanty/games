@@ -76,6 +76,7 @@ game's own scripts and stylesheets.
 | `sameDevice` | `true`: a bot seat may be a person on the host's phone — SINGLE PLAYER's quick table offers BOT / PERSON per seat, the card says SINGLE PLAYER / SAME DEVICE, and `init` marks such a seat `local` ([sdk-v2.md](sdk-v2.md), managed state). Only for a game that plays those seats for the person; Neon Fission (2026-11-17). The validator requires `"state": "managed"` and bots, and refuses it with kind `local` or `shared`: only managed state passes `local` and keeps such a table off the board of wins against bots |
 | `kind` (results) | a game reports results of its manifest `kind`; the room server's table (`scripts/build-games-table.mjs` `EXTRA_KINDS`) lists the few that report more — Bubble Rush and Ludo (`ffa`) also report `teams` from their teams modes — all on the game's one board. A later manifest field, `"kinds"`, would replace that table |
 | `leaderboard` | `true` (default) / `false`: online boards for it — ranked, alone, against bots. `false` for a game where a ranking means nothing (Lokesh, 2026-11-16: Tic Tac Toe, a solved game; Connect 4; the party games Undercover and Draw & Guess): no reports, runs or boards, no rating on the end card; the device's own stats still count (docs/accounts.md "Games without boards") |
+| `achievements`, `records` | optional: what a player can earn and keep in this game, as conditions on its end-of-game result — see "Achievements and records" below (at most 24 and 8; refused on a `shared` web app) |
 | `tags`, `categories`, `preview` | portal filters; sections (`arcade` · `party` · `strategy` · `puzzle` · `examples`); the preview: a gif, or a `.webp` poster; a `.webm`/`.mp4`/`.webp` of the same name beside it is played/shown instead (scripts/catalog-lib.mjs) |
 | `license` | an OSI licence that allows redistribution (the list is in `scripts/manifest.mjs`) |
 | `author`, `repo` | GitHub user, `https://github.com/…` |
@@ -142,6 +143,145 @@ A draw is everyone in one slot; co-op is one slot (played, with scores);
 `local` (one phone) counts as played. Leave out seats that emptied. A
 managed game's result may also carry `title`, `details` and `names` for the
 end card (sdk-v2.md).
+
+Two optional fields carry what the game's achievements and records read
+(below): `facts`, the match's (`{ level: "hard", daily: true }`), and
+`seatFacts`, each player's own (`{ "<id>": { mistakes: 0, notes: 3 } }`).
+Each is at most 16 keys of `a-z A-Z 0-9 _` (starting with a lower-case
+letter), each value text of at most 40 characters, a finite number, true,
+false or null; anything else is dropped. A result may also say how long the
+match took in `ms`; a managed game's comes from the host's clock without
+asking.
+
+## Achievements and records
+
+*Built 2026-11-24 (branch `records`). Lokesh, 2026-11-21: "a personal record
+table and achievements so that single player games are also fun and feel
+rewarding" — for every game you can play alone (puzzles, and every game
+against bots).*
+
+A game declares them in game.json, as **data**: conditions on its
+end-of-game result. The platform checks them on each player's own device
+after every result it counts (lib/records.js, on lib/stats.js's count),
+keeps them, syncs them to the account when signed in, and shows unlocks.
+So any game, in any language, adds its own without code: it only reports
+the facts its conditions read. The rules are one file, `lib/achievements.js`,
+which the device, the manifest check (`scripts/manifest.mjs`: catalog
+build, `validate-game`, the PR check) and the Worker all run.
+
+```json
+"records": [
+  { "id": "time", "title": "Best time", "of": "facts.ms", "best": "min", "by": "facts.level",
+    "when": { "facts.solved": true }, "format": "time" },
+  { "id": "solved", "title": "Puzzles solved", "best": "count", "when": { "facts.solved": true } }
+],
+"achievements": [
+  { "id": "clean-sheet", "title": "Clean Sheet", "description": "Solve a puzzle without one wrong digit.",
+    "glyph": "✨", "when": { "facts.solved": true, "facts.mistakes": 0 } },
+  { "id": "speed-easy", "title": "Speedrun: Easy", "glyph": "⚡",
+    "when": { "facts.solved": true, "facts.level": "easy", "facts.ms": { "<": 180000 } } },
+  { "id": "daily-7", "title": "7-Day Streak", "when": { "facts.solved": true, "facts.daily": true }, "days": 7 }
+]
+```
+
+**What a condition reads** — the result as one player sees it
+(`contextOf` in lib/achievements.js):
+
+| Field | |
+|---|---|
+| `outcome` | `"won"`, `"lost"`, `"drawn"` or `"played"` (co-op, one phone), as lib/stats.js reads it |
+| `won` | true when `outcome` is `"won"`. A game alone with one seat in an `ffa` result counts as won (Light Cycles alone): require `"seats": { ">=": 2 }` for a win over someone |
+| `place` | 1 for first; null for a one-phone game |
+| `kind` | the result's kind |
+| `seats`, `bots`, `people`, `alone`, `vsBots` | everyone in the ranking (you included); bot opponents (people on this phone, named in the result's `names`, are people); other people; nobody else; at least one bot and no other person |
+| `score` | `scores[you]` |
+| `ms` | how long the match took: the host's clock for a managed game, else the result's `ms`, else this device's time from the game's start or last result (at most 90 minutes) |
+| `match` | which match of the run, from 0 |
+| `streak` | this game's win streak after this result |
+| `facts.<name>` | your `seatFacts` entry, else the match's `facts` |
+
+**A condition** is an object of fields, all of which must hold. A field's
+value is either a value it must equal (`"facts.level": "easy"`; null
+matches a fact the result does not have), or an object of operators, all of
+which must hold: `=`, `!=`, `<`, `<=`, `>`, `>=` (numbers only: a missing
+or non-number value never passes), `in` (a list of 1–16 values), `exists`
+(true/false). At most 8 fields. No `when` matches every counted result.
+
+**An achievement** is `id` (1–32 of `a-z 0-9 -`), `title` (≤ 32),
+`description` (≤ 100), `glyph` (≤ 8 characters: an emoji or a symbol;
+🏆 when absent), `when`, and at most one of:
+
+| | unlocks when |
+|---|---|
+| (none) | one result meets `when` |
+| `"count": n` | n results have met it (2 ≤ n ≤ 100000) |
+| `"streak": n` | n results in a row of this game have met it (any other result of the game starts again) |
+| `"days": n` | results met it on n calendar days in a row (the device's local day) |
+| `"distinct": { "of": <field>, "count": n }` | results that met it had n different values of the field (Every Level) |
+| `"total": { "of": <field>, "atLeast": x }` | the field's values over results that met it add up to x |
+
+An unlocked achievement stays unlocked, with its time. Progress towards one
+is kept and shown ("37 / 100").
+
+**A record** is `id`, `title`, `best` — `min`, `max` or `sum` of the field
+`of`, or `count` (results that met `when`), or `days` (the current and the
+longest run of days with one) — and optionally `by` (a field: one value per
+group, e.g. per level; at most 16 groups), `when`, `format` (`number`, or
+`time` for milliseconds shown as m:ss) and `unit` (≤ 8 characters).
+
+**Refused** (as sentences naming the field, like every manifest problem):
+an unknown field or operator, a nested path, a comparison with text, an
+`in` that is not a list, more than one of the aggregates, an unknown key in
+an achievement or record, an id used twice, more than 24 achievements or 8
+records. The language has no expressions, no functions and no paths
+outside the table: nothing in it can run.
+
+**The platform's own**, with no declaration: every game's panel shows
+played, won (and the rate), the best win streak, the wins against each
+number of bots and the time played (lib/stats.js); and across games,
+**Regular** (10 games), **Veteran** (100), **Seven Days** (a game on 7 days
+in a row) and **Explorer** (every listed game you can play alone — bots or
+one seat, whatever its section, so Tic Tac Toe (JS) counts; the SDK
+example's other language lanes are unlisted and do not — played once).
+
+**A win because the others left** is still a win (stats, First Win, the
+streaks), but it shows no skill: a game whose leaves end it reports
+whether the win was played out, and its skill achievements and min/max
+records require that fact — otherwise a forfeit at move three would set a
+"fewest" record no real game could beat. Connect 4 `four`, Neon Fission
+`finished`, Five in a Row `line >= 5`, Snakes & Ladders `home`, Ludo
+`finished`, Battleship `complete`, Liar's Dice `finished` (review,
+2026-11-24; test-records checks every such game.json against a flattering
+forfeit — the pinned community ones in CI's build job, after the fetch,
+with `NEON_REQUIRE_COMMUNITY=1`).
+
+**Where it shows:**
+- a notice (toast) when something unlocks or a record is beaten, over
+  whatever is on screen, the end card included — never a dialog;
+- **🏆 Records** in the party's top band while no game runs, and **🏆 YOUR
+  RECORDS** on the PARTY screen during one (a phone's band has no room for
+  a sixth button then: ← GAMES would lose its word), for the game in hand: its records,
+  the platform's rows and its achievements, each with a shape and a word for
+  its state (✓ in a filled disc, UNLOCKED · date; 🔒 in a dashed ring,
+  LOCKED · progress), never a colour alone;
+- the profile's **Trophies and records**: the platform's achievements, then
+  each game played with its trophies counted; a game opens its panel;
+- for friends only, the same on your profile, and **🏆 TROPHIES** beside a
+  friend in the party (docs/accounts.md "Records and achievements"). There
+  is no ranking: memory casual-not-competitive.
+
+The device's word is taken (UX > performance >>> anti-cheat): nothing
+checks a fact against the game, and nothing ranks by them.
+
+**Which games declare them** (2026-11-24): Connect 4, Neon Fission, Neon
+Bid, Neon Survival and Tic Tac Toe (JS, the platform's fields only: it is
+the conformance reference, so its result stays the same in every language)
+here; in lokeshmohanty/web-games (pinned at 7782b67) Sudoku, Bubble Rush, Light Cycles, Five in a Row, Snakes & Ladders,
+Ludo, Battleship and Liar's Dice; in lokeshmohanty/card-games (pinned at
+606480f) Glowdown, Guess What and
+29. Undercover and Draw & Guess cannot be played alone.
+Each game.json is the list; their results' `facts`/`seatFacts` are in each
+game's `result`.
 
 ## The rules a game must follow
 

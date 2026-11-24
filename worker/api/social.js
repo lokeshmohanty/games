@@ -126,8 +126,12 @@ export async function friendIds(env, me) {
 	const rows = await all(env.DB.prepare("SELECT a, b FROM friends WHERE state = 'friends' AND (a = ? OR b = ?)").bind(me, me));
 	return [...new Set(rows.map((r) => (r.a === me ? r.b : r.a)))];
 }
+// Friends, and no block either way (a block replaces the pair's row today;
+// checked again here so a stray row can never show a blocker's records).
 export const areFriends = async (env, x, y) =>
-	!!(await env.DB.prepare("SELECT 1 FROM friends WHERE state = 'friends' AND ((a = ? AND b = ?) OR (a = ? AND b = ?))").bind(x, y, y, x).first());
+	!!(await env.DB.prepare(
+		"SELECT 1 FROM friends WHERE state = 'friends' AND ((a = ? AND b = ?) OR (a = ? AND b = ?)) AND NOT EXISTS (SELECT 1 FROM friends WHERE state = 'blocked' AND ((a = ? AND b = ?) OR (a = ? AND b = ?)))",
+	).bind(x, y, y, x, x, y, y, x).first());
 
 const pairRows = (env, x, y) => all(env.DB.prepare("SELECT a, b, state, at FROM friends WHERE (a = ? AND b = ?) OR (a = ? AND b = ?)").bind(x, y, y, x));
 const friendCount = async (env, id) =>

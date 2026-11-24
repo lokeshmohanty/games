@@ -97,6 +97,13 @@ jobs:
         env:
           NEON_APP_CACHE: ${{ runner.temp }}/app-cache
         run: node scripts/fetch-community.mjs
+      # Achievements and records against the pinned games' game.json
+      # (test-records: a win because the others left unlocks no skill
+      # achievement). The static job has no community games and skips them.
+      - name: Achievements against the pinned games
+        env:
+          NEON_REQUIRE_COMMUNITY: "1"
+        run: node scripts/test-records.mjs
       # The room server's table of games (worker/api/games.js) against the
       # catalogs just fetched: `just check-games`, part of `just test`. Here a
       # warning, as in submission.yml: a merged pin makes it stale until
