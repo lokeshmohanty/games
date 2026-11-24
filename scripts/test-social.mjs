@@ -142,6 +142,36 @@ try {
 	await notice.locator("button", { hasText: "ACCEPT" }).click();
 	check("accepting from the notice: the party's button says so", await bo.p.locator(".party-member button", { hasText: "FRIENDS ✓" }).waitFor({ timeout: TIMEOUT }).then(() => true, () => false));
 
+	// Records and achievements are for friends only (docs/accounts.md "Records
+	// and achievements"): Ana's, synced from her device, behind 🏆 TROPHIES
+	// beside her in Bo's party and on her profile — and not for a stranger.
+	await ana.p.evaluate(() =>
+		NeonArcade.account.api("/api/me/records", { method: "PUT", body: { games: { "neon-fission": { a: { "first-win": Date.now() }, r: { chain: { b: "max", v: { "": 12 } } }, s: { played: 3, won: 2, last: 1 } }, "*": { a: { regular: Date.now() }, n: 10, g: ["neon-fission"] } } } }),
+	);
+	const trophiesBtn = bo.p.locator(`.party-member [data-trophies="${anaId}"]`);
+	check("a friend in the party has 🏆 TROPHIES beside FRIENDS ✓, 44px", await trophiesBtn.waitFor({ timeout: TIMEOUT }).then(async () => (await trophiesBtn.boundingBox()).height >= 44, () => false));
+	await trophiesBtn.click();
+	const fsheet = bo.p.locator(`dialog.records-sheet[data-friend="${anaId}"]`);
+	await fsheet.locator(".records-game", { hasText: "Neon Fission" }).waitFor({ timeout: TIMEOUT }).catch(() => {});
+	const fsays = await fsheet.textContent().catch(() => "");
+	check("…which shows her trophies: two, Regular among them, and her games", /2 trophies/.test(fsays) && fsays.includes("Regular") && fsays.includes("🏆 1 / 7"), fsays.slice(0, 300));
+	await fsheet.locator(".records-game", { hasText: "Neon Fission" }).click();
+	const fpanel = bo.p.locator('dialog.records-sheet [data-records="neon-fission"]');
+	const fp = await fpanel.textContent({ timeout: TIMEOUT }).catch(() => "");
+	check("…and a game's best: her biggest chain, First Win unlocked, her played and won", fp.includes("Biggest chain") && fp.includes("12 bursts") && /First Win.*UNLOCKED/.test(fp) && fp.includes("Played3"), fp.slice(0, 300));
+	await bo.p.keyboard.press("Escape");
+	const asFriend = await bo.ctx.newPage();
+	await asFriend.goto(page(`?page=profile&u=${anaId}`));
+	check("her profile shows a friend her trophies and records", await asFriend.locator('[data-section="trophies"] .records-game[data-game="neon-fission"]').waitFor({ timeout: TIMEOUT }).then(() => true, () => false));
+	await asFriend.close();
+	{
+		const cy = await device("Cy");
+		await cy.p.goto(page(`?page=profile&u=${anaId}`));
+		await cy.p.locator("section h2", { hasText: "Ratings" }).waitFor({ timeout: TIMEOUT }).catch(() => {});
+		check("…and a stranger, signed in, none of it", (await cy.p.locator('[data-section="trophies"]').count()) === 0 && (await cy.p.locator("section h2", { hasText: "Ratings" }).count()) === 1);
+		await cy.ctx.close();
+	}
+
 	// Bo opens another page (the portal); Ana invites from the party screen.
 	const boPortal = await bo.ctx.newPage();
 	await boPortal.goto(page("index.html"));

@@ -1794,3 +1794,161 @@ body[data-view]:not([data-view="party"]) > :is(.top-band, .turn-wait, .host-paus
 body:has(.back-to-game) #app {
   padding-bottom: calc(88px + env(safe-area-inset-bottom));
 }
+/* lib/records.js: records and achievements — "Your records" (🏆 in the top
+   band), the profile's trophies, a friend's from the party. A trophy's state
+   is a shape and a word, never a colour alone: ✓ in a filled disc and
+   UNLOCKED, or 🔒 in a dashed ring and LOCKED. Text 12px and up, every
+   control 44px, at 354px wide too. */
+.party-acct-controls {
+  display: contents;
+}
+.records-sheet .neon-sheet-body {
+  padding-top: 4px;
+}
+.records-panel h3 {
+  margin: 14px 0 6px;
+  font-size: 0.78rem;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.records-panel h3:first-child {
+  margin-top: 4px;
+}
+.records-count {
+  letter-spacing: 1px;
+  color: var(--ink-2);
+}
+.records-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.85rem;
+}
+.records-table th,
+.records-table td {
+  padding: 7px 4px;
+  border-top: 1px solid var(--border);
+  vertical-align: top;
+}
+.records-table th {
+  text-align: left;
+  color: var(--muted);
+  font-weight: normal;
+}
+.records-table td {
+  text-align: right;
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  color: var(--ink);
+  overflow-wrap: anywhere;
+}
+.records-empty,
+.records-total {
+  margin: 4px 0 8px;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+.trophies {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.trophy {
+  display: grid;
+  grid-template-columns: 28px 28px minmax(0, 1fr);
+  align-items: start;
+  gap: 8px;
+  padding: 8px 0;
+  border-top: 1px solid var(--border);
+}
+.trophy-mark {
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  font-size: 0.8rem;
+  line-height: 1;
+}
+.trophy.is-unlocked .trophy-mark {
+  border: 2px solid var(--good);
+  background: var(--good);
+  color: var(--bg);
+  font-weight: 700;
+}
+.trophy.is-locked .trophy-mark {
+  border: 2px dashed var(--rule);
+}
+.trophy-glyph {
+  font-size: 1.3rem;
+  line-height: 26px;
+  text-align: center;
+}
+.trophy.is-locked .trophy-glyph {
+  filter: grayscale(1);
+  opacity: 0.55;
+}
+.trophy-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.trophy-title {
+  font-size: 0.95rem;
+  color: var(--ink);
+}
+.trophy.is-locked .trophy-title {
+  color: var(--ink-2);
+}
+.trophy-desc {
+  font-size: 0.8rem;
+  color: var(--muted);
+  line-height: 1.35;
+}
+.trophy-status {
+  font-size: 0.75rem;
+  letter-spacing: 1px;
+  color: var(--ink-2);
+}
+.trophy.is-unlocked .trophy-status {
+  color: var(--good);
+}
+.records-games {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 12px;
+}
+.records-game {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 44px;
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg);
+  color: var(--ink);
+  font: inherit;
+  font-size: 0.9rem;
+  text-align: left;
+  cursor: pointer;
+}
+.records-game:hover {
+  border-color: var(--accent);
+}
+.records-game-title {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.records-game-count {
+  flex: none;
+  font-family: var(--font-mono);
+  font-size: 0.8rem;
+  color: var(--ink-2);
+}
