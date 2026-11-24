@@ -16,6 +16,20 @@ separate `TODO.md`.*
 
 ## Now (2026-11-18)
 
+**Branch `records` (2026-11-24, three repos, pushed, not merged):**
+personal records and achievements (Lokesh, 2026-11-21) — game.json
+`achievements`/`records`, data-only conditions on the result
+(lib/achievements.js, shared by the device, manifest.mjs and the Worker);
+lib/records.js on the device, synced to D1 `records` (migration 0007, not
+applied) and shown to friends only; 🏆 Records in the top band, the
+profile's trophies, a friend's 🏆 TROPHIES in the party. Declared here for
+Connect 4, Neon Fission, Neon Bid, Neon Survival; web-games branch
+`achievements` (8 games, with the `facts`/`seatFacts` they read) and
+card-games branch `achievements` (Glowdown, 29). To land: merge web-games,
+move its pin here; migrate 0007 first, then `just deploy-worker`
+(docs/accounts.md "Migrations"). Until the pin moves, the web-games games
+show only the platform's rows (played, won, per bot count, time).
+
 **Branch `ludo` (2026-11-23, both repos, pushed, not merged):** Ludo in
 web-games (`ludo`, 4- and 6-player boards, free-for-all or teams), and here
 its test-taps, test-bots and preview blocks, `make-preview.sh --gif`,

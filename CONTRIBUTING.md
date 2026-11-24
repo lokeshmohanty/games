@@ -123,6 +123,31 @@ The arcade fetches the file from your folder, so it works offline like the
 rest of your game. Nothing reaches your game: the sheet is the player's
 own, and your game keeps running under it, for them and for everyone else.
 
+### Achievements and records (optional)
+
+A game you can play alone — a puzzle, or anything with bots — can give
+players records to beat and achievements to earn, with no code in the
+arcade: list them in `game.json` as conditions on your result, and report
+the values they read in the result's `facts` (the match's) or `seatFacts`
+(each player's own).
+
+```json
+"records": [{ "id": "fewest", "title": "Fewest moves to win", "of": "facts.moves", "best": "min", "when": { "won": true } }],
+"achievements": [
+  { "id": "first-win", "title": "First Win", "glyph": "🏁", "when": { "won": true } },
+  { "id": "quick", "title": "Quick Win", "description": "Win in 20 moves or fewer.", "when": { "won": true, "facts.moves": { "<=": 20 } } },
+  { "id": "ten", "title": "Ten Wins", "when": { "won": true }, "count": 10 }
+]
+```
+
+and in `result()`: `{ kind, ranking, facts: { moves: 17 } }`. The fields a
+condition can test, the operators (`= != < <= > >= in exists`), streaks,
+days in a row, totals and the limits are in
+[docs/platform.md](docs/platform.md#achievements-and-records);
+`validate-game` checks them. The arcade keeps them on the player's device,
+syncs them to their account, and shows them to their friends — nobody
+else, and there is no ranking.
+
 ## 2. Play it in the real arcade, from your machine
 
 ```sh
