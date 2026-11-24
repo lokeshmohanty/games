@@ -873,8 +873,9 @@ are, and when your pick is taken, by whom and what you have meanwhile. A
 swatch is struck through (an ink stroke outlined in the surface, so it shows
 on Neon's yellow and white) when a pick of it would not get you it now: the
 picker settles the record again on a copy with that wish (`assignColors`),
-so a colour held by a person who never picked, by an earlier picker as a
-stand-in, or by a bot mid-game counts as taken.
+so a colour someone picked before you holds (as their wish or as a stand-in
+while they wait), or a bot holds mid-game, counts as taken; one a person was
+only given (never picked) does not, since picking it takes it.
 Every roster row has a dot in its member's colour, named the same way.
 
 **Names.** Each theme names its eight colours (lib/theme.js
@@ -896,26 +897,30 @@ pick made before that is saved and offered then). A game frame cannot set it:
 **Who has which** (lib/net.js `assignColors`, run by the host on every
 commit of the record; `color` and `colorAt` are record fields a member may
 not write, RESERVED_META):
-Nobody who holds a colour is moved by someone arriving or picking later
-(the review of 2026-11-24, reading Lokesh's "first to pick keeps it"; a
-newcomer with a saved colour had moved a host who never picked, mid-match):
+**Pickers beat non-pickers; between pickers the first keeps it** (Lokesh,
+2026-11-21 "the first to pick keeps it", and 2026-11-24 "pickers beat
+non-pickers": the guest who picks Red gets it, even off a host who never
+picked). Someone who picked is never moved by anyone else's arrival or pick.
 1. Everyone keeps the colour they hold.
 2. The people who want another, in the order their wish reached the host
    (`colorAt: { c, n }`, stamped as `colorWant` changes): the wish is
-   granted if its colour is free, or held by a later picker as a stand-in,
-   or — between games only — by a bot. Otherwise a wish made just now takes
-   the free colour nearest it (rightwards first) as a stand-in, and an older
-   one keeps its stand-in. The wish stays on the record, so it is granted
-   the moment its colour frees (its holder picks another or leaves). A bot
-   never wishes.
-3. Anyone still without a colour (a newcomer who wants none, a bot that
-   gave way), people before bots, in party order: the lowest free one.
+   granted if its colour is free, or held by a person who never picked (at
+   once, mid-game too), or by a later picker as a stand-in, or — between
+   games only — by a bot. Otherwise a wish made just now takes the free
+   colour nearest it (rightwards first) as a stand-in, and an older one
+   keeps its stand-in. The wish stays on the record, so it is granted the
+   moment its colour frees (its holder picks another or leaves). A bot never
+   wishes.
+3. Anyone still without a colour: whoever was moved off one (a non-picker,
+   or a bot between games) takes the free colour nearest it; a newcomer who
+   wants none, the lowest free one, people before bots, in party order.
 
-So mid-game nobody's colour changes except by their own wish, and bots
-fill the gaps (between games they give way to people's wishes; mid-game a
-wish waits for the game to end). Step 2 runs until nothing moves, so the
-answer is stable: settled again, nothing changes (test-plumbing fuzzes
-2,000 random parties for that and for no two alike).
+So a picker's colour changes only by their own wish, a non-picker's may move
+when someone picks theirs, and bots fill the gaps (between games they give
+way to people's wishes; mid-game a wish for a bot's colour waits for the game
+to end). Step 2 runs until nothing moves, so the answer is stable: settled
+again, nothing changes. test-plumbing fuzzes 2,000 random parties for that,
+for no two alike, and for no picker ever moved by anyone else.
 
 With nobody picking this is 0, 1, 2… in party order, the seat colours games
 used before. Within the party's eight seats no two members share a colour;
@@ -941,7 +946,8 @@ seat a shape or mark as well (each game's `debug()` reports `shapes`,
 `marks` or `patterns` beside `colors`):
 - **Neon Fission** — a seat's orbs, cells, halo and rings in its player's
   colour; the chips and turn line too. Each seat's orbs have their own shape
-  (circle, square, triangle, diamond, hexagon, star, plus, pentagon), and
+  (circle, square, triangle, diamond, hexagon, star, plus, ring — not a
+  pentagon, which at 1x read like the hexagon and the circle), and
   the chips' dots match (added 2026-11-24: orbs were all circles).
 - **Connect 4** — two fixed sides, red (Team A) and yellow (Team B), stay the
   sides in the rules; each side's discs are its player's own colour, and the
@@ -953,9 +959,10 @@ seat a shape or mark as well (each game's `debug()` reports `shapes`,
   who opens, so nothing in the rules hangs on the hue.
 - **Neon Survival** — each ship its player's colour (it hashed the id
   before, which could give two ships one colour) and its own shape (square,
-  triangle, diamond, hexagon, star, pentagon, octagon, kite, by the ships'
-  ids in order; never a dot, which is the swarm's and the gems'; added
-  2026-11-24).
+  triangle, diamond, hexagon, star, pentagon, octagon, kite), keyed to the
+  player like their colour, so it stays put when someone leaves mid-run;
+  never a dot, which is the swarm's and the gems'. The ghost of a downed
+  ship and the HUD's You swatch take the same shape (added 2026-11-24).
 - **Neon Bid** — the ring around a seat's initial, the initial its mark (gems keep their own
   colours; a seat is never a filled dot, so it cannot read as a gem).
 - **Undercover** — played on one phone, no player colours: untouched.
