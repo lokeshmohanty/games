@@ -14,9 +14,9 @@ mesh — once per person, never per pair.
 
 **Connections and the party**
 
-- **`net.js`** — the P2P mesh: `createHost` / `createGuest`, the replicated party record, typed channels, invite links (`shareBase`), and who said it: `identity()` (a member's id is its signing key's hash), the link hello, signed and proven messages (docs/index.md "Who said it").
+- **`net.js`** — the P2P mesh: `createHost` / `createGuest`, the replicated party record and the player colours it settles (`assignColors`), typed channels, invite links (`shareBase`), and who said it: `identity()` (a member's id is its signing key's hash), the link hello, signed and proven messages (docs/index.md "Who said it").
 - **`room-join.js`** — join by six-digit code over the optional room server (`worker/`), rejoin tokens; falls back to the scan/paste flow.
-- **`party.js`** — `mountParty()`: the persistent party screen — roster, teams, game switching, host handover; the quick table, PLAY WITH FRIENDS and CHANGE PLAYERS.
+- **`party.js`** — `mountParty()`: the persistent party screen — roster, teams, game switching, host handover; the quick table, PLAY WITH FRIENDS and CHANGE PLAYERS; the colour picker (docs/index.md "Player colours").
 - **`lobby.js`** — what every party screen shares: invite/reply blocks, the leave question, presence toasts, the back guard.
 - **`qr.js`** / **`qr-decode.js`** — QR encoder, and decoder plus camera scanner (loaded on first scan).
 - **`secrets.js`** — sealed channels and commit-reveal; the shell's `seal.*` / `commit` / `verify` services (loaded on first use).
@@ -46,7 +46,7 @@ mesh — once per person, never per pair.
 - **`account.js`** / **`account-ui.js`** — signing in and the social layer, and their pieces of the screens.
 - **`load.js`** — `NeonArcade.load(name)`: a lib/ script fetched once, on first use.
 - **`pwa.js`** — registers the service worker and offers INSTALL APP (the pwa skill).
-- **`theme.js`** / **`theme.css`** — the theme tokens (Paper light/dark, Neon), the saved choice before paint, the picker, `palette()`.
+- **`theme.js`** / **`theme.css`** — the theme tokens (Paper light/dark, Neon), the saved choice before paint, the picker, `palette()`, the player colours' names.
 - **`styles.css`** — the shared look: buttons, the party screen, sheets, toasts.
 
 ## Where the detail lives

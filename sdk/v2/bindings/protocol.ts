@@ -37,6 +37,12 @@ export interface Member {
 	away?: boolean;
 	/** Lost connection at this time (ms); the seat is held. */
 	reconnecting?: number;
+	/**
+	 * The member's player colour, settled by the host's record (the first to pick
+	 * keeps it): an index into the theme's `players` (`--p1`…`--p8`).
+	 * docs/sdk-v2.md "Seat colours". 0..7.
+	 */
+	color?: number;
 	/** Other fields are allowed. */
 	[key: string]: unknown;
 }
@@ -75,9 +81,19 @@ export interface Theme {
 	 * danger, glow.
 	 */
 	tokens: Record<string, string>;
-	/** Seat colours in seat order, as rgba(). Exactly 8 items. */
+	/**
+	 * The eight player colours (`--p1`…`--p8`), as rgba(). A seat's is
+	 * `players[color]`, its player's pick (docs/sdk-v2.md "Seat colours"); an
+	 * older shell sent no `color`, and seats went in this order. Exactly 8 items.
+	 */
 	players: string[];
 	fonts: ThemeFonts;
+	/**
+	 * The eight player colours' names in this theme, in `players` order ("Red",
+	 * "Yellow", "Blue"… under Paper; "Cyan" for the third under Neon): a game's
+	 * words for a seat's colour. Exactly 8 items.
+	 */
+	playerNames?: string[];
 }
 
 export interface Phase {
@@ -623,6 +639,11 @@ export interface RulesCallSeatsItem {
 	 * only for a game with manifest `sameDevice`.
 	 */
 	local?: boolean;
+	/**
+	 * init: the seat's player colour, an index into the theme's `players`
+	 * (docs/sdk-v2.md "Seat colours"). Absent from an older shell. 0..7.
+	 */
+	color?: number;
 }
 
 /**
@@ -705,6 +726,12 @@ export interface View {
 	 * newest it has shown in `idle`. At least 1.
 	 */
 	seq?: number;
+	/**
+	 * Each seat's player colour, an index into the theme's `players`, by id
+	 * (docs/sdk-v2.md "Seat colours"). On every view, so a colour picked mid-game
+	 * reaches the frame. Absent from an older shell.
+	 */
+	colors?: Record<string, number>;
 }
 
 /**

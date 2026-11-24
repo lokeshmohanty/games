@@ -1,5 +1,5 @@
 {
   "repo": "https://github.com/lokeshmohanty/card-games",
-  "commit": "7ef5aa2b7214a50f781aa92211bfaad36397a96e",
+  "commit": "0d10c1fed0e0559a496e4a3f1c1170d196bf8011",
   "games": ["glowdown", "guess-what", "twenty-nine"]
 }

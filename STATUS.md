@@ -16,7 +16,7 @@ separate `TODO.md`.*
 
 ## Now (2026-11-18)
 
-**Branch `records` (2026-11-24, three repos, pushed, not merged):**
+**Branch `records` (2026-11-24, PR open; community sides merged):**
 personal records and achievements (Lokesh, 2026-11-21) — game.json
 `achievements`/`records`, data-only conditions on the result
 (lib/achievements.js, shared by the device, manifest.mjs and the Worker);
@@ -25,13 +25,19 @@ applied) and shown to friends only; 🏆 Records in the top band (PARTY screen m
 profile's trophies, a friend's 🏆 TROPHIES in the party. Declared here for
 Connect 4, Neon Fission, Neon Bid, Neon Survival; web-games branch
 `achievements` (8 games, with the `facts`/`seatFacts` they read) and
-card-games branch `achievements` (Glowdown, Guess What, 29; on card-games
-main 7ef5aa2, so its pin can move to it). Review fixes (2026-11-24): owner
+card-games (Glowdown, Guess What, 29): both merged, pins at web-games
+7782b67 and card-games 606480f. Review fixes (2026-11-24): owner
 per account on a shared device, completion facts gate skill achievements,
-per-game refusals, optimistic writes, 29's Comeback, Tic Tac Toe (JS). To land: merge web-games,
-move its pin here; migrate 0007 first, then `just deploy-worker`
-(docs/accounts.md "Migrations"). Until the pin moves, the web-games games
-show only the platform's rows (played, won, per bot count, time).
+per-game refusals, optimistic writes, 29's Comeback, Tic Tac Toe (JS). To land: merge
+this PR; migrate 0007 first, then `just deploy-worker` (docs/accounts.md
+"Migrations").
+**Player colours (2026-11-24, landed by PR here; web-games 69c7587 and
+card-games 0d10c1f pinned):** players pick their own colour (Lokesh,
+2026-11-21: "every game with colours"): the picker under YOU and on the quick
+table, `neon.color` per device, the host's record settles `color` (pickers
+beat non-pickers, the first picker keeps it, bots fill the gaps), games hear
+it as `color` / view `colors` (docs/index.md "Player colours", docs/sdk-v2.md
+"Seat colours"), and no seat differs by colour alone.
 
 **Branch `card-games` (2026-11-24, pushed, not merged):** a new
 community repo, lokeshmohanty/card-games (../card-games; main pushed at

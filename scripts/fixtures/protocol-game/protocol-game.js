@@ -69,9 +69,11 @@ arcade.init.then(async (init) => {
 	).then((ok) => pass("channels+bin+emitAs", ok, `heard ${[...heard]} of ${everyone()}`));
 
 	// -- party record, storage -----------------------------------------------
-	arcade.send("meta", { patch: { fixture: me } });
+	// A game may decorate its seat, never speak for the player: their colour
+	// wish (docs/index.md "Player colours") is the shell's, so it is dropped.
+	arcade.send("meta", { patch: { fixture: me, colorWant: 7 } });
 	const metaSeen = until(() => humans().every((id) => arcade.party.members.find((m) => m.id === id)?.fixture === id)).then((ok) =>
-		pass("meta", ok, "not every player's meta arrived"),
+		pass("meta", ok && humans().every((id) => arcade.party.members.find((m) => m.id === id)?.colorWant !== 7), ok ? "a frame set a player's colorWant" : "not every player's meta arrived"),
 	);
 	arcade.send("store.set", { key: "seen", value: (init.storage.seen ?? 0) + 1 });
 	arcade.send("session.set", { key: "tab", value: "here" });

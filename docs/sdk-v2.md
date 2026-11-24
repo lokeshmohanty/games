@@ -93,6 +93,7 @@ shell works with an older game and the reverse.
 ```js
 await arcade.init                       // the init message
 arcade.party                            // { self, host, members }, kept current
+arcade.seatColors(ids)                  // each seat's colour, an index into theme.players ("Seat colours")
 arcade.on("roster", (m) => …)           // any message type → off()
 arcade.send("toast", { text: "hi" })    // fire and forget
 const r = await arcade.request("asset", { path: "level1.json", as: "text" })
@@ -125,7 +126,7 @@ by hand:
 
 ```js
 arcade.managed({
-  init({ seats, opts, seed, match, first }) { … },   // seats: [{ id, name, team, bot, local? }] — local: below; first: "Who starts"
+  init({ seats, opts, seed, match, first }) { … },   // seats: [{ id, name, team, bot, local?, color? }] — local: below; color: "Seat colours"; first: "Who starts"
   apply({ action, by }) { … },                // return nothing to allow; a string to refuse (the reason)
   view({ seat }) { return … },                // what this seat may see; seat null = a spectator
   turn() { return [ids…] },                   // whose move it is: drives bots and the turn-wait banner
@@ -136,7 +137,7 @@ arcade.managed({
   skip({ seat }) { … return true },           // optional: the host chose SKIP TURN
   tick({ inputs, dt }) { … },                 // with manifest "tick": a fixed step
 });
-arcade.on("view", ({ state }) => draw(state));  // every phone, on change only
+arcade.on("view", ({ state, colors }) => draw(state));  // every phone, on change only; colors: "Seat colours"
 button.onclick = () => arcade.act({ i: 4 });    // your move; a refusal comes back as "rejected"
 arcade.idle?.();                                // optional: this view is shown (its animation is over)
 ```
@@ -231,6 +232,53 @@ How it runs:
     rematches and a mid-series handover), `just test-managed` 1b (the
     platform, real browsers, three seats, the host leaving mid-series) and
     `just test-conformance` (every lane: O opens when named, X without it).
+- **Seat colours** (Lokesh, 2026-11-21: "every game with colours"). Each
+  player picks their own colour in the party or at the quick table,
+  remembered on the device; the host's record settles who has which (the
+  first to pick keeps it; docs/index.md "Player colours"). A game hears
+  each seat's colour as an **index into `theme.players`** (`--p1`…`--p8`),
+  never a colour, so every phone draws it in its own theme:
+  - `color` on each managed `init` seat, and on each member of
+    `arcade.party` (`init.party`, `roster`) for any game, Layer 1 too;
+  - `colors: { id: index }` on **every** `view`, read from that phone's copy
+    of the party, and a view sent again when only the colours changed, so a
+    pick made mid-game reaches the frame without the game keeping colours in
+    its state. Draw from the latest, not from `init`;
+  - `theme.playerNames`: the theme's names for the eight ("Blue", or "Cyan"
+    under Neon), for a game that says a colour in words.
+
+  `arcade.seatColors(ids)` (sdk/v2/runtime.js) turns seat ids, in seat
+  order, into indices: each player's own, no two alike, and the seat's own
+  place (or the next free one) where the shell sent none — an older shell,
+  an id the party does not know. So a game honours picks with one line in
+  its view handler and falls back to the old seat order by itself:
+
+  ```js
+  let cols = [];
+  arcade.on("view", ({ state }) => {
+    cols = arcade.seatColors?.(state.seats) ?? [];   // ?.: a cached older shell has no seatColors
+    draw(state);
+  });
+  const colourOf = (seat) => arcade.theme.players[cols[seat] ?? seat % 8];
+  ```
+
+  - **Backward compatible.** A game that ignores all this keeps working, its
+    seats in seat order as before; an older shell sends none of it.
+  - **Never colour alone.** Two seats always get different colours, but
+    picked colours may be close, or the same under colour blindness (the
+    review of 2026-11-24 measured some pairs 1.4–4.2 apart in OKLab ×100
+    under simulation). Give each seat a shape, mark or pattern too (Five in
+    a Row's ring, cross, triangle, diamond; Neon Fission's orb shapes;
+    Connect 4's solid and hollow discs; Light Cycles' trail patterns).
+  - **Two fixed sides** (Connect 4's red and yellow): the sides stay the
+    rules' names; each side's discs are drawn in its player's colour, with
+    a mark of their own, and with nobody picking that is still red and
+    yellow (the first two).
+  - A **team** colour (Bubble Rush's TEAMS, in the accents) is the game's
+    own; seat colours are for seats.
+  - Every game here honours it (docs/index.md "Player colours", "Each
+    game"). In the adapters' typed seats it is not modelled yet: read it
+    from the JSON (`init` and `view` carry it whatever the language).
 - **The end card waits for the last move's animation** (2026-11-15: a
   winning chain in Neon Fission was covered by the card before the loser
   saw a cell flip). A game that animates its moves calls `arcade.idle()`
@@ -273,7 +321,7 @@ How it runs:
   - the title: `title` (≤ 40 characters) if the result has one, else YOU
     WIN / X WINS / DRAW / GAME OVER (co-op);
   - the ranking: place (a tie or a team shares one; co-op has none), the
-    seat's colour (`--p1`…`--p8` in seat order), name, and score when
+    seat's colour (its player's, "Seat colours"), name, and score when
     `scores` has one; this phone's row is marked;
   - PLAY AGAIN on the host (others read who can start one), and SEE THE
     BOARD, which tucks the card away to look at the final board.
@@ -367,7 +415,7 @@ The schema is the authority; this table is the map.
 | Group | Frame → shell | Shell → frame |
 |---|---|---|
 | Lifecycle | `hello {sdk, runtime, features}` · `ready` | `init` · `unmount` · `takeOver` (request) |
-| Party | `meta {patch}` | `roster {party}` on change only · `join {who}` · `leave {who}` |
+| Party | `meta {patch}` | `roster {party}` on change only (each member's `color`) · `join {who}` · `leave {who}` |
 | Channels | `listen {ch}` · `send {ch, d, to?}` · `emitAs {bot, ch, d, to?}` | `msg {ch, d, from}` |
 | Storage | `store.set {key, value}` · `session.set {key, value}` | (in `init`: `storage`, `session`) |
 | Files | `asset {path, as?}` → `{bytes, type}` or `{text, type}` | |
@@ -376,7 +424,7 @@ The schema is the authority; this table is the map.
 | Clock | `timer.open {name, rounds, phases, bots}` · `timer.do {name, op, …}` | `timer {name, ev, info, entries?, bot?}` |
 | Waiting | `wait.turn {who}` · `wait.pause {on}` | `wait {ev: "skip", who}` · `paused {on}` |
 | Secrets | `seal.listen {ch}` · `seal.send {ch, to, d}` → ok · `commit {value}` → `{digest, nonce}` · `verify {…}` → `{valid}` | `sealed {ch, d, from, to?}` |
-| Managed (Layer 2) | `act {a}` · `input {i}` · `idle {seq}` | `rules {calls}` (request) → `{out}` · `view {state, seq}` · `rejected {a, reason}` |
+| Managed (Layer 2) | `act {a}` · `input {i}` · `idle {seq}` | `rules {calls}` (request) → `{out}` · `view {state, seq, colors}` · `rejected {a, reason}` |
 | Runtimes | `runtime.file {path}` → `{bytes, type}` (Pyodide, for `runtime: "python"`) | |
 
 What the services do, briefly. The long explanations are in the files they
@@ -419,11 +467,14 @@ come from, which the shell now runs:
 ### The theme, as values
 
 `init.theme` and `theme.set.theme` are `{ name, mode, dark, tokens, players,
-fonts }`:
+playerNames, fonts }`:
 
 - `tokens` holds each colour token as `rgba(r, g, b, a)`, camelCased (bg,
   surface, ink, accent, accent2, good, warn, danger, …).
-- `players` holds the eight seat colours in seat order.
+- `players` holds the eight player colours (`--p1`…`--p8`). A seat's is
+  `players[color]`, its player's pick ("Seat colours"); with no `color`
+  (an older shell), seats went in this order.
+- `playerNames` holds their names in this theme, in the same order.
 
 These are values, not CSS, so a canvas, a WASM renderer or Python can use
 them directly. DOM games also have the CSS variables (`var(--accent)`).

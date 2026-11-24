@@ -33,10 +33,11 @@
 	const R = globalThis.neonBidRules;
 	const { COLOURS, LOTS } = R;
 
-	// Seat colours are the theme's (lib/theme.css --p1…--p8) — and so are the
-	// gems' (--p2…--p5), so four seats share a colour with a gem. A seat is
-	// therefore marked by a ring in its colour around its initial
-	// (`seatMark`), never by a filled dot that could read as a gem.
+	// Seat colours are the theme's (lib/theme.css --p1…--p8, each its
+	// player's pick) — and so are the gems' (--p2…--p5), so a seat may share
+	// a colour with a gem. A seat is therefore marked by a ring in its colour
+	// around its initial (`seatMark`), never by a filled dot that could read
+	// as a gem.
 	const SEAT_HEX = Array.from({ length: 8 }, (_, i) => `var(--p${i + 1})`);
 	const CHIPS = [0, 5, 10, 25];
 	const CLOCK = "nbRound";
@@ -172,7 +173,13 @@
 
 	const seatOf = (id) => game?.players.find((p) => p.id === id) ?? null;
 	const mySeat = () => seatOf(self());
-	const seatHex = (id) => SEAT_HEX[Math.max(0, game?.players.findIndex((p) => p.id === id) ?? 0) % SEAT_HEX.length];
+	// A seat's ring is its player's colour (docs/sdk-v2.md "Seat colours"),
+	// no two alike; in seat order on an older shell.
+	const seatHex = (id) => {
+		const ids = game?.players.map((p) => p.id) ?? [];
+		const i = Math.max(0, ids.indexOf(id));
+		return SEAT_HEX[(arcade.seatColors?.(ids)[i] ?? i) % SEAT_HEX.length];
+	};
 	const nameOf = (id) => (id === self() ? "You" : (members().find((m) => m.id === id)?.name ?? "Player"));
 	const themeNow = () => document.documentElement.dataset.theme || "paper";
 	const gemName = (colour) => COLOURS[colour].names?.[themeNow()] ?? COLOURS[colour].name;
@@ -754,6 +761,15 @@
 	// A gem's name follows the theme (the runtime has already set <html>'s
 	// data-theme), so redraw.
 	arcade.on("theme.set", () => render());
+	// A player picked another colour (docs/sdk-v2.md "Seat colours"):
+	// redraw, only then — the roster changes for many other reasons.
+	let seatColorsShown = "";
+	arcade.on("roster", () => {
+		const now = JSON.stringify(arcade.seatColors?.(game?.players.map((p) => p.id) ?? []) ?? null);
+		if (now === seatColorsShown) return;
+		seatColorsShown = now;
+		render();
+	});
 
 	/**
 	 * The crown moved to us mid-auction. Credits, gems and results came with

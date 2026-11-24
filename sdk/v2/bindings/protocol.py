@@ -43,6 +43,10 @@ class Member(TypedDict):
     away: NotRequired[bool]
     # Lost connection at this time (ms); the seat is held.
     reconnecting: NotRequired[float]
+    # The member's player colour, settled by the host's record (the first to
+    # pick keeps it): an index into the theme's `players` (`--p1`…`--p8`).
+    # docs/sdk-v2.md "Seat colours". 0..7.
+    color: NotRequired[int]
 
 class Party(TypedDict):
     self: MemberId
@@ -75,9 +79,16 @@ class Theme(TypedDict):
     # surface2, ink, ink2, ink3, rule, accent, onAccent, accent2, onAccent2,
     # good, warn, danger, glow.
     tokens: dict[str, str]
-    # Seat colours in seat order, as rgba(). Exactly 8 items.
+    # The eight player colours (`--p1`…`--p8`), as rgba(). A seat's is
+    # `players[color]`, its player's pick (docs/sdk-v2.md "Seat colours"); an
+    # older shell sent no `color`, and seats went in this order. Exactly 8
+    # items.
     players: list[str]
     fonts: ThemeFonts
+    # The eight player colours' names in this theme, in `players` order ("Red",
+    # "Yellow", "Blue"… under Paper; "Cyan" for the third under Neon): a game's
+    # words for a seat's colour. Exactly 8 items.
+    playerNames: NotRequired[list[str]]
 
 class Phase(TypedDict):
     # At most 64 chars.
@@ -632,6 +643,9 @@ class RulesCallSeatsItem(TypedDict):
     # A bot seat a person on the host's phone plays (the quick table's PERSON);
     # only for a game with manifest `sameDevice`.
     local: NotRequired[bool]
+    # init: the seat's player colour, an index into the theme's `players`
+    # (docs/sdk-v2.md "Seat colours"). Absent from an older shell. 0..7.
+    color: NotRequired[int]
 
 class RulesCall(TypedDict):
     """
@@ -706,6 +720,10 @@ class View(TypedDict):
     # This view's number on this frame, rising by one per view; a frame echoes
     # the newest it has shown in `idle`. At least 1.
     seq: NotRequired[int]
+    # Each seat's player colour, an index into the theme's `players`, by id
+    # (docs/sdk-v2.md "Seat colours"). On every view, so a colour picked
+    # mid-game reaches the frame. Absent from an older shell.
+    colors: NotRequired[dict[str, int]]
 
 class Rejected(TypedDict):
     """

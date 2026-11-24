@@ -9,7 +9,7 @@ questions about this project from this folder alone.
 
 - [The portal](#the-portal) — the home screen's sub-tabs (My Games · All Games), sections, PLAY SOMETHING, the phone layout and the search
 - [Connecting players](#connecting-players) — the serverless handshake, paid once per person; `scanQr`; connectivity (relaying, STUN, NAT classification, no TURN); who said it (signed party messages)
-- [Parties](#parties) — the persistent group, teams, switching games, host succession; the party API (`mountParty`, the room controller, lib/lobby.js)
+- [Parties](#parties) — the persistent group, teams, switching games, host succession; [player colours](#player-colours) (the picker, first to pick keeps it, each game's handling); the party API (`mountParty`, the room controller, lib/lobby.js)
 - [Bots](#bots) — why there is no single-player section, and what a bot actually is
 - [Hidden information](#hidden-information) — sealed private state, and commit-reveal
 - [Rounds and phases](#rounds-and-phases) — the shared clock for timed and simultaneous-turn games
@@ -866,6 +866,143 @@ page navigation** — nobody reconnects and nobody re-scans.
   pauses for everyone and says why, takes no input meanwhile (it used to land
   all at once on return), and resumes after a 3-2-1. Lokesh's choices,
   2026-11-13.
+- **Player colours** — each member's own, picked under their name; below.
+
+### Player colours
+
+*Built 2026-11-24 (branch `player-colours`, here and in web-games). Lokesh,
+2026-11-21: "every game with colours" — one picker in the party and on the
+quick table, remembered per device, used by every game that colours its
+players; if two people want the same colour, the first to pick keeps it.*
+
+**The picker** (lib/party.js `colorPicker`). A row of eight swatches, the
+theme's `--p1`…`--p8`, under YOU's name on the party screen (also when it
+is pulled up over a game) and under the seats on the quick table (and the
+fixed-seat bots screen). Each swatch is 44px with its colour's initial on a
+chip of the surface, so it reads in every theme and without colour, and is
+named to a screen reader ("Blue", "Red, taken by Ana"). Two rows of four at
+354px, one row of eight from 440px. A line under it says which colour you
+are, and when your pick is taken, by whom and what you have meanwhile. A
+swatch is struck through (an ink stroke outlined in the surface, so it shows
+on Neon's yellow and white) when a pick of it would not get you it now: the
+picker settles the record again on a copy with that wish (`assignColors`),
+so a colour someone picked before you holds (as their wish or as a stand-in
+while they wait), or a bot holds mid-game, counts as taken; one a person was
+only given (never picked) does not, since picking it takes it.
+Every roster row has a dot in its member's colour, named the same way.
+
+**Names.** Each theme names its eight colours (lib/theme.js
+`PLAYER_NAMES`, `NeonArcade.theme.playerNames()`): Paper's are Red, Yellow,
+Blue, Magenta, Green, Orange, Purple, Teal; Neon's say Cyan for the third
+and Violet and White for the last two. Eight different initials in each.
+Games get them as `theme.playerNames` (Connect 4's HUD and its "Blue dropped
+in column 3").
+
+**Where the choice lives.** An index, never a colour: themes draw them
+differently. On the device, localStorage `neon.color`. In the party, the
+member's own record field `colorWant`, set with `setMeta`, so a guest's
+travels as its own signed `__i` (Who said it) and `_reassert` says it again
+if it is lost; offered once per room once the member is on the record (a
+pick made before that is saved and offered then). A game frame cannot set it:
+`colorWant` is in lib/sdk-host.js `SHELL_META`, dropped from a frame's
+`meta`.
+
+**Who has which** (lib/net.js `assignColors`, run by the host on every
+commit of the record; `color` and `colorAt` are record fields a member may
+not write, RESERVED_META):
+**Pickers beat non-pickers; between pickers the first keeps it** (Lokesh,
+2026-11-21 "the first to pick keeps it", and 2026-11-24 "pickers beat
+non-pickers": the guest who picks Red gets it, even off a host who never
+picked). Someone who picked is never moved by anyone else's arrival or pick.
+1. Everyone keeps the colour they hold.
+2. The people who want another, in the order their wish reached the host
+   (`colorAt: { c, n }`, stamped as `colorWant` changes): the wish is
+   granted if its colour is free, or held by a person who never picked (at
+   once, mid-game too), or by a later picker as a stand-in, or — between
+   games only — by a bot. Otherwise a wish made just now takes the free
+   colour nearest it (rightwards first) as a stand-in, and an older one
+   keeps its stand-in. The wish stays on the record, so it is granted the
+   moment its colour frees (its holder picks another or leaves). A bot never
+   wishes.
+3. Anyone still without a colour: whoever was moved off one (a non-picker,
+   or a bot between games) takes the free colour nearest it; a newcomer who
+   wants none, the lowest free one, people before bots, in party order.
+
+So a picker's colour changes only by their own wish, a non-picker's may move
+when someone picks theirs, and bots fill the gaps (between games they give
+way to people's wishes; mid-game a wish for a bot's colour waits for the game
+to end). Step 2 runs until nothing moves, so the answer is stable: settled
+again, nothing changes. test-plumbing fuzzes 2,000 random parties for that,
+for no two alike, and for no picker ever moved by anyone else.
+
+With nobody picking this is 0, 1, 2… in party order, the seat colours games
+used before. Within the party's eight seats no two members share a colour;
+past eight (a room opened wider) they repeat. Everything the rule reads is on
+the record, so an heir — elected or handed the crown — settles the same
+colours: a handover keeps them, except that a wish the old host's colour was
+holding up is granted as it frees. Guests do not settle anything: a guest's own
+pick shows once the host's record comes back (a moment).
+
+**The protocol** (sdk-v2.md "Seat colours"): `color` on every roster member
+(Layer 1 and `init.party`), `color` on managed `init` seats, `colors` on every
+managed `view` (so a pick mid-game reaches the frame), and the runtime's
+`arcade.seatColors(ids)`, which maps seats to distinct indices and falls back
+to seat order where the shell sent none. The end card's dots use the same
+colours.
+
+**Each game, and never by colour alone.** Picked colours can be close, or
+one under colour blindness: the review of 2026-11-24 measured Neon's yellow
+and green 1.4 apart (OKLab ×100, Machado deuteranopia), Paper dark's blue and
+purple 2.6, Paper light's red and green 4.2, and blue/teal and green/teal
+about 2 under tritanopia. So every game that colours its seats gives each
+seat a shape or mark as well (each game's `debug()` reports `shapes`,
+`marks` or `patterns` beside `colors`):
+- **Neon Fission** — a seat's orbs, cells, halo and rings in its player's
+  colour; the chips and turn line too. Each seat's orbs have their own shape
+  (circle, square, triangle, diamond, hexagon, star, plus, ring — not a
+  pentagon, which at 1x read like the hexagon and the circle), and
+  the chips' dots match (added 2026-11-24: orbs were all circles).
+- **Connect 4** — two fixed sides, red (Team A) and yellow (Team B), stay the
+  sides in the rules; each side's discs are its player's own colour, and the
+  HUD names it ("◎ BLUE", "Blue to move"). Red's discs are solid, yellow's
+  have a hollow centre (added 2026-11-24; the last move's ring and dot read
+  over both). Decided: the full palette rather
+  than a choice between red and yellow, so one picker means the same thing in
+  every game; nobody picking keeps red and yellow; `first` already decides
+  who opens, so nothing in the rules hangs on the hue.
+- **Neon Survival** — each ship its player's colour (it hashed the id
+  before, which could give two ships one colour) and its own shape (square,
+  triangle, diamond, hexagon, star, pentagon, octagon, kite), keyed to the
+  player like their colour, so it stays put when someone leaves mid-run;
+  never a dot, which is the swarm's and the gems'. The ghost of a downed
+  ship and the HUD's You swatch take the same shape (added 2026-11-24).
+- **Neon Bid** — the ring around a seat's initial, the initial its mark (gems keep their own
+  colours; a seat is never a filled dot, so it cannot read as a gem).
+- **Undercover** — played on one phone, no player colours: untouched.
+- In web-games (branch `player-colours`, its pin to move by PR): **Ludo**
+  (yard, start, home column, tokens, the die's rim), **Five in a Row**
+  (marks, with their four shapes), **Snakes & Ladders** (tokens, with their
+  glyphs), **Light Cycles** (trails and the heads; each rider's own pattern
+  — solid, dot, frame, dash-dot, plus, bars across, bars down, half — on its
+  trail over a faint wash of its colour, inside its head, and beside its
+  name as the key; added 2026-11-24, trails were colour alone),
+  **Bubble Rush** (free-for-all only, where a player's colour marks the
+  scores beside their name; TEAMS keeps the sides' accent colours). Ludo's
+  set-up screen redraws when a colour changes. Draw & Guess
+  (pens), Sudoku, Battleship and Liar's Dice colour no players.
+
+**Tests.** test-plumbing "player colours" (the rule itself, and over real
+rooms: a pick reaching a relayed member, the conflict, a granted wish, bots
+filling the gaps, a hand-over keeping colours); test-party "player colours"
+(three browsers: a pick on the others' screens, the conflict and the taken
+swatch, a wish granted, a wish for a colour held by a non-picker refused and
+the strike on both kinds of taken, 44px and 12px at 390×844 and 354×696; and
+"losing the host": the heir's record keeps every colour); test-bots "your
+colour" (the quick table's picker at both sizes, then Neon Fission, Five in a
+Row and Ludo drawing your seat in your pick, each seat its own shape, a pick
+mid-game reaching the host's own board, Ludo's remembered from an earlier
+load, Connect 4's two marks, Light Cycles' patterns); test-protocol (a frame's
+`meta` cannot set `colorWant`).
 
 ### When the host goes
 
