@@ -229,8 +229,8 @@ fixed 2026-11-19, branch `phone-shell`)**, asserted with computed sizes
   `card-games`, 2026-11-23): each one's settings screen at friends' first
   game (host and guest), a one-tap start straight into play on the
   settings kept on the phone (the settings only the first time, Lokesh
-  2026-11-23, as Ludo), Glowdown's turn, a pick and a hand of 13 or more
-  fanned in rows; 29's bid, trump pick, asking for the trump and turn;
+  2026-11-23, as Ludo), Glowdown's turn, a pick, a hand of 9 fanned in
+  rows and eight players with a hand of 30; 29's bid, trump pick, asking for the trump and turn;
   Guess What's clue-giver, guesser, answer and one-phone screens; and each
   end's "Next game: … · CHANGE" with its choices above the tucked end card.
   Their blocks (and test-bots') skip, saying so, only while the registry

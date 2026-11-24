@@ -25,7 +25,8 @@ one phone) and 29. Each asks its settings only before the first match
 game: … · CHANGE" (host only), a one-tap start uses the host device's last
 settings. Here: their test-taps and test-bots blocks (skipping only while
 the registry does not list them, `registryLists`), preview scenarios
-(`cardTable`). No registry pin is committed:
+(`soloTable`). Glowdown's deck was redesigned as our own on 2026-11-24
+(the review found UNO's card set under a new name). No registry pin is committed:
 `registry/lokeshmohanty/card-games.json` moves by PR, with `just
 games-table` (worker/api/games.js) in the same PR. test-portal's
 Contributors and Collections checks expect card-games once the catalog has

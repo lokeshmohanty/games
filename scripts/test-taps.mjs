@@ -512,7 +512,9 @@ const GAMES = {
 		await until(G, () => window.__game.handle.debug().myTurn);
 		const fit = [".gd-status, .gd-others, .gd-table, .gd-hand", 4];
 		await audit(page, G, "glowdown", "your turn", { min: 1, fit });
-		// Draw on every turn for a while: the hand grows past one row (7 cards on a 354px phone).
+		// Draw on every turn for a while: the hand grows past one row (7 cards on a
+		// 354px phone; a five-card deal from 60 ends too soon for more, and the
+		// hand of 30 below is set by hand).
 		const end = Date.now() + 420_000;
 		let picked = false;
 		let long = false;
@@ -521,7 +523,7 @@ const GAMES = {
 				await sleep(150);
 				continue;
 			}
-			if (!long && d.hand.length < 13) {
+			if (!long && d.hand.length < 9) {
 				if (d.drawn != null) await press(G, ".gd-btn:not(.go)");
 				else await press(G, ".gd-draw");
 			} else if (!long) {
@@ -529,7 +531,7 @@ const GAMES = {
 				await audit(page, G, "glowdown", `a long hand (${d.hand.length} cards)`, { min: 1, fit });
 				continue;
 			} else if (d.legal.length) {
-				const wild = d.legal.find((id) => id >= 104); // the PRISMs
+				const wild = d.legal.find((id) => id >= 55); // the PRISMs (ids 55–59)
 				const id = !picked && wild != null ? wild : d.legal[0];
 				await press(G, `.gd-card[data-card="${id}"]`);
 				await sleep(150);
@@ -547,9 +549,20 @@ const GAMES = {
 		}
 		const last = await debug(G);
 		check("glowdown reached its end", last.phase === "over", { counts: last.counts });
-		check("glowdown: a hand of 13 or more was fanned in rows", long);
+		check("glowdown: a hand of 9 or more was fanned in rows", long);
 		await audit(page, G, "glowdown", "the end", { min: 0 });
-		await nextGameLine(page, G, "glowdown", { line: ".gd-next", change: ".gd-next-change", picks: ".gd-next button[data-rule]", says: "Next game: no house rules", min: 5, pick: '.gd-next button[data-rule="stack"]', after: "Next game: Stack draws" });
+		await nextGameLine(page, G, "glowdown", { line: ".gd-next", change: ".gd-next-change", picks: ".gd-next button[data-rule]", says: "Next game: no house rules", min: 5, pick: '.gd-next button[data-rule="stack"]', after: "Next game: Stack sparks" });
+		// Eight at the table and a hand of 30 (review, 2026-11-24): every card a
+		// whole target on a 354x696 phone, the rows stacked over each other.
+		const E = await solo(page, "glowdown", 8);
+		await until(E, () => window.__game.handle.debug().myTurn);
+		await E.evaluate(() => {
+			// On this phone's turn nothing else arrives: draw a hand of 30, all playable.
+			const d = window.__game.handle.debug();
+			const hand = Array.from({ length: 30 }, (_, k) => k);
+			onView({ state: { ...d, hand, legal: hand, counts: d.counts.map((n, i) => (i === d.you ? 30 : n)) } });
+		});
+		await audit(page, E, "glowdown", "eight players, a hand of 30", { min: 31, fit: [".gd-status, .gd-others, .gd-table, .gd-hand", 4] });
 	},
 
 	/** Two phones and bots (friends' first game): the rules; one with bots: straight in on the rules kept on the phone, your bid, the trump pick, asking for the trump, your turn, the end, the next game's rules. */

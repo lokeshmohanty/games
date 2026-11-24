@@ -245,27 +245,6 @@ function tttPick(board, me) {
 	return [4, 0, 2, 6, 8, 1, 3, 5, 7].find((i) => !board[i]) ?? 0;
 }
 
-/**
- * A card game's SINGLE PLAYER address (`&mode=bots`: the quick table straight away) with `players` seated at the quick
- * table (the others bots), started, off camera; returns its frame once the
- * first view is in.
- */
-async function cardTable(page, players) {
-	const table = page.locator(".quick-table");
-	if (await table.waitFor({ timeout: 8000 }).then(() => true, () => false)) {
-		for (let i = 0; i < 10 && Number(await page.locator(".quick-n").textContent()) !== players; i++) {
-			const now = Number(await page.locator(".quick-n").textContent());
-			await page.locator(`.quick-table [data-qt="${now < players ? "plus" : "minus"}"]`).click();
-			await sleep(120);
-		}
-		await page.locator(".quick-table .quick-go button").click();
-	}
-	await page.waitForFunction(() => window.__game?.handle, null, { timeout: 20_000 });
-	const G = await gameScope(page, 20_000);
-	await G.waitForFunction(() => window.__game.handle.debug()?.match != null, null, { timeout: 20_000 });
-	await readyToClick(page);
-	return G;
-}
 /** A button in the game's frame, pressed (`element.click()`); false when there is none. */
 const press = (G, sel) =>
 	G.evaluate((sel) => {
@@ -819,16 +798,15 @@ const GAMES = {
 	// The card games (lokeshmohanty/card-games): record with --gif into that
 	// repo's folder. Upright, like the phones they are made for.
 	glowdown: {
-		file: "?game=lokeshmohanty%2Fglowdown&fresh=1&mode=bots",
+		file: "?game=lokeshmohanty%2Fglowdown&fresh=1",
 		peers: 1,
 		seconds: 14,
 		width: 420,
 		height: 760,
 		async beforeStart([page]) {
-			const G = await cardTable(page, 4);
-			await press(G, '.gd-rule[data-rule="stack"]');
-			await sleep(300);
-			await press(G, ".gd-btn.go");
+			// One person with bots: dealt at once (the settings only the first time, and only for friends).
+			await soloTable(page, 4);
+			const G = await gameScope(page, 20_000);
 			await G.waitForFunction(() => window.__game.handle.debug().phase === "play", null, { timeout: 20_000 });
 			// A few turns off camera: the clip opens on a game under way.
 			for (let i = 0, end = Date.now() + 20_000; i < 2 && Date.now() < end; ) {
@@ -849,14 +827,14 @@ const GAMES = {
 	},
 
 	"twenty-nine": {
-		file: "?game=lokeshmohanty%2Ftwenty-nine&fresh=1&mode=bots",
+		file: "?game=lokeshmohanty%2Ftwenty-nine&fresh=1",
 		peers: 1,
 		seconds: 16,
 		width: 420,
 		height: 760,
 		async beforeStart([page]) {
-			const G = await cardTable(page, 4);
-			await press(G, ".tn-btn.go");
+			await soloTable(page, 4);
+			const G = await gameScope(page, 20_000);
 			// The bidding and the trump off camera: the clip opens on the tricks.
 			for (const end = Date.now() + 30_000; Date.now() < end; ) {
 				const v = await twentyNineMove(G);
@@ -876,16 +854,14 @@ const GAMES = {
 	},
 
 	"guess-what": {
-		file: "?game=lokeshmohanty%2Fguess-what&fresh=1&mode=bots",
+		file: "?game=lokeshmohanty%2Fguess-what&fresh=1",
 		peers: 1,
 		seconds: 16,
 		width: 420,
 		height: 760,
 		async beforeStart([page]) {
-			const G = await cardTable(page, 3);
-			await press(G, '.gw-opt[data-secs="30"]');
-			await sleep(200);
-			await press(G, ".gw-btn.go");
+			await soloTable(page, 3);
+			const G = await gameScope(page, 20_000);
 			// Wait for a round this phone gives clues in: the picture shows.
 			for (const end = Date.now() + 60_000; Date.now() < end; ) {
 				const v = await view(G);

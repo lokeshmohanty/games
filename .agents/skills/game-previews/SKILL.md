@@ -31,8 +31,9 @@ card is its own `preview.gif`, so the gif is written there and nothing in
 `assets/` is touched; commit it in that repo. Build the site with that repo's
 games first (`NEON_LOCAL_REPOS` / `NEON_PIN_OVERRIDE`, scripts/fetch-community.mjs
 header; the override also builds game folders the registry does not list yet).
-The card games' scenarios open their SINGLE PLAYER address with `&mode=bots`
-and seat the quick table with `cardTable(page, n)`.
+The card games' scenarios seat the quick table with `soloTable(page, n)` like
+the others; one person with bots goes straight into play (their settings
+screen is only for friends' first game).
 
 That is the whole job: it plays the game, records it, converts it to a gif in
 a temp folder, writes `assets/<game>.webp`, `.webm` and `.mp4` from it
