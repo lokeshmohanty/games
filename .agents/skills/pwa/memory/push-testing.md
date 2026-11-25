@@ -28,6 +28,17 @@ Three things a real browser does cannot be done here, and each has a stand-in:
   to record the URL, then opens that URL itself; `focus()` failing is caught
   in sw.js on purpose.
 
+**Trap (2026-11-25): never poll `getNotifications()` while a push may still
+be showing one.** Chrome loses a notification stored while a
+`getNotifications()` is in flight: overlapping the two calls in one worker
+lost 100 of 100 (one after the other, none). The test polled straight after
+`deliverPushMessage`, so a slow push (CI, a loaded machine) drew its
+notification during a poll and it was gone: `push → a notification … — []`
+and then `{"opened":null,"left":0}` on the tap. test-push now counts the
+worker's settled `showNotification` calls (a wrapper on the prototype) and
+reads `getNotifications()` once after. sw.js never calls `getNotifications()`,
+so the arcade itself is not exposed.
+
 Unproven by any test, so check on a real phone after a deploy: a real FCM /
 autopush / Apple subscription and delivery, the OS notification itself, and
 a real tap focusing or opening the app (iOS only from the Home Screen).
