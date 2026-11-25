@@ -35,9 +35,16 @@ not; re-deriving them costs an afternoon.
   `<iframe>`** (a sandboxed frame is its own process, and a page that has
   not drawn since the frame mounted misses the click) — `bringToFront()`
   before clicking.
-  Both traps hit the rules-overlay check; calling `window.open` directly
+  A second cause, which `bringToFront()` does not cure (2026-11-25): after
+  `setViewportSize` on *another* page of the same context, the last page's
+  game frames route clicks and taps in their bottom ~87px to the `<iframe>`
+  element, for the rest of the run (Draw & Guess's SEND, test-party). The
+  page resizing itself puts it right, so resize every page of the party, or
+  none. `elementFromPoint` still says the frame is on top: record where the
+  pointerdown lands instead.
+  The first two hit the rules-overlay check; calling `window.open` directly
   proved the feature worked.
 
 **How to apply:** before changing web-shim.js or the app path in bridge.js,
 run `just test-webapp`; before blaming a feature for a multi-peer test
-failure, rule out the two test traps.
+failure, rule out the test traps.
