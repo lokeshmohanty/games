@@ -41,7 +41,7 @@ install option (on iOS: Share → Add to Home Screen). Firefox on Android instal
 from its ⋮ menu. Firefox on desktop can't install web apps, but it plays
 offline just the same.
 
-**Signing in is optional.** It adds leaderboards, friends and favourites that
+**Signing in is optional.** It adds a head-to-head record against the people you play, friends and favourites that
 follow you between devices.
 
 ## Add your game

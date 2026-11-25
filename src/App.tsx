@@ -2,7 +2,7 @@
 //
 // The party (lib/party.js: the room, the roster, the running game's frame)
 // is mounted once, the first time the address names it, into a layer that
-// is never re-rendered. Moving to the leaderboard or a profile only hides
+// is never re-rendered. Moving to a profile or the portal only hides
 // that layer: the connections and the game keep running, and BACK TO GAME
 // (or Back) shows it again. Every other view is a Solid component, loaded
 // on first visit.
@@ -16,7 +16,6 @@ const A = (window as any).NeonArcade;
 
 const views: Record<Exclude<View, "party">, ReturnType<typeof lazy>> = {
 	portal: Portal as any,
-	leaderboard: lazy(() => import("./views/Leaderboard")),
 	profile: lazy(() => import("./views/Profile")),
 	contribute: lazy(() => import("./views/Contribute")),
 	contributors: lazy(() => import("./views/Contributors")),
@@ -26,7 +25,6 @@ const views: Record<Exclude<View, "party">, ReturnType<typeof lazy>> = {
 const TITLES: Record<View, string> = {
 	portal: "Arcade Games",
 	party: "Party — Arcade Games",
-	leaderboard: "Leaderboard — Arcade Games",
 	profile: "Profile — Arcade Games",
 	contribute: "Add your game — Arcade Games",
 	contributors: "Contributors — Arcade Games",

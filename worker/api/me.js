@@ -6,8 +6,9 @@
 //   PATCH  /api/me             { name?, hidePublic?, appearOffline? }
 //   DELETE /api/me             every row of ours, at once; the session too
 //   GET    /api/me/export      all of it, as one JSON document: profile, sign-ins,
-//                              favourites, ratings, wins against bots, runs,
-//                              matches (paged), pending reports, friends,
+//                              favourites, matches (paged), and what the old
+//                              ranked layer kept (ratings, wins against bots,
+//                              runs: no longer written, 2026-11-25), pending reports, friends,
 //                              groups, sessions, feedback posts, presence,
 //                              devices getting invites as notifications (no keys),
 //                              records and achievements
@@ -21,7 +22,6 @@
 
 import { linkUrl, signOut } from "./auth.js";
 import { GAME_ID, HttpError, body } from "./http.js";
-import { shownRating } from "./match.js";
 import { ensureFriendCode, handover } from "./social.js";
 
 const parse = (text) => {
@@ -155,10 +155,10 @@ export async function exportMe(env, me, page = 0) {
 		// Which sign-ins, and whether a GitHub token is kept (never the token itself).
 		identities: (await q("SELECT provider, login, linked, token_enc IS NOT NULL AS githubTokenKept FROM identities WHERE account = ?", me.id)),
 		favourites: (await q("SELECT game FROM favs WHERE account = ?", me.id)).map((r) => r.game),
-		// As shown everywhere else: `rated` and `provisional` on rated boards (match.js shownRating).
-		ratings: (await q("SELECT game, elo, games, wins, best FROM ratings WHERE account = ?", me.id)).map((r) => shownRating(r)),
+		// The old ranked layer's rows (2026-11-25: no longer written or shown;
+		// the tables go in a later migration, STATUS.md) — still yours to see.
+		ratings: await q("SELECT game, elo, games, wins, best FROM ratings WHERE account = ?", me.id),
 		winsAgainstBots: await q("SELECT game, wins, first, at FROM bot_wins WHERE account = ?", me.id),
-		// Every run the server issued us, alone or against bots (worker/api/runs.js; kept 4 days).
 		runs: await q("SELECT id, game, vs, seed, at, used, counted, daily FROM runs WHERE account = ? ORDER BY at DESC", me.id),
 		// Reports of ours not yet settled, the starts we said we were seated in,
 		// and outcomes not yet read back (worker/api/match.js; minutes to hours).

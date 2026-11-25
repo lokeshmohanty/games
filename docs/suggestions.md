@@ -69,8 +69,8 @@ this is built unless a section says so.*
 ## 5. Players
 
 - **A daily challenge.** One seeded puzzle or run per day, the same for
-  everyone, with its own leaderboard. It reuses server-issued runs and
-  replay verification, so it is cheap once those exist.
+  everyone. (Its leaderboard is out: no boards since 2026-11-25; server-issued
+  runs went with them.)
 - **Achievements and profiles:** per-game achievements declared in
   game.json and checked from `result().details`, shown on profiles.
 - **Tournaments and parties over time:** a group's season (the groups

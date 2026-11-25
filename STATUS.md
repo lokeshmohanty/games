@@ -24,11 +24,29 @@ from the seed and a wave event every 20 s with a banner; Neon Fission's
 game only, "Next game · CHANGE" at the end); Tic Tac Toe's equal squares
 picked from the seed in all seven lanes (test-conformance still identical).
 web-games `randomness` (PR #3): Light Cycles' spawn shuffle and **Obstacles**
-option, Liar's Dice per-bot slack. To land: review, merge web-games, then move
-`registry/lokeshmohanty/web-games.json` to its main in this branch's PR (until
-then test-taps' Light Cycles setup checks skip, saying so). main merged in
-with records (2026-11-25): its one overlap, neon-fission.js `result()`, keeps
-both the voids in the Grid detail and records' `facts`/`seatFacts`.
+option, Liar's Dice per-bot slack — merged (web-games 2177097), and this
+branch moves `registry/lokeshmohanty/web-games.json` to it, so test-taps'
+Light Cycles setup checks run. main merged in with records and standings
+(2026-11-25): records' one overlap, neon-fission.js `result()`, keeps both
+the voids in the Grid detail and records' `facts`/`seatFacts`. To land:
+merge this PR.
+
+**Branch `standings` (2026-11-25, PR open, not merged):** no boards
+(Lokesh, memory `casual-not-competitive`): leaderboards, friends'/group
+boards, boards against bots, Elo ratings, solo runs, Sudoku's server check
+and bot-win checks removed; `/api/lb/…` and `/api/run/start` answer 410;
+`./?page=leaderboard` and `leaderboard.html` land on the profile.
+Head-to-head instead, read from `match_players` (profile `vs`, `/api/me/
+matches` `rivals`, the end card's "You 5–3 Asha"); the manifest's
+`leaderboard` field is retired (Connect 4 etc. now count). Party standings
+unchanged; groups stay a member list (Lokesh). Migration 0008 adds
+`match_players.team` (a team leaver is no teammate's win); after merge:
+apply migrations (0007, 0008), then `just deploy-worker`. **Later,
+explicit step:** a migration dropping the dead tables `ratings`, `runs`,
+`bot_wins` (still read by the export, deleted with an account; remove
+those reads in the same change), and with it the empty `ratings: []` /
+`botWins: []` that profiles and `/api/me/matches` still send for shells
+cached before 2026-11-25.
 
 **Branch `records` (2026-11-24, PR open; community sides merged):**
 personal records and achievements (Lokesh, 2026-11-21) — game.json

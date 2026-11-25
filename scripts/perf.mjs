@@ -7,7 +7,8 @@
 //   portal       index.html: FCP, LCP, DOMContentLoaded, load, bytes
 //   bots game    SINGLE PLAYER on Connect 4: time to the START GAME button,
 //                then the tap, then time to the game's frame being mounted
-//   leaderboard  ./?page=leaderboard: FCP, LCP, load, bytes
+//   profile      ./?page=profile (a lazy view; was the leaderboard until
+//                2026-11-25): FCP, LCP, load, bytes
 //
 // The link is a throttling proxy in front of the static server, not CDP's
 // network emulation: CDP throttles only the page, so a service worker's own
@@ -23,7 +24,7 @@
 // Medians of --runs N (default 3).
 //
 //   node scripts/perf.mjs [--runs N] [--label name] [--out results.json]
-//                         [--only portal,bots,leaderboard]
+//                         [--only portal,bots,profile]
 //                         [--debug]  also list each run's five largest downloads
 //
 // Caveat: CPU throttling reaches the page's process only. A game runs in a
@@ -44,7 +45,7 @@ const RUNS = Number(arg("runs", 3));
 const LABEL = arg("label", "current");
 const OUT = arg("out", null);
 const LOAD_CAP = 60_000;
-const ONLY = arg("only", null)?.split(","); // e.g. --only portal,leaderboard
+const ONLY = arg("only", null)?.split(","); // e.g. --only portal,profile
 const DEBUG = process.argv.includes("--debug");
 
 const pw = loadPlaywright();
@@ -213,11 +214,11 @@ const scenarios = {
 		return { fcp: v.fcp, jsBytes: v.jsBytes, jsDecoded: v.jsDecoded, bytes: v.bytes, toStart, tapNeeded, toFrame };
 	},
 
-	async leaderboard(site, warm) {
-		const ctx = await context(this.browser, warm, site.url("?page=leaderboard"));
+	async profile(site, warm) {
+		const ctx = await context(this.browser, warm, site.url("?page=profile"));
 		const page = await ctx.newPage();
 		await throttle(page);
-		await page.goto(site.url("?page=leaderboard"), { waitUntil: "domcontentloaded", timeout: 120_000 });
+		await page.goto(site.url("?page=profile"), { waitUntil: "domcontentloaded", timeout: 120_000 });
 		await page.waitForLoadState("load", { timeout: LOAD_CAP }).catch(() => {});
 		await settle(page);
 		const v = await readVitals(page);

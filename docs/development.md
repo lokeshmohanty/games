@@ -38,7 +38,7 @@ sdk/arcade_server.py    a web app's Python server glue, run in Pyodide
 sdk/pyodide/            (vendored, git-ignored: just pyodide) the Python runtime
 registry/<owner>/<repo>.json   contributors' repositories, each pinned to a commit
 community/              (generated, git-ignored) the pinned games, fetched at deploy
-worker/                 the Cloudflare Worker: room server, accounts, leaderboards
+worker/                 the Cloudflare Worker: room server, accounts, head-to-head
                         (docs/room-server.md, docs/accounts.md)
 scripts/                build, tests, preview recorder, icon generator, PR checks
 assets/                 app icons, previews (webp posters, webm, mp4; no gifs since 2026-11-15)
