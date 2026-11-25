@@ -1569,7 +1569,9 @@ as Ludo): friends' first match opens on the host's setup; PLAY AGAIN (NEW GAME
 in Neon Bid) goes straight in; one person (alone, with bots, or with people on
 their phone) goes straight in on the options kept on their phone (`opts` in
 the game's storage); at the end the host's phone says "Next game: … · CHANGE"
-(`nextGame()` / `setNext()` on the host's own rules). Tested by
+(`nextGame()` / `setNext()` on the host's own rules). START waits for two
+seats in all three (review, 2026-11-25: the only guest leaving during the
+setup left a one-seat game that one move won, `finished`). Tested by
 scripts/test-randomness.mjs, test-neon-fission.mjs, test-neon-bid.mjs,
 test-conformance.mjs, and on phones by test-taps.mjs (the setups, Neon Fission
 and Light Cycles' next-game line) and test-bots.mjs (Neon Survival's banner,

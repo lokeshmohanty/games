@@ -689,11 +689,15 @@
 		const table = el("table", "nb-table");
 		const head = el("tr");
 		head.append(el("th", null, ""), ...COLOURS.map((c, ci) => {
-			const th = el("th");
+			// The hot colour's column says so (underlined, as its slots are, and
+			// in words for a screen reader), so PTS visibly adds up.
+			const hot = ci === hotOf();
+			const th = el("th", hot ? "hot" : null);
 			const t = el("span", "nb-tiny");
 			t.style.setProperty("--gem", c.hex);
 			th.append(t);
-			th.setAttribute("aria-label", gemName(ci));
+			th.setAttribute("aria-label", hot ? `${gemName(ci)}, the hot colour: its set scores ${R.HOT_BONUS} more` : gemName(ci));
+			if (hot) th.title = `Hot colour: +${R.HOT_BONUS} for the set`;
 			return th;
 		}), el("th", null, "🌈"), el("th", null, "CR"), el("th", null, "PTS"));
 		table.append(head);
@@ -744,9 +748,13 @@
 				setup = { hot };
 				pushState();
 			}));
+			const waiting = R.startProblem(players());
+			if (waiting) panel.append(el("p", "nb-setup-text", "Waiting for players: add a bot or invite a friend."));
 			const go = el("button", "neon-btn neon-btn--accent nb-go nb-start", "START");
 			go.type = "button";
+			go.disabled = !!waiting;
 			go.addEventListener("click", () => {
+				if (R.startProblem(players())) return renderPanel();
 				opts = cleanOpts(setup);
 				setup = null;
 				startGame();
@@ -791,7 +799,7 @@
 	let panelKey = "";
 	function renderPanel() {
 		const me = mySeat();
-		const key = JSON.stringify([phase, setup, curLot(), !!over, draft, me?.credits, !!myCommit, committing,
+		const key = JSON.stringify([phase, setup, setup ? players().length : 0, curLot(), !!over, draft, me?.credits, !!myCommit, committing,
 			phase === "bid" ? stillToBid() : 0, !!game?.results[curLot()], game?.players.length, themeNow(), isHost()]);
 		if (key === panelKey) return;
 		panelKey = key;

@@ -650,11 +650,12 @@ try {
 	// in words. Both screens at 390x844 and 354x696.
 	{
 		const nextText = () => G.evaluate(() => document.querySelector(".nb-next-line")?.textContent ?? "");
+		check("neon bid · a plain game's end table marks no hot column", (await G.evaluate(() => document.querySelectorAll(".nb-table th.hot").length)) === 0);
 		check("neon bid · the end: the host's next game line, no hot colour, with CHANGE", (await nextText()).startsWith("Next game: no hot colour"), await nextText());
 		await G.evaluate(() => document.querySelector(".nb-next-change").click());
 		await G.waitForFunction(() => document.querySelector('.nb-next button[data-hot="true"]'), null, { timeout: TIMEOUT });
-		const floorsAt = async (what, sizes = [[390, 844], [354, 696]]) => {
-			for (const [w, h] of sizes) {
+		const floorsAt = async (what) => {
+			for (const [w, h] of [[390, 844], [354, 696]]) {
 				await page.setViewportSize({ width: w, height: h });
 				await sleep(200);
 				const f = await phoneFloors(G, "body", { hit: true });
@@ -675,11 +676,31 @@ try {
 			return { hot: d.hot, lotHot: d.order[d.round] === d.hot, slots: document.querySelectorAll(".nb-slot.hot").length, line: document.querySelector(".nb-lot .lotno")?.textContent ?? "", hud: document.getElementById("hud").textContent };
 		});
 		check("neon bid · NEW GAME: a hot colour, its three slots marked, named in the status line (and on a hot lot's LOT line)", hot.slots === 3 && /Hot: /.test(hot.hud) && /HOT \+1/.test(hot.line) === hot.lotHot, JSON.stringify(hot));
-		// 390x844 only: at 354x696 eight seats push PASS/BID 19px below the
-		// screen with or without a hot colour (measured 2026-11-25, 715 of
-		// 696px, the same both ways; the hot colour adds no height). That is
-		// Neon Bid's eight-seat layout, older than this option: STATUS.md.
-		await floorsAt("bidding with a hot colour", [[390, 844]]);
+		await floorsAt("bidding with a hot colour, eight seats");
+		// BID/PASS wholly on a 354x696 screen with eight seats (it ran 19px
+		// off before 2026-11-25), under the band and above the bottom edge.
+		await page.setViewportSize({ width: 354, height: 696 });
+		await sleep(200);
+		const go = await G.evaluate(() => {
+			const r = document.querySelector(".nb-go").getBoundingClientRect();
+			return { top: r.top, bottom: r.bottom, h: innerHeight, text: document.querySelector(".nb-go").textContent };
+		});
+		check("neon bid · eight seats at 354x696: BID/PASS wholly on screen", go.top >= 52 && go.bottom <= go.h, JSON.stringify(go));
+		await page.setViewportSize({ width: 390, height: 844 });
+		// Played out (this phone passes every lot): the end table marks the hot
+		// colour's column, so its PTS add up where a player can see why.
+		for (const end = Date.now() + 240_000; Date.now() < end; ) {
+			const d = await G.evaluate(() => window.__game.handle.debug());
+			if (d.over) break;
+			if (d.phase === "bid" && !d.committed) await G.evaluate(() => document.querySelector(".nb-go:not(:disabled)")?.click());
+			await sleep(300);
+		}
+		const table = await G.evaluate(() => {
+			const ths = [...document.querySelectorAll(".nb-table tr:first-child th")];
+			const hot = ths.findIndex((th) => th.classList.contains("hot"));
+			return { over: !!window.__game.handle.debug().over, hot, label: ths[hot]?.getAttribute("aria-label") ?? "", want: window.__game.handle.debug().hot + 1 };
+		});
+		check("neon bid · a hot game's end table marks the hot colour's column, and says why", table.over && table.hot === table.want && /hot colour/.test(table.label), JSON.stringify(table));
 	}
 
 	// ------------------------------------------------------------ battleship

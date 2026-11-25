@@ -3,7 +3,7 @@
 Twelve gems go up for auction one at a time. Bid in secret with 100 credits and collect the gems that score you the most points.
 
 ## Setting up
-- The setup shows only the first time, for a party's first game with friends. The host picks **no hot colour** or **hot colour**, then taps **START**.
+- The setup shows only the first time, for a party's first game with friends. The host picks **no hot colour** or **hot colour**, then taps **START**. START waits until at least two players are seated.
 - With a **hot colour**, one of the four colours is drawn at random when the gems are laid out. It is shown all game: its three gems are underlined, and it is named under each lot. Holding any gem of the hot colour scores 1 more point.
 - **NEW GAME** goes straight on with the same choice, and so does a game started alone with bots (with the choice you last played). At the end the host sees **Next game: … · CHANGE** under NEW GAME.
 
@@ -19,7 +19,7 @@ Twelve gems go up for auction one at a time. Bid in secret with 100 credits and 
 ## Scoring
 - One gem of a colour scores 1 point, two score 3, three score 6.
 - At least one gem of every colour adds a 4-point rainbow bonus.
-- With a hot colour, its set scores 1 more: one hot gem is 2 points, two are 4, three are 7.
+- With a hot colour, its set scores 1 more: one hot gem is 2 points, two are 4, three are 7. So a game with a hot colour can score a point more than one without, and your best score counts both kinds of game alike. At the end, the hot colour's column in the table is underlined.
 - Leftover credits score nothing, but they break ties.
 
 ## Winning

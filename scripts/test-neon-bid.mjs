@@ -359,6 +359,9 @@ console.log("\nthe hot colour (the setup's option)");
 	const plain = newGame(["bot_1", "x"], () => 0.5);
 	plain.order = [0, 1, 2, 3, 0, 1, 2, 3, 0, 1, 2, 3];
 	const hot = { ...plain, hot: 0, players: plain.players.map((p) => ({ ...p, hand: [...p.hand] })) };
+	// Review, 2026-11-25: a guest leaving during the setup must not leave the
+	// host a one-seat auction to win. START waits for a second seat.
+	check("the setup's START waits for two seats", R.startProblem?.(["a"]) === "waiting for players" && R.startProblem(["a", "bot_1"]) === null && R.startProblem([]) === "waiting for players");
 	check("a bot bids more for a hot gem than for the same gem plain", botBid(hot, "bot_1", () => 0.5) > botBid(plain, "bot_1", () => 0.5), `${botBid(hot, "bot_1", () => 0.5)} vs ${botBid(plain, "bot_1", () => 0.5)}`);
 }
 

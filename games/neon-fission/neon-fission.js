@@ -102,6 +102,10 @@ const fission = {
 				return;
 			}
 			if (action.start === true) {
+				// Two seats at least (the manifest's minimum): the only other
+				// seat leaving during the setup must not leave a game one move
+				// wins (review, 2026-11-25).
+				if (s.ids.length < 2) return "waiting for players";
 				s.phase = "play";
 				return;
 			}
@@ -582,7 +586,8 @@ function renderSetup() {
 	wrapEl.classList.toggle("is-setup", on);
 	if (!on) return void (lastSetup = "");
 	const host = arcade.isHost();
-	const key = JSON.stringify([view.voidsOn, host, arcade.party?.host]);
+	const alone = view.players.length < 2;
+	const key = JSON.stringify([view.voidsOn, host, arcade.party?.host, alone]);
 	if (key === lastSetup) return;
 	lastSetup = key;
 	const parts = [el("h2", null, "NEON FISSION")];
@@ -591,7 +596,9 @@ function renderSetup() {
 		parts.push(voidButtons(view.voidsOn, (voids) => arcade.act({ voids })));
 		const start = el("button", "neon-btn neon-btn--accent nf-start", "START");
 		start.type = "button";
+		start.disabled = alone;
 		start.onclick = () => arcade.act({ start: true });
+		if (alone) parts.push(el("p", null, "Waiting for players: add a bot or invite a friend."));
 		parts.push(start);
 	} else {
 		const hostName = arcade.party?.members?.find((p) => p.id === arcade.party?.host)?.name || "The host";

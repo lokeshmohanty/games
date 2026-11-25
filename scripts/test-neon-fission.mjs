@@ -493,6 +493,13 @@ console.log("\nthe managed layer: one phone, several people");
 		s.g.winner = 0;
 		return rules.result().names === undefined;
 	})());
+	// Review, 2026-11-25: the only other seat leaving during the setup must not
+	// leave a one-seat game that one move "wins", finished (First Win and the
+	// finished-gated records). START waits for a second seat.
+	rules.init({ seats: [seats[0], { id: "sam", name: "Sam", team: "A", bot: false }], seed: 12, match: 0 });
+	check("…a two-person setup", rules.view({ seat: null }).phase === "setup");
+	check("…the guest leaves: the host's table has one seat", rules.leave({ seat: "sam" }) === true && rules.view({ seat: null }).players.length === 1);
+	check("…and START waits for players, the setup stays up", rules.apply({ action: { start: true }, by: "host" }) === "waiting for players" && rules.view({ seat: null }).phase === "setup" && same(rules.turn(), []) && rules.result() === null);
 }
 
 console.log(failures ? `\n${failures} FAILED` : "\nall passed");

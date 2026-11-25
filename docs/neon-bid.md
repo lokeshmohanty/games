@@ -62,7 +62,12 @@ first game (the setup shows only for friends' first game; NEW GAME keeps it;
 "Next game: … · CHANGE" at the end). One colour is drawn with the lot order
 and published with it, so it is as public as the order; that colour's set
 scores 1 more (`HOT_BONUS`: 2/4/7). The bot counts it in its valuation, and
-the "worth to you" line says `hot +1` for a first gem of it.
+the "worth to you" line says `hot +1` for a first gem of it; the end table
+underlines its column. A hot game can score a point more than a plain one,
+and a player's best score (the records) counts both alike: accepted, the
+game is casual (review, 2026-11-25). START waits for two seats
+(`startProblem`), so a guest leaving during the setup cannot leave the host
+a one-seat auction.
 
 ## Why these rules
 

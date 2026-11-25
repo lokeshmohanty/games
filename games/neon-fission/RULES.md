@@ -3,7 +3,7 @@
 Fill cells with orbs until they burst. A burst takes over the cells next to it, and bursts set off more bursts. Be the last player with cells on the grid.
 
 ## Setting up
-- The setup shows only the first time, for a party's first game with friends. The host picks a **plain grid** or **voids**, then taps **START**.
+- The setup shows only the first time, for a party's first game with friends. The host picks a **plain grid** or **voids**, then taps **START**. START waits until at least two players are seated.
 - **Voids** take 2 or 4 cells out of the grid, placed differently every game, in pairs facing each other across the middle so neither side gets a better board. A void holds nothing and cannot be played. The cells next to a void have one neighbour fewer, so they burst one orb sooner.
 - **PLAY AGAIN** goes straight on with the same choice, and so does a game started alone or with people on your phone (with the choice you last played; a plain grid the first time).
 - At the end the host sees **Next game: plain grid · CHANGE** (tap SEE THE BOARD to reach it): CHANGE picks the grid for the next game.

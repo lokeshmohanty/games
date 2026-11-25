@@ -35,6 +35,12 @@
 	// becomes 2/4/7). `hot` below is that colour's index, or null without the
 	// option; every function taking it defaults to none, as before.
 	const HOT_BONUS = 1;
+	/**
+	 * Why the setup's START must wait, or null: two seats at least (the
+	 * manifest's minimum), so a guest leaving during the setup does not leave
+	 * the host a one-seat auction that "wins" (review, 2026-11-25).
+	 */
+	const startProblem = (ids) => ((ids?.length ?? 0) < 2 ? "waiting for players" : null);
 
 	/** The twelve lots, shuffled. Made once by the host and then public. */
 	function shuffledOrder(rng = Math.random) {
@@ -220,7 +226,7 @@
 	}
 
 	globalThis.neonBidRules = {
-		COLOURS, PER_COLOUR, LOTS, START_CREDITS, RESERVE, SET_POINTS, RAINBOW, HOT_BONUS,
+		COLOURS, PER_COLOUR, LOTS, START_CREDITS, RESERVE, SET_POINTS, RAINBOW, HOT_BONUS, startProblem,
 		shuffledOrder, emptyHand, score, marginal, worth, validBid, resolveLot,
 		newGame, applyLot, standings, auditBid, gemValue, botBid,
 	};
