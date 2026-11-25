@@ -90,19 +90,23 @@ jobs:
           include-hidden-files: false
           retention-days: 1
 
-  deploy:
+  # The site as one `github-pages` artifact, in its own job before deploy's.
+  # deploy-pages finds it by listing the run's artifacts, and that listing
+  # can lag a just-finalized upload by seconds (actions/deploy-pages#451):
+  # uploaded and deployed in one job, the lookup missed it on every first
+  # attempt from 2026-11-24 (run 45466386825 on). Apart, the lookup comes a
+  # job start later; and re-running a failed deploy alone uploads no second
+  # `github-pages` (which deploy-pages refuses as "Multiple artifacts").
+  pages-artifact:
     needs: [tests, build-community]
     # The tests passed; or, on the emergency path, they were skipped and the
     # community games were fetched here instead.
     if: ${{ !cancelled() && (needs.tests.result == 'success' || (inputs.skip_tests && needs.tests.result == 'skipped' && needs.build-community.result == 'success')) }}
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
     runs-on: ubuntu-24.04
-    timeout-minutes: 10  # an upload and a deploy
+    timeout-minutes: 15  # a download and an upload; the emergency build too
+    permissions:
+      contents: read
     steps:
-      - name: Setup Pages
-        uses: actions/configure-pages@v6
       # The site every suite just passed against, as test.yml built it
       # (Pyodide, the community games, pnpm build): deployed as it is.
       - name: The tested site
@@ -148,6 +152,37 @@ jobs:
         with:
           # The built site (pnpm build), not the repository.
           path: 'dist'
+
+  deploy:
+    needs: pages-artifact
+    if: ${{ !cancelled() && needs.pages-artifact.result == 'success' }}
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url || steps.deployment-again.outputs.page_url }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25  # a deploy (deploy-pages waits up to 10 min), and once more
+    steps:
+      - name: Setup Pages
+        uses: actions/configure-pages@v6
       - name: Deploy to GitHub Pages
         id: deployment
+        continue-on-error: true
         uses: actions/deploy-pages@v5
+      # Once more, a minute on, if it failed before any deployment existed
+      # (no page_url yet: the artifact lookup comes first) — the listing can
+      # still lag a job start later (~46 s reported upstream). A deploy that
+      # started and failed is not retried; a second failure fails the job.
+      - name: Wait for the artifact listing
+        if: ${{ steps.deployment.outcome == 'failure' && steps.deployment.outputs.page_url == '' }}
+        run: sleep 60
+      - name: Deploy to GitHub Pages (once more)
+        id: deployment-again
+        if: ${{ steps.deployment.outcome == 'failure' && steps.deployment.outputs.page_url == '' }}
+        uses: actions/deploy-pages@v5
+      # continue-on-error keeps the job green above; a deploy that started and
+      # failed must still fail it.
+      - name: The deploy that started and failed
+        if: ${{ steps.deployment.outcome == 'failure' && steps.deployment.outputs.page_url != '' }}
+        run: |
+          echo "::error::deploy-pages failed after creating the deployment (above); not retried"
+          exit 1

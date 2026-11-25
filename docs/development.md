@@ -109,6 +109,17 @@ same workflow before every deploy, so nothing deploys unless every suite
 passes. It then deploys the very site the suites passed against: the build
 job's `site` artifact, not a second build.
 
+The deploy is two jobs. `pages-artifact` (read-only) packs that site as the
+`github-pages` artifact; `deploy` (the Pages token) runs `deploy-pages`.
+`deploy-pages` finds the artifact by listing the run's artifacts, and that
+listing can lag a just-finalized upload by seconds (actions/deploy-pages#451).
+In one job, the lookup missed it on every first attempt from 2026-11-24 on.
+Apart, the lookup comes a job start later. If it still misses, `deploy` waits
+a minute and tries once more, but only when no deployment was created. Re-run
+a failed `deploy` alone ("Re-run failed jobs"): it reuses the one artifact.
+Re-running `pages-artifact` too can add a second `github-pages`, which
+`deploy-pages` refuses ("Multiple artifacts").
+
 | Job | Runs | Locally | Local, 2026-11-15 | Runner (run 43774429667) |
 |---|---|---|---|---|
 | static | bindings, colours, `catalog --check`, stats, submission rules, codec, the Justfile, hub, Durable Object, plumbing, rules | `just test-static` | 17 s | 17 s |
