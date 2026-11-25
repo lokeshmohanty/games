@@ -31,7 +31,7 @@ Squares are numbered 1 to 9, left to right, top row first.
 Had O blocked every line until the ninth square was filled, the game would end in a draw.
 
 ## The bot
-- It wins if it can, blocks you if it must, otherwise takes the centre, otherwise the first free square.
+- It wins if it can, blocks you if it must, otherwise takes the centre, otherwise any free square. Where several squares are equally good it picks one at random, so games do not all go the same way.
 
 ## Controls
 - Tap or click a square to mark it.

@@ -85,3 +85,35 @@ html, body { margin: 0; height: 100%; overflow: hidden; background: var(--bg); c
 #wrap { position: relative; flex: 1; width: 100%; min-height: 0; display: flex; align-items: flex-start; justify-content: center; }
 #board { display: block; border-radius: 10px; box-shadow: 0 0 24px var(--glow); cursor: pointer; }
 
+
+/* The setup (friends' first game) over the grid, and the end's "Next game"
+   line over its top: both laid over #wrap, so the grid, sized once a match
+   starts, never moves. Taps 44px, text 12px and more. */
+.nf-setup, .nf-next {
+	position: absolute;
+	left: 0;
+	right: 0;
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	gap: 10px;
+	padding: 12px;
+	box-sizing: border-box;
+	text-align: center;
+	border-radius: 10px;
+	background: color-mix(in oklch, var(--bg) 86%, transparent);
+	z-index: 2;
+}
+.nf-setup { top: 0; bottom: 0; justify-content: center; overflow-y: auto; }
+.nf-next { top: 0; gap: 6px; font-size: 0.85rem; color: var(--ink-2); box-shadow: 0 6px 18px var(--glow); }
+.nf-setup[hidden], .nf-next[hidden] { display: none; }
+.nf-setup h2 { margin: 0; font-family: var(--font-display); font-size: 1.4rem; letter-spacing: 0.06em; color: var(--accent); }
+.nf-setup p { margin: 0; max-width: 24em; color: var(--ink-2); line-height: 1.35; font-size: 0.85rem; }
+.nf-choice { display: flex; flex-wrap: wrap; gap: 6px; justify-content: center; }
+.nf-setup .neon-btn, .nf-next .neon-btn { min-height: 44px; min-width: 44px; padding: 8px 12px; font-size: 0.85rem; }
+.nf-choice .neon-btn { border: 2px solid var(--accent); }
+.nf-choice .neon-btn[aria-pressed="false"] { background: transparent; color: var(--accent); }
+.nf-next-line { display: flex; align-items: center; justify-content: center; gap: 4px 10px; flex-wrap: wrap; }
+.nf-next b { color: var(--ink); font-weight: 600; }
+/* Under the setup the grid is a preview, not a target. */
+#wrap.is-setup #board { cursor: default; pointer-events: none; }

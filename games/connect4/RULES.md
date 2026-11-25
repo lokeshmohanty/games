@@ -9,6 +9,7 @@ Drop your discs into the frame and be the first to line up four of your colour i
 - Who moves first is picked at random for the first game. After that it alternates: on **PLAY AGAIN**, whoever went second last time goes first.
 - On your turn, pick a column. Your disc falls to the lowest empty space in it.
 - A full column cannot be played; choose another.
+- The bot does not always play the same game: where two or more columns look about as good to it, it picks one at random. It always takes a win and always blocks one.
 
 ## Scoring
 - There are no points. A line of four of your discs ends the game at once.

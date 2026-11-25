@@ -16,6 +16,21 @@ separate `TODO.md`.*
 
 ## Now (2026-11-18)
 
+**Branch `randomness` (2026-11-25, both repos, pushed, not merged):** the
+variety Lokesh picked on 2026-11-24 (docs/index.md "Variety, from the seed").
+Here: Connect 4's seeded pick among near-best columns; Neon Survival's run
+from the seed and a wave event every 20 s with a banner; Neon Fission's
+**Voids** and Neon Bid's **Hot colour** options (setup before friends' first
+game only, "Next game · CHANGE" at the end); Tic Tac Toe's equal squares
+picked from the seed in all seven lanes (test-conformance still identical).
+web-games `randomness` (PR #3): Light Cycles' spawn shuffle and **Obstacles**
+option, Liar's Dice per-bot slack — merged (web-games 2177097), and this
+branch moves `registry/lokeshmohanty/web-games.json` to it, so test-taps'
+Light Cycles setup checks run. main merged in with records and standings
+(2026-11-25): records' one overlap, neon-fission.js `result()`, keeps both
+the voids in the Grid detail and records' `facts`/`seatFacts`. To land:
+merge this PR.
+
 **Branch `standings` (2026-11-25, PR open, not merged):** no boards
 (Lokesh, memory `casual-not-competitive`): leaderboards, friends'/group
 boards, boards against bots, Elo ratings, solo runs, Sudoku's server check
@@ -48,6 +63,7 @@ per account on a shared device, completion facts gate skill achievements,
 per-game refusals, optimistic writes, 29's Comeback, Tic Tac Toe (JS). To land: merge
 this PR; migrate 0007 first, then `just deploy-worker` (docs/accounts.md
 "Migrations").
+
 **Player colours (2026-11-24, landed by PR here; web-games 69c7587 and
 card-games 0d10c1f pinned):** players pick their own colour (Lokesh,
 2026-11-21: "every game with colours"): the picker under YOU and on the quick

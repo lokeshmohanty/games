@@ -10,6 +10,13 @@ Dodge the red swarm and catch the green gems. Everyone shares one arena, and eac
 - Every gem anyone catches makes the swarm tougher. Red dots arrive more often and fly faster.
 - Bots move at a fixed top speed, so a fast swarm can catch them.
 
+## Wave events
+Every 20 seconds of a run something happens, and a banner at the top says what. It is never the same event twice in a row:
+- **Swarm from the left** (or the top, right or bottom): eight red dots come in at once from that side.
+- **Fast drones:** for 6 seconds, new red dots fly half again as fast.
+- **Gem rain:** six extra gems appear at once.
+- **Slow-mo:** for 5 seconds, the whole swarm flies at half speed.
+
 ## Scoring
 - Each green gem you catch scores 1 point for you.
 - Your score stays when you go down.

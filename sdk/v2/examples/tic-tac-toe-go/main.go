@@ -33,6 +33,18 @@ type game struct {
 	Winner *int    `json:"winner"` // nil: still going; 0: a draw
 	X      *string `json:"x"`
 	O      *string `json:"o"`
+	// Seed is the bot's, for equal squares: in the snapshot, never in the
+	// view (View zeroes it, and omitempty leaves a zero out).
+	Seed int64 `json:"seed,omitempty"`
+}
+
+// pickOf is which of n equal squares the bot takes: one Park–Miller step
+// over the match's seed and the marks on the board, the same in every lane.
+func pickOf(seed int64, marks, n int) int {
+	if seed < 0 {
+		seed = -seed
+	}
+	return int((((seed % 2147483647) + int64(marks) + 1) * 48271 % 2147483647) % int64(n))
 }
 
 type view struct {
@@ -56,7 +68,7 @@ func newGame(s arcade.Setup) arcade.Game {
 		}
 		return nil
 	}
-	g := &game{Mover: 1, X: team("A", 0), O: team("B", 1)}
+	g := &game{Mover: 1, X: team("A", 0), O: team("B", 1), Seed: s.Seed}
 	// The platform's First moves first: it takes turns between rematches
 	// (docs/sdk-v2.md "Who starts"). X otherwise, as from an older shell.
 	if s.First != "" && g.O != nil && *g.O == s.First {
@@ -109,6 +121,7 @@ func (g *game) Apply(action arcade.RawJSON, by string) error {
 
 func (g *game) View(seat *string) any {
 	v := view{game: *g}
+	v.Seed = 0
 	if seat != nil && *seat != "" {
 		v.You = g.markOf(*seat)
 	}
@@ -125,8 +138,8 @@ func (g *game) Turn() []string {
 	return nil
 }
 
-// Bot wins if it can, blocks if it must, else takes the centre, else the
-// first free square.
+// Bot wins if it can, blocks if it must, else takes the centre, else any
+// free square; between equal squares, one picked from the seed (pickOf).
 func (g *game) Bot(string) any {
 	var free []int
 	for i, m := range g.Board {
@@ -134,30 +147,27 @@ func (g *game) Bot(string) any {
 			free = append(free, i)
 		}
 	}
-	wins := func(mark int) int {
+	wins := func(mark int) []int {
+		var out []int
 		for _, i := range free {
 			b := g.Board
 			b[i] = mark
 			if w := winnerOf(b); w != nil && *w == mark {
-				return i
+				out = append(out, i)
 			}
 		}
-		return -1
+		return out
 	}
-	i := wins(g.Mover)
-	if i < 0 {
-		i = wins(3 - g.Mover)
+	var centre []int
+	if g.Board[4] == 0 {
+		centre = []int{4}
 	}
-	if i < 0 && g.Board[4] == 0 {
-		i = 4
+	for _, take := range [][]int{wins(g.Mover), wins(3 - g.Mover), centre, free} {
+		if len(take) > 0 {
+			return map[string]int{"i": take[pickOf(g.Seed, 9-len(free), len(take))]}
+		}
 	}
-	if i < 0 && len(free) > 0 {
-		i = free[0]
-	}
-	if i < 0 {
-		return nil
-	}
-	return map[string]int{"i": i}
+	return nil
 }
 
 func (g *game) Result() *arcade.Result {

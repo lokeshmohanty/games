@@ -25,7 +25,7 @@ for (const f of ["../lib/net.js", "../lib/games.js", "../lib/secrets.js", "../ga
 const R = globalThis.neonBidRules;
 const {
 	COLOURS, LOTS, START_CREDITS, RESERVE, score, marginal, worth, validBid, resolveLot,
-	newGame, applyLot, standings, auditBid, shuffledOrder, botBid,
+	newGame, applyLot, standings, auditBid, shuffledOrder, botBid, RAINBOW,
 } = R;
 
 let failures = 0;
@@ -327,6 +327,42 @@ function play(kinds, rng) {
 		if (soldHere / 100 < 9 || stalled) thin.push(`${seats} seats: ${(soldHere / 100).toFixed(1)} sold, ${stalled} stalled`);
 	}
 	check("at every table size, 2 to 8, most lots sell and no game stalls on ties", !thin.length, thin.join("; "));
+}
+
+
+// ---------------------------------------------------------------------------
+console.log("\nthe hot colour (the setup's option)");
+{
+	// Lokesh, 2026-11-24: "Hot colour" — one colour, drawn at the deal and
+	// shown from the start, whose set scores 1 more (1/3/6 → 2/4/7).
+	const { HOT_BONUS } = R;
+	check("the hot colour's bonus is 1 a set", HOT_BONUS === 1);
+	check("a hand scores the bonus once for holding the hot colour", score([1, 0, 0, 0], 0) === 2 && score([3, 0, 0, 0], 0) === 7 && score([0, 2, 0, 0], 0) === 3, `${score([1, 0, 0, 0], 0)} ${score([3, 0, 0, 0], 0)}`);
+	check("…and nothing without the option", score([1, 0, 0, 0]) === 1 && score([1, 0, 0, 0], null) === 1);
+	check("…on top of the rainbow", score([1, 1, 1, 1], 2) === 4 + RAINBOW + 1);
+	check("a first hot gem is worth one more to you, and says why", marginal([0, 0, 0, 0], 1, 1) === 2 && worth([0, 0, 0, 0], 1, 1).reasons.some((r) => /hot/.test(r)), JSON.stringify(worth([0, 0, 0, 0], 1, 1)));
+	check("…a second one is not (the set already has its bonus)", marginal([0, 1, 0, 0], 1, 1) === marginal([0, 1, 0, 0], 1));
+	const seen = new Set();
+	let r = 0;
+	const rng = () => ((r = (r * 9301 + 49297) % 233280) / 233280);
+	for (let k = 0; k < 40; k++) seen.add(newGame(["a", "b"], rng, { hot: true }).hot);
+	check("the deal draws the hot colour: each of the four turns up", seen.size === 4 && [...seen].every((c) => c >= 0 && c < COLOURS.length), [...seen].join());
+	check("without the option there is none", newGame(["a", "b"]).hot === null && newGame(["a", "b"], Math.random, { hot: false }).hot === null);
+	const g = newGame(["a", "b"], Math.random, { hot: true });
+	g.players[0].hand = [0, 0, 0, 0];
+	g.players[1].hand = [0, 0, 0, 0];
+	g.players[0].hand[g.hot] = 1;
+	g.players[1].hand[(g.hot + 1) % 4] = 1;
+	const st = standings(g.players, g.hot);
+	check("the standings count it: one hot gem beats one plain gem", st.winners.length === 1 && st.winners[0] === "a" && st.rows[0].points === 2, JSON.stringify(st));
+	// The bot wants the hot colour more.
+	const plain = newGame(["bot_1", "x"], () => 0.5);
+	plain.order = [0, 1, 2, 3, 0, 1, 2, 3, 0, 1, 2, 3];
+	const hot = { ...plain, hot: 0, players: plain.players.map((p) => ({ ...p, hand: [...p.hand] })) };
+	// Review, 2026-11-25: a guest leaving during the setup must not leave the
+	// host a one-seat auction to win. START waits for a second seat.
+	check("the setup's START waits for two seats", R.startProblem?.(["a"]) === "waiting for players" && R.startProblem(["a", "bot_1"]) === null && R.startProblem([]) === "waiting for players");
+	check("a bot bids more for a hot gem than for the same gem plain", botBid(hot, "bot_1", () => 0.5) > botBid(plain, "bot_1", () => 0.5), `${botBid(hot, "bot_1", () => 0.5)} vs ${botBid(plain, "bot_1", () => 0.5)}`);
 }
 
 console.log(failures ? `\n${failures} neon bid check${failures > 1 ? "s" : ""} failed` : "\nall neon bid checks passed");

@@ -188,6 +188,7 @@ test-rules:
     node scripts/test-undercover.mjs
     node scripts/test-neon-fission.mjs
     node scripts/test-who-starts.mjs
+    node scripts/test-randomness.mjs
 
 # Three real browser peers: recruiting, teams, game switching, succession.
 test-party:

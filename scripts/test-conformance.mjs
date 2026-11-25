@@ -79,6 +79,18 @@ const SCRIPT = [
 	[{ fn: "bot", seat: O }],
 	"BOT",
 	[{ fn: "init", seats: SEATS, opts: {}, seed: 9, match: 2 }, ...views()], // no `first` (an older shell): X starts
+	// The bot's equal squares come from the seed, the same way in every lane
+	// (Lokesh, 2026-11-24: "a random choice among equal moves"). A seed past
+	// 2^31 that does not reduce to something small: with the centre gone (8
+	// equal squares), 3000000000 picks the 8th (index 7) in 64-bit arithmetic,
+	// the 3rd (2) where the seed was cut to 32 bits, and the 7th (6) where the
+	// multiply was too, so any lane doing either answers differently.
+	[{ fn: "init", seats: SEATS, opts: {}, seed: 3000000000, match: 3, first: X }],
+	[{ fn: "apply", action: { i: 4 }, by: X }],
+	[{ fn: "bot", seat: O }],
+	"BOT",
+	[{ fn: "apply", action: { i: 0 }, by: X }],
+	[{ fn: "bot", seat: O }], // a block: one square, whatever the seed
 ];
 
 function chromePath() {

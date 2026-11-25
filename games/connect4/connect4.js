@@ -141,23 +141,48 @@ function* search(board, depth, alpha, beta, turn, me) {
 	return best;
 }
 
-/** The column the side `me` plays. Never a full column. A generator, as `search`. */
-function* columnFor(board0, me) {
+// Variety (Lokesh, 2026-11-24): among columns whose value is within MARGIN
+// of the best, the bot picks at random — a draw from the match's `seed` — so
+// two games do not open the same way. Never among wins or losses: a column
+// that wins, or one whose search sees a forced result, is played or avoided
+// exactly as before. MARGIN is one "two in a line" (evaluate's 8): 11 of 12
+// seeds open a bots-only game differently over eight moves (6 gave 4).
+const MARGIN = 8;
+const DECIDED = 5000; // a search value past this is a forced win or loss
+
+/** A small seeded generator (mulberry32) whose whole state is one number, so it travels in a snapshot. */
+function rng(seed) {
+	let a = seed >>> 0;
+	const next = () => {
+		a = (a + 0x6d2b79f5) >>> 0;
+		let t = a;
+		t = Math.imul(t ^ (t >>> 15), t | 1);
+		t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+		return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+	};
+	return { next, state: () => a };
+}
+
+/**
+ * The column the side `me` plays. Never a full column. A generator, as
+ * `search`. `pick` (0..1) chooses among the near-best columns; 0 is the
+ * first of them in centre-out order.
+ */
+function* columnFor(board0, me, pick = 0) {
 	const board = board0.map((row) => [...row]);
 	const cols = BOT_ORDER.filter((c) => board[0][c] === 0);
-	let bestCol = cols[0];
-	let bestValue = -Infinity;
+	const values = [];
 	for (const c of cols) {
 		const r = dropRowIn(board, c);
 		board[r][c] = me;
 		const value = checkWin(board, r, c, me) ? Infinity : yield* search(board, BOT_DEPTH - 1, -Infinity, Infinity, me === RED ? YELLOW : RED, me);
 		board[r][c] = 0;
-		if (value > bestValue) {
-			bestValue = value;
-			bestCol = c;
-		}
+		values.push(value);
 	}
-	return bestCol;
+	const best = Math.max(...values);
+	const near = cols.filter((_, i) => (best >= DECIDED ? values[i] === best : values[i] >= best - MARGIN && values[i] > -DECIDED));
+	if (!near.length) return cols[values.indexOf(best)]; // every column loses: the longest resistance, as before
+	return near[Math.min(near.length - 1, Math.floor(pick * near.length))];
 }
 
 /**
@@ -188,16 +213,17 @@ function sliced(gen) {
 }
 
 /** The column the side `me` plays, without holding the frame: a promise. */
-const chooseColumn = (board, me) => sliced(columnFor(board, me));
+const chooseColumn = (board, me, pick) => sliced(columnFor(board, me, pick));
 
-let s = null; // { match, board, turn, winner, started, red, yellow, moves, line, last }
+let s = null; // { match, board, turn, winner, started, red, yellow, moves, line, last, rng }
 const colourOf = (id) => (id === s.red ? RED : id === s.yellow ? YELLOW : 0);
 const idOf = (colour) => (colour === RED ? s.red : s.yellow);
 
 arcade.managed({
-	init({ seats, match, first }) {
+	init({ seats, match, first, seed }) {
 		const team = (t, i) => (seats.find((p) => p.team === t) ?? seats[i])?.id ?? null;
-		s = { match: match + 1, board: emptyBoard(), turn: RED, winner: null, started: true, red: team("A", 0), yellow: team("B", 1), moves: 0, line: null, last: null };
+		// `rng`: the bot's generator, from the match's seed (a run replays); in the snapshot, not the view.
+		s = { match: match + 1, board: emptyBoard(), turn: RED, winner: null, started: true, red: team("A", 0), yellow: team("B", 1), moves: 0, line: null, last: null, rng: (Math.abs(Math.floor(Number(seed) || 0)) ^ 0xc0ec4) >>> 0 };
 		// Who drops first: the platform's `first`, which takes turns between
 		// rematches (docs/sdk-v2.md "Who starts"). Red stays red; only the
 		// opening move changes hands. An older shell sends none: red starts.
@@ -220,11 +246,20 @@ arcade.managed({
 		else if (isDraw(s.board)) s.winner = 0;
 		else s.turn = s.turn === RED ? YELLOW : RED;
 	},
-	view: ({ seat }) => ({ ...s, board: s.board.map((r) => [...r]), you: seat ? colourOf(seat) : 0 }),
+	view: ({ seat }) => {
+		const { rng: _, ...shown } = s;
+		return { ...shown, board: s.board.map((r) => [...r]), you: seat ? colourOf(seat) : 0 };
+	},
 	turn: () => (s.winner === null && s.red && s.yellow ? [idOf(s.turn)] : []),
 	// A promise: the runtime awaits it, and the platform's queue holds every
 	// other rules call until it settles, so `s` cannot change under it.
-	bot: async () => ({ col: await chooseColumn(s.board, s.turn) }),
+	// The draw comes first, so the generator moves on once per move asked.
+	bot: async () => {
+		const r = rng(s.rng ?? 0);
+		const pick = r.next();
+		s.rng = r.state();
+		return { col: await chooseColumn(s.board, s.turn, pick) };
+	},
 	result() {
 		if (s.winner === null) return null;
 		const places = (...slots) => slots.map((x) => x.filter(Boolean)).filter((x) => x.length);

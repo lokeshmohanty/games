@@ -30,6 +30,17 @@
 	// amounts to different players.
 	const SET_POINTS = [0, 1, 3, 6];
 	const RAINBOW = 4;
+	// The "Hot colour" option (Lokesh, 2026-11-24): one colour, drawn at the
+	// deal and shown from the start, whose set scores this much more (1/3/6
+	// becomes 2/4/7). `hot` below is that colour's index, or null without the
+	// option; every function taking it defaults to none, as before.
+	const HOT_BONUS = 1;
+	/**
+	 * Why the setup's START must wait, or null: two seats at least (the
+	 * manifest's minimum), so a guest leaving during the setup does not leave
+	 * the host a one-seat auction that "wins" (review, 2026-11-25).
+	 */
+	const startProblem = (ids) => ((ids?.length ?? 0) < 2 ? "waiting for players" : null);
 
 	/** The twelve lots, shuffled. Made once by the host and then public. */
 	function shuffledOrder(rng = Math.random) {
@@ -48,21 +59,23 @@
 	const withGem = (hand, colour) => hand.map((n, i) => (i === colour ? n + 1 : n));
 	const hasRainbow = (hand) => hand.every((n) => n > 0);
 
-	function score(hand) {
+	function score(hand, hot = null) {
 		let points = 0;
 		for (const n of hand) points += SET_POINTS[Math.min(n, SET_POINTS.length - 1)];
+		if (hot != null && hand[hot] > 0) points += HOT_BONUS;
 		return points + (hasRainbow(hand) ? RAINBOW : 0);
 	}
 
 	/** Points one more gem of `colour` would add to `hand`, right now. */
-	const marginal = (hand, colour) => score(withGem(hand, colour)) - score(hand);
+	const marginal = (hand, colour, hot = null) => score(withGem(hand, colour), hot) - score(hand, hot);
 
 	/** The "worth to you" line: how many points, and why. */
-	function worth(hand, colour) {
+	function worth(hand, colour, hot = null) {
 		const n = hand[colour];
 		const reasons = [n === 0 ? "a new colour" : n === 1 ? "makes a pair" : "completes the set"];
+		if (colour === hot && n === 0) reasons.push(`hot +${HOT_BONUS}`);
 		if (!hasRainbow(hand) && hasRainbow(withGem(hand, colour))) reasons.push(`rainbow +${RAINBOW}`);
-		return { points: marginal(hand, colour), reasons };
+		return { points: marginal(hand, colour, hot), reasons };
 	}
 
 	/** A bid is a whole number of credits you actually have. 0 is a pass. */
@@ -93,9 +106,10 @@
 		return { kind: "won", winner: live[0][0], price, top };
 	}
 
-	/** A fresh game: public order, 100 credits each, empty hands. */
-	const newGame = (ids, rng = Math.random) => ({
+	/** A fresh game: public order, 100 credits each, empty hands; with `opts.hot`, a hot colour drawn after the order. */
+	const newGame = (ids, rng = Math.random, opts = {}) => ({
 		order: shuffledOrder(rng),
+		hot: opts?.hot ? Math.floor(rng() * COLOURS.length) : null,
 		lot: 0,
 		players: ids.map((id) => ({ id, credits: START_CREDITS, hand: emptyHand() })),
 		results: [],
@@ -132,9 +146,9 @@
 	 * Final table, best first. Ties on points break by credits left; still tied
 	 * is a shared win — every row in `winners`.
 	 */
-	function standings(players) {
+	function standings(players, hot = null) {
 		const rows = players
-			.map((p) => ({ id: p.id, points: score(p.hand), credits: p.credits, hand: [...p.hand], rainbow: hasRainbow(p.hand) }))
+			.map((p) => ({ id: p.id, points: score(p.hand, hot), credits: p.credits, hand: [...p.hand], rainbow: hasRainbow(p.hand) }))
 			.sort((a, b) => b.points - a.points || b.credits - a.credits);
 		const best = rows[0];
 		const winners = best ? rows.filter((r) => r.points === best.points && r.credits === best.credits).map((r) => r.id) : [];
@@ -177,8 +191,8 @@
 
 	const DENY = 0.5;
 
-	function gemValue(hand, colour) {
-		let v = marginal(hand, colour);
+	function gemValue(hand, colour, hot = null) {
+		let v = marginal(hand, colour, hot);
 		const missing = hand.filter((n) => n === 0).length;
 		if (hand[colour] === 0 && missing > 1) v += RAINBOW / missing;
 		return v;
@@ -191,12 +205,13 @@
 		const rest = game.order.slice(game.lot);
 
 		const others = game.players.filter((p) => p.id !== botId);
-		const leader = [...others].sort((a, b) => score(b.hand) - score(a.hand) || b.credits - a.credits)[0];
-		const deny = leader && score(leader.hand) >= score(me.hand) ? marginal(leader.hand, colour) * DENY : 0;
-		const value = gemValue(me.hand, colour) + deny;
+		const hot = game.hot ?? null;
+		const leader = [...others].sort((a, b) => score(b.hand, hot) - score(a.hand, hot) || b.credits - a.credits)[0];
+		const deny = leader && score(leader.hand, hot) >= score(me.hand, hot) ? marginal(leader.hand, colour, hot) * DENY : 0;
+		const value = gemValue(me.hand, colour, hot) + deny;
 		if (value <= 0) return 0;
 
-		const mean = rest.reduce((s, c) => s + gemValue(me.hand, c), 0) / rest.length || 1;
+		const mean = rest.reduce((s, c) => s + gemValue(me.hand, c, hot), 0) / rest.length || 1;
 		const bidders = Math.max(1, game.players.filter((p) => p.credits > 0).length);
 		const lotsToWin = Math.max(1, rest.length / bidders);
 		const perLot = me.credits / lotsToWin;
@@ -211,7 +226,7 @@
 	}
 
 	globalThis.neonBidRules = {
-		COLOURS, PER_COLOUR, LOTS, START_CREDITS, RESERVE, SET_POINTS, RAINBOW,
+		COLOURS, PER_COLOUR, LOTS, START_CREDITS, RESERVE, SET_POINTS, RAINBOW, HOT_BONUS, startProblem,
 		shuffledOrder, emptyHand, score, marginal, worth, validBid, resolveLot,
 		newGame, applyLot, standings, auditBid, gemValue, botBid,
 	};

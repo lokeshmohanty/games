@@ -37,6 +37,24 @@ const BOT_SPEED = 4;
 const BOT_DANGER = 110; // px — how far ahead a bot notices an enemy
 const BOT_GREED = 0.55; // pull toward a gem, relative to fleeing
 
+// Wave events (Lokesh, 2026-11-24): every 20 s of a run, one of four, never
+// the same twice running, with a banner on every phone for its first 3 s.
+// - burst: a wave of BURST drones at once, from one side;
+// - fast: drones launched for FAST_MS fly at FAST x the swarm's pace (and
+//   three come at once, so it shows);
+// - rain: RAIN gems at once, past the usual three;
+// - slow: for SLOW_MS the whole swarm flies at half speed.
+// Always on. Like everything random in the run, drawn from the run's seed.
+const EVENT_EVERY = 20000; // ms of run time
+const BANNER_MS = 3000;
+const EVENTS = ["burst", "fast", "rain", "slow"];
+const SIDES = ["top", "right", "bottom", "left"];
+const BURST = 8;
+const FAST = 1.6;
+const FAST_MS = 6000;
+const RAIN = 6;
+const SLOW_MS = 5000;
+
 /**
  * The box the world is drawn in: inside the canvas's CSS limits (max-width
  * 95vw, max-height 80vh), so the browser never squeezes one axis of it. The
@@ -57,47 +75,78 @@ const r2 = (v) => Math.round(v * 100) / 100;
 
 // { match, w, h, frames, ships: { id: { x, y, alive, bot } },
 //   enemies: [{ x, y, vx, vy, size }], gems: [{ id, x, y, size }], nextGem,
-//   score, ms, lastSpawn, spawnRate, gone: { id: 1 }, names: { id: name } }
+//   score, ms, lastSpawn, spawnRate, gone: { id: 1 }, names: { id: name },
+//   rng, event: { kind, side, at } | null, nextEvent }
 let s = null;
 let live = false; // these rules are the running simulation: we are the host
 let version = 0; // bumped on every change, so a tick's view is built once
 const polled = new Set(); // bot seats asked for a move since the last tick
 
+/**
+ * The run's random numbers: a small seeded generator (mulberry32) whose
+ * whole state is `s.rng`, so the run is dealt from `seed`, replays from it,
+ * and goes on unchanged under the heir. (Sparks are the only Math.random
+ * left: they are each phone's own and change nothing.)
+ */
+function rand() {
+	s.rng = (s.rng + 0x6d2b79f5) >>> 0;
+	let t = s.rng;
+	t = Math.imul(t ^ (t >>> 15), t | 1);
+	t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+	return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+}
+/** The event under way, if `kind` and still running. */
+const during = (kind, ms) => s.event?.kind === kind && s.ms - s.event.at < ms;
+/** The swarm's speed now: half under slow-mo. */
+const pace = () => (s && during("slow", SLOW_MS) ? 0.5 : 1);
+
 const shipOf = (id) => s?.ships[id] ?? null;
 const aliveShips = () => Object.values(s.ships).filter((p) => p.alive);
 const newShip = (bot) =>
 	bot
-		? { x: Math.random() * (s.w - 80) + 40, y: Math.random() * (s.h - 80) + 40, alive: true, bot: true, score: 0 }
+		? { x: rand() * (s.w - 80) + 40, y: rand() * (s.h - 80) + 40, alive: true, bot: true, score: 0 }
 		: { x: s.w / 2, y: s.h / 2, alive: true, bot: false, score: 0 };
 
-function spawnEnemy() {
+/** One drone, from a random side or `side` (0 top, 1 right, 2 bottom, 3 left), homing on a ship. */
+function spawnEnemy(side = Math.floor(rand() * 4)) {
 	const { w: W, h: H } = s;
-	const side = Math.floor(Math.random() * 4);
 	let x, y;
 	if (side === 0) {
-		x = Math.random() * W;
+		x = rand() * W;
 		y = -20;
 	} else if (side === 1) {
 		x = W + 20;
-		y = Math.random() * H;
+		y = rand() * H;
 	} else if (side === 2) {
-		x = Math.random() * W;
+		x = rand() * W;
 		y = H + 20;
 	} else {
 		x = -20;
-		y = Math.random() * H;
+		y = rand() * H;
 	}
 	// Home toward a ship still flying.
 	const targets = aliveShips();
 	if (targets.length === 0) return;
-	const target = targets[Math.floor(Math.random() * targets.length)];
+	const target = targets[Math.floor(rand() * targets.length)];
 	const angle = Math.atan2(target.y - y, target.x - x);
-	const speed = 1.5 + s.score / 15;
+	const speed = (1.5 + s.score / 15) * (during("fast", FAST_MS) ? FAST : 1);
 	s.enemies.push({ x, y, vx: Math.cos(angle) * speed, vy: Math.sin(angle) * speed, size: ENEMY_SIZE });
 }
 
 function spawnGem() {
-	s.gems.push({ id: ++s.nextGem, x: Math.random() * (s.w - 20) + 10, y: Math.random() * (s.h - 20) + 10, size: GEM_SIZE });
+	s.gems.push({ id: ++s.nextGem, x: rand() * (s.w - 20) + 10, y: rand() * (s.h - 20) + 10, size: GEM_SIZE });
+}
+
+/** The next wave event: any but the last one, and what it does at once. */
+function startEvent() {
+	const last = s.event?.kind;
+	const pool = EVENTS.filter((k) => k !== last);
+	const kind = pool[Math.floor(rand() * pool.length)];
+	const side = Math.floor(rand() * 4);
+	s.event = { kind, side: kind === "burst" ? SIDES[side] : null, at: s.ms };
+	if (kind === "burst") for (let i = 0; i < BURST; i++) spawnEnemy(side);
+	else if (kind === "fast") for (let i = 0; i < 3; i++) spawnEnemy();
+	else if (kind === "rain") for (let i = 0; i < RAIN; i++) spawnGem();
 }
 
 /**
@@ -163,16 +212,21 @@ function steerBot(ship, ahead) {
 /** One 60 Hz frame of the world: the spawn clock, the swarm, and what it hit. */
 function step() {
 	s.ms += FRAME_MS;
+	if (s.ms >= s.nextEvent) {
+		startEvent();
+		s.nextEvent += EVENT_EVERY;
+	}
 	if (s.ms - s.lastSpawn > s.spawnRate) {
 		spawnEnemy();
 		s.lastSpawn = s.ms;
 		s.spawnRate = Math.max(SPAWN_INTERVAL_MIN, SPAWN_INTERVAL_INIT - s.score * 10);
 	}
-	if (s.gems.length < MAX_GEMS && Math.random() < 0.02) spawnGem();
+	if (s.gems.length < MAX_GEMS && rand() < 0.02) spawnGem();
 
+	const k = pace();
 	for (const e of s.enemies) {
-		e.x += e.vx;
-		e.y += e.vy;
+		e.x += e.vx * k;
+		e.y += e.vy * k;
 	}
 	// Cull off-screen enemies (far gone), in place: a new array every frame
 	// was garbage at 60 Hz.
@@ -211,11 +265,13 @@ let packedAt = -1;
 function pack() {
 	if (packedAt === version) return packed;
 	const e = new Array(s.enemies.length * 4);
+	// Velocities as flown: halved under slow-mo, so phones draw the swarm at its speed.
+	const k = pace();
 	s.enemies.forEach((en, i) => {
 		e[i * 4] = r1(en.x);
 		e[i * 4 + 1] = r1(en.y);
-		e[i * 4 + 2] = r2(en.vx);
-		e[i * 4 + 3] = r2(en.vy);
+		e[i * 4 + 2] = r2(en.vx * k);
+		e[i * 4 + 3] = r2(en.vy * k);
 	});
 	packed = { ...small(), e };
 	packedAt = version;
@@ -227,7 +283,9 @@ function small() {
 	for (const gem of s.gems) g.push(gem.id, r1(gem.x), r1(gem.y));
 	const ships = {};
 	for (const [id, p] of Object.entries(s.ships)) ships[id] = [r1(p.x), r1(p.y), p.alive ? 1 : 0, p.bot ? 1 : 0, p.score ?? 0];
-	return { m: s.match, w: s.w, h: s.h, score: s.score, g, s: ships };
+	// The event's banner, for its first seconds: [kind, side].
+	const ev = s.event && s.ms - s.event.at < BANNER_MS ? [s.event.kind, s.event.side] : null;
+	return { m: s.match, w: s.w, h: s.h, score: s.score, g, s: ships, ev };
 }
 
 /**
@@ -241,9 +299,10 @@ function feed() {
 }
 
 arcade.managed({
-	init({ seats, match }) {
+	init({ seats, match, seed }) {
 		const { w, h } = box();
-		s = { match, w, h, frames: 2, ships: {}, enemies: [], gems: [], nextGem: 0, score: 0, ms: 0, lastSpawn: -1e9, spawnRate: SPAWN_INTERVAL_INIT, gone: {}, names: {} };
+		const rng = (Math.abs(Math.floor(Number(seed) || 0)) ^ 0x5e1f) >>> 0;
+		s = { match, w, h, frames: 2, ships: {}, enemies: [], gems: [], nextGem: 0, score: 0, ms: 0, lastSpawn: -1e9, spawnRate: SPAWN_INTERVAL_INIT, gone: {}, names: {}, rng, event: null, nextEvent: EVENT_EVERY };
 		for (const p of seats) s.ships[p.id] = newShip(p.bot);
 		for (const p of seats) s.names[p.id] = p.name;
 		for (let i = 0; i < 2; i++) spawnGem();
@@ -343,6 +402,10 @@ arcade.managed({
 	snapshot: () => s,
 	restore({ snapshot }) {
 		s = snapshot;
+		// A copy from before the events: they start from here.
+		s.rng ??= 0;
+		s.event ??= null;
+		s.nextEvent ??= Math.ceil((s.ms + 1) / EVENT_EVERY) * EVENT_EVERY;
 		live = true;
 		version++;
 		feed();
@@ -379,6 +442,15 @@ style.textContent = `
 	#me-color[data-shape="kite"] { clip-path: polygon(50% 0, 100% 35%, 50% 100%, 0 35%); }
 	#gameCanvas { border: 2px solid var(--border); box-shadow: 0 0 20px var(--glow);
 		touch-action: none; max-width: 95vw; max-height: 80vh; }
+	/* A wave event's banner: under the stats, over the arena, never in the way of a finger. */
+	#event { position: absolute; top: 100px; left: 50%; transform: translateX(-50%); max-width: calc(100vw - 32px);
+		box-sizing: border-box; padding: 6px 14px; border-radius: 8px; pointer-events: none; z-index: 6;
+		font-family: var(--font-display); font-size: clamp(1rem, 4.5vw, 1.4rem); letter-spacing: 0.06em; text-align: center;
+		color: var(--warn, var(--accent)); background: color-mix(in oklch, var(--bg) 72%, transparent);
+		border: 1px solid currentColor; text-shadow: 0 0 10px var(--glow); white-space: nowrap; }
+	#event[hidden] { display: none; }
+	@media (prefers-reduced-motion: no-preference) { #event:not([hidden]) { animation: ev-in 0.25s ease-out; } }
+	@keyframes ev-in { from { opacity: 0; transform: translate(-50%, -8px); } }
 	.ghost-msg { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
 		color: var(--muted); font-size: 1.5rem; text-align: center; pointer-events: none;
 		z-index: 4; text-shadow: 0 0 10px var(--glow); }
@@ -390,6 +462,27 @@ const scoreEl = document.getElementById("score");
 const aliveEl = document.getElementById("alive");
 const meColorEl = document.getElementById("me-color");
 const ghostEl = document.getElementById("ghost");
+const eventEl = document.createElement("div");
+eventEl.id = "event";
+eventEl.hidden = true;
+eventEl.setAttribute("role", "status");
+eventEl.setAttribute("aria-live", "polite");
+document.getElementById("game").append(eventEl);
+/** A wave event's banner, from the view's [kind, side]. */
+const EVENT_TEXT = {
+	burst: (side) => `SWARM FROM THE ${String(side ?? "").toUpperCase()}!`,
+	fast: () => "FAST DRONES!",
+	rain: () => "GEM RAIN!",
+	slow: () => "SLOW-MO!",
+};
+let lastEvent = "";
+function banner(ev) {
+	const text = ev ? (EVENT_TEXT[ev[0]]?.(ev[1]) ?? "") : "";
+	if (text === lastEvent) return;
+	lastEvent = text;
+	eventEl.textContent = text;
+	eventEl.hidden = !text;
+}
 
 /** "rgba(r, g, b, a)" with its alpha replaced. */
 const alpha = (rgba, a) => rgba.replace(/,\s*[\d.]+\)$/, `, ${a})`);
@@ -539,6 +632,7 @@ function onState(v, t) {
 	for (const id in v.s) if (v.s[id][2]) alive++;
 	if (resized) fit();
 	hud();
+	banner(v.ev);
 }
 
 function sparks(x, y, color) {
@@ -613,7 +707,10 @@ function draw(now) {
 	const enemy = glow("dot", ENEMY_SIZE, tokens.danger, blur);
 	const e = v.e;
 	if (e) for (let i = 0; i < e.length; i += 4) stamp(enemy, e[i] + e[i + 2] * ahead, e[i + 1] + e[i + 3] * ahead);
-	else for (const en of s.enemies) stamp(enemy, en.x + en.vx * ahead, en.y + en.vy * ahead);
+	else {
+		const k = pace(); // the host's own simulation: slow-mo halves it here too
+		for (const en of s.enemies) stamp(enemy, en.x + en.vx * k * ahead, en.y + en.vy * k * ahead);
+	}
 
 	for (const [id, p] of Object.entries(v.s)) {
 		if (id === v.you) continue;
@@ -819,4 +916,4 @@ Object.defineProperties(window, {
 });
 
 /** For the tests: the run as this phone sees it. */
-arcade.debug = () => ({ active: aliveCount() > 0, match: cur?.v.m ?? null, you: cur?.v.you ?? null, score: cur ? (mine()?.[4] ?? 0) : 0, alive: aliveCount(), enemies: live ? s.enemies.length : cur ? cur.v.e.length / 4 : 0, host: live, simMs: live ? Math.round(s.ms) : null, shapes: Object.fromEntries(Object.keys(cur?.v.s ?? {}).map((id) => [id, shipShape(id)])), meShape: meColorEl.dataset.shape ?? null });
+arcade.debug = () => ({ active: aliveCount() > 0, match: cur?.v.m ?? null, you: cur?.v.you ?? null, score: cur ? (mine()?.[4] ?? 0) : 0, alive: aliveCount(), enemies: live ? s.enemies.length : cur ? cur.v.e.length / 4 : 0, host: live, simMs: live ? Math.round(s.ms) : null, shapes: Object.fromEntries(Object.keys(cur?.v.s ?? {}).map((id) => [id, shipShape(id)])), meShape: meColorEl.dataset.shape ?? null, event: cur?.v.ev?.[0] ?? null, banner: eventEl.hidden ? null : eventEl.textContent });

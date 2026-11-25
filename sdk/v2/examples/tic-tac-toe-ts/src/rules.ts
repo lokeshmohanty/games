@@ -15,8 +15,9 @@ export interface State {
 	winner: Mark | null; // 0: a draw; null: still going
 	x: MemberId | null;
 	o: MemberId | null;
+	seed: number; // the bot's, for equal squares; not in the view
 }
-export interface View extends State {
+export interface View extends Omit<State, "seed"> {
 	you: Mark; // 0: a spectator
 }
 export interface Move {
@@ -29,18 +30,22 @@ const winnerOf = (b: Mark[]): Mark | null => {
 	return b.every(Boolean) ? 0 : null;
 };
 const other = (p: Player): Player => (p === 1 ? 2 : 1);
+// Which of `n` equal squares the bot takes: one Park–Miller step over the
+// match's seed and the marks on the board — the same in every lane, and
+// exact in a double (the product stays under 2^53).
+const pickOf = (seed: number, marks: number, n: number) => ((((Math.abs(seed) % 2147483647) + marks + 1) * 48271) % 2147483647) % n;
 const markOf = (s: State, id: MemberId | null | undefined): Mark => (id === s.x ? 1 : id === s.o ? 2 : 0);
 // The manifest seats exactly two, so both marks have a player.
 const idOf = (s: State, p: Player): MemberId => (p === 1 ? s.x : s.o)!;
 
 export const game = defineGame<State, Move, View>({
-	init({ seats, first }) {
+	init({ seats, seed, first }) {
 		const team = (t: string, i: number) => (seats.find((p) => p.team === t) ?? seats[i])?.id ?? null;
 		const x = team("A", 0);
 		const o = team("B", 1);
 		// The platform's `first` moves first: it takes turns between rematches
 		// (docs/sdk-v2.md "Who starts"). X otherwise, as from an older shell.
-		return { board: Array<Mark>(9).fill(0), turn: first && first === o ? 2 : 1, winner: null, x, o };
+		return { board: Array<Mark>(9).fill(0), turn: first && first === o ? 2 : 1, winner: null, x, o, seed: Number(seed) || 0 };
 	},
 	apply(s, action, by) {
 		const i = action?.i;
@@ -51,14 +56,15 @@ export const game = defineGame<State, Move, View>({
 		s.turn = other(s.turn);
 		s.winner = winnerOf(s.board);
 	},
-	view: (s, seat) => ({ ...s, board: [...s.board], you: seat ? markOf(s, seat) : 0 }),
+	view: ({ seed: _, ...s }, seat) => ({ ...s, board: [...s.board], you: seat ? markOf(s as State, seat) : 0 }),
 	turn: (s) => (s.winner === null ? [idOf(s, s.turn)] : []),
 	bot(s) {
-		// Win if it can, block if it must, else the centre, else the first free.
+		// Win if it can, block if it must, else the centre, else any free
+		// square; between equal squares, one picked from the seed (pickOf).
 		const free = s.board.flatMap((m, i) => (m ? [] : [i]));
-		const wins = (p: Player) => free.find((i) => winnerOf(s.board.map((m, j) => (j === i ? p : m))) === p);
-		const i = wins(s.turn) ?? wins(other(s.turn)) ?? (free.includes(4) ? 4 : free[0]);
-		return i === undefined ? null : { i };
+		const wins = (p: Player) => free.filter((i) => winnerOf(s.board.map((m, j) => (j === i ? p : m))) === p);
+		const take = [wins(s.turn), wins(other(s.turn)), free.includes(4) ? [4] : [], free].find((c) => c.length);
+		return take ? { i: take[pickOf(s.seed ?? 0, 9 - free.length, take.length)]! } : null;
 	},
 	result(s) {
 		if (s.winner === null) return null;

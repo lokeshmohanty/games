@@ -75,6 +75,8 @@ const EXEMPT = {
 	glowdown: [],
 	"twenty-nine": [],
 	"guess-what": [],
+	"neon-fission": [],
+	"neon-bid": [],
 };
 
 const chrome = [process.env.CHROME, "/run/current-system/sw/bin/google-chrome-stable", "/run/current-system/sw/bin/chromium", join(homedir(), ".nix-profile", "bin", "google-chrome-stable"), "/usr/bin/google-chrome"]
@@ -87,6 +89,10 @@ if (!chrome) {
 const { chromium } = loadPlaywright();
 const site = await serve(8749);
 const browser = await chromium.launch({ executablePath: chrome, args: ["--no-sandbox", "--autoplay-policy=no-user-gesture-required"] });
+
+// The platform's own games are addressed by their bare id; a community game by owner/id.
+const PLATFORM = new Set(["neon-fission", "neon-bid"]);
+const gameParam = (id) => (PLATFORM.has(id) ? id : `lokeshmohanty%2F${id}`);
 
 /** A touch phone (DPR 3.5, as the one of the pass) that never reaches the deployed room server; phoneSizes sizes it. */
 async function phone() {
@@ -109,7 +115,7 @@ function watch(page) {
  * people on this phone.
  */
 async function solo(page, id, players, people = []) {
-	await page.goto(site.url(`?game=lokeshmohanty%2F${id}&fresh=1&mode=bots`));
+	await page.goto(site.url(`?game=${gameParam(id)}&fresh=1&mode=bots`));
 	const which = await (
 		await page.waitForFunction(() => {
 			const go = document.querySelector(".quick-table .quick-go button");
@@ -156,7 +162,7 @@ async function friendsSetup(page, id, { min }) {
 	const host = watch(await ctx.newPage());
 	const guest = watch(await ctx.newPage());
 	try {
-		await host.goto(site.url(`?game=lokeshmohanty%2F${id}&fresh=1`));
+		await host.goto(site.url(`?game=${gameParam(id)}&fresh=1`));
 		await host.locator("button", { hasText: "MULTI-PLAYER" }).first().click();
 		await host.locator("button", { hasText: "INVITE A FRIEND" }).first().click();
 		const invite = host.locator("textarea.share-code").first();
@@ -375,6 +381,37 @@ async function ludoSharedStar(page, G, board, fit, who = "four players") {
 // ------------------------------------------------------------------ games
 
 const GAMES = {
+	/**
+	 * The platform's own games with a setup option (Lokesh, 2026-11-24): the
+	 * setup among friends; one person straight in; Neon Fission's end, "Next
+	 * game: plain grid · CHANGE", VOIDS, and PLAY AGAIN on a grid with voids.
+	 * (Neon Bid's end and NEW GAME with a hot colour: scripts/test-bots.mjs.)
+	 */
+	async "neon-fission"(page) {
+		await friendsSetup(page, "neon-fission", { min: 3 });
+		const G = await solo(page, "neon-fission", 2);
+		await until(G, () => window.__game.handle.debug().phase === "play");
+		check("neon-fission · one person with a bot: no setup, straight in on a plain grid", (await debug(G)).voids.length === 0);
+		// A known game to its last move (as scripts/test-managed.mjs 5): ours ends it.
+		const GAME = [53, 28, 48, 44, 0, 15, 5, 31, 11, 22, 24, 52, 23, 50, 23, 33, 23, 1, 18, 42, 30, 37, 3, 31, 6, 25, 0, 44, 0, 45, 29, 46, 29, 37, 41, 51, 12, 33, 30, 10, 30, 44, 31, 27, 48, 39, 48, 46, 36, 20, 24, 51, 22, 20, 22, 29, 23, 24, 18, 23, 17, 27, 23, 43, 27, 15, 22, 4, 21, 45, 5, 44, 24];
+		await G.evaluate((game) => {
+			s.g = R.newGame(2);
+			for (const c of game.slice(0, -1)) R.play(s.g, c);
+			window.arcade.act({ cell: game.at(-1), n: s.g.moves });
+		}, GAME);
+		await page.locator(".managed-over").first().waitFor({ timeout: TIMEOUT });
+		await nextGameLine(page, G, "neon-fission", { line: ".nf-next", change: ".nf-next-change", picks: ".nf-next button[data-voids]", says: "Next game: plain grid", min: 3, pick: '.nf-next button[data-voids="true"]', after: "Next game: voids" });
+		await page.locator(".managed-over button", { hasText: "PLAY AGAIN" }).first().click({ timeout: TIMEOUT });
+		await until(G, () => window.__game.handle.debug().match === 2);
+		const d = await debug(G);
+		check("neon-fission · PLAY AGAIN: straight in, with voids on the grid", d.phase === "play" && d.voids.length >= 2, { phase: d.phase, voids: d.voids });
+		await readyToClick(page);
+		await audit(page, G, "neon-fission", "a grid with voids", { min: 0, canvas: true, fit: ["#board", 1] });
+	},
+	async "neon-bid"(page) {
+		await friendsSetup(page, "neon-bid", { min: 3 });
+	},
+
 	/** Pick a puzzle, the grid and pad (with notes, racing a bot), solved. */
 	async sudoku(page) {
 		const G = await solo(page, "sudoku", 2);
@@ -496,16 +533,38 @@ const GAMES = {
 		await audit(page, G, "liars-dice", "the end", { min: 1 });
 	},
 
-	/** The countdown, the race (steering halves, canvas), the round's end. */
+	/**
+	 * Friends' first round: the setup (open arena or OBSTACLES, START). One
+	 * person with bots: straight in — the countdown, the race (steering
+	 * halves, canvas), the round's end, and "Next game: open arena · CHANGE";
+	 * OBSTACLES picked there, PLAY AGAIN races among the blocks.
+	 */
 	async "light-cycles"(page) {
+		// The setup and the next-game line came with the randomness branch (web-games, 2026-11-24).
+		const hasSetup = await (async () => {
+			const G = await solo(page, "light-cycles", 2);
+			await until(G, () => window.__game.handle.debug().riders.length === 2);
+			return "phase" in (await debug(G));
+		})();
+		if (hasSetup) await friendsSetup(page, "light-cycles", { min: 3 });
+		else check("light-cycles · the setup and the next-game line: not in the pinned commit yet (skipped)", true);
 		const G = await solo(page, "light-cycles", 2);
 		await until(G, () => window.__game.handle.debug().riders.length === 2);
+		if (hasSetup) check("light-cycles · one person with bots: no setup, straight into the countdown", (await debug(G)).phase === "play", (await debug(G)).phase);
 		// No controls in the frame: each half of the arena is a steering zone, 150px+ wide.
 		await audit(page, G, "light-cycles", "the countdown", { min: 0, canvas: true });
 		await until(G, () => window.__game.handle.debug().racing);
 		await audit(page, G, "light-cycles", "racing", { min: 0, canvas: true });
 		await until(G, () => window.__game.handle.debug().racing === false, null, 90_000);
 		await audit(page, G, "light-cycles", "the round over", { min: 0, canvas: true });
+		if (!hasSetup) return;
+		await nextGameLine(page, G, "light-cycles", { line: ".lc-next", change: ".lc-next-change", picks: ".lc-next button[data-obstacles]", says: "Next game: open arena", min: 3, pick: '.lc-next button[data-obstacles="true"]', after: "Next game: obstacles" });
+		await page.locator(".managed-over button", { hasText: "PLAY AGAIN" }).first().click({ timeout: TIMEOUT });
+		await until(G, () => window.__game.handle.debug().obstacles && window.__game.handle.debug().countdown > 0);
+		const d = await debug(G);
+		check("light-cycles · PLAY AGAIN: straight in, obstacles on the arena", d.phase === "play" && d.blocks >= 12, { phase: d.phase, blocks: d.blocks });
+		await until(G, () => window.__game.handle.debug().racing);
+		await audit(page, G, "light-cycles", "racing among obstacles", { min: 0, canvas: true });
 	},
 
 	/** The mode pick, the round (canvas), the end. */

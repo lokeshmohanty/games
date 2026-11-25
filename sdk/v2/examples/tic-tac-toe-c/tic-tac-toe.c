@@ -16,7 +16,15 @@ static struct {
 	int turn;     /* 1 or 2 */
 	int winner;
 	char *x, *o; /* the players' ids; NULL when nobody sits there */
-} s = {{0}, 1, RUNNING, NULL, NULL};
+	long long seed; /* the bot's, for equal squares: in the snapshot, not the view */
+} s = {{0}, 1, RUNNING, NULL, NULL, 0};
+
+/* Which of n equal squares the bot takes: one Park-Miller step over the
+ * match's seed and the marks on the board, the same in every lane. */
+static int pick_of(long long seed, int marks, int n) {
+	long long x = (seed < 0 ? -seed : seed) % 2147483647LL + marks + 1;
+	return (int)(x * 48271LL % 2147483647LL % n);
+}
 
 static int winner_of(const int *b) {
 	int k, i;
@@ -50,6 +58,7 @@ static void init(const arcade_setup *setup) {
 	memset(s.board, 0, sizeof s.board);
 	s.turn = 1;
 	s.winner = RUNNING;
+	s.seed = setup->seed;
 	seat_ids(arcade_dup(team(setup, "A", 0)), arcade_dup(team(setup, "B", 1)));
 	/* The platform's first moves first: it takes turns between rematches
 	 * (docs/sdk-v2.md "Who starts"). X otherwise, as from an older shell. */
@@ -99,27 +108,32 @@ static void turn(arcade_out *o) {
 	arcade_end(o);
 }
 
-/* The first free square where `mark` would win, or -1. */
-static int wins(int mark) {
-	int i, b[9];
+/* The free squares where `mark` would win, into out: how many. */
+static int wins(int mark, int *out) {
+	int i, n = 0, b[9];
 	for (i = 0; i < 9; i++) {
 		if (s.board[i]) continue;
 		memcpy(b, s.board, sizeof b);
 		b[i] = mark;
-		if (winner_of(b) == mark) return i;
+		if (winner_of(b) == mark) out[n++] = i;
 	}
-	return -1;
+	return n;
 }
 
-/* Win if it can, block if it must, else the centre, else the first free. */
+/* Win if it can, block if it must, else the centre, else any free square;
+ * between equal squares, one picked from the seed (pick_of). */
 static void bot(arcade_out *o, const char *seat) {
-	int i = wins(s.turn);
+	int take[9], n, i, marks = 0;
 	(void)seat;
-	if (i < 0) i = wins(3 - s.turn);
-	if (i < 0 && !s.board[4]) i = 4;
-	for (int k = 0; i < 0 && k < 9; k++)
-		if (!s.board[k]) i = k;
-	if (i < 0) return; /* nothing written: null, no move */
+	for (i = 0; i < 9; i++) marks += s.board[i] != 0;
+	n = wins(s.turn, take);
+	if (!n) n = wins(3 - s.turn, take);
+	if (!n && !s.board[4]) take[n++] = 4;
+	if (!n)
+		for (i = 0; i < 9; i++)
+			if (!s.board[i]) take[n++] = i;
+	if (!n) return; /* nothing written: null, no move */
+	i = take[pick_of(s.seed, marks, n)];
 	arcade_begin_obj(o);
 	arcade_key(o, "i");
 	arcade_put_int(o, i);
@@ -159,6 +173,8 @@ static int skip(const char *seat) {
 static void snapshot(arcade_out *o) {
 	arcade_begin_obj(o);
 	put_state(o);
+	arcade_key(o, "seed");
+	arcade_put_int(o, s.seed);
 	arcade_end(o);
 }
 
@@ -175,6 +191,7 @@ static void restore(arcade_val snap) {
 	memcpy(s.board, board, sizeof board);
 	s.turn = turn;
 	s.winner = winner;
+	if (!arcade_int64(arcade_get(snap, "seed"), &s.seed)) s.seed = 0; /* a snapshot from before the seed */
 	seat_ids(arcade_strdup(arcade_get(snap, "x")), arcade_strdup(arcade_get(snap, "o")));
 }
 
