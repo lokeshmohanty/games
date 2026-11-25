@@ -70,7 +70,10 @@ function winLine(board, row, col, player) {
 const BOT_DEPTH = 5;
 const SLICE_MS = 8; // the longest stretch the search keeps the frame
 let sliceEnd = Infinity; // when the running slice should yield
-let nodes = 0; // positions searched; the clock is read every 64th
+// The clock is read at every position searched: read every 64th, the first
+// slice of a game ran 33 ms at 4x CPU (the search's code still cold, 2026-11-25)
+// and 175 ms on a loaded machine, past the 50 ms of a long task. Read at every
+// one, no slice ran past 10 ms, in as many slices a move as before.
 // Centre-out: alpha-beta prunes far more when the likely-best move comes first.
 const BOT_ORDER = [3, 2, 4, 1, 5, 0, 6];
 // Every 4-in-a-row line, computed once: the evaluation walks these.
@@ -114,7 +117,7 @@ function evaluate(board, me) {
  * the value.
  */
 function* search(board, depth, alpha, beta, turn, me) {
-	if ((++nodes & 63) === 0 && performance.now() >= sliceEnd) yield;
+	if (performance.now() >= sliceEnd) yield;
 	const cols = BOT_ORDER.filter((c) => board[0][c] === 0);
 	if (!cols.length) return 0;
 	const maximising = turn === me;

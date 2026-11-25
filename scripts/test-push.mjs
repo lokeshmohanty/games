@@ -538,12 +538,27 @@ try {
 		const worker = bo.ctx.serviceWorkers().find((x) => x.url().startsWith(site.base));
 		check("(Bo's phone has the arcade's service worker)", !!reg && !!worker, regs);
 		const shown = async () => worker.evaluate(async () => (await self.registration.getNotifications()).map((n) => ({ title: n.title, body: n.body, tag: n.tag, data: n.data })));
-		await cdp.send("ServiceWorker.deliverPushMessage", { origin: new URL(site.base).origin, registrationId: reg.registrationId, data: JSON.stringify(msg.payload) });
-		let notes = [];
-		for (const end = Date.now() + 8000; !(notes = await shown()).length && Date.now() < end; ) await sleep(100);
+		// Deliver, wait for the worker's own showNotification to settle, and
+		// only then ask getNotifications. Chrome loses a notification stored
+		// while a getNotifications() is in flight (2026-11-25: the two calls
+		// overlapping, 100 of 100 gone; one after the other, none), so polling
+		// during a slow push lost it: the "[]" flake, 3 times in CI.
+		await worker.evaluate(() => {
+			self.__shows = 0;
+			const show = ServiceWorkerRegistration.prototype.showNotification;
+			ServiceWorkerRegistration.prototype.showNotification = function (...args) {
+				return show.apply(this, args).finally(() => self.__shows++);
+			};
+		});
+		const push = async (data) => {
+			const n = await worker.evaluate(() => self.__shows);
+			await cdp.send("ServiceWorker.deliverPushMessage", { origin: new URL(site.base).origin, registrationId: reg.registrationId, data });
+			for (const end = Date.now() + 8000; (await worker.evaluate(() => self.__shows)) === n && Date.now() < end; ) await sleep(50);
+			return shown();
+		};
+		let notes = await push(JSON.stringify(msg.payload));
 		check(`push → a notification: "${asha.name} invited you to a party", the game as its body`, notes.length === 1 && notes[0].title === `${asha.name} invited you to a party` && notes[0].body === "Connect 4" && notes[0].tag === `invite:${asha.id}`, notes);
-		await cdp.send("ServiceWorker.deliverPushMessage", { origin: new URL(site.base).origin, registrationId: reg.registrationId, data: "not json" });
-		for (const end = Date.now() + 8000; (notes = await shown()).length < 2 && Date.now() < end; ) await sleep(100);
+		notes = await push("not json");
 		check("a payload it cannot read still shows a notification (userVisibleOnly)", notes.some((n) => n.title === "A friend invited you to a party" && n.tag === "invite:unknown"), notes);
 		await worker.evaluate(async () => (await self.registration.getNotifications({ tag: "invite:unknown" })).forEach((n) => n.close()));
 
@@ -557,7 +572,7 @@ try {
 					self.dispatchEvent(new NotificationEvent("notificationclick", { notification: n }));
 				} catch {}
 				await new Promise((r) => setTimeout(r, 500));
-				return { opened: self.__opened, left: (await self.registration.getNotifications({ tag })).length };
+				return { tapped: !!n, opened: self.__opened, left: (await self.registration.getNotifications({ tag })).length };
 			}, `invite:${asha.id}`);
 		const t1 = await tap();
 		check("tapped with the arcade closed: it opens the arcade at that invite, and the notification goes", t1.opened === `${site.base}/?invite=${encodeURIComponent(asha.id)}` && t1.left === 0, t1);
@@ -571,10 +586,9 @@ try {
 
 		// The tap with an arcade page open: that page shows it, nothing opens.
 		await bo.p.evaluate(() => document.querySelector(".neon-invite[data-invite]")?.remove());
-		await cdp.send("ServiceWorker.deliverPushMessage", { origin: new URL(site.base).origin, registrationId: reg.registrationId, data: JSON.stringify(msg.payload) });
-		for (const end = Date.now() + 8000; !(await shown()).length && Date.now() < end; ) await sleep(100);
+		await push(JSON.stringify(msg.payload));
 		const t2 = await tap();
-		check("tapped with an arcade page open: no new window…", t2.opened === null, t2);
+		check("tapped with an arcade page open: no new window…", t2.tapped && t2.opened === null, t2);
 		check("…the open page shows the invite", await card.waitFor({ timeout: TIMEOUT }).then(() => true, () => false));
 		await card.locator("button", { hasText: "NOT NOW" }).click();
 		for (const end = Date.now() + 8000; Date.now() < end; await sleep(200)) if (!(await call("GET", "/api/invites", { token: bo.token })).body.invites?.length) break;
@@ -591,10 +605,13 @@ try {
 			// device): the next 401 forgets the device too (review, 2026-11-21).
 			check("(the device is on, told as this account)", (await rows(`account = '${bo.id}'`)).length === 1 && ((await bo.p.evaluate(() => localStorage.getItem("neon.push.sent"))) ?? "").split(" ")[1] === bo.id);
 			await call("POST", "/api/me/signout", { token: bo.token });
+			// Watched from before the 401: the toast lasts 4.5 s, and the rows
+			// below are read by starting wrangler, a second or more a read.
+			const said = bo.p.locator(".neon-toast", { hasText: "party invites by notification are off" }).waitFor({ timeout: TIMEOUT }).then(() => true, () => false);
 			await bo.p.evaluate(() => NeonArcade.account.api("/api/me").catch(() => {}));
 			for (const end = Date.now() + 8000; Date.now() < end; await sleep(200)) if (!(after = await rows(`account = '${bo.id}'`)).length) break;
 			check("a session that ended elsewhere (401): this device stops getting the account's invites", after.length === 0 && (await bo.p.evaluate(() => [localStorage.getItem("test.pushsub"), localStorage.getItem("neon.push")])).every((x) => x === null), after);
-			check("…and says so", await bo.p.locator(".neon-toast", { hasText: "party invites by notification are off" }).waitFor({ timeout: TIMEOUT }).then(() => true, () => false));
+			check("…and says so", await said);
 			await bo.p.goto(`${B}/auth/test?name=${encodeURIComponent(bo.name)}&uid=${encodeURIComponent(bo.name)}&back=${encodeURIComponent(page("index.html"))}`);
 			const again = bo.p.locator(".neon-push-offer");
 			check("signed in again: the offer comes back, once", await again.waitFor({ timeout: TIMEOUT }).then(() => true, () => false));

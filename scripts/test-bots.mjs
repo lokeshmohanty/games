@@ -1270,7 +1270,7 @@ try {
 				out.instant++;
 				if (shown.ack < shown.taps) out.early++;
 				if (shown.ms !== null) out.showMs = Math.max(out.showMs, Math.round(shown.ms));
-			}
+			} else (out.odd ??= []).push({ before, shown }); // which part did not show, for a failure's details (one in CI, 2026-11-25, unexplained)
 			// Until the host has judged this tap (its view's `ack` reaches this
 			// phone's tap number): a late answer must not land in the next tap's
 			// count, and a slow one is not "someone popped it first".
