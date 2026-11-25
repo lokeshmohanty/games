@@ -247,17 +247,25 @@ try {
 			.waitForFunction(() => document.querySelector('.color-swatch[data-color="0"]')?.classList.contains("is-taken") && !document.querySelector('.color-swatch[data-color="1"]')?.classList.contains("is-taken"), null, { timeout: TIMEOUT })
 			.then(() => true, () => false);
 		check("…and p3's picker strikes Red (p2 picked it), not Yellow (the host was only given it)", struck, await p3.evaluate(() => [...document.querySelectorAll(".color-swatch.is-taken")].map((b) => b.dataset.color).join()));
-		// The picker on the party screen, on a phone.
+		// The picker on the party screen, on a phone. Every page goes to the
+		// size, not the host's alone: resizing one page of this shared
+		// context left p3's game frames deaf to clicks in their bottom 87px
+		// for the rest of the run (headless Chrome's routing into the
+		// sandboxed frame's process; p3 resizing itself puts it right). That
+		// was Draw & Guess's SEND "taken by something over the frame",
+		// 2026-11-24: nothing was over it, the pointerdown landed on p3's
+		// own <iframe> element. No phone has another page to resize.
+		const party = [host, p2, p3];
 		for (const [w, h] of [
 			[390, 844],
 			[354, 696],
 		]) {
-			await host.setViewportSize({ width: w, height: h });
+			for (const pg of party) await pg.setViewportSize({ width: w, height: h });
 			const f = await phoneFloors(host, ".color-pick, .party-member .party-name");
 			const sideways = await host.evaluate(() => document.documentElement.scrollWidth > innerWidth);
 			check(`${w}x${h}: the party's colour picker, eight swatches 44px, its text and the roster's names 12px or more`, f.measured.taps === 8 && !f.taps.length && !f.text.length && !sideways, JSON.stringify(f));
 		}
-		await host.setViewportSize({ width: 390, height: 844 });
+		for (const pg of party) await pg.setViewportSize({ width: 390, height: 844 });
 	}
 
 	console.log("\nparty: teams and starting a game");
@@ -386,12 +394,22 @@ try {
 				if (!enabled) continue;
 				await readyToClick(page);
 				await F.get(page).fill("#chat-input", secret);
-				// Enter, not a click on SEND: a click is a point on the page,
-				// taken by anything the shell draws over the frame there (a
-				// passing toast, likely), which Playwright's checks inside the
-				// frame cannot see; the guess stayed in the box (2026-11-24,
-				// here and in CI).
-				await F.get(page).press("#chat-input", "Enter");
+				// A click on SEND, as a thumb would: a point on the page, so
+				// whatever the shell draws over the frame's bottom would take
+				// it. Where its pointerdown landed says which (the frame's
+				// SEND, or the page's own <iframe> element: see the colour
+				// check's resize, above, for how that happened on 2026-11-24).
+				const send = await F.get(page).locator("#chat-send").boundingBox();
+				const [x, y] = [send.x + send.width / 2, send.y + send.height / 2];
+				const hit = () => { window.__hit = null; addEventListener("pointerdown", (e) => (window.__hit ??= e.target.id || e.target.className || e.target.tagName), { capture: true, once: true }); };
+				await Promise.all([page.evaluate(hit), F.get(page).evaluate(hit)]);
+				const who = page === host ? "host" : page === p2 ? "p2" : "p3";
+				const over = await page.evaluate(([x, y]) => { const e = document.elementFromPoint(x, y); return e?.matches(".game-frame") ? null : (e?.outerHTML.slice(0, 80) ?? "nothing"); }, [x, y]);
+				check("a guesser's SEND, at the frame's bottom, has nothing of the shell's over it", !over, `${who}: ${over}`);
+				await page.mouse.click(x, y);
+				const landed = await settled(() => F.get(page).evaluate(() => window.__hit), Boolean, 2000);
+				const left = await settled(() => F.get(page).evaluate(() => document.querySelector("#chat-input").value), (v) => v === "", 2000);
+				check("a click on a guesser's SEND sends the guess", left === "", `${who}: the guess stayed in the box; the pointerdown went to ${landed ? `the frame's #${landed}` : `the page's ${await page.evaluate(() => window.__hit)}`}`);
 			}
 			// Sixty seconds is the drawing deadline; anything near it means the
 			// early exit did not fire.
