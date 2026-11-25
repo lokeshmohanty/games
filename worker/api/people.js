@@ -3,44 +3,34 @@
 //
 //   GET /api/u/<who>   <who>: an account id, or a friend code (worker/api/social.js)
 //
-//   - Not hidden: { id, name, avatar, since, hidden: false, ratings, matches, botWins }.
+//   - Not hidden: { id, name, avatar, since, hidden: false, matches }.
+//   - `vs` besides, for a signed-in viewer who is not the player: the
+//     viewer's head-to-head record against them (match.js headToHead) —
+//     { wins, losses, draws, games: { <game>: { wins, losses, draws } } }.
+//     No ratings and no boards (2026-11-25: casual, not competitive);
+//     `ratings: []` and `botWins: []` stay, empty, for cached older pages.
 //   - `records` besides (personal records and achievements, records.js) for
 //     the player and their signed-in friends only, hidden or not (Lokesh,
 //     2026-11-21: "friends can see your trophies and best times"); anyone
 //     else never gets the field.
-//   - Hidden from public boards (accounts.hide_public): a signed-in friend (or
+//   - Hidden (accounts.hide_public, "hide my profile"): a signed-in friend (or
 //     the player) gets the same, with `hidden: true`; anyone else only
 //     { id, name, hidden: true } — enough for ADD FRIEND from a friend link or
 //     QR, nothing about how they play (Lokesh, 2026-11-16: audit D6).
-//   - In anyone's `matches`, a player hidden from public boards is
+//   - In anyone's `matches`, a hidden player is
 //     { id: null, name: "(hidden)" } — unless it is the profile's own player
 //     or the one asking (audit D5).
 //
-// The index routes /api/u/ here (match.js's old publicProfile is gone); it answers a
+// The index routes /api/u/ here; it answers a
 // personal copy (never cached publicly) when the request is signed in or
 // names a friend code, which can be rotated.
 
-import { botWinsOf } from "./bots.js";
 import { HttpError } from "./http.js";
-import { ratingsOf } from "./match.js";
+import { headToHead } from "./match.js";
 import { recordsOf } from "./records.js";
-import { boardKind, unitOf } from "./runs.js";
 import { areFriends, findAccount } from "./social.js";
 
 const all = async (stmt) => (await stmt.all()).results ?? [];
-
-/**
- * Each rating with its board's own kind and unit, where the server pins them
- * (worker/api/runs.js SOLO: Sudoku's level boards are times, Light Cycles
- * alone is a best score in seconds); any other board's kind is its game's
- * manifest kind, from the Worker's table (runs.js boardKind).
- */
-export const withBoards = (ratings) =>
-	ratings.map((r) => {
-		const kind = boardKind(r.game);
-		const unit = unitOf(r.game);
-		return { ...r, ...(kind ? { kind } : {}), ...(unit ? { unit } : {}) };
-	});
 
 /**
  * An account's most recent matches, named for `viewer` (an account id or
@@ -101,9 +91,12 @@ export async function publicProfile(env, who, { viewer = null, gate = null } = {
 		avatar: a.avatar,
 		since: a.created,
 		hidden,
-		ratings: withBoards(await ratingsOf(env, a.id)),
 		matches: await publicMatches(env, a.id, viewer?.id ?? null, 20),
-		botWins: await botWinsOf(env, a.id),
+		// Empty, for shells cached before 2026-11-25: their profile page reads
+		// these and failed on undefined. They go with the table-drop migration (STATUS.md).
+		ratings: [],
+		botWins: [],
+		...(viewer && viewer.id !== a.id ? { vs: await headToHead(env, viewer.id, a.id) } : {}),
 		...(close ? { records: await recordsOf(env, a.id) } : {}),
 	};
 }

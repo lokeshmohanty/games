@@ -300,22 +300,11 @@ How it runs:
   - A takeover keeps the hold: the heir's card waits for its own frame.
   - Under `prefers-reduced-motion` a game should not animate, so it says
     `idle` at once and the card is not held.
-- **Played alone, ranked.** When a signed-in player starts a game alone
-  (one seat, no bots), the shell asks the arcade's server for a run before
-  `init`, and `seed` is the server's: deal anything random from it and the
-  server can deal the same. A result may carry `proof` (any JSON) for a
-  server-side check of the run; Sudoku sends its solved grid. Offline or
-  signed out, `seed` is local and the run does not rank. docs/accounts.md
-  "Solo runs". A game that ranks alone by a score sends it in `scores`
-  (Light Cycles: the seconds survived, to the tenth).
-- **Won against bots, counted apart.** When a signed-in player is the only
-  person in a match and every other seat is a bot, the shell asks the
-  server for a run as the match begins (not waited for; a game that runs
-  its own matches gets one at its start and after each result), and a win
-  goes to the game's board of wins against bots — never a rating. Nothing
-  for a game to do, with one exception: bot seats that are really people
-  on this phone must be named in the result's `names` (below), and then
-  the win does not count against bots. docs/accounts.md "Against bots".
+- **Alone and against bots: nothing goes to a server** (since 2026-11-25:
+  no boards, no server-issued runs, docs/accounts.md "No boards"). `seed`
+  is always local. A `proof` in a result is accepted and ignored. Bot seats
+  that are really people on this phone are still named in the result's
+  `names` (below), for the device's own stats.
 - **The end card** (Lokesh, 2026-11-15: everything, with the extra
   information behind a toggle so the screen stays simple). Always shown:
   - the title: `title` (≤ 40 characters) if the result has one, else YOU
@@ -334,8 +323,8 @@ How it runs:
     players who have won one are listed; draws counted; co-op has none);
   - **Your stats:** this device's record for the game (lib/stats.js:
     played, won, streak and best, against bots and people, best score).
-    Rating changes are not shown: the server's match report answers only
-    whether it counted;
+    the head-to-head line under the ranking ("You 5–3 Asha", lib/account.js
+    endCard) is the server's answer, shown once it counts;
   - **The game's own details:** an optional `details` in the result,
     `[{ label, value }]`, at most 8 rows of short strings or numbers
     (label ≤ 32 characters, value ≤ 40; anything else is dropped), drawn
@@ -629,7 +618,7 @@ These fields add to the base `game.json` (platform.md, "`game.json`"):
 | `"tick"`, `"viewRate"` | managed and real-time: steps and views per second |
 | `"wasm"` | with `runtime: "wasm"` only: the module's path inside the folder |
 | `"rules"` | a Markdown file in the folder (`"RULES.md"`): the rules, shown by the shell on a first open and behind "?" (below) |
-| `"leaderboard"` | `false`: no online boards for this game (a base field, platform.md "`game.json`"; default `true`) |
+| `"leaderboard"` | retired 2026-11-25: accepted, read by nothing (no boards; platform.md "`game.json`") |
 | `"achievements"`, `"records"` | what a player earns and keeps in this game, as data-only conditions on the result (a base field, platform.md "Achievements and records"); the result carries what they read in `facts` and `seatFacts` |
 
 **Rules** (Lokesh, 2026-11-15: "the first time the user opens it, a

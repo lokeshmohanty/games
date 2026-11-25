@@ -7,16 +7,13 @@
 // public, open to every origin.
 
 import { auth, requireAccount, sessionOf, accountForToken } from "./auth.js";
-import { botWinsOf } from "./bots.js";
 import { getFeedback, postFeedback } from "./feedback.js";
 import { HttpError, fail, json, preflight } from "./http.js";
-import { leaderboard } from "./lb.js";
-import { matchesOf, played, ratingsOf, report, startMatch, summary, sweep, withdrawStart } from "./match.js";
+import { matchesOf, played, report, rivalsOf, startMatch, summary, sweep, withdrawStart } from "./match.js";
 import { deleteMe, exportMe, getFavs, getMe, link, patchMe, putFavs, signOut, unlink } from "./me.js";
-import { publicProfile, withBoards } from "./people.js";
+import { publicProfile } from "./people.js";
 import { pushKey, subscribe, unsubscribe } from "./push.js";
 import { getRecords, putRecords } from "./records.js";
-import { ageRun, startRun } from "./runs.js";
 import { runSnapshot } from "./snapshot.js";
 import {
 	addFriend,
@@ -74,15 +71,10 @@ export async function api(request, env, { gate = async () => true, ctx = null } 
 
 		// ------------------------------------------------ public reads
 		if (method === "GET" && a === "stats" && b === "summary") return open(await summary(env), "public, max-age=300");
-		if (method === "GET" && a === "lb" && b) {
-			const game = seg.slice(1).join("/");
-			const scope = url.searchParams.get("scope") ?? "global";
-			// ?me=1 on the global board: add where you stand (personal, so not cached).
-			const who = scope === "global" && !url.searchParams.has("me") ? null : await me();
-			// ?vs=bots: the game's board of wins against bots (worker/api/bots.js).
-			const lb = await leaderboard(env, who, game, scope, url.searchParams.get("vs"));
-			return who ? send(lb) : open(lb, "public, max-age=60");
-		}
+		// Gone (2026-11-25: no boards, no ratings, no server-issued runs —
+		// docs/accounts.md "No boards"): an older cached page asking gets a
+		// plain answer, not a 404 it might retry.
+		if (a === "lb" || (a === "run" && b === "start")) throw new HttpError(410, "leaderboards and ranked runs are gone; see a friend's profile for your head-to-head");
 		if (method === "GET" && a === "u" && b) {
 			// Signed in (a friend may see a hidden player) or by friend code (it
 			// can be rotated, and each lookup is charged against guessing):
@@ -120,7 +112,10 @@ export async function api(request, env, { gate = async () => true, ctx = null } 
 		if (a === "me" && b === "identities" && c && method === "DELETE") return send(await unlink(env, await me(), c));
 		if (a === "me" && b === "matches" && method === "GET") {
 			const m = await me();
-			return send({ matches: await matchesOf(env, m.id), ratings: withBoards(await ratingsOf(env, m.id)), botWins: await botWinsOf(env, m.id) });
+			// History, and the people played: a head-to-head record with each.
+			// `ratings` and `botWins`, empty: a shell cached before 2026-11-25
+			// reads them (until the table-drop migration, STATUS.md).
+			return send({ matches: await matchesOf(env, m.id), rivals: await rivalsOf(env, m.id), ratings: [], botWins: [] });
 		}
 		if (a === "me" && b === "friend-code" && method === "POST") return send(await rotateFriendCode(env, await me()));
 		if (a === "push" && !b) {
@@ -135,7 +130,6 @@ export async function api(request, env, { gate = async () => true, ctx = null } 
 		if (a === "match" && b === "report" && method === "POST") return send(await report(env, await me(), request));
 		if (a === "match" && b === "start" && method === "POST") return send(await startMatch(env, await me(), request, { gate }));
 		if (a === "match" && b === "start" && method === "DELETE") return send(await withdrawStart(env, await me(), request));
-		if (a === "run" && b === "start" && method === "POST") return send(await startRun(env, await me(), request));
 		if (a === "feedback" && b && method === "POST") return send(await postFeedback(env, await me(), seg.slice(1).join("/"), request));
 
 		// ------------------------------------------------ friends
@@ -173,9 +167,6 @@ export async function api(request, env, { gate = async () => true, ctx = null } 
 		if (a === "admin" && b === "snapshot" && method === "POST" && env.AUTH_TEST === "1" && /^127\.|^localhost$/.test(url.hostname)) {
 			return send(await runSnapshot(env));
 		}
-		if (a === "admin" && b === "age-run" && method === "POST" && env.AUTH_TEST === "1" && /^127\.|^localhost$/.test(url.hostname)) {
-			return send(await ageRun(env, request));
-		}
 
 		throw new HttpError(404, "not found");
 	} catch (err) {
@@ -197,7 +188,8 @@ async function live(request, env) {
 }
 
 /**
- * The cron (wrangler.toml [triggers]): the hourly public snapshot, after the
+ * The cron (wrangler.toml [triggers]): the hourly public snapshot (play
+ * counts only), after the
  * reports' upkeep (match.js sweep: matches two agreed on but nobody asked
  * about again still count, once their reports expire).
  */

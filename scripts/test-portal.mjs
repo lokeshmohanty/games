@@ -679,7 +679,7 @@ try {
 	}
 
 	console.log("\nportal: the tabs and the menu on every page");
-	// One row: Games · Leaderboards · Community, and ☰ (Lokesh, 2026-11-15:
+	// One row: Games · Community, and ☰ (Lokesh, 2026-11-15:
 	// the buttons above the tabs crowded a phone). Community has its own tabs.
 	// A device with nothing of its own: ./ is All Games.
 	await p.evaluate(() => localStorage.removeItem("neon.recent"));
@@ -688,7 +688,6 @@ try {
 		["index.html", "Games", "All Games"],
 		["./?page=games&tab=mine", "Games", "My Games"],
 		["./?page=games&tab=all", "Games", "All Games"],
-		["./?page=leaderboard", "Leaderboards", null],
 		["./?page=contributors", "Community", "Contributors"],
 		["./?page=collections", "Community", "Collections"],
 		["./?page=contribute", null, null],
@@ -716,7 +715,7 @@ try {
 				};
 			});
 		let nav = await read();
-		check(`${page}: tabs Games · Leaderboards · Community${tab ? `, on ${tab}` : ""}`, nav.tabs.join() === "Games,Leaderboards,Community" && nav.on === tab, nav);
+		check(`${page}: tabs Games · Community, no Leaderboards${tab ? `, on ${tab}` : ""}`, nav.tabs.join() === "Games,Community" && nav.on === tab, nav);
 		check(`${page}: ${sub ? `${tab}'s tabs ${SUBS[tab].replace(",", " · ")}, on ${sub}, 44px tall` : "no sub-tabs"}`, sub ? nav.subs.join() === SUBS[tab] && nav.subOn === sub && nav.subH >= 44 : nav.subs.length === 0, nav);
 		check(`${page}: tabs and ☰ in one row, ☰ 44px at the right, closed`, nav.oneRow && nav.btn.w >= 44 && nav.btn.h >= 44 && nav.btn.right > 340 && !nav.open && nav.expanded === "false", nav);
 		await p.locator(".site-menu-btn").click();
@@ -735,9 +734,35 @@ try {
 	await p.waitForTimeout(300);
 	check("…and does nothing else: the game card under it stays shut", (await p.evaluate(() => document.body.dataset.view)) === "portal", p.url());
 	await p.locator("[data-nav] .site-menu-btn").click();
-	await p.locator("[data-nav] .site-tab", { hasText: "Leaderboards" }).click();
+	await p.locator("[data-nav] .site-tab", { hasText: "Community" }).click();
 	await p.waitForTimeout(300);
-	check("…nor a link it lands on (Leaderboards)", (await p.evaluate(() => document.body.dataset.view)) === "portal" && new URL(p.url()).searchParams.get("page") !== "leaderboard", p.url());
+	check("…nor a link it lands on (Community)", (await p.evaluate(() => document.body.dataset.view)) === "portal" && new URL(p.url()).searchParams.get("page") !== "collections", p.url());
+
+	console.log("\nportal: the old leaderboard addresses land on the profile (no boards since 2026-11-25)");
+	for (const from of ["./?page=leaderboard", "./?page=leaderboard&game=neon-fission&scope=friends&vs=bots", "leaderboard.html", "leaderboard.html?game=connect4&scope=global"]) {
+		await p.goto(site.url(from));
+		const landed = await p.waitForFunction(() => document.body.dataset.view === "profile", null, { timeout: TIMEOUT }).then(() => true, () => false);
+		const u = new URL(p.url());
+		check(`${from} → ./?page=profile, nothing of the board kept, no 404`, landed && u.pathname.endsWith("/") && u.searchParams.get("page") === "profile" && [...u.searchParams.keys()].join() === "page", p.url());
+	}
+	await p.goto(site.url("index.html"));
+	await p.locator("[data-nav] .site-menu-list").waitFor({ state: "attached", timeout: TIMEOUT });
+	await p.evaluate(() => {
+		history.pushState(null, "", "./?page=leaderboard&game=x");
+		dispatchEvent(new PopStateEvent("popstate"));
+	});
+	await p.waitForFunction(() => document.body.dataset.view === "profile", null, { timeout: TIMEOUT }).catch(() => {});
+	check("…and so does Back or Forward to one (popstate)", new URL(p.url()).searchParams.get("page") === "profile" && !new URL(p.url()).searchParams.has("game"), p.url());
+	for (const [w, h] of [[390, 844], [354, 696]]) {
+		const pc = await browser.newContext({ viewport: { width: w, height: h }, hasTouch: true, isMobile: true });
+		const pp = await pc.newPage();
+		await pp.goto(site.url("leaderboard.html"));
+		await pp.waitForFunction(() => document.body.dataset.view === "profile" && document.querySelector("[data-profile] section"), null, { timeout: TIMEOUT });
+		const floors = await phoneFloors(pp, "[data-profile]");
+		const sideways = await pp.evaluate(() => document.documentElement.scrollWidth > innerWidth);
+		check(`${w}x${h}: where leaderboard.html lands (the profile, signed out) has 44px taps, 12px text, no sideways scroll`, floors.measured.taps > 0 && !floors.taps.length && !floors.text.length && !sideways, { floors, sideways });
+		await pc.close();
+	}
 	await p.goto(site.url(ALL));
 	await p.locator("[data-nav] .site-menu-list").waitFor({ state: "attached", timeout: TIMEOUT });
 	await p.waitForSelector(".game-card:visible");
@@ -791,7 +816,7 @@ try {
 			const fp = await fc.newPage();
 			for (const [page, lit] of [
 				["index.html?page=games&tab=all", "Games"],
-				["./?page=leaderboard", "Leaderboards"],
+				["./?page=collections", "Community"],
 				["./?page=contributors", "Community"],
 			]) {
 				await fp.goto(site.url(page));

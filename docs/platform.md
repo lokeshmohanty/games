@@ -14,7 +14,7 @@ every game and web app now says `"sdk": 2`.*
 The arcade is a platform: other people write games, keep them in their own
 public GitHub repository, and the platform gives them everything that is not
 the game — connections, the party, bots' seats, host handover, accounts,
-stats and leaderboards.
+stats and head-to-head records.
 
 Their code must not be able to touch any of that. So every game — ours
 included — runs in
@@ -75,7 +75,7 @@ game's own scripts and stylesheets.
 | `bots` | `true`/`false`: can the host fill seats with bots |
 | `sameDevice` | `true`: a bot seat may be a person on the host's phone — SINGLE PLAYER's quick table offers BOT / PERSON per seat, the card says SINGLE PLAYER / SAME DEVICE, and `init` marks such a seat `local` ([sdk-v2.md](sdk-v2.md), managed state). Only for a game that plays those seats for the person; Neon Fission (2026-11-17). The validator requires `"state": "managed"` and bots, and refuses it with kind `local` or `shared`: only managed state passes `local` and keeps such a table off the board of wins against bots |
 | `kind` (results) | a game reports results of its manifest `kind`; the room server's table (`scripts/build-games-table.mjs` `EXTRA_KINDS`) lists the few that report more — Bubble Rush and Ludo (`ffa`) also report `teams` from their teams modes — all on the game's one board. A later manifest field, `"kinds"`, would replace that table |
-| `leaderboard` | `true` (default) / `false`: online boards for it — ranked, alone, against bots. `false` for a game where a ranking means nothing (Lokesh, 2026-11-16: Tic Tac Toe, a solved game; Connect 4; the party games Undercover and Draw & Guess): no reports, runs or boards, no rating on the end card; the device's own stats still count (docs/accounts.md "Games without boards") |
+| `leaderboard` | retired 2026-11-25 (no boards): still accepted as `true`/`false`, read by nothing (docs/accounts.md "No boards") |
 | `achievements`, `records` | optional: what a player can earn and keep in this game, as conditions on its end-of-game result — see "Achievements and records" below (at most 24 and 8; refused on a `shared` web app) |
 | `tags`, `categories`, `preview` | portal filters; sections (`arcade` · `party` · `strategy` · `puzzle` · `examples`); the preview: a gif, or a `.webp` poster; a `.webm`/`.mp4`/`.webp` of the same name beside it is played/shown instead (scripts/catalog-lib.mjs) |
 | `license` | an OSI licence that allows redistribution (the list is in `scripts/manifest.mjs`) |
@@ -125,7 +125,7 @@ manifest `ownColours: true`.
 
 ## Results
 
-A game says how a match ended, for stats and leaderboards: the protocol's
+A game says how a match ended, for stats and head-to-head: the protocol's
 `result {r}` message, sent on **every peer** (each one saw it), or a managed
 game's `result()` ([sdk-v2.md](sdk-v2.md), "Managed state"). The platform
 counts it once per run, `match` and ranking (`lib/stats.js`).

@@ -7,13 +7,16 @@
 //   ./                         the portal, on its default sub-tab (below)
 //   ./?page=games&tab=mine     the portal's sub-tabs: My Games | All Games
 //   ./?page=games&tab=all      (and its search, ?q=, on All Games)
-//   ./?page=leaderboard        leaderboard | profile | contribute | contributors
-//                              | collections
+//   ./?page=profile            profile | contribute | contributors | collections
 //   ./?game=connect4 …         the party (its words: game, mode, fresh, dev,
 //   ./?party  ./?party#i=…     party — and any invite or code link)
 //
-// The old pages (party.html, leaderboard.html, …) and their redirect stubs
-// were removed on 2026-11-15: these are the only addresses.
+// The old pages (party.html, …) and their redirect stubs were removed on
+// 2026-11-15: these are the only addresses. The leaderboards went on
+// 2026-11-25 (no boards: party standings and head-to-head only, docs/
+// accounts.md "No boards"): ./?page=leaderboard, with whatever it named, is
+// taken to the profile, where head-to-head lives (legacyAddress), and
+// leaderboard.html is a static stub that sends a bookmark there too.
 //
 // A portal address that names no sub-tab (./, ./?q=…, an old bookmark) is
 // given one as it is entered (portalAddress): All Games for a search, else
@@ -22,8 +25,8 @@
 // and Back returns to the sub-tab you left.
 import { createMemo, createRoot, createSignal } from "solid-js";
 
-export type View = "portal" | "party" | "leaderboard" | "profile" | "contribute" | "contributors" | "collections";
-const PAGES: View[] = ["leaderboard", "profile", "contribute", "contributors", "collections"];
+export type View = "portal" | "party" | "profile" | "contribute" | "contributors" | "collections";
+const PAGES: View[] = ["profile", "contribute", "contributors", "collections"];
 // Not ?rs= or ?mockroom= (they choose the room server and ride along on any view).
 const PARTY_KEYS = ["game", "mode", "fresh", "dev", "party"];
 
@@ -37,6 +40,20 @@ export function viewOf(url: URL): View {
 	return "portal";
 }
 
+/**
+ * A view that is gone, as the address that replaced it: the leaderboard
+ * (?page=leaderboard&game=…&scope=…) → the profile; ?rs= and ?mockroom=
+ * ride along, as on any view. Anything else: `url` itself.
+ */
+export function legacyAddress(url: URL): URL {
+	if (url.searchParams.get("page") !== "leaderboard" || /[#&](i|c|a)=/.test(url.hash)) return url;
+	const out = new URL(url);
+	const keep = ["rs", "mockroom"].filter((k) => url.searchParams.has(k)).map((k) => [k, url.searchParams.get(k) as string]);
+	out.search = `?${new URLSearchParams([["page", "profile"], ...keep])}`;
+	out.hash = "";
+	return out;
+}
+
 export type PortalTab = "mine" | "all";
 /** The sub-tab a portal address names, or null when it names none. */
 export function portalTab(url: URL): PortalTab | null {
@@ -45,6 +62,7 @@ export function portalTab(url: URL): PortalTab | null {
 }
 /** `url` with its sub-tab named: the same URL when it has one or is not the portal. */
 export function portalAddress(url: URL): URL {
+	url = legacyAddress(url);
 	if (viewOf(url) !== "portal" || (url.searchParams.get("page") === "games" && portalTab(url))) return url;
 	const out = new URL(url);
 	const q = out.searchParams;

@@ -120,8 +120,8 @@ export function validateManifest(m) {
 	if (typeof m.author !== "string" || !m.author) p.push('"author" is required (GitHub user)');
 	if (typeof m.repo !== "string" || !m.repo.startsWith("https://github.com/")) p.push('"repo" must be a https://github.com/ URL');
 	if (m.bots != null && typeof m.bots !== "boolean") p.push('"bots" must be true or false');
-	// Online boards are optional (Lokesh, 2026-11-16): false for a game where
-	// a ranking means nothing (a solved game, a party game). Local stats stay.
+	// Retired 2026-11-25 (no boards; docs/accounts.md "No boards"): still
+	// accepted, so manifests that carry it stay valid, and read by nothing.
 	if (m.leaderboard != null && typeof m.leaderboard !== "boolean") p.push('"leaderboard" must be true or false');
 	// A bot seat can be a person on the host's phone (the quick table's
 	// PERSON; seat `local` in init): only for a game that plays such seats.
