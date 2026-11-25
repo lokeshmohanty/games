@@ -285,7 +285,8 @@ counts; the party's own standings (lib/party.js), which never touched the
 server.
 
 **Tables not dropped.** `ratings`, `runs` and `bot_wins` stay in D1, no
-longer written; the export still returns their rows, and deleting an
+longer written (one additive migration, 0008, adds `match_players.team`:
+"Head-to-head"); the export still returns their rows, and deleting an
 account still deletes them. Dropping them is a later, explicit migration
 (STATUS.md).
 
@@ -294,10 +295,21 @@ account still deletes them. Dropping them is a later, explicit migration
 A person's record against another, from the matches both are recorded in
 (`worker/api/match.js` `H2H_SQL`; `match_players` joined to itself on the
 match): a place ahead is a **win**, behind a **loss**, the same place a
-**draw** — except in a `teams` match, where the same place is the same side
-(or two sides level) and counts as neither; `coop` matches are played
-together and never count. A leaver's forfeit is a loss like any other (they
-are recorded in a last place). No rating, no ranking of anybody.
+**draw** — except in a `teams` match, where the same team or the same place
+(two sides level) counts as neither; `coop` matches are played together and
+never count — a co-op game's scored free-for-all (Neon Survival's
+multi-ship runs) is stored as `coop` for this (Lokesh, 2026-11-25). A
+leaver's forfeit is a loss, against the other team only: a leaver from the
+winning side is booked in a last place of their own, and
+`match_players.team` (migration 0008: the report's `teams` label, else
+`#<slot>` from the game's ranking for an older page) keeps their teammates
+from "beating" them (a review, 2026-11-25). Only games the Worker still
+knows (GAMES) count, in every total alike. No rating, no ranking of anybody.
+
+**Old cached shells.** A shell from before 2026-11-25 reads `ratings` and
+`botWins` on a profile and from `/api/me/matches`, and failed on undefined
+("Could not load"). Both answers carry them, empty (`[]`), until the
+table-drop migration (STATUS.md).
 
 - `GET /api/u/<who>` signed in, not your own: `vs: { wins, losses, draws,
   games: { <game>: { wins, losses, draws } } }` — your record against them.
@@ -945,6 +957,19 @@ the branch is merged:
    one ("🏆 Unlocked: First Win"); open the profile on the other — Trophies
    and records lists it after the page loads; a friend's profile shows it,
    a stranger's view of yours does not.
+
+### 0008 (branch `standings`, 2026-11-25)
+
+`worker/migrations/0008_match_teams.sql` adds `match_players.team` (who
+played for whom in a team match, for head-to-head). Additive; the Worker
+from this branch writes it on every match commit, so after the merge:
+
+1. From `worker/`: `nix shell nixpkgs#wrangler -c wrangler d1 migrations apply arcade --remote`
+   (0007 too, if it is still pending).
+2. From the root: `just deploy-worker` (it refuses while a migration is pending).
+3. Check, signed in on two devices: a Connect 4 between them ends with
+   "You 1–0 <name>" on the winner's card; each one's profile of the other
+   shows the record.
 
 ## Testing
 

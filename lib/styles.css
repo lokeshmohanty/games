@@ -966,9 +966,12 @@ canvas {
    endCard; the class keeps its old name). */
 .managed-over p.managed-rating {
   align-self: center;
+  max-width: 100%;
   font-family: var(--font-mono);
   font-size: 0.86rem;
   color: var(--ink);
+  /* A 24-character name with no space must wrap, not widen the card. */
+  overflow-wrap: anywhere;
 }
 .managed-over p.managed-rating[data-state="pending"] {
   color: var(--ink-2);

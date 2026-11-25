@@ -113,7 +113,9 @@ export async function api(request, env, { gate = async () => true, ctx = null } 
 		if (a === "me" && b === "matches" && method === "GET") {
 			const m = await me();
 			// History, and the people played: a head-to-head record with each.
-			return send({ matches: await matchesOf(env, m.id), rivals: await rivalsOf(env, m.id) });
+			// `ratings` and `botWins`, empty: a shell cached before 2026-11-25
+			// reads them (until the table-drop migration, STATUS.md).
+			return send({ matches: await matchesOf(env, m.id), rivals: await rivalsOf(env, m.id), ratings: [], botWins: [] });
 		}
 		if (a === "me" && b === "friend-code" && method === "POST") return send(await rotateFriendCode(env, await me()));
 		if (a === "push" && !b) {

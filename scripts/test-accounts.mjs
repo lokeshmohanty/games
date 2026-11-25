@@ -318,6 +318,8 @@ try {
 		check("…and the summary may be cached for five minutes", /max-age=300/.test(s.headers.get("cache-control") ?? ""));
 	}
 
+	/** An empty list: what `ratings` and `botWins` are now, for shells cached before 2026-11-25. */
+	const empty = (x) => Array.isArray(x) && x.length === 0;
 	console.log("\naccounts: confirmed matches");
 	const duel = (run, winner, loser, extra = {}) => ({
 		game: "lokeshmohanty/battleship",
@@ -337,7 +339,7 @@ try {
 		r = await call("POST", "/api/match/report", { token: ana, body: duel("run1", "pa", "pb") });
 		check("…once; a repeat carries the record too", r.body.already === true && r.body.vs?.[0]?.id === Bo && r.body.vs[0].wins === 1, r.body);
 		const mine = await call("GET", "/api/me/matches", { token: ana });
-		check("no ratings and no wins against bots in your matches any more", mine.body.ratings === undefined && mine.body.botWins === undefined, Object.keys(mine.body));
+		check("no ratings and no wins against bots in your matches — only empty lists, for shells cached before 2026-11-25", empty(mine.body.ratings) && empty(mine.body.botWins), { ratings: mine.body.ratings, botWins: mine.body.botWins });
 		check("…the match is in the history, with names", mine.body.matches[0]?.won === true && mine.body.matches[0].ranking[1][0].name === "Bo", mine.body.matches[0]);
 		check("…and Bo is among the people you have played: 1–0", JSON.stringify(mine.body.rivals.map(({ id, wins, losses, draws }) => ({ id, wins, losses, draws }))) === JSON.stringify([{ id: Bo, wins: 1, losses: 0, draws: 0 }]), mine.body.rivals);
 
@@ -437,7 +439,7 @@ try {
 		check("a hidden profile is down to a name to befriend: no matches", minimal.status === 200 && minimal.body.hidden === true && minimal.body.id === Bo && minimal.body.matches === undefined, minimal.body);
 		await call("PATCH", "/api/me", { token: bo, body: { hidePublic: false } });
 		const prof = await call("GET", `/api/u/${A}`);
-		check("a public profile: name and recent matches, no ratings, no wins against bots", prof.body.name === "Ana P" && prof.body.matches.length >= 2 && prof.body.ratings === undefined && prof.body.botWins === undefined, prof.body);
+		check("a public profile: name and recent matches, no ratings, no wins against bots", prof.body.name === "Ana P" && prof.body.matches.length >= 2 && empty(prof.body.ratings) && empty(prof.body.botWins), prof.body);
 	}
 
 	console.log("\naccounts: a match counts only for the accounts that reported it");
@@ -511,7 +513,7 @@ try {
 		await w.sql(`INSERT INTO ratings (account, game, elo, games, wins, best) VALUES ('${A}', 'connect4', 1250, 7, 4, NULL); INSERT INTO bot_wins (account, game, wins, first, at) VALUES ('${A}', 'tic-tac-toe-js', 2, 1, 1);`);
 		const mm = await matchesOfTok(ana);
 		const pub = (await call("GET", `/api/u/${A}`)).body;
-		check("old ratings and wins against bots are served nowhere", mm.ratings === undefined && mm.botWins === undefined && pub.ratings === undefined && pub.botWins === undefined, { mm: Object.keys(mm), pub: Object.keys(pub) });
+		check("old ratings and wins against bots are served nowhere (the lists stay empty)", [mm.ratings, mm.botWins, pub.ratings, pub.botWins].every((x) => Array.isArray(x) && x.length === 0), { mm: Object.keys(mm), pub: Object.keys(pub) });
 		check("its play count still lands", (await call("POST", "/api/stats/played", { body: { game: "undercover" } })).body.counted === true);
 	}
 
@@ -700,6 +702,46 @@ try {
 		await grace();
 		r = await report(lea, ffa("lv7"));
 		check("…one reporter alone cannot, with another player still there", r.body.counted !== true && (await tallyIn(lia, "neon-bid")).games === 1, r.body);
+	}
+
+	console.log("\naccounts: a team game's leaver is no teammate's win (match_players.team, 0008)");
+	{
+		const G = "lokeshmohanty/bubble-rush";
+		const ps = await Promise.all(["Tma", "Tmb", "Tmc", "Tmd"].map(async (n) => { const t = await testLogin(n); return { t, id: await id(t) }; }));
+		const [a1, a2, b1, b2] = ps;
+		const roster = { pa1: a1.id, pa2: a2.id, pb1: b1.id, pb2: b2.id };
+		const vsOf = async (me, other) => (await call("GET", `/api/u/${other.id}`, { token: me.t })).body.vs?.games?.[G] ?? null;
+		/** All four sit down, A2 leaves, the other three report until it counts. */
+		const play = async (run, extra) => {
+			for (const p of ps) await call("POST", "/api/match/start", { token: p.t, body: { game: G, run, match: 1 } });
+			const body = { game: G, run, match: 1, kind: "teams", roster, seats: 4, left: ["pa2"], ...extra };
+			for (const p of [a1, b1, b2]) await report(p.t, body);
+			await grace();
+			return report(a1.t, body);
+		};
+		// With the teams map: the game dropped A2, team A won.
+		let r = await play("tl1", { ranking: [["pa1"], ["pb1", "pb2"]], teams: { pa1: "A", pa2: "A", pb1: "B", pb2: "B" } });
+		check("2v2, a leaver from the winning team (with `teams`): counted", r.body.counted === true, r.body);
+		check("…their teammate has no record against them, win or loss", (await vsOf(a1, a2)) === null, await vsOf(a1, a2));
+		check("…the other team gets the forfeit win over them", JSON.stringify(await vsOf(b1, a2)) === JSON.stringify({ wins: 1, losses: 0, draws: 0 }), await vsOf(b1, a2));
+		check("…and the winners still beat the other team", (await vsOf(a1, b1))?.wins === 1, await vsOf(a1, b1));
+		// An older page: no `teams`, the game kept A2 in its side's slot.
+		r = await play("tl2", { ranking: [["pa1", "pa2"], ["pb1", "pb2"]] });
+		check("the same with no `teams` (an older page): counted", r.body.counted === true, r.body);
+		check("…the side comes from the game's slot: still no record between teammates", (await vsOf(a1, a2)) === null && (await vsOf(b1, b2)) === null, { a: await vsOf(a1, a2), b: await vsOf(b1, b2) });
+		check("…and the forfeit counts against the other team only: 2–0 now", (await vsOf(b2, a2))?.wins === 2, await vsOf(b2, a2));
+	}
+
+	console.log("\naccounts: a co-op game never counts towards head-to-head, even scored");
+	{
+		const [c1, c2] = await Promise.all(["Coa", "Cob"].map(async (n) => { const t = await testLogin(n); return { t, id: await id(t) }; }));
+		// Neon Survival's multi-ship run: a scored free-for-all of a co-op game.
+		const body = { game: "neon-survival-mp", run: "co1", match: 1, kind: "ffa", ranking: [["p1"], ["p2"]], roster: { p1: c1.id, p2: c2.id }, scores: { p1: 40, p2: 12 }, seats: 2 };
+		await report(c1.t, body);
+		const r = await report(c2.t, body);
+		check("Neon Survival's ranked free-for-all counts, kept as co-op", r.body.counted === true && Array.isArray(r.body.vs) && r.body.vs.length === 0 && (await matchesOfTok(c1.t)).matches[0]?.kind === "coop", { r: r.body, m: (await matchesOfTok(c1.t)).matches[0] });
+		const vs = (await call("GET", `/api/u/${c2.id}`, { token: c1.t })).body.vs;
+		check("…and is no win for the one ahead", vs?.wins === 0 && vs.losses === 0 && !vs.games["neon-survival-mp"], vs);
 	}
 
 	console.log("\naccounts: one atomic commit; a missing account; commits at once");

@@ -56,12 +56,11 @@ const noSideScroll = (p) => p.evaluate(() => document.documentElement.scrollWidt
 // Screenshots (NEON_SHOTS=dir), for a person to look at too.
 const SHOTS = process.env.NEON_SHOTS ?? null;
 if (SHOTS) mkdirSync(SHOTS, { recursive: true });
-/** Every run-start and match report a page sends, with the server's answers. */
+/** Every match report a page sends, with the server's answers. */
 function watchRuns(p) {
-	const seen = { starts: [], reports: [] };
+	const seen = { reports: [] };
 	p.on("response", async (r) => {
 		const sent = () => JSON.parse(r.request().postData() ?? "{}");
-		if (r.url().includes("/api/run/start") && r.ok()) seen.starts.push({ sent: sent(), got: await r.json().catch(() => null) });
 		if (r.url().includes("/api/match/report")) seen.reports.push({ sent: sent(), got: await r.json().catch(() => null), at: Date.now() });
 	});
 	return seen;
@@ -301,6 +300,19 @@ try {
 			return r.width > 0 && r.left >= 0 && r.right <= innerWidth && r.bottom <= innerHeight;
 		});
 		check("…inside the phone's screen (390x844), no side scroll", fits && (await noSideScroll(ana.p)));
+		// The longest name an account may have (24 characters), with no space,
+		// on this same card at 354x696: it wraps inside the screen.
+		await ana.p.setViewportSize({ width: 354, height: 696 });
+		const long = await line.evaluate((el) => {
+			const was = el.textContent;
+			el.textContent = `You 12–10 ${"W".repeat(24)}`;
+			const r = el.getBoundingClientRect();
+			const out = { left: Math.round(r.left), right: Math.round(r.right), lines: Math.round(r.height / parseFloat(getComputedStyle(el).lineHeight || "16")), wrap: getComputedStyle(el).overflowWrap, sideways: document.documentElement.scrollWidth > innerWidth };
+			el.textContent = was;
+			return out;
+		});
+		check("…a 24-character name with no space wraps inside the 354x696 screen", long.left >= 0 && long.right <= 354 && long.wrap === "anywhere" && !long.sideways, long);
+		await ana.p.setViewportSize(phone.viewport);
 		const boSide = await bo.p.evaluate((id) => NeonArcade.account.api(`/api/u/${id}`), anaId);
 		check("…a loss for Bo, in his head-to-head against Ana", boSide.vs?.games["neon-fission"]?.losses === 1 && boSide.vs.games["neon-fission"].wins === 0, boSide.vs);
 	}
@@ -527,7 +539,7 @@ try {
 		await dee.p.goto(page("?party", "&game=tic-tac-toe-js&fresh=1&mode=bots"));
 		await gameFrame(dee.p, TIMEOUT);
 		await dee.p.waitForTimeout(2500);
-		check("Tic Tac Toe against the bot: no run asked for, nothing sent", seen.starts.length === 0 && seen.reports.length === 0, seen);
+		check("Tic Tac Toe against the bot: nothing sent", seen.reports.length === 0, seen);
 		// Neon Fission against a bot; removing the bot hands Dee the match.
 		await dee.p.goto(page("?party", "&game=neon-fission&fresh=1&mode=bots"));
 		await passTable(dee.p, TIMEOUT); // its quick table, at Players 2: START GAME
@@ -539,7 +551,7 @@ try {
 		});
 		await dee.p.locator(".managed-actions").waitFor({ timeout: TIMEOUT }).catch(() => {});
 		await dee.p.waitForTimeout(2500);
-		check("Neon Fission against a bot, won: no run asked for, nothing reported", seen.starts.length === 0 && seen.reports.length === 0, seen);
+		check("Neon Fission against a bot, won: nothing reported", seen.reports.length === 0, seen);
 		check("…and the end card has no head-to-head line", await dee.p.locator(".managed-over .managed-rating").isHidden().catch(() => true));
 		await dee.ctx.close();
 	}

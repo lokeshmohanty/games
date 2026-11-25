@@ -209,7 +209,26 @@ export function toAccounts({ kind, ranking, roster, scores, left, teams }) {
 		const v = scores?.[pid];
 		if (accounts.includes(a) && typeof v === "number" && Number.isFinite(v)) s[a] = v;
 	}
-	return { places, accounts, departed, scores: Object.keys(s).length ? s : null, ...(sides ? { sides, forfeits } : {}) };
+	// Teams: who played for whom, kept with each player of the match
+	// (match_players.team, 0008) so head-to-head never counts a teammate as
+	// beaten — a leaver from the winning side goes last, but only the other
+	// team gets the win over them (a review, 2026-11-25). From `teams` when it
+	// names everyone, else (an older page) from the game's own slots: a side
+	// is a slot of `ranking`. A leaver the game dropped from its ranking, with
+	// no `teams`, has none and is compared by place alone.
+	let team = null;
+	if (kind === "teams") {
+		team = {};
+		if (accounts.every((a) => teamOf.has(a))) for (const a of accounts) team[a] = teamOf.get(a);
+		else
+			ranking.forEach((slot, i) =>
+				slot.forEach((id) => {
+					const a = acct(id);
+					if (a && accounts.includes(a)) team[a] = `#${i}`;
+				}),
+			);
+	}
+	return { places, accounts, departed, scores: Object.keys(s).length ? s : null, ...(sides ? { sides, forfeits } : {}), ...(team ? { team } : {}) };
 }
 
 /** POST /api/stats/played — the host's count of a finished match (a game in the table only). */
@@ -310,11 +329,16 @@ export async function report(env, me, request) {
 	const done = await countedFor(env, key, me.id);
 	if (done) return done;
 	if (!kindFits(b.game, b.kind)) throw new HttpError(400, `${b.game} is a ${GAMES[b.game]} game; a ${b.kind} result for it does not count`);
+	// A co-op game is played together, whatever its result says: a scored
+	// free-for-all of one (Neon Survival's multi-ship runs) is kept as co-op,
+	// so it never counts towards head-to-head (Lokesh, 2026-11-25). Its play
+	// count and the devices' records count as ever.
+	const kind = GAMES[b.game] === "coop" ? "coop" : b.kind;
 	if (r.accounts.length < 2) return { counted: false, why: "a match is recorded with two signed-in players" };
 	if (await env.DB.prepare("SELECT 1 FROM kv WHERE k = ?").bind(`void:${key}`).first()) {
 		return { counted: false, why: "the players disagreed about this match, so it does not count" };
 	}
-	const canonical = JSON.stringify({ game: b.game, run: b.run, match, kind: b.kind, places: r.places, left: r.departed, scores: r.scores, ...(r.sides ? { sides: r.sides, forfeits: r.forfeits } : {}) });
+	const canonical = JSON.stringify({ game: b.game, run: b.run, match, kind, places: r.places, left: r.departed, scores: r.scores, ...(r.sides ? { sides: r.sides, forfeits: r.forfeits } : {}), ...(r.team ? { team: r.team } : {}) });
 	const digest = await sha256(canonical);
 	// A re-sent report keeps the time of the first: the grace runs from it.
 	await env.DB.prepare(
@@ -378,7 +402,7 @@ async function settle(env, key, who, t) {
 	const left = P.left ?? [];
 	const present = P.places.flat().filter((a) => !left.includes(a));
 	const first = Math.min(...rows.map((x) => x.at));
-	const base = { id: key, game: P.game, kind: P.kind, places: P.places, scores: P.scores, t, who };
+	const base = { id: key, game: P.game, kind: P.kind, places: P.places, scores: P.scores, team: P.team ?? null, t, who };
 	if (!left.length && agreeing.length >= 2 && present.every((a) => agreeing.includes(a))) return commit(env, { ...base, recorded: agreeing });
 	if (t < first + grace) return { counted: false, pending: true, settleAt: first + grace };
 	const confirmed = agreeing.length >= 2 || (present.length === 1 && agreeing.length === 1);
@@ -416,7 +440,7 @@ async function departures(env, P, left, first, t) {
  * account that is missing (deleted since) makes nothing half written.
  * Resolves `who`'s answer, with their head-to-head against the others.
  */
-async function commit(env, { id, game, kind, places, scores, recorded, departed = [], startOf = null, t, who }) {
+async function commit(env, { id, game, kind, places, scores, team = null, recorded, departed = [], startOf = null, t, who }) {
 	const exist = new Set(
 		(await all(env.DB.prepare("SELECT id FROM accounts WHERE id IN (SELECT value FROM json_each(?))").bind(JSON.stringify(recorded)))).map((x) => x.id),
 	);
@@ -429,7 +453,7 @@ async function commit(env, { id, game, kind, places, scores, recorded, departed 
 	const accounts = [...keep];
 	const stmts = [
 		env.DB.prepare("INSERT INTO matches (id, game, kind, ranking, scores, at) VALUES (?, ?, ?, ?, ?, ?)").bind(id, game, kind, JSON.stringify(ranked), score ? JSON.stringify(score) : null, t),
-		...ranked.flatMap((slot, place) => slot.map((a) => env.DB.prepare("INSERT INTO match_players (match, account, place) VALUES (?, ?, ?)").bind(id, a, place))),
+		...ranked.flatMap((slot, place) => slot.map((a) => env.DB.prepare("INSERT INTO match_players (match, account, place, team) VALUES (?, ?, ?, ?)").bind(id, a, place, team?.[a] ?? null))),
 		// Each player's outcome waits in a report row for a repeat to read
 		// (countedFor) — a leaver's marked, so a late report of theirs is told
 		// the match counted against them.
@@ -519,27 +543,31 @@ export async function matchesOf(env, account, limit = 30) {
 /**
  * How `a` did against each other account, from the matches both are
  * recorded in: a place ahead is a win, behind a loss, the same place a draw —
- * except in a team game, where the same place is the same side (or two
- * sides level) and counts as neither. Co-op matches are played together and
- * never count. Grouped by opponent (`by` "other") or by game for one
- * opponent (`other` set). Never a rating, never a ranking of anybody.
+ * except in a team game, where the same team (match_players.team, 0008; a
+ * leaver's last place included) or the same place (two sides level)
+ * counts as neither. Co-op matches are played together and never count.
+ * Only games the Worker still knows (GAMES) count, in every total alike.
+ * Grouped by opponent or by game. Never a rating, never a ranking of
+ * anybody. Its last bound parameter is GAME_LIST.
  */
+const GAME_LIST = JSON.stringify(Object.keys(GAMES));
 const H2H_SQL = (filter, group) => `SELECT q.account AS other, ${group === "game" ? "m.game AS game," : ""}
 	SUM(p.place < q.place) AS wins, SUM(p.place > q.place) AS losses,
 	SUM(p.place = q.place) AS draws, MAX(m.at) AS last
 	FROM match_players p JOIN match_players q ON q.match = p.match AND q.account <> p.account
 	JOIN matches m ON m.id = p.match
-	WHERE p.account = ? ${filter} AND m.kind <> 'coop' AND NOT (m.kind = 'teams' AND p.place = q.place)
+	WHERE p.account = ? ${filter} AND m.kind <> 'coop'
+	AND NOT (m.kind = 'teams' AND (p.place = q.place OR COALESCE(p.team = q.team, 0)))
+	AND m.game IN (SELECT value FROM json_each(?))
 	GROUP BY q.account${group === "game" ? ", m.game" : ""}`;
 
 const tally = (x) => ({ wins: x.wins ?? 0, losses: x.losses ?? 0, draws: x.draws ?? 0 });
 
 /** `a`'s record against `b`: { wins, losses, draws, games: { <game>: { wins, losses, draws } } }. */
 export async function headToHead(env, a, b) {
-	const rows = await all(env.DB.prepare(H2H_SQL("AND q.account = ?", "game")).bind(a, b));
+	const rows = await all(env.DB.prepare(H2H_SQL("AND q.account = ?", "game")).bind(a, b, GAME_LIST));
 	const out = { wins: 0, losses: 0, draws: 0, games: {} };
 	for (const r of rows) {
-		if (!GAMES[r.game]) continue;
 		const t = tally(r);
 		out.games[r.game] = t;
 		out.wins += t.wins;
@@ -554,7 +582,7 @@ export async function rivalsOf(env, a, limit = 50) {
 	const rows = await all(
 		env.DB.prepare(
 			`SELECT h.*, acc.name FROM (${H2H_SQL("", "other")}) h JOIN accounts acc ON acc.id = h.other ORDER BY h.last DESC LIMIT ?`,
-		).bind(a, limit),
+		).bind(a, GAME_LIST, limit),
 	);
 	return rows.map((r) => ({ id: r.other, name: r.name, ...tally(r), last: r.last }));
 }
@@ -565,7 +593,7 @@ async function versusIn(env, id, who) {
 		env.DB.prepare(
 			`SELECT h.*, acc.name FROM (${H2H_SQL("AND q.account IN (SELECT account FROM match_players WHERE match = ?) AND m.game = (SELECT game FROM matches WHERE id = ?)", "other")}) h
 			 JOIN accounts acc ON acc.id = h.other ORDER BY acc.name`,
-		).bind(who, id, id),
+		).bind(who, id, id, GAME_LIST),
 	);
 	return rows.map((r) => ({ id: r.other, name: r.name, ...tally(r) }));
 }

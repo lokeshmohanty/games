@@ -2038,7 +2038,7 @@ try {
 			console.log(`  FAIL page error: ${err.message}`);
 			failures++;
 		});
-		/** Fission's table at 3, seat 2 a PERSON or a BOT; record any run asked for (there are none since 2026-11-25: no boards); START. */
+		/** Fission's table at 3, seat 2 a PERSON or a BOT; START. */
 		const startWithPerson = async (personHere) => {
 			await r.goto(url("?game=neon-fission&fresh=1&mode=bots"));
 			await setPlayers(r, 3);
@@ -2046,21 +2046,16 @@ try {
 			const seg = r.locator(`.quick-table ${want}`);
 			if ((await seg.getAttribute("aria-pressed")) !== "true") await seg.click();
 			await r.waitForFunction((q) => document.querySelector(q)?.getAttribute("aria-pressed") === "true", want, { timeout: TIMEOUT });
-			await r.evaluate(() => {
-				window.__runs = [];
-				const A = NeonArcade.account;
-				if (A) A.startRun = (game, o) => (window.__runs.push({ game, vs: o?.vs ?? "solo" }), Promise.resolve(null));
-			});
 			await r.locator(".quick-table button", { hasText: "START GAME" }).click();
 			const F = await gameScope(r, TIMEOUT);
 			await F.waitForFunction(() => window.__game.handle.debug().match != null, null, { timeout: TIMEOUT });
 			await sleep(300);
-			return { kinds: (await fission(F)).players.map((p) => p.kind).join(), runs: await r.evaluate(() => window.__runs), local: await r.evaluate(() => window.__party.room.getMembers()[1].local === true) };
+			return { kinds: (await fission(F)).players.map((p) => p.kind).join(), local: await r.evaluate(() => window.__party.room.getMembers()[1].local === true) };
 		};
 		let got = await startWithPerson(true);
-		check("with a PERSON at the table, the game seats them (local) and no run against bots is asked for", got.kinds === "human,local,bot" && !got.runs.some((x) => x.vs === "bots"), JSON.stringify(got));
+		check("with a PERSON at the table, the game seats them (local)", got.kinds === "human,local,bot", JSON.stringify(got));
 		got = await startWithPerson(false);
-		check("…the same table with that seat a BOT: seated as a bot, and still no run asked for (no boards)", !got.local && got.kinds === "human,bot,bot" && got.runs.length === 0, JSON.stringify(got));
+		check("…the same table with that seat a BOT: seated as a bot", !got.local && got.kinds === "human,bot,bot", JSON.stringify(got));
 		// A tap (start=1) plays the table last played, PERSON seats included
 		// (Lokesh, 2026-11-22: "Yes, reuse the table"): a group passing one
 		// phone just taps and plays.

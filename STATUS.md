@@ -24,11 +24,14 @@ and bot-win checks removed; `/api/lb/…` and `/api/run/start` answer 410;
 Head-to-head instead, read from `match_players` (profile `vs`, `/api/me/
 matches` `rivals`, the end card's "You 5–3 Asha"); the manifest's
 `leaderboard` field is retired (Connect 4 etc. now count). Party standings
-unchanged. No migration; after merge: `just deploy-worker`. **Later,
+unchanged; groups stay a member list (Lokesh). Migration 0008 adds
+`match_players.team` (a team leaver is no teammate's win); after merge:
+apply migrations (0007, 0008), then `just deploy-worker`. **Later,
 explicit step:** a migration dropping the dead tables `ratings`, `runs`,
 `bot_wins` (still read by the export, deleted with an account; remove
-those reads in the same change). VERIFY with Lokesh: whether groups
-(now only a member list) should go too.
+those reads in the same change), and with it the empty `ratings: []` /
+`botWins: []` that profiles and `/api/me/matches` still send for shells
+cached before 2026-11-25.
 
 **Branch `records` (2026-11-24, PR open; community sides merged):**
 personal records and achievements (Lokesh, 2026-11-21) — game.json

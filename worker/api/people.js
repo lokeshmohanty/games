@@ -7,7 +7,8 @@
 //   - `vs` besides, for a signed-in viewer who is not the player: the
 //     viewer's head-to-head record against them (match.js headToHead) —
 //     { wins, losses, draws, games: { <game>: { wins, losses, draws } } }.
-//     No ratings and no boards (2026-11-25: casual, not competitive).
+//     No ratings and no boards (2026-11-25: casual, not competitive);
+//     `ratings: []` and `botWins: []` stay, empty, for cached older pages.
 //   - `records` besides (personal records and achievements, records.js) for
 //     the player and their signed-in friends only, hidden or not (Lokesh,
 //     2026-11-21: "friends can see your trophies and best times"); anyone
@@ -91,6 +92,10 @@ export async function publicProfile(env, who, { viewer = null, gate = null } = {
 		since: a.created,
 		hidden,
 		matches: await publicMatches(env, a.id, viewer?.id ?? null, 20),
+		// Empty, for shells cached before 2026-11-25: their profile page reads
+		// these and failed on undefined. They go with the table-drop migration (STATUS.md).
+		ratings: [],
+		botWins: [],
 		...(viewer && viewer.id !== a.id ? { vs: await headToHead(env, viewer.id, a.id) } : {}),
 		...(close ? { records: await recordsOf(env, a.id) } : {}),
 	};
