@@ -31,6 +31,16 @@ Light Cycles setup checks run. main merged in with records and standings
 the voids in the Grid detail and records' `facts`/`seatFacts`. To land:
 merge this PR.
 
+**Branch `drop-boards` (2026-11-26, PR open, not merged):** migration
+0009 drops the dead tables `ratings`, `runs`, `bot_wins` (Lokesh
+approved); the export and account deletion no longer touch them. The empty
+`ratings: []` / `botWins: []` on profiles and `/api/me/matches` stay, as
+constants, for shells cached before 2026-11-25. **To land:** merge, then
+apply 0009 remotely (from `worker/`: `wrangler d1 migrations apply arcade
+--remote`) **before** `just deploy-worker` — it refuses while a migration
+is pending — and deploy straight after: the deployed Worker's export and
+deletion answer 500 between the two (docs/accounts.md "0009").
+
 **Branch `standings` (2026-11-25, PR open, not merged):** no boards
 (Lokesh, memory `casual-not-competitive`): leaderboards, friends'/group
 boards, boards against bots, Elo ratings, solo runs, Sudoku's server check
@@ -41,12 +51,7 @@ matches` `rivals`, the end card's "You 5–3 Asha"); the manifest's
 `leaderboard` field is retired (Connect 4 etc. now count). Party standings
 unchanged; groups stay a member list (Lokesh). Migration 0008 adds
 `match_players.team` (a team leaver is no teammate's win); after merge:
-apply migrations (0007, 0008), then `just deploy-worker`. **Later,
-explicit step:** a migration dropping the dead tables `ratings`, `runs`,
-`bot_wins` (still read by the export, deleted with an account; remove
-those reads in the same change), and with it the empty `ratings: []` /
-`botWins: []` that profiles and `/api/me/matches` still send for shells
-cached before 2026-11-25.
+apply migrations (0007, 0008), then `just deploy-worker`.
 
 **Branch `records` (2026-11-24, PR open; community sides merged):**
 personal records and achievements (Lokesh, 2026-11-21) — game.json

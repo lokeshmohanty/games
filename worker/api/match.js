@@ -77,8 +77,7 @@
 //
 // The old ranked surfaces answer 410 (worker/api/index.js): the boards
 // (/api/lb/…) and server-issued runs (/api/run/start). Their tables —
-// ratings, runs, bot_wins — are no longer written; dropping them is a later,
-// explicit step (STATUS.md).
+// ratings, runs, bot_wins — are dropped (migration 0009, 2026-11-26).
 
 import { GAMES, KINDS as RESULT_KINDS } from "./games.js";
 import { HttpError, body, now, requestNow, sha256 } from "./http.js";

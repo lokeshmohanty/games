@@ -93,7 +93,7 @@ export async function publicProfile(env, who, { viewer = null, gate = null } = {
 		hidden,
 		matches: await publicMatches(env, a.id, viewer?.id ?? null, 20),
 		// Empty, for shells cached before 2026-11-25: their profile page reads
-		// these and failed on undefined. They go with the table-drop migration (STATUS.md).
+		// these and failed on undefined. Constants: no table behind them since 0009.
 		ratings: [],
 		botWins: [],
 		...(viewer && viewer.id !== a.id ? { vs: await headToHead(env, viewer.id, a.id) } : {}),
