@@ -41,7 +41,7 @@ apply 0009 remotely (from `worker/`: `wrangler d1 migrations apply arcade
 is pending — and deploy straight after: the deployed Worker's export and
 deletion answer 500 between the two (docs/accounts.md "0009").
 
-**Branch `standings` (2026-11-25, PR open, not merged):** no boards
+**Branch `standings` (2026-11-25, merged as PR #22):** no boards
 (Lokesh, memory `casual-not-competitive`): leaderboards, friends'/group
 boards, boards against bots, Elo ratings, solo runs, Sudoku's server check
 and bot-win checks removed; `/api/lb/…` and `/api/run/start` answer 410;
@@ -50,15 +50,15 @@ Head-to-head instead, read from `match_players` (profile `vs`, `/api/me/
 matches` `rivals`, the end card's "You 5–3 Asha"); the manifest's
 `leaderboard` field is retired (Connect 4 etc. now count). Party standings
 unchanged; groups stay a member list (Lokesh). Migration 0008 adds
-`match_players.team` (a team leaver is no teammate's win); after merge:
-apply migrations (0007, 0008), then `just deploy-worker`.
+`match_players.team` (a team leaver is no teammate's win); 0007 and 0008
+applied remotely and the Worker deployed (2026-11-25).
 
-**Branch `records` (2026-11-24, PR open; community sides merged):**
+**Branch `records` (2026-11-24, merged; community sides merged):**
 personal records and achievements (Lokesh, 2026-11-21) — game.json
 `achievements`/`records`, data-only conditions on the result
 (lib/achievements.js, shared by the device, manifest.mjs and the Worker);
-lib/records.js on the device, synced to D1 `records` (migration 0007, not
-applied) and shown to friends only; 🏆 Records in the top band (PARTY screen mid-game), the
+lib/records.js on the device, synced to D1 `records` (migration 0007, applied
+2026-11-25) and shown to friends only; 🏆 Records in the top band (PARTY screen mid-game), the
 profile's trophies, a friend's 🏆 TROPHIES in the party. Declared here for
 Connect 4, Neon Fission, Neon Bid, Neon Survival; web-games branch
 `achievements` (8 games, with the `facts`/`seatFacts` they read) and

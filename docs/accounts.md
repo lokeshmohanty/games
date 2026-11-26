@@ -259,8 +259,8 @@ head-to-head only, no global boards".* Removed in branch `standings`:
   bookmark to the same place.
 - **Ratings**: pairwise Elo, provisional K, the end card's "Rating +12 →
   1534" (`ratingDeltas`, `sideDeltas`, `shownRating`). Nothing writes
-  `ratings` any more; `GET /api/me/matches` and public profiles no longer
-  carry `ratings` or `botWins`.
+  `ratings` any more; `GET /api/me/matches` and public profiles carry
+  `ratings` and `botWins` only as empty lists, for cached shells.
 - **Solo runs and wins against bots**: server-issued runs and seeds
   (`worker/api/runs.js`), Sudoku's server-side grid check
   (`worker/api/sudoku.js`), the per-game minimum times and daily caps
