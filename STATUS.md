@@ -16,15 +16,22 @@ separate `TODO.md`.*
 
 ## Now (2026-11-18)
 
-**Branch `registry-branch` (2026-11-26, local, not pushed):** registry
+**Branch `propose-action` (2026-11-26, local, on top of `registry-branch`):**
+`sdk/propose-pin.yml`, the contributor's own workflow that opens/moves their
+registry PR on every push (Lokesh chose it over an arcade bot; labels keep
+their `submission: …` names). Tested against a fake gh only — **VERIFY** with
+a real token on a real repo (e.g. locale-chess `arcade-v2`).
+
+**Branch `registry-branch` (2026-11-26, PR #29, CI green, not merged):** registry
 entries take an optional `"branch"` (Lokesh: Locale should "go from this
 branch itself and not from the main branch"): propose, Add your game
 (`owner/name@branch`) and Check for updates follow it, and the submission
 check wants the pin's commit on it; root games propose as `"."`. For
 **locale-chess**: its branch `arcade-v2` (local, commit c2085d6, game.json
 `"sdk": 2` + LICENSE, nothing else) built and passed `validate-game` through a
-temporary pin. To land: push `arcade-v2` to rajarshi99/locale-chess (their
-call), merge this, then `just propose rajarshi99/locale-chess@arcade-v2`.
+temporary pin. `arcade-v2` is pushed to rajarshi99/locale-chess (Lokesh,
+2026-11-26). To land: merge #29, then `just propose
+rajarshi99/locale-chess@arcade-v2` (or the workflow above).
 
 **Branch `top-tabs` (2026-11-26, PR open, not merged):** the nav row is
 My Games · All Games · Community (Lokesh: "keep them separate tabs"); the
