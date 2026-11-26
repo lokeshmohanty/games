@@ -81,7 +81,7 @@ serve-lan: install
 test: test-static pyodide community check-games build test-room test-party test-scan test-pwa test-bots test-rules-screen test-devkit test-protocol test-managed test-conformance test-webapp test-theme test-portal test-taps
 
 # The cheap checks: no build, no browser, seconds. CI's first job, which gates the shards.
-test-static: check-bindings check-colours (catalog "--check") test-stats test-records test-submission test-codec test-just test-hub test-worker-do test-plumbing test-rules
+test-static: check-bindings check-colours (catalog "--check") test-stats test-records test-submission test-propose-pin test-codec test-just test-hub test-worker-do test-plumbing test-rules
 
 # CI runs the slow suites in parallel shards (.github/workflows/test.yml),
 # grouped by time so they take about as long as each other: these are the
@@ -369,3 +369,8 @@ propose repo *games: (_not-recipes "propose" repo)
 # with no network or git.
 test-submission:
     node scripts/test-submission.mjs
+
+# The contributor's propose workflow (sdk/propose-pin.yml), its shell run
+# against a fake gh: no network.
+test-propose-pin:
+    node scripts/test-propose-pin.mjs

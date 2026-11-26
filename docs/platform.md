@@ -343,7 +343,23 @@ runs `community` first; the browser suites play those games through it.
 Lokesh (2026-11-13): the pull request is the contributor's to open — "add a
 button/command to open the create PR page (pre-filled)" — and "once merged,
 it should auto deploy" (deploy.yml runs on every push to main). No workflow
-opens or merges pins. `just propose owner/repo` (`scripts/propose.mjs`) and
+of the arcade's opens or merges pins.
+
+**The contributor's own workflow** (Lokesh, 2026-11-26: propose should
+happen by itself, from the contributor's side). `sdk/propose-pin.yml`,
+published at `…/games/sdk/propose-pin.yml`, goes in the contributor's repo:
+on a push to their games' branch it forks the arcade (once), resets the
+fork's `arcade-pin/<repo>` onto the arcade's main, writes
+`registry/<owner>/<repo>.json` there (the pin's games kept; a new repo gets
+every folder with a game.json; `"branch"` when not the default branch) and
+opens the pull request, or leaves the open one to follow the new push. Their
+token (`ARCADE_TOKEN`, a classic PAT with `public_repo`), plain shell, no
+third-party action. The pull request is still theirs, so the submission
+check, labels and the owner rule apply unchanged. **VERIFY:** a fine-grained
+token reportedly cannot open a pull request in another owner's repo (GitHub
+community discussion 106661; peter-evans/create-pull-request 1791), hence
+the classic token — not yet tried against GitHub itself; `just
+test-propose-pin` plays the API. `just propose owner/repo` (`scripts/propose.mjs`) and
 the browser twin `lib/propose.js` (the Add your game view's form,
 Contributors' "Check for updates") ask the GitHub API for the repo's head: a
 new repo gets GitHub's `/new/main?filename=registry/<owner>/<repo>.json&value=…`
