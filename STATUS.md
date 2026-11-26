@@ -20,7 +20,10 @@ separate `TODO.md`.*
 `sdk/propose-pin.yml`, the contributor's own workflow that opens/moves their
 registry PR on every push (Lokesh chose it over an arcade bot; labels keep
 their `submission: …` names). Tested against a fake gh only — **VERIFY** with
-a real token on a real repo (e.g. locale-chess `arcade-v2`).
+a real token on a real repo (e.g. locale-chess `arcade-v2`). Also here:
+every registered repo must carry a `contributor.json` with a `"name"`
+(Lokesh, 2026-11-26); locale-chess `arcade-v2` has one at `ee4236b`
+(Rajarshi Dasgupta, from rajarshi99.github.io), local, not pushed.
 
 **Branch `registry-branch` (2026-11-26, PR #29, CI green, not merged):** registry
 entries take an optional `"branch"` (Lokesh: Locale should "go from this
