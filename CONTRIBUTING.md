@@ -199,9 +199,10 @@ tooling, it copies the folder at the pinned commit.
 
 ## Your card on the Contributors page
 
-Optional: a `contributor.json` at the root of your repository says how you
-appear on the [Contributors](https://www.lokeshmohanty.in/games/?page=contributors) page — your GitHub avatar
-and login are shown anyway.
+Required: a `contributor.json` at the root of your repository, with at least
+your `"name"`, says who made the games and how you appear on the
+[Contributors](https://www.lokeshmohanty.in/games/?page=contributors) page, beside your GitHub avatar and
+login. A repository without one is not proposed and its submission fails.
 
 ```json
 {

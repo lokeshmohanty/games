@@ -320,6 +320,15 @@ catalog's `CONTRIBUTORS[].branches`), and the submission check requires the
 commit to be on it. `owner/name@branch` (or a `…/tree/<branch>` address)
 names it for a new repo. A game at the repository's root is listed as `"."`.
 
+**Every entry names its contributor** (Lokesh, 2026-11-26: "ensure that
+every registry item is linked to a contributor (from contributor.json)").
+The registry file's owner folder is the contributor's login; the pinned
+commit must hold a `contributor.json` at its top with a `"name"`
+(`validateContributor(…, { registered: true })`, `contributorEntry` throws
+without one), so the fetch — and with it the submission check — fails
+otherwise, and propose, the Add your game form and `sdk/propose-pin.yml`
+refuse up front. The card is read at the pin, beside the games.
+
 `just community` (`scripts/fetch-community.mjs`) unpacks exactly that commit
 — GitHub's tarball, or `git archive` from a clone at `../<repo>` that has the
 commit (`NEON_LOCAL_REPOS=owner/repo=path` names another) — and copies only

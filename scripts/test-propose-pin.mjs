@@ -62,7 +62,7 @@ process.stdout.write(jq ? execFileSync("jq", ["-r", jq], { input: s }) : s);
 `;
 
 const HEAD = "c".repeat(40);
-function run({ registered = null, pinBranch = false, openPr = null, token = "t", branch = "arcade-v2", games = ["game.json"] } = {}) {
+function run({ registered = null, pinBranch = false, openPr = null, token = "t", branch = "arcade-v2", games = ["game.json"], card = { name: "Ada" } } = {}) {
 	const dir = mkdtempSync(join(tmpdir(), "propose-pin-"));
 	try {
 		const repo = join(dir, "repo");
@@ -76,6 +76,7 @@ function run({ registered = null, pinBranch = false, openPr = null, token = "t",
 			writeFileSync(join(repo, g), "{}");
 		}
 		writeFileSync(join(repo, "mygame.json"), "{}"); // not a game.json
+		if (card) writeFileSync(join(repo, "contributor.json"), JSON.stringify(card));
 		execFileSync("git", ["add", "-A"], { cwd: repo });
 		const r = spawnSync("bash", ["-c", `gh() { node "$FAKE_GH" "$@"; }\n${script}`], {
 			cwd: repo,
@@ -126,6 +127,11 @@ r = run({ token: "" });
 check("no ARCADE_TOKEN secret: fails, saying to add it, and asks GitHub nothing", r.status !== 0 && r.out.includes("ARCADE_TOKEN") && !r.calls.length, r.out);
 r = run({ games: ["README.md"] });
 check("no game.json in the commit: fails before forking", r.status !== 0 && r.out.includes("No game.json") && !r.calls.some((c) => c.path.endsWith("/forks")), r.out);
+
+for (const [what, card] of [["no contributor.json", null], ["a contributor.json with no name", { bio: "hi" }]]) {
+	r = run({ card });
+	check(`${what}: fails, saying to add it, and asks GitHub nothing`, r.status !== 0 && r.out.includes("contributor.json") && !r.calls.length, r.out);
+}
 
 console.log(failures ? `\n${failures} propose workflow check(s) failed` : "\nall propose workflow checks passed");
 process.exit(failures ? 1 : 0);
