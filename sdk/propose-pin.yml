@@ -1,0 +1,106 @@
+# Propose to the Neon Arcade — copy into your games repo as
+# .github/workflows/arcade-pin.yml (CONTRIBUTING.md, "Proposing on every push").
+#
+# On every push to the branch your games live on, this opens a pull request
+# in lokeshmohanty/games that moves your registry pin to the commit you
+# pushed (or registers the repo, the first time). The pull request is yours:
+# it is opened from your fork, with your token, and one stays open per repo —
+# a later push moves it along. A maintainer merges it; the site then deploys.
+#
+# Setup, once:
+#   1. a classic personal access token with the `public_repo` scope
+#      (https://github.com/settings/tokens) — a fine-grained one can push to
+#      your fork but cannot open the pull request in another owner's repo;
+#   2. this repo → Settings → Secrets and variables → Actions → New
+#      repository secret: ARCADE_TOKEN = that token;
+#   3. set `branches` below to your games' branch, and commit this file on
+#      that branch (a push runs the workflow file of the commit pushed).
+#
+# Everything it does is below, in shell: no outside action sees your token.
+
+name: Propose to the arcade
+
+on:
+  push:
+    branches: [main] # the branch your games live on, e.g. [arcade]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: arcade-pin
+  cancel-in-progress: true
+
+jobs:
+  propose:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Open or move the pull request
+        env:
+          GH_TOKEN: ${{ secrets.ARCADE_TOKEN }}
+          ARCADE: lokeshmohanty/games
+          REPO: ${{ github.repository }}
+          SHA: ${{ github.sha }}
+          BRANCH: ${{ github.ref_name }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        run: |
+          set -euo pipefail
+          if [ -z "${GH_TOKEN:-}" ]; then
+            echo "::error::Add the ARCADE_TOKEN secret (see the top of this file)."
+            exit 1
+          fi
+          file="registry/$REPO.json"
+          pin="arcade-pin/${REPO#*/}"
+          me=$(gh api user --jq .login)
+
+          # The pin as the arcade has it now: its games stay as they are.
+          if current=$(gh api "repos/$ARCADE/contents/$file" -H "Accept: application/vnd.github.raw" 2>/dev/null); then
+            if [ "$(jq -r .commit <<<"$current")" = "$SHA" ]; then
+              echo "The arcade already pins $SHA."
+              exit 0
+            fi
+            games=$(jq -c .games <<<"$current")
+          else
+            # Not registered yet (gh printed the 404's body): every folder
+            # holding a game.json ("." for the top).
+            current=""
+            games=$(git ls-files | { grep -E '(^|/)game\.json$' || true; } | sed -E 's#/?game\.json$##; s#^$#.#' | sort | jq -R . | jq -sc .)
+            if [ "$games" = "[]" ]; then
+              echo "::error::No game.json in this commit."
+              exit 1
+            fi
+          fi
+          follow=""
+          [ "$BRANCH" != "$DEFAULT_BRANCH" ] && follow="$BRANCH"
+          entry=$(jq -n --arg repo "https://github.com/$REPO" --arg branch "$follow" --arg commit "$SHA" --argjson games "$games" \
+            '{repo: $repo} + (if $branch == "" then {} else {branch: $branch} end) + {commit: $commit, games: $games}')
+
+          # Your fork of the arcade (made the first time), and a branch in it
+          # on the arcade's main with only this file changed.
+          fork=$(gh api -X POST "repos/$ARCADE/forks" --jq .full_name)
+          for _ in $(seq 30); do gh api "repos/$fork" >/dev/null 2>&1 && break; sleep 2; done
+          base=$(gh api "repos/$ARCADE/git/ref/heads/main" --jq .object.sha)
+          if gh api "repos/$fork/git/ref/heads/$pin" >/dev/null 2>&1; then
+            gh api -X PATCH "repos/$fork/git/refs/heads/$pin" -f sha="$base" -F force=true >/dev/null
+          else
+            gh api -X POST "repos/$fork/git/refs" -f ref="refs/heads/$pin" -f sha="$base" >/dev/null
+          fi
+          old=$(gh api "repos/$fork/contents/$file?ref=$pin" --jq .sha 2>/dev/null || true)
+          gh api -X PUT "repos/$fork/contents/$file" \
+            -f message="registry: $REPO at ${SHA:0:7}" \
+            -f content="$(printf '%s\n' "$entry" | base64 -w0)" \
+            -f branch="$pin" ${old:+-f sha="$old"} >/dev/null
+
+          # One open pull request per repo: a later push moves it along.
+          open=$(gh api "repos/$ARCADE/pulls?head=$me:$pin&state=open" --jq '.[0].html_url // empty')
+          if [ -n "$open" ]; then
+            echo "Moved $open to ${SHA:0:7}."
+          else
+            kind=$([ -n "${current:-}" ] && echo "Update" || echo "Add")
+            url=$(gh api -X POST "repos/$ARCADE/pulls" -f base=main -f head="$me:$pin" \
+              -f title="$kind $REPO (${SHA:0:7})" \
+              -f body="Opened by $REPO's arcade-pin workflow on a push to \`$BRANCH\`." --jq .html_url)
+            echo "Opened $url."
+          fi
