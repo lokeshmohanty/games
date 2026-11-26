@@ -14,6 +14,8 @@
 //   registered, moved  → the pin's edit page, and the commit to paste in
 //                        (GitHub cannot fill an edit page).
 //   registered, current → says so.
+//   no card yet         → registry/<owner>/main.json first, from the owner's
+//                        GitHub profile (lib/propose.js cardFrom, the same).
 //
 // "Head" is the default branch's, or the entry's "branch" when it names one;
 // `@branch` names it for a repo not registered yet.
@@ -42,6 +44,17 @@ async function gh(path) {
 /** The pin file a repo would have, as GitHub shows it in the arcade. */
 export function pinText(repo, commit, games, branch = null) {
 	return `${JSON.stringify({ repo: `https://github.com/${repo}`, ...(branch ? { branch } : {}), commit, games }, null, 2).replace(/\[\n\s+([\s\S]*?)\n\s+\]/, (_, inner) => `[${inner.replace(/\s*\n\s*/g, " ")}]`)}\n`;
+}
+
+/** A contributor card from a GitHub profile, within validateContributor's limits. */
+export function cardFrom(user) {
+	const card = { name: String(user.name || user.login).slice(0, 40) };
+	if (user.bio) card.bio = String(user.bio).slice(0, 280);
+	if (user.location) card.location = String(user.location).slice(0, 40);
+	const blog = String(user.blog ?? "").trim();
+	const url = /^https:\/\//.test(blog) ? blog : blog && !/^[a-z]+:/i.test(blog) ? `https://${blog}` : "";
+	if (/^https:\/\/\S+$/.test(url) && url.length <= 200) card.links = [{ label: "Website", url }];
+	return card;
 }
 
 /** GitHub's prefilled "new file" page in the arcade repo. */
@@ -74,10 +87,15 @@ async function main() {
 		return;
 	}
 
-	const tree = await gh(`/repos/${repo}/git/trees/${head}?recursive=1`);
-	if (!tree.tree.some((t) => t.type === "blob" && t.path === "contributor.json")) throw new Error(`no contributor.json at the top of ${repo} at ${head.slice(0, 7)} — every registered repo names its contributor (CONTRIBUTING.md)`);
+	const owner = repo.split("/")[0];
+	if (!existsSync(join(ROOT, "registry", owner, "main.json"))) {
+		const card = `${JSON.stringify(cardFrom(await gh(`/users/${owner}`)), null, 2)}\n`;
+		console.log(`First, your card — registry/${owner}/main.json (from your GitHub profile; edit it there):\n\n${card}`);
+		console.log(`open (filled in; commit it, then open the pull request):\n${newFileUrl(`${owner}/main`, card)}\n\nThen your games:\n`);
+	}
 	let games = named;
 	if (!games.length) {
+		const tree = await gh(`/repos/${repo}/git/trees/${head}?recursive=1`);
 		games = tree.tree
 			.filter((t) => t.type === "blob" && /(^|\/)game\.json$/.test(t.path))
 			.map((t) => t.path.replace(/\/?game\.json$/, "") || ".")

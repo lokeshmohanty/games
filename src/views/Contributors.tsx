@@ -27,8 +27,8 @@ export default function Contributors() {
 				<h1>Contributors</h1>
 				<p class="muted">
 					<span data-count /> Each shares one or more <a href="./?page=collections">collections</a> — games repositories. Make one
-					yourself — <a href="./?page=contribute">add your game</a>. Your card comes from a <code>contributor.json</code> in your games
-					repo; ★ keeps someone at the top.
+					yourself — <a href="./?page=contribute">add your game</a>. Your card is your <code>main.json</code> in the arcade's registry;
+					★ keeps someone at the top.
 				</p>
 				<div data-people />
 			</main>

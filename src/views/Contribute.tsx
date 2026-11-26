@@ -15,7 +15,7 @@ const REPO_FILES = "https://github.com/lokeshmohanty/games/blob/main/";
 type Plan =
 	| { kind: "current"; repo: string; at: string }
 	| { kind: "update"; repo: string; url: string; from: string; to: string }
-	| { kind: "new"; repo: string; url: string; text: string; games: string[]; to: string };
+	| { kind: "new"; repo: string; url: string; text: string; games: string[]; to: string; card?: { url: string; text: string } };
 /** What the propose box shows: a line of text, or a plan. */
 type Out = { text: string } | { plan: Plan };
 
@@ -85,8 +85,21 @@ export default function Contribute() {
 					<pre>{p.to}</pre>
 				</>
 			);
+		const owner = p.repo.split("/")[0];
 		return (
 			<>
+				<Show when={p.card}>
+					{(card) => (
+						<>
+							<p class="muted">{`First, your card — registry/${owner}/main.json, from your GitHub profile (edit it there before committing):`}</p>
+							<pre>{card().text}</pre>
+							<a class="neon-btn neon-btn--accent" data-card href={card().url} target="_blank" rel="noopener">
+								1. OPEN YOUR CARD ↗
+							</a>
+							<p class="muted">Then your games, in a second pull request:</p>
+						</>
+					)}
+				</Show>
 				<p class="muted">{`registry/${p.repo}.json — ${p.games.length} game${p.games.length === 1 ? "" : "s"} at ${p.to.slice(0, 7)}:`}</p>
 				<pre>{p.text}</pre>
 				<a class="neon-btn neon-btn--accent" href={p.url} target="_blank" rel="noopener">

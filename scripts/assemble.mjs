@@ -11,7 +11,7 @@
 //               Python glue, the dev kit and, when vendored, Pyodide — not
 //               the adapters, bindings or the unlisted Tic Tac Toe example
 //   games/  assets/  registry/  community/ (if fetched)
-//   manifest, contributor.json
+//   manifest
 //
 // Then every game the catalogs register gets its frame prebuilt into
 // frames/<id>.html (scripts/prebuild-frames.mjs): the shell fetches that one
@@ -54,7 +54,7 @@ for (const dir of ["lib", "sdk", "games", "assets", "registry", "community"]) {
 // renders it). leaderboard.html: a stub that sends an old bookmark to the
 // profile (the boards went on 2026-11-25, src/router.ts legacyAddress).
 const rootListed = [...readFileSync(join(ROOT, "sw.js"), "utf8").matchAll(/"\.\/([^"/]+\.[a-z]+)"/g)].map((m) => m[1]).filter((f) => f !== "index.html");
-for (const f of new Set(["manifest.webmanifest", "contributor.json", "leaderboard.html", ...rootListed])) if (existsSync(join(ROOT, f))) cpSync(join(ROOT, f), join(DIST, f));
+for (const f of new Set(["manifest.webmanifest", "leaderboard.html", ...rootListed])) if (existsSync(join(ROOT, f))) cpSync(join(ROOT, f), join(DIST, f));
 // The dev kit's old public address, for authors who fetched it from there
 // (CONTRIBUTING.md once said so). A copy of sdk/dev-server.mjs, not kept in
 // the source tree. Transition only: remove on 2027-02-15 (docs/platform.md).

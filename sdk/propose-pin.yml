@@ -3,7 +3,9 @@
 #
 # On every push to the branch your games live on, this opens a pull request
 # in lokeshmohanty/games that moves your registry pin to the commit you
-# pushed (or registers the repo, the first time). The pull request is yours:
+# pushed (or registers the repo, the first time, with your contributor card,
+# registry/<you>/main.json, made from your GitHub profile if you have none
+# yet — edit it in the pull request). The pull request is yours:
 # it is opened from your fork, with your token, and one stays open per repo —
 # a later push moves it along. A maintainer merges it; the site then deploys.
 #
@@ -51,12 +53,13 @@ jobs:
             echo "::error::Add the ARCADE_TOKEN secret (see the top of this file)."
             exit 1
           fi
-          # Every registered repo names its contributor (CONTRIBUTING.md).
-          if ! jq -e '.name | strings | length > 0' contributor.json >/dev/null 2>&1; then
-            echo "::error::Add a contributor.json with your \"name\" at the top of this repo."
+          owner=${REPO%%/*}
+          if [ "${REPO#*/}" = main ]; then
+            echo "::error::registry/$owner/main.json is your contributor card, so a repo called main cannot be registered."
             exit 1
           fi
           file="registry/$REPO.json"
+          card="registry/$owner/main.json"
           pin="arcade-pin/${REPO#*/}"
           me=$(gh api user --jq .login)
 
@@ -91,6 +94,21 @@ jobs:
             gh api -X PATCH "repos/$fork/git/refs/heads/$pin" -f sha="$base" -F force=true >/dev/null
           else
             gh api -X POST "repos/$fork/git/refs" -f ref="refs/heads/$pin" -f sha="$base" >/dev/null
+          fi
+          # Every registered repo's owner has a card: one from your GitHub
+          # profile when the arcade has none yet (validateContributor's limits).
+          if ! gh api "repos/$ARCADE/contents/$card" >/dev/null 2>&1; then
+            profile=$(gh api "users/$owner" | jq '
+              (.blog // "" | gsub("^\\s+|\\s+$"; "")) as $b
+              | (if ($b | test("^https://")) then $b elif $b != "" and ($b | test("^[a-zA-Z]+:") | not) then "https://" + $b else "" end) as $url
+              | {name: (if (.name // "") != "" then .name else .login end)[0:40]}
+              + (if (.bio // "") != "" then {bio: .bio[0:280]} else {} end)
+              + (if (.location // "") != "" then {location: .location[0:40]} else {} end)
+              + (if ($url | test("^https://\\S+$")) and ($url | length) <= 200 then {links: [{label: "Website", url: $url}]} else {} end)')
+            gh api -X PUT "repos/$fork/contents/$card" \
+              -f message="registry: $owner's contributor card" \
+              -f content="$(printf '%s\n' "$profile" | base64 -w0)" \
+              -f branch="$pin" >/dev/null
           fi
           old=$(gh api "repos/$fork/contents/$file?ref=$pin" --jq .sha 2>/dev/null || true)
           gh api -X PUT "repos/$fork/contents/$file" \

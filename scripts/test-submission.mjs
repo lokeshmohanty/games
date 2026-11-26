@@ -17,14 +17,17 @@ const check = (label, ok, detail = "") => {
 const A = "a".repeat(40);
 const B = "b".repeat(40);
 const entry = (owner, repo, commit, games = ["chess"]) => ({ repo: `https://github.com/${owner}/${repo}`, commit, games });
-/** A world: files before/after, and how GitHub compares commits (`on`: a branch against the pin). */
-const world = ({ changed, author = "ada", association = "NONE", before = {}, after = {}, rel = "ahead", on = "ahead" }) =>
+/**
+ * A world: files before/after, and how GitHub compares commits (`on`: a
+ * branch against the pin). Every owner has a card unless `cards` is false.
+ */
+const world = ({ changed, author = "ada", association = "NONE", before = {}, after = {}, rel = "ahead", on = "ahead", cards = true }) =>
 	judge({
 		changed,
 		author,
 		association,
 		before: (p) => before[p] ?? null,
-		after: (p) => (p in after ? after[p] : null),
+		after: (p) => (p in after ? after[p] : cards && p.endsWith("/main.json") ? { name: "Someone" } : null),
 		compare: async (repo, from, to) => (to === "arcade" ? on : rel),
 	});
 const P = "registry/ada/minis.json";
@@ -80,7 +83,21 @@ for (const b of ["arcade-v2", "feature/arcade", "v1.2"]) {
 	check(`"branch": ${JSON.stringify(b)} is accepted`, validateEntry({ ...entry("ada", "minis", A), branch: b }, "ada", "minis").length === 0);
 }
 
-console.log("\nsubmission: every registered repo names its contributor");
+console.log("\nsubmission: every registered repo's owner has a card (registry/<owner>/main.json)");
+const C = "registry/ada/main.json";
+v = await world({ changed: [P], after: { [P]: entry("ada", "minis", A) }, cards: false });
+check("a new pin from an owner with no card: refused, saying where it goes", !v.ok && v.problems.some((p) => p.includes("no registry/ada/main.json")), v.problems);
+v = await world({ changed: [C, P], after: { [C]: { name: "Ada" }, [P]: entry("ada", "minis", A) }, cards: false });
+check("…the card and the pin in one pull request: fine, a 'new'", v.ok && v.kind === "new", v);
+v = await world({ changed: [C], after: { [C]: { name: "Ada", bio: "Small games." } } });
+check("a card alone is its own kind, 'card'", v.ok && v.kind === "card", v);
+v = await world({ changed: [C], after: { [C]: { bio: "no name" } } });
+check("a card without a name: refused", !v.ok && v.problems.some((p) => p.includes('"name" is required')), v.problems);
+v = await world({ changed: ["registry/bob/main.json"], after: { "registry/bob/main.json": { name: "Not Bob" } } });
+check("someone else's card: refused (the owner rule)", !v.ok && v.problems.some((p) => p.includes("bob's")), v.problems);
+v = await world({ changed: [C], after: { [C]: entry("ada", "main", A) } });
+check("a repo called main: refused — main.json is the card", !v.ok && v.problems.some((p) => p.includes('a repo called "main" cannot be registered')), v.problems);
+
 const card = (data) => {
 	try {
 		return contributorEntry("ada", "https://github.com/ada/minis", data, A);
@@ -88,8 +105,8 @@ const card = (data) => {
 		return err.message;
 	}
 };
-check("a contributor.json with a name makes the card", card({ name: "Ada" }).name === "Ada", card({ name: "Ada" }));
-check("no contributor.json: refused, saying so", String(card(null)).includes("no contributor.json"), card(null));
+check("a card with a name makes the Contributors entry", card({ name: "Ada" }).name === "Ada", card({ name: "Ada" }));
+check("a pin with no card: refused, saying so", String(card(null)).includes("no registry/ada/main.json"), card(null));
 check("…nor one without a name", String(card({ bio: "hi" })).includes('"name" is required'), card({ bio: "hi" }));
 check("…nor a blank name", String(card({ name: "  " })).includes('"name" is required'), card({ name: "  " }));
 check("the arcade's own card (no pin) may still go without one", contributorEntry("ada", "https://github.com/ada/minis", null).name === null);

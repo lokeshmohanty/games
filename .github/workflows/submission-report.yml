@@ -10,7 +10,7 @@
 #
 # Labels (made if missing):
 #   game-submission                 every submission — filter with label:game-submission
-#   submission: new / update / removal / mixed
+#   submission: new / update / removal / mixed / card
 #   checks passed / changes needed  the latest result; the other one is removed
 name: Report game submission
 
@@ -50,7 +50,7 @@ jobs:
           kind=$(jq -r '.kind // "none"' submission/result.json)
           ok=$(jq -r '.ok' submission/result.json)
           case "$pr" in ''|*[!0-9]*) echo "no PR number"; exit 0;; esac
-          case "$kind" in new|update|removal|mixed|none) ;; *) kind=none;; esac
+          case "$kind" in new|update|removal|mixed|card|none) ;; *) kind=none;; esac
           # The result is the PR's: the PR's head must be the commit that was judged.
           head=$(gh api "repos/$REPO/pulls/$pr" --jq .head.sha)
           [ "$head" = "$HEAD_SHA" ] || { echo "PR #$pr has moved on ($head); a newer run reports"; exit 0; }
@@ -61,6 +61,7 @@ jobs:
                    "submission: update|5319e7|Moves a pin to a newer commit" \
                    "submission: removal|b60205|Removes a games repo" \
                    "submission: mixed|fbca04|Several kinds of change at once" \
+                   "submission: card|c5def5|Only a contributor's card (registry/<owner>/main.json)" \
                    "checks passed|2ea44f|The submission check passed" \
                    "changes needed|d93f0b|The submission check found problems"; do
             IFS='|' read -r name color desc <<< "$l"
