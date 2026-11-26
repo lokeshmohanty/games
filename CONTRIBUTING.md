@@ -199,10 +199,14 @@ tooling, it copies the folder at the pinned commit.
 
 ## Your card on the Contributors page
 
-Required: a `contributor.json` at the root of your repository, with at least
-your `"name"`, says who made the games and how you appear on the
+Your card lives in the arcade's registry, beside your pins:
+`registry/<your-github-user>/main.json` — nothing to add to your own
+repository. It is required, with at least your `"name"`: it says who made the
+games and how you appear on the
 [Contributors](https://www.lokeshmohanty.in/games/?page=contributors) page, beside your GitHub avatar and
-login. A repository without one is not proposed and its submission fails.
+login. Proposing your first repo (step 4) offers it filled in from your GitHub
+profile; edit it there before committing. (`main` is therefore the one repo
+name the registry cannot take.)
 
 ```json
 {
@@ -213,16 +217,17 @@ login. A repository without one is not proposed and its submission fails.
 }
 ```
 
-Name ≤ 40, bio ≤ 280, location ≤ 40 characters, up to 5 https links. It is
-read at the same pinned commit as your games, so it changes with your next
-pin bump.
+Name ≤ 40, bio ≤ 280, location ≤ 40 characters, up to 5 https links. To
+change it later, edit that file in a pull request of its own (labelled
+`submission: card`).
 
 ## 4. Open a pull request
 
 On the [Add your game](https://www.lokeshmohanty.in/games/?page=contribute) page, type your repository
 (`owner/name`) under **Propose your games**: it opens GitHub's page for your
 registry file, filled in with your latest commit and every folder holding a
-`game.json`. Commit it there and GitHub offers the pull request. (From a
+`game.json`. Commit it there and GitHub offers the pull request. Your first
+time, it opens your card (above) first, as a pull request of its own. (From a
 checkout: `just propose owner/name`.) The file it makes:
 
 ```json
@@ -248,7 +253,7 @@ workflow, on every PR that touches `registry/`):
 - an update moves your pin forward (never back, never to another branch);
 - every listed game is fetched (and a web app built) at that commit and
   passes `validate-game` (manifest, 10 MB, no CSP violation,
-  your `contributor.json`, and a play with bots at phone size — for a web app,
+  your card, and a play with bots at phone size — for a web app,
   its server starting and answering; own colours are a warning).
 
 The result is posted as a comment and as labels — `game-submission`,
@@ -264,7 +269,7 @@ the branch your games live on, and add a repository secret `ARCADE_TOKEN`: a
 classic personal access token with the `public_repo` scope. Then every push
 to that branch opens — or moves along — your pull request here, from your
 fork, with the same file as above (`"branch"` included when it is not your
-default branch). The setup steps are at the top of the file; all it does is
+default branch) and, the first time, your card from your GitHub profile. The setup steps are at the top of the file; all it does is
 in plain shell below them. It is still your pull request, and a maintainer
 still merges it.
 

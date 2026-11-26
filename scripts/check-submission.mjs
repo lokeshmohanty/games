@@ -14,11 +14,14 @@
 //      never behind or on another branch (the compare API's "ahead");
 //   5. the commit exists in that public repo;
 //   6. an entry naming a "branch" has its commit on it (the branch is the
-//      commit or ahead of it): a game may live on a branch, not on main.
+//      commit or ahead of it): a game may live on a branch, not on main;
+//   7. every pin's owner has a card, registry/<owner>/main.json, with a name
+//      (validateContributor); a changed card is checked too. "main" is the
+//      card's name, so no repo called main can be registered.
 //
 // Then the wrapper fetches the pinned commits and runs the same checks as
 // `just validate-game` on every listed game (manifest, bundle, no network,
-// theme colours, 5 MB, contributor.json, and each game played with bots at
+// theme colours, 5 MB, the owner's card, and each game played with bots at
 // 390x844). It writes result.json and summary.md for the report workflow.
 //
 //   node scripts/check-submission.mjs [--base origin/main] [--out dir]
@@ -28,7 +31,8 @@ import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { validateEntry } from "./fetch-community.mjs";
+import { CARD, validateEntry } from "./fetch-community.mjs";
+import { validateContributor } from "./manifest.mjs";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const FILE = /^registry\/([A-Za-z0-9-]+)\/([A-Za-z0-9_.-]+)\.json$/;
@@ -41,7 +45,8 @@ export const MAINTAINER = new Set(["OWNER", "MEMBER", "COLLABORATOR"]);
  *   before(p)    the file's JSON on the base branch, or null
  *   after(p)     the file's JSON in the PR, or null when deleted
  *   compare(repo, from, to) → "ahead" | "behind" | "diverged" | "identical" | "missing"
- * Resolves { ok, kind: "new"|"update"|"removal"|"mixed", problems, entries }.
+ * Resolves { ok, kind: "new"|"update"|"removal"|"mixed"|"card", problems,
+ * entries }: "card" when only cards change.
  */
 export async function judge({ changed, author, association, before, after, compare }) {
 	const problems = [];
@@ -57,6 +62,15 @@ export async function judge({ changed, author, association, before, after, compa
 		}
 		const old = before(path);
 		const next = after(path);
+		if (`${repo}.json` === CARD) {
+			// The owner's card, not a pin.
+			if (next) {
+				const bad = validateContributor(next, { registered: true });
+				if (bad.length) problems.push(`${path}: ${bad.join("; ")}${"repo" in next || "commit" in next ? ` — ${CARD} is the contributor's card, so a repo called "main" cannot be registered` : ""}`);
+			}
+			continue;
+		}
+		if (next && !after(`registry/${owner}/${CARD}`)) problems.push(`${path}: no registry/${owner}/${CARD} — add your card there, with your "name" (CONTRIBUTING.md)`);
 		if (!next) {
 			kinds.add("removal");
 			entries.push({ path, owner, repo, kind: "removal" });
@@ -81,7 +95,8 @@ export async function judge({ changed, author, association, before, after, compa
 		}
 	}
 	if (!changed.some((p) => FILE.test(p))) problems.push("no registry/<owner>/<repo>.json changes");
-	const kind = kinds.size === 1 ? [...kinds][0] : kinds.size ? "mixed" : "none";
+	const cards = changed.some((p) => FILE.test(p) && p.endsWith(`/${CARD}`));
+	const kind = kinds.size === 1 ? [...kinds][0] : kinds.size ? "mixed" : cards ? "card" : "none";
 	return { ok: !problems.length, kind, problems, entries, maintainer };
 }
 

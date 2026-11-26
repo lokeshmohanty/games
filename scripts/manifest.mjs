@@ -141,9 +141,10 @@ export function validateManifest(m) {
 }
 
 /**
- * Problems with a contributor.json (optional, at the root of a games repo):
- * how its owner appears on the Contributors page. Their GitHub login and
- * avatar are known already; this is the part they choose.
+ * Problems with a contributor's card, registry/<owner>/main.json (CARD in
+ * fetch-community.mjs): how its owner appears on the Contributors page.
+ * Their GitHub login and avatar are known already; this is the part they
+ * choose. `registered`: every owner folder has one, with a name.
  *
  *   { "name": "Ada", "bio": "Makes small strategy games.", "location": "Pune",
  *     "links": [{ "label": "Blog", "url": "https://…" }] }

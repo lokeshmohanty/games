@@ -16,25 +16,23 @@ separate `TODO.md`.*
 
 ## Now (2026-11-18)
 
-**Branch `propose-action` (2026-11-26, local, on top of `registry-branch`):**
-`sdk/propose-pin.yml`, the contributor's own workflow that opens/moves their
-registry PR on every push (Lokesh chose it over an arcade bot; labels keep
-their `submission: …` names). Tested against a fake gh only — **VERIFY** with
-a real token on a real repo (e.g. locale-chess `arcade-v2`). Also here:
-every registered repo must carry a `contributor.json` with a `"name"`
-(Lokesh, 2026-11-26); locale-chess `arcade-v2` has one at `ee4236b`
-(Rajarshi Dasgupta, from rajarshi99.github.io), local, not pushed.
+**Branch `contributor-cards` (2026-11-26, local):** what PR #30 had — it was
+merged into `registry-branch`, not main — plus contributor cards in the
+registry. `sdk/propose-pin.yml`: the contributor's own workflow that
+opens/moves their registry PR on every push (Lokesh chose it over an arcade
+bot; labels keep their `submission: …` names, plus `submission: card`);
+tested against a fake gh only — **VERIFY** with a real token on a real repo.
+Every pin's owner has a card, `registry/<owner>/main.json`, with a `"name"`
+(registry only; a repo's contributor.json is no longer read; `main` is a
+reserved repo name). The arcade's own card moved there from the root
+`contributor.json`.
 
-**Branch `registry-branch` (2026-11-26, PR #29, CI green, not merged):** registry
-entries take an optional `"branch"` (Lokesh: Locale should "go from this
-branch itself and not from the main branch"): propose, Add your game
-(`owner/name@branch`) and Check for updates follow it, and the submission
-check wants the pin's commit on it; root games propose as `"."`. For
-**locale-chess**: its branch `arcade-v2` (local, commit c2085d6, game.json
-`"sdk": 2` + LICENSE, nothing else) built and passed `validate-game` through a
-temporary pin. `arcade-v2` is pushed to rajarshi99/locale-chess (Lokesh,
-2026-11-26). To land: merge #29, then `just propose
-rajarshi99/locale-chess@arcade-v2` (or the workflow above).
+**Locale (rajarshi99/locale-chess):** PR #29 (`"branch"`) is merged. Its
+`arcade-v2` holds game.json (`"sdk": 2`) + LICENSE; `7dba6ca` removes the
+interim contributor.json (local, Lokesh to push). PR #31 registers it; after
+`contributor-cards` lands it is rebased onto main with the pin at `7dba6ca`
+and `registry/rajarshi99/main.json` (Rajarshi Dasgupta, from
+rajarshi99.github.io).
 
 **Branch `top-tabs` (2026-11-26, PR open, not merged):** the nav row is
 My Games · All Games · Community (Lokesh: "keep them separate tabs"); the

@@ -320,14 +320,23 @@ catalog's `CONTRIBUTORS[].branches`), and the submission check requires the
 commit to be on it. `owner/name@branch` (or a `…/tree/<branch>` address)
 names it for a new repo. A game at the repository's root is listed as `"."`.
 
-**Every entry names its contributor** (Lokesh, 2026-11-26: "ensure that
-every registry item is linked to a contributor (from contributor.json)").
-The registry file's owner folder is the contributor's login; the pinned
-commit must hold a `contributor.json` at its top with a `"name"`
-(`validateContributor(…, { registered: true })`, `contributorEntry` throws
-without one), so the fetch — and with it the submission check — fails
-otherwise, and propose, the Add your game form and `sdk/propose-pin.yml`
-refuse up front. The card is read at the pin, beside the games.
+**Every entry names its contributor, in the registry** (Lokesh,
+2026-11-26: "ensure that every registry item is linked to a contributor";
+then "there is no need to maintain separate contributor.json, instead it can
+be inside registry/<contributor>/main.json"). Each owner folder holds their
+card, `registry/<owner>/main.json` (`CARD` in fetch-community.mjs), with a
+`"name"` (`validateContributor(…, { registered: true })`); `contributorEntry`
+throws for a pin without one, so the fetch and the submission check fail.
+A game repo's own `contributor.json` is no longer read (registry only).
+`main` is the one repo name the registry cannot take: check-submission says
+so for a pin-shaped main.json, and the workflow refuses a repo called main.
+The submission check also checks a changed card (owner rule as for pins); a
+pull request changing only cards is labelled `submission: card`. For an owner
+with no card, propose and the Add your game form offer it first (its own
+pull request: GitHub fills one new file per page), and `sdk/propose-pin.yml`
+writes it into the same pull request — both from the owner's GitHub profile
+(`cardFrom`). The arcade's own card is `registry/lokeshmohanty/main.json`
+(was the root `contributor.json`), read by build-catalog.mjs too.
 
 `just community` (`scripts/fetch-community.mjs`) unpacks exactly that commit
 — GitHub's tarball, or `git archive` from a clone at `../<repo>` that has the

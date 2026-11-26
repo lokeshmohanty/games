@@ -50,10 +50,10 @@ try {
 	console.error(err.message);
 	process.exit(1);
 }
-// This repo's own author: its contributor.json, like any games repo's.
+// This repo's own author: their registry card, like any contributor's.
 let contributors = [];
 try {
-	const own = join(ROOT, "contributor.json");
+	const own = join(ROOT, "registry", games[0]?.author ?? "", "main.json");
 	const login = games[0]?.author;
 	if (login) contributors = [contributorEntry(login, games[0].repo, existsSync(own) ? JSON.parse(readFileSync(own, "utf8")) : null)];
 } catch (err) {
