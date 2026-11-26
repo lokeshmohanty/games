@@ -1773,7 +1773,7 @@ html[data-home="all"] .boot .site-tab[data-tab="all"] {
   z-index: 40;
   display: flex;
   flex-direction: column;
-  min-width: 13rem;
+  min-width: min(13rem, calc(100vw - 32px));
   max-width: calc(100vw - 32px);
   padding: 6px;
   border: 1px solid var(--accent);

@@ -855,11 +855,18 @@ try {
 					};
 				});
 				check(`Firefox, text at ${scale}%, ${w}x${h}, ${page}: tabs clear of ☰ (the lit ${lit} in view), sub-tabs apart and 44px, no sideways scroll`, bar.clear && bar.lit === lit && bar.litInView && bar.tabsH >= 43 && bar.subsApart && bar.subsInside && !(page.startsWith("index") && bar.sideways), bar);
-				// 130%: all three whole (they tighten: lib/styles.css), or a fade
-				// where one is cut; 200%: they cannot fit, so a fade shows, never
-				// over the lit tab.
-				if (scale === 130) check(`Firefox, text at 130%, ${w}x${h}, ${page}: every tab whole, or a fade on the side that cuts one`, bar.whole || (bar.hinted && bar.litClear), bar);
+				// 130%: all three whole (they tighten: lib/styles.css); 200%: they
+				// cannot fit, so a fade shows, never over the lit tab.
+				if (scale === 130) check(`Firefox, text at 130%, ${w}x${h}, ${page}: every tab whole`, bar.whole, bar);
 				else check(`Firefox, text at ${scale}%, ${w}x${h}, ${page}: the strip fades where it hides a tab, the lit one clear of the fade`, (bar.fade.start || bar.fade.end) && bar.hinted && bar.litClear, bar);
+			}
+			if (scale === 200) {
+				// ☰ open with the text at 200%: the list stays on screen (its
+				// 13rem floor gives way to the viewport).
+				await fp.goto(site.url("index.html?page=games&tab=all"));
+				await fp.locator(".site-menu-btn").first().tap();
+				const list = await fp.locator(".site-menu-list:not([hidden])").first().boundingBox();
+				check(`Firefox, text at 200%, ${w}x${h}: the ☰ list stays on screen`, !!list && list.x >= 0 && list.x + list.width <= w, list);
 			}
 			if (scale === 200 && w === 354) {
 				// JOIN WITH A CODE in Firefox, its text at 200%: still 44px and
