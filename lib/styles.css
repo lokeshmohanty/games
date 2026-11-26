@@ -1684,16 +1684,16 @@ canvas {
 /* Still wider than the column (a large text size): the side that hides a
    tab fades out, since the scrollbar is hidden (lib/nav.js edges). */
 .site-tabs.fade-end {
-  -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 28px), transparent);
-  mask-image: linear-gradient(to right, #000 calc(100% - 28px), transparent);
+  -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 28px), transparent); /* theme-exempt: a mask, only its alpha counts */
+  mask-image: linear-gradient(to right, #000 calc(100% - 28px), transparent); /* theme-exempt: a mask, only its alpha counts */
 }
 .site-tabs.fade-start {
-  -webkit-mask-image: linear-gradient(to left, #000 calc(100% - 28px), transparent);
-  mask-image: linear-gradient(to left, #000 calc(100% - 28px), transparent);
+  -webkit-mask-image: linear-gradient(to left, #000 calc(100% - 28px), transparent); /* theme-exempt: a mask, only its alpha counts */
+  mask-image: linear-gradient(to left, #000 calc(100% - 28px), transparent); /* theme-exempt: a mask, only its alpha counts */
 }
 .site-tabs.fade-start.fade-end {
-  -webkit-mask-image: linear-gradient(to right, transparent, #000 28px, #000 calc(100% - 28px), transparent);
-  mask-image: linear-gradient(to right, transparent, #000 28px, #000 calc(100% - 28px), transparent);
+  -webkit-mask-image: linear-gradient(to right, transparent, #000 28px, #000 calc(100% - 28px), transparent); /* theme-exempt: a mask, only its alpha counts */
+  mask-image: linear-gradient(to right, transparent, #000 28px, #000 calc(100% - 28px), transparent); /* theme-exempt: a mask, only its alpha counts */
 }
 .site-tab,
 .site-subtab {
