@@ -22,7 +22,7 @@ const SITE = await serve(8733);
 const PARTY = SITE.url("?party");
 const TIMEOUT = 40_000;
 // The portal: the shell with no query (LEAVE PARTY and GAMES go there).
-// The portal: ./, or ./ with its sub-tab named (src/router.ts portalAddress).
+// The portal: ./, or ./ with its tab named (src/router.ts portalAddress).
 const PORTAL = (u) => u.pathname === "/" && /^(\?page=games&tab=(mine|all))?$/.test(u.search);
 
 function chromePath() {
@@ -175,7 +175,7 @@ try {
 	});
 	check("the fixed portal pill does not overlap the title", !behindPill);
 	// Lokesh, 2026-11-16: "← GAMES" (it lands on the home screen's default
-	// sub-tab, My Games or All Games), every way back to it named the same.
+	// tab, My Games or All Games), every way back to it named the same.
 	const backLabel = await host.evaluate(() => document.querySelector(".portal-link")?.textContent.trim());
 	check("the pill back to the home screen says ← Games", backLabel === "← Games", backLabel);
 	check("host sees 2 members", await waitForMembers(host, 2, "host"), "roster did not grow");

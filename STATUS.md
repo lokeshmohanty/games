@@ -16,6 +16,11 @@ separate `TODO.md`.*
 
 ## Now (2026-11-18)
 
+**Branch `top-tabs` (2026-11-26, PR open, not merged):** the nav row is
+My Games · All Games · Community (Lokesh: "keep them separate tabs"); the
+portal has no sub-tab row, Community keeps Collections · Contributors.
+Same addresses; index.html's first frame lights the top tab now.
+
 **Branch `randomness` (2026-11-25, both repos, pushed, not merged):** the
 variety Lokesh picked on 2026-11-24 (docs/index.md "Variety, from the seed").
 Here: Connect 4's seeded pick among near-best columns; Neon Survival's run

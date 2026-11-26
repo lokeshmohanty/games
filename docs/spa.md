@@ -25,8 +25,8 @@ GitHub Pages has no rewrites, and the hash already carries invites (`#i=`,
 
 | Address | View |
 |---|---|
-| `./` | the portal, on the sub-tab the router picks (below) |
-| `./?page=games&tab=mine`, `./?page=games&tab=all` (with `&q=…`, a search; `&genre=<id>`, a genre's page) | the portal's sub-tabs, My Games and All Games |
+| `./` | the portal, on the tab the router picks (below) |
+| `./?page=games&tab=mine`, `./?page=games&tab=all` (with `&q=…`, a search; `&genre=<id>`, a genre's page) | the portal's tabs, My Games and All Games |
 | `./?page=profile` (or `contribute`, `contributors`, `collections`) | that view; its own query parameters ride along. `./?page=leaderboard` (gone 2026-11-25) is replaced by `./?page=profile` as it is entered (`legacyAddress`) |
 | `./?game=connect4`, `?mode`, `?fresh`, `?dev`, `?party`, or an invite or code hash (`./?party#i=…`) | the party |
 
@@ -48,39 +48,40 @@ now 404s**, which Lokesh accepted on 2026-11-15. That covers:
 A phone whose service worker is older than the shell (2026-11-14's snapshot)
 may show the old portal for a new invite once, until its worker updates.
 
-### The portal's sub-tabs
+### The portal's tabs
 
-*Lokesh, 2026-11-15: "All favourites land under My Games".* The Games tab
-has two sub-tabs, like Community's: **My Games** (Recently played and ★
-Favourites: games, contributors, collections) and **All Games** (PLAY
-SOMETHING, the search, Popular and the categories). lib/portal.js draws only
-the sections of the sub-tab showing.
+*Lokesh, 2026-11-15: "All favourites land under My Games".* The portal is
+two tabs of the nav row: **My Games** (Recently played and ★ Favourites:
+games, contributors, collections) and **All Games** (PLAY SOMETHING, the
+search, Popular and the categories). They were a Games tab's sub-tabs until
+2026-11-26 (Lokesh: "keep them separate tabs"); the addresses did not
+change. lib/portal.js draws only the sections of the tab showing.
 
 - **The default.** `./` opens on My Games when this device has any
   favourite or any recently played game (localStorage `neon.favs`,
   `neon.recent`), else on All Games; a portal address with `?q=` and no
-  sub-tab opens on All Games. The rule is one function,
+  tab opens on All Games. The rule is one function,
   `NeonArcade.homeTab()`, defined by an inline script in index.html's head:
   it runs before the first paint, and localStorage is synchronous, so the
-  static first frame (below) already shows the right sub-tab.
+  static first frame (below) already lights the right tab.
 - **The address always names it.** `src/router.ts` `portalAddress` gives any
-  portal address without a sub-tab one (`page=games&tab=…`) as it is
+  portal address without a tab one (`page=games&tab=…`) as it is
   entered: on load and on Back (replaceState), and in `navigate()`. So a star
-  never moves you to the other sub-tab, a sub-tab link is a history entry,
-  and Back returns to the sub-tab you left. The sub-tab links are
-  `./?page=games&tab=mine` / `tab=all`; the Games tab itself links `./`.
+  never moves you to the other tab, a tab link is a history entry, and Back
+  returns to the tab you left. The tabs link `./?page=games&tab=mine` /
+  `tab=all`; `./` lands on whichever the rule picks.
 - **The static first frame** (index.html `#app .boot`) draws the nav row as
-  lib/nav.js will: the tabs, the ☰ button's place and both sub-tabs, the
-  chosen one lit by `html[data-home]` (lib/styles.css). Its height is
-  therefore the drawn row's, and test-portal compares the two (with the
-  app's code blocked, then loaded): same boxes, same lit sub-tab, the title
-  unmoved. **Change nav.js's tabs and that markup together.**
+  lib/nav.js will: the three tabs, the chosen one lit by `html[data-home]`
+  (lib/styles.css), and the ☰ button's place; no sub-tab row on either.
+  Its height is therefore the drawn row's, and test-portal compares the two
+  (with the app's code blocked, then loaded): same boxes, same lit tab, the
+  title unmoved. **Change nav.js's tabs and that markup together.**
 - **A genre's page** (2026-11-21) is the same view at
   `./?page=games&tab=all&genre=<id>`, reached by a category's SEE ALL (a
   link, so a history entry: Back returns to All Games). lib/portal.js draws
   only that section, as a grid, and the view's ← All Games link
   (`[data-genre-back]`); the router needs nothing new, since the address
-  already names its sub-tab.
+  already names its tab.
 - **PLAY SOMETHING** (Popular's heading; on My Games, Recently played's
   heading, else ★ Favourites', and the empty state) is the SINGLE PLAYER
   address, plus `start=pick` (the size of the game's remembered quick table
@@ -228,12 +229,13 @@ contribute, contributors; collections is new (no old page: the nav links
   weigh against lib/styles.css exactly as they did on their own page. A plain `.view-x a` prefix outranked
   `.neon-btn--accent` and turned button text the colour of its background.
 - **The site nav** is lib/nav.js, drawn into `nav[data-nav]` in `onMount`.
-  It is one row on phone and desktop: the tabs Games · Community (no
-  Leaderboards since 2026-11-25), and a ☰ menu at the right holding Add your game, Theme, sign in
-  or the profile, and the source on GitHub. Games has its own sub-tabs, My
-  Games · All Games (the portal sets `data-page="mine|all"`), and Community
-  Collections · Contributors, opening on Collections; the sub-tab row sits
-  under the tab row, every sub-tab 44px tall. The row's height is reserved
+  It is one row on phone and desktop: the tabs My Games · All Games ·
+  Community (the portal sets `data-page="mine|all"`; no Leaderboards since
+  2026-11-25; My Games and All Games were a Games tab's sub-tabs until
+  2026-11-26), and a ☰ menu at the right holding Add your game, Theme, sign in
+  or the profile, and the source on GitHub. Only Community has sub-tabs,
+  Collections · Contributors, opening on Collections; that row sits under
+  the tab row, every sub-tab 44px tall, and the portal has none. The row's height is reserved
   in CSS, and on the portal the static first frame draws it, so nothing
   jumps when it's drawn. This replaced a bar of buttons above the tabs that
   crowded a phone (2026-11-15).

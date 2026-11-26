@@ -1,11 +1,11 @@
 // src/views/Portal.tsx — the home screen: brand, the party banner, then the
-// Games tab's two sub-tabs (was index.html; docs/spa.md):
+// portal's two tabs, My Games and All Games (was index.html; docs/spa.md):
 //   My Games   (./?page=games&tab=mine) recently played, ★ favourites, or
 //              how to star when there are none
 //   All Games  (./?page=games&tab=all) the search, Popular (with PLAY
 //              SOMETHING) and the categories, each with SEE ALL: its own
 //              page (&genre=<id>), a grid
-// The router names the sub-tab for ./ (src/router.ts portalAddress); this
+// The router names the tab for ./ (src/router.ts portalAddress); this
 // view follows the address, so Back moves between them.
 //
 // The sections, cards and search stay lib/portal.js's vanilla DOM
@@ -44,7 +44,7 @@ export default function Portal() {
 		onCleanup(A.portal.mount(main, tab()));
 		askNameOnce(); // a first visit's name (src/NamePrompt.tsx), once per device
 	});
-	// A sub-tab chosen, Back to the other one, or to another search: the same
+	// A tab chosen, Back to the other one, or to another search: the same
 	// view, redrawn. (An address of another view: this one is going.)
 	createEffect(
 		on(
@@ -63,7 +63,7 @@ export default function Portal() {
 	);
 	return (
 		<main class="view-portal" ref={main}>
-			{/* lib/nav.js: the tabs, the ☰ menu, and the sub-tabs My Games · All Games. */}
+			{/* lib/nav.js: the tabs My Games · All Games · Community, and the ☰ menu. */}
 			<nav class="site-nav" data-nav ref={nav} />
 			<h1 class="brand">
 				<svg class="mark" viewBox="96 104 320 288" aria-hidden="true">

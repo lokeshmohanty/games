@@ -1,4 +1,4 @@
-// scripts/test-portal.mjs — the home screen's sub-tabs (My Games · All
+// scripts/test-portal.mjs — the home screen's tabs (My Games · All
 // Games), sections, PLAY SOMETHING and search, the bar and tabs on every page,
 // the Contributors and Collections pages and the add-your-game guide, at
 // 390x844 (and Lokesh's phone, 354x696).
@@ -679,15 +679,16 @@ try {
 	}
 
 	console.log("\nportal: the tabs and the menu on every page");
-	// One row: Games · Community, and ☰ (Lokesh, 2026-11-15:
-	// the buttons above the tabs crowded a phone). Community has its own tabs.
+	// One row: My Games · All Games · Community, and ☰ (Lokesh, 2026-11-15:
+	// the buttons above the tabs crowded a phone; 2026-11-26: My Games and
+	// All Games "separate tabs"). Only Community has sub-tabs.
 	// A device with nothing of its own: ./ is All Games.
 	await p.evaluate(() => localStorage.removeItem("neon.recent"));
-	const SUBS = { Games: "My Games,All Games", Community: "Collections,Contributors" };
+	const SUBS = { Community: "Collections,Contributors" };
 	for (const [page, tab, sub] of [
-		["index.html", "Games", "All Games"],
-		["./?page=games&tab=mine", "Games", "My Games"],
-		["./?page=games&tab=all", "Games", "All Games"],
+		["index.html", "All Games", null],
+		["./?page=games&tab=mine", "My Games", null],
+		["./?page=games&tab=all", "All Games", null],
 		["./?page=contributors", "Community", "Contributors"],
 		["./?page=collections", "Community", "Collections"],
 		["./?page=contribute", null, null],
@@ -715,7 +716,7 @@ try {
 				};
 			});
 		let nav = await read();
-		check(`${page}: tabs Games · Community, no Leaderboards${tab ? `, on ${tab}` : ""}`, nav.tabs.join() === "Games,Community" && nav.on === tab, nav);
+		check(`${page}: tabs My Games · All Games · Community, no Leaderboards${tab ? `, on ${tab}` : ""}`, nav.tabs.join() === "My Games,All Games,Community" && nav.on === tab, nav);
 		check(`${page}: ${sub ? `${tab}'s tabs ${SUBS[tab].replace(",", " · ")}, on ${sub}, 44px tall` : "no sub-tabs"}`, sub ? nav.subs.join() === SUBS[tab] && nav.subOn === sub && nav.subH >= 44 : nav.subs.length === 0, nav);
 		check(`${page}: tabs and ☰ in one row, ☰ 44px at the right, closed`, nav.oneRow && nav.btn.w >= 44 && nav.btn.h >= 44 && nav.btn.right > 340 && !nav.open && nav.expanded === "false", nav);
 		await p.locator(".site-menu-btn").click();
@@ -815,7 +816,7 @@ try {
 			await fc.route("**/api/stats/summary", (r) => r.abort());
 			const fp = await fc.newPage();
 			for (const [page, lit] of [
-				["index.html?page=games&tab=all", "Games"],
+				["index.html?page=games&tab=all", "All Games"],
 				["./?page=collections", "Community"],
 				["./?page=contributors", "Community"],
 			]) {
@@ -862,9 +863,9 @@ try {
 	}
 
 console.log("\nportal: My Games · All Games");
-// Lokesh, 2026-11-15: "All favourites land under My Games". The Games tab
-// has two sub-tabs with addresses; ./ opens on My Games once this device
-// has a favourite or a recent game, decided before the first paint.
+// Lokesh, 2026-11-15: "All favourites land under My Games". Two tabs with
+// addresses (Games' sub-tabs until 2026-11-26); ./ opens on My Games once
+// this device has a favourite or a recent game, decided before the first paint.
 {
 	/** A phone of its own, with this device's storage set before the first load. */
 	const phone = async (storage = {}, { width = 390, height = 844, init = null, counts = null } = {}) => {
@@ -883,7 +884,7 @@ console.log("\nportal: My Games · All Games");
 		return { c, pg };
 	};
 	const tabOf = (pg) => new URL(pg.url()).searchParams.get("tab");
-	const subOn = (pg) => pg.locator(".site-subtab.is-on").textContent({ timeout: TIMEOUT });
+	const subOn = (pg) => pg.locator("[data-nav] .site-tab.is-on").textContent({ timeout: TIMEOUT });
 	const RECENT = ["connect4", "neon-bid", "undercover", "neon-fission", "lokeshmohanty/sudoku"];
 
 	// The default, by what the device holds.
@@ -896,7 +897,7 @@ console.log("\nportal: My Games · All Games");
 		const { c, pg } = await phone(storage);
 		await pg.goto(site.url("index.html"));
 		const on = await subOn(pg);
-		check(`./ with ${what}: opens on ${want === "mine" ? "My Games" : "All Games"} (address and sub-tab)`, tabOf(pg) === want && on === (want === "mine" ? "My Games" : "All Games"), { url: pg.url(), on });
+		check(`./ with ${what}: opens on ${want === "mine" ? "My Games" : "All Games"} (address and tab)`, tabOf(pg) === want && on === (want === "mine" ? "My Games" : "All Games"), { url: pg.url(), on });
 		await c.close();
 	}
 	{
@@ -908,8 +909,8 @@ console.log("\nportal: My Games · All Games");
 	}
 
 	// The first paint: index.html's static frame, before any of the app's
-	// code runs, already lights the sub-tab that will show — and the drawn
-	// row lands exactly on it.
+	// code runs, already lights the tab that will show — and the drawn row
+	// lands exactly on it, with no sub-tab row on either.
 	for (const [storage, want] of [
 		[{}, "all"],
 		[{ "neon.recent": ["connect4"] }, "mine"],
@@ -924,13 +925,13 @@ console.log("\nportal: My Games · All Games");
 					const r = n.getBoundingClientRect();
 					return [Math.round(r.left), Math.round(r.top), Math.round(r.width), Math.round(r.height)].join(",");
 				};
-				const subs = [...document.querySelectorAll(".site-subtab")];
+				const tabs = [...document.querySelectorAll(".site-tab")];
 				return {
 					boot: !!document.querySelector(".boot"),
-					tabs: [...document.querySelectorAll(".site-tab")].map((t) => `${t.textContent}@${box(t)}`).join(" "),
-					subs: subs.map((t) => `${t.textContent}@${box(t)}`).join(" "),
-					bg: Object.fromEntries(subs.map((t) => [t.dataset.tab, getComputedStyle(t).backgroundColor])),
-					on: document.querySelector(".site-subtab.is-on")?.dataset.tab ?? null,
+					tabs: tabs.map((t) => `${t.textContent}@${box(t)}`).join(" "),
+					subs: document.querySelectorAll(".site-subtab, .site-subtabs").length,
+					bg: Object.fromEntries(tabs.map((t) => [t.dataset.tab, `${getComputedStyle(t).color} ${getComputedStyle(t).borderBottomColor}`])),
+					on: document.querySelector(".site-tab.is-on")?.dataset.tab ?? null,
 					h1: box(document.querySelector("h1")),
 				};
 			});
@@ -938,21 +939,21 @@ console.log("\nportal: My Games · All Games");
 		await pg.unroute(/\/app\/[^/]+\.js(\?|$)/);
 		await pg.goto(site.url("index.html"));
 		// The app's own row and heading, not the static frame's: that one has
-		// a lit sub-tab too, and the app's heading can follow its nav (a
+		// a lit tab too, and the app's heading can follow its nav (a
 		// runner read no h1 here, CI run 44143511384).
-		await pg.waitForFunction(() => !document.querySelector(".boot") && document.querySelector("[data-nav] .site-subtab.is-on") && document.querySelector("main h1"), null, { timeout: TIMEOUT }).catch(() => {});
+		await pg.waitForFunction(() => !document.querySelector(".boot") && document.querySelector("[data-nav] .site-tab.is-on") && document.querySelector("main h1"), null, { timeout: TIMEOUT }).catch(() => {});
 		const drawn = await frame();
 		const other = want === "mine" ? "all" : "mine";
 		check(`first paint (${want === "mine" ? "a game played" : "a first visit"}): the static frame lights ${want === "mine" ? "My Games" : "All Games"}, as the app does`, first.boot && first.bg[want] === drawn.bg[want] && first.bg[other] === drawn.bg[other] && first.bg[want] !== first.bg[other] && drawn.on === want, { first, drawn });
-		check("…the same tabs and sub-tabs in the same places, and the title does not move", !drawn.boot && first.tabs === drawn.tabs && first.subs === drawn.subs && first.h1 === drawn.h1, { first, drawn });
+		check("…the same tabs in the same places, no sub-tab row, and the title does not move", !drawn.boot && first.tabs === drawn.tabs && first.subs === 0 && drawn.subs === 0 && first.h1 === drawn.h1, { first, drawn });
 		await c.close();
 	}
 
-	// The sub-tabs are addresses: Back and Forward move between them.
+	// The tabs are addresses: Back and Forward move between them.
 	{
 		const { c, pg } = await phone();
 		await pg.goto(site.url("index.html"));
-		await pg.locator(".site-subtab", { hasText: "My Games" }).click();
+		await pg.locator("[data-nav] .site-tab", { hasText: "My Games" }).click();
 		await pg.locator("[data-my-empty]:not([hidden])").waitFor({ timeout: TIMEOUT });
 		const empty = await pg.evaluate(() => ({
 			text: document.querySelector("[data-my-empty] p").textContent,
@@ -978,7 +979,7 @@ console.log("\nportal: My Games · All Games");
 		const favs = () => pg.locator('[data-section="favs"] .game-card').evaluateAll((cs) => cs.map((c) => c.dataset.game).join());
 		await pg.evaluate(() => NeonArcade.stats.toggleFav("connect4")); // as the game's ★ does
 		check("…a star from a game leaves you where you are", tabOf(pg) === "all");
-		await pg.locator(".site-subtab", { hasText: "My Games" }).click();
+		await pg.locator("[data-nav] .site-tab", { hasText: "My Games" }).click();
 		await pg.locator('[data-section="favs"]:not([hidden]) .game-card').first().waitFor({ timeout: TIMEOUT });
 		check("…and the game is in My Games", (await favs()) === "connect4" && (await pg.locator("[data-my-empty]").isHidden()));
 		await pg.evaluate(() => NeonArcade.stats.toggleFav("connect4"));
@@ -991,13 +992,13 @@ console.log("\nportal: My Games · All Games");
 		await pg.locator('[data-section="favs"] .game-card[data-game="connect4"]').waitFor({ timeout: TIMEOUT });
 		await pg.locator('[data-section="favs"] .game-card[data-game="connect4"]').dispatchEvent("contextmenu"); // a long press
 		const opened = await settled(() => pg.locator('[data-section="favs"] .game-card.is-open').count(), (n) => n === 1, 3000);
-		await pg.locator(".site-subtab", { hasText: "All Games" }).click();
+		await pg.locator("[data-nav] .site-tab", { hasText: "All Games" }).click();
 		await pg.locator('[data-section="popular"]:not([hidden]) .game-card').first().waitFor({ timeout: TIMEOUT });
 		await pg.evaluate(() => NeonArcade.stats.toggleFav("connect4"));
-		await pg.locator(".site-subtab", { hasText: "My Games" }).click();
+		await pg.locator("[data-nav] .site-tab", { hasText: "My Games" }).click();
 		await pg.locator('[data-section="favs"]:not([hidden]) .game-card').first().waitFor({ timeout: TIMEOUT });
 		const back = await settled(async () => ({ favs: await favs(), open: await pg.locator(".game-card.is-open").count() }), (b) => b.favs === "neon-bid" && b.open === 0, 5000);
-		check("a card left open, a sub-tab away, a star changed: My Games is current on return", opened === 1 && back.favs === "neon-bid" && back.open === 0, { opened, back });
+		check("a card left open, a tab away, a star changed: My Games is current on return", opened === 1 && back.favs === "neon-bid" && back.open === 0, { opened, back });
 		await c.close();
 	}
 
@@ -1121,8 +1122,22 @@ console.log("\nportal: My Games · All Games");
 					};
 				}
 				const search = document.querySelector(".search:not([hidden]) input");
+				const strip = document.querySelector("[data-nav] .site-tabs");
+				const tabs = [...strip.children].map(r);
+				const menu = r(document.querySelector("[data-nav] .site-menu-btn"));
 				return {
 					vw: innerWidth,
+					// The three tabs and ☰ in one row: no tab scrolled out of
+					// sight, none over another or under ☰, the open one lit.
+					bar: {
+						tabs: [...strip.children].map((a) => a.textContent).join(),
+						whole: strip.scrollWidth <= strip.clientWidth && tabs.every((b) => b.left >= 0 && b.right <= menu.left),
+						apart: tabs.every((b, i) => i === 0 || tabs[i - 1].right <= b.left + 0.5),
+						row: tabs.every((b) => Math.abs(b.top - tabs[0].top) < 1) && menu.top < tabs[0].bottom && menu.bottom > tabs[0].top,
+						lit: document.querySelector("[data-nav] .site-tab.is-on")?.dataset.tab ?? null,
+						current: document.querySelector('[data-nav] .site-tab[aria-current="page"]')?.dataset.tab ?? null,
+						subs: document.querySelectorAll("[data-nav] .site-subtabs").length,
+					},
 					sideways: document.documentElement.scrollWidth > innerWidth,
 					targets,
 					text,
@@ -1136,13 +1151,14 @@ console.log("\nportal: My Games · All Games");
 					recent,
 					search: search ? Math.round(r(search).left) : null,
 					title: Math.round(r(document.querySelector(".portal-section:not([hidden]) .section-title")).left),
-					// PLAY SOMETHING where this sub-tab shows it: Popular's heading, or Recently played's.
+					// PLAY SOMETHING where this tab shows it: Popular's heading, or Recently played's.
 					quick: [...document.querySelectorAll("[data-quick]")].filter(shown).map((a) => ({ where: a.closest("[data-section], [data-recent]")?.dataset.section ?? "recent", h: Math.round(r(a).height), left: Math.round(r(a).left), right: Math.round(r(a).right), game: a.dataset.game })),
 				};
 			});
 			const at = `${width}x${height} ${t === "mine" ? "My Games" : "All Games"}`;
 			check(`${at}: no sideways scroll`, !L.sideways);
-			check(`${at}: every tap target 44px tall (START A PARTY, JOIN WITH A CODE, sub-tabs, chips, PLAY SOMETHING…)`, L.targets.length >= 8 && L.targets.every((x) => x.h >= 44), L.targets.filter((x) => x.h < 44));
+			if (width >= 354) check(`${at}: My Games · All Games · Community and ☰ in one row, every tab whole, ${t} lit, no sub-tab row`, L.bar.tabs === "My Games,All Games,Community" && L.bar.whole && L.bar.apart && L.bar.row && L.bar.lit === t && L.bar.current === t && L.bar.subs === 0, L.bar);
+			check(`${at}: every tap target 44px tall (START A PARTY, JOIN WITH A CODE, tabs, chips, PLAY SOMETHING…)`, L.targets.length >= 8 && L.targets.every((x) => x.h >= 44), L.targets.filter((x) => x.h < 44));
 			check(`${at}: every line on a card 12px or more`, L.text.length > 0 && L.text.every((x) => x.size >= 12), L.text.filter((x) => x.size < 12));
 			check(`${at}: …and the meta line still on one line`, L.metaLines <= 1, L.metaLines);
 			if (t === "all") check(`${at}: a row is two whole cards and the edge of the next, scrolling to the screen's edges`, L.rowWhole === 2 && L.rowPeeks && L.rowEdges[0] === 0 && L.rowEdges[1] === L.vw, L);
@@ -1754,7 +1770,7 @@ console.log("\nportal: My Games · All Games");
 			check(`${at}: …and the party running behind the portal takes it at once`, live === want, { live, want });
 		}
 		await np.reload();
-		await np.waitForSelector(".view-portal [data-nav] .site-subtab", { timeout: TIMEOUT }); // My Games may hold no card
+		await np.waitForSelector(".view-portal [data-nav] .site-tab", { timeout: TIMEOUT }); // My Games may hold no card
 		await np.waitForTimeout(300);
 		check(`${at}: …and it is never asked again`, (await np.locator("dialog.name-prompt").count()) === 0);
 		if (w === 390) {

@@ -7,7 +7,7 @@ questions about this project from this folder alone.
 
 ## Contents
 
-- [The portal](#the-portal) — the home screen's sub-tabs (My Games · All Games), sections, PLAY SOMETHING, the phone layout and the search
+- [The portal](#the-portal) — the home screen's tabs (My Games · All Games), sections, PLAY SOMETHING, the phone layout and the search
 - [Connecting players](#connecting-players) — the serverless handshake, paid once per person; `scanQr`; connectivity (relaying, STUN, NAT classification, no TURN); who said it (signed party messages)
 - [Parties](#parties) — the persistent group, teams, switching games, host succession; [player colours](#player-colours) (the picker, first to pick keeps it, each game's handling); the party API (`mountParty`, the room controller, lib/lobby.js)
 - [Bots](#bots) — why there is no single-player section, and what a bot actually is
@@ -104,11 +104,12 @@ eyeballed, in `test-pwa.mjs` and `test-portal.mjs` "My Games · All Games"
 (390x844, Lokesh's phone at 354x696, and 320x640); what is in each section,
 in `test-portal.mjs`.
 
-**Two sub-tabs** (Lokesh, 2026-11-15: "All favourites land under My
-Games"). Under the tab row, Games has **My Games · All Games**, each an
+**Two tabs** (Lokesh, 2026-11-15: "All favourites land under My
+Games"; 2026-11-26: "keep them separate tabs"). The nav row is **My Games ·
+All Games** · Community, the first two each an
 address (`./?page=games&tab=mine` / `tab=all`); `./` opens on My Games once
 the device has a favourite or a recently played game, else on All Games,
-decided before the first paint ([spa.md](spa.md) "The portal's sub-tabs").
+decided before the first paint ([spa.md](spa.md) "The portal's tabs").
 Under the brand and the party banner:
 
 - **My Games** — Recently played (PLAY SOMETHING at its heading's right;
