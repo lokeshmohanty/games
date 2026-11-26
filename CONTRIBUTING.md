@@ -256,7 +256,18 @@ maintainers can filter submissions (`label:game-submission`). Push a fix and
 it is checked again. Once a maintainer merges it, the site deploys by itself
 and lists your games as `<your-github-user>/<id>`.
 
-**To update**, push to your repo, then press **Check for updates** on your
+**Proposing on every push** (optional). Copy
+[`propose-pin.yml`](https://www.lokeshmohanty.in/games/sdk/propose-pin.yml)
+into your repo as `.github/workflows/arcade-pin.yml`, set its `branches` to
+the branch your games live on, and add a repository secret `ARCADE_TOKEN`: a
+classic personal access token with the `public_repo` scope. Then every push
+to that branch opens — or moves along — your pull request here, from your
+fork, with the same file as above (`"branch"` included when it is not your
+default branch). The setup steps are at the top of the file; all it does is
+in plain shell below them. It is still your pull request, and a maintainer
+still merges it.
+
+**To update** by hand, push to your repo, then press **Check for updates** on your
 card on the [Contributors](https://www.lokeshmohanty.in/games/?page=contributors) page (or use Propose your games
 again, or `just propose`). One tap copies your new commit and opens your
 pin's edit page: select the old commit in the `"commit"` line, paste, then
