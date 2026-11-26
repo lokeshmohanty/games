@@ -51,6 +51,11 @@ jobs:
             echo "::error::Add the ARCADE_TOKEN secret (see the top of this file)."
             exit 1
           fi
+          # Every registered repo names its contributor (CONTRIBUTING.md).
+          if ! jq -e '.name | strings | length > 0' contributor.json >/dev/null 2>&1; then
+            echo "::error::Add a contributor.json with your \"name\" at the top of this repo."
+            exit 1
+          fi
           file="registry/$REPO.json"
           pin="arcade-pin/${REPO#*/}"
           me=$(gh api user --jq .login)
