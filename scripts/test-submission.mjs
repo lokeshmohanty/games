@@ -4,6 +4,7 @@
 
 import { readFileSync } from "node:fs";
 import { judge } from "./check-submission.mjs";
+import { validateEntry } from "./fetch-community.mjs";
 import { validateManifest } from "./manifest.mjs";
 
 let failures = 0;
@@ -15,15 +16,15 @@ const check = (label, ok, detail = "") => {
 const A = "a".repeat(40);
 const B = "b".repeat(40);
 const entry = (owner, repo, commit, games = ["chess"]) => ({ repo: `https://github.com/${owner}/${repo}`, commit, games });
-/** A world: files before/after, and how GitHub compares commits. */
-const world = ({ changed, author = "ada", association = "NONE", before = {}, after = {}, rel = "ahead" }) =>
+/** A world: files before/after, and how GitHub compares commits (`on`: a branch against the pin). */
+const world = ({ changed, author = "ada", association = "NONE", before = {}, after = {}, rel = "ahead", on = "ahead" }) =>
 	judge({
 		changed,
 		author,
 		association,
 		before: (p) => before[p] ?? null,
 		after: (p) => (p in after ? after[p] : null),
-		compare: async () => rel,
+		compare: async (repo, from, to) => (to === "arcade" ? on : rel),
 	});
 const P = "registry/ada/minis.json";
 
@@ -56,6 +57,27 @@ v = await world({ changed: [P], before: { [P]: entry("ada", "minis", A) }, after
 check("an 'update' that changes nothing", !v.ok && v.problems.some((p) => p.includes("unchanged")), v.problems);
 v = await world({ changed: ["README.md"] });
 check("a PR with no registry file at all", !v.ok && v.problems.some((p) => p.includes("no registry")), v.problems);
+
+console.log("\nsubmission: a pin that follows a branch");
+const onBranch = (commit) => ({ ...entry("ada", "minis", commit, ["."]), branch: "arcade" });
+v = await world({ changed: [P], after: { [P]: onBranch(A) } });
+check("a new repo whose games live on a branch, its commit on it", v.ok && v.kind === "new", v);
+v = await world({ changed: [P], after: { [P]: onBranch(A) }, on: "identical" });
+check("…the commit at the branch's head", v.ok, v.problems);
+v = await world({ changed: [P], before: { [P]: entry("ada", "minis", A) }, after: { [P]: onBranch(B) } });
+check("an update that moves a pin from the default branch to another, forward", v.ok && v.kind === "update", v.problems);
+for (const on of ["behind", "diverged"]) {
+	v = await world({ changed: [P], after: { [P]: onBranch(A) }, on });
+	check(`a commit off the branch (compare: ${on}) is refused`, !v.ok && v.problems.some((p) => p.includes("not on branch arcade")), v.problems);
+}
+v = await world({ changed: [P], after: { [P]: onBranch(A) }, on: "missing" });
+check("a branch GitHub does not have", !v.ok && v.problems.some((p) => p.includes("no branch arcade")), v.problems);
+for (const b of ["-x", "a..b", "a//b", "/a", "a/", "a.", "a b", "", 7]) {
+	check(`"branch": ${JSON.stringify(b)} is refused`, validateEntry({ ...entry("ada", "minis", A), branch: b }, "ada", "minis").some((p) => p.includes('"branch"')));
+}
+for (const b of ["arcade-v2", "feature/arcade", "v1.2"]) {
+	check(`"branch": ${JSON.stringify(b)} is accepted`, validateEntry({ ...entry("ada", "minis", A), branch: b }, "ada", "minis").length === 0);
+}
 
 console.log("\nsubmission: kinds, for the labels");
 v = await world({ changed: [P], before: { [P]: entry("ada", "minis", A) }, after: {} });

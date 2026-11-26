@@ -65,6 +65,10 @@ const MAX_WHEEL_BYTES = 5 * 1024 * 1024; // a web app's server/wheels/, counted 
 const SHA = /^[0-9a-f]{40}$/;
 const NAME = /^[A-Za-z0-9_.-]+$/;
 const GAME_PATH = /^[A-Za-z0-9_.-]+(\/[A-Za-z0-9_.-]+)*$/;
+// A registry entry's optional "branch": the one its pins follow (propose,
+// Check for updates), and the one its commit must be on. Git's ref rules,
+// narrowed: no leading -, / or ., no .., //, or trailing / or .
+export const BRANCH = /^(?![-\/.])(?!.*\.\.)(?!.*\/\/)[A-Za-z0-9._\/-]+(?<![\/.])$/;
 
 const APP_CACHE = process.env.NEON_APP_CACHE ? resolve(process.env.NEON_APP_CACHE) : null;
 // What a build's output depends on besides the pinned commit: change any of
@@ -117,6 +121,7 @@ export function validateEntry(entry, owner, repo) {
 	const p = [];
 	if (entry.repo !== `https://github.com/${owner}/${repo}`) p.push(`"repo" must be https://github.com/${owner}/${repo}`);
 	if (!SHA.test(entry.commit ?? "")) p.push('"commit" must be a full 40-character commit sha');
+	if (entry.branch != null && (typeof entry.branch !== "string" || !BRANCH.test(entry.branch))) p.push('"branch", when given, must be a branch name');
 	if (!Array.isArray(entry.games) || !entry.games.length) p.push('"games" must list at least one game folder');
 	for (const g of entry.games ?? []) {
 		if (typeof g !== "string" || !GAME_PATH.test(g) || g.split("/").includes("..")) p.push(`bad game path: ${g}`);
@@ -276,7 +281,7 @@ function main() {
 				// The owner's card for the Contributors page, from the same commit.
 				try {
 					const card = join(src, "contributor.json");
-					contributors.push(contributorEntry(owner, entry.repo, existsSync(card) ? JSON.parse(readFileSync(card, "utf8")) : null, entry.commit));
+					contributors.push(contributorEntry(owner, entry.repo, existsSync(card) ? JSON.parse(readFileSync(card, "utf8")) : null, entry.commit, entry.branch));
 				} catch (err) {
 					errors.push(`${where}: ${err.message}`);
 				}

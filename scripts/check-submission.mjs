@@ -12,7 +12,9 @@
 //   3. each entry is well formed and names its own repo (validateEntry);
 //   4. an update moves its pin forward: the new commit is ahead of the old,
 //      never behind or on another branch (the compare API's "ahead");
-//   5. the commit exists in that public repo.
+//   5. the commit exists in that public repo;
+//   6. an entry naming a "branch" has its commit on it (the branch is the
+//      commit or ahead of it): a game may live on a branch, not on main.
 //
 // Then the wrapper fetches the pinned commits and runs the same checks as
 // `just validate-game` on every listed game (manifest, bundle, no network,
@@ -72,6 +74,11 @@ export async function judge({ changed, author, association, before, after, compa
 		if (where === "missing") problems.push(`${path}: commit ${next.commit.slice(0, 7)} is not in https://github.com/${owner}/${repo} (is the repo public, and the commit pushed?)`);
 		else if (old && where === "identical") problems.push(`${path}: the pin is unchanged`);
 		else if (old && where !== "ahead") problems.push(`${path}: an update moves forward — ${next.commit.slice(0, 7)} is ${where} of the current pin ${old.commit.slice(0, 7)}`);
+		if (where !== "missing" && next.branch != null) {
+			const on = await compare(`${owner}/${repo}`, next.commit, next.branch);
+			if (on === "missing") problems.push(`${path}: no branch ${next.branch} in https://github.com/${owner}/${repo} (is it pushed?)`);
+			else if (on !== "ahead" && on !== "identical") problems.push(`${path}: commit ${next.commit.slice(0, 7)} is not on branch ${next.branch}`);
+		}
 	}
 	if (!changed.some((p) => FILE.test(p))) problems.push("no registry/<owner>/<repo>.json changes");
 	const kind = kinds.size === 1 ? [...kinds][0] : kinds.size ? "mixed" : "none";
