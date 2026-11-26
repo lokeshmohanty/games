@@ -7,6 +7,9 @@
 //   { "repo": "https://github.com/<owner>/<repo>", "commit": "<40-hex sha>",
 //     "games": ["path/to/game-a", "path/to/game-b"] }
 //
+// and one card per owner, registry/<owner>/main.json (so no repo called
+// "main" can be registered): { "name", "bio"?, "location"?, "links"? }.
+//
 // For each, the tarball of exactly that commit is unpacked, and only the
 // listed game folders are copied to community/<owner>/<repo>/<path>/ (tests
 // left behind). A game folder is static files, copied as they are — unless
@@ -65,6 +68,12 @@ const MAX_WHEEL_BYTES = 5 * 1024 * 1024; // a web app's server/wheels/, counted 
 const SHA = /^[0-9a-f]{40}$/;
 const NAME = /^[A-Za-z0-9_.-]+$/;
 const GAME_PATH = /^[A-Za-z0-9_.-]+(\/[A-Za-z0-9_.-]+)*$/;
+// An owner's contributor card, beside their pins (validateContributor).
+export const CARD = "main.json";
+// A registry entry's optional "branch": the one its pins follow (propose,
+// Check for updates), and the one its commit must be on. Git's ref rules,
+// narrowed: no leading -, / or ., no .., //, or trailing / or .
+export const BRANCH = /^(?![-\/.])(?!.*\.\.)(?!.*\/\/)[A-Za-z0-9._\/-]+(?<![\/.])$/;
 
 const APP_CACHE = process.env.NEON_APP_CACHE ? resolve(process.env.NEON_APP_CACHE) : null;
 // What a build's output depends on besides the pinned commit: change any of
@@ -117,6 +126,7 @@ export function validateEntry(entry, owner, repo) {
 	const p = [];
 	if (entry.repo !== `https://github.com/${owner}/${repo}`) p.push(`"repo" must be https://github.com/${owner}/${repo}`);
 	if (!SHA.test(entry.commit ?? "")) p.push('"commit" must be a full 40-character commit sha');
+	if (entry.branch != null && (typeof entry.branch !== "string" || !BRANCH.test(entry.branch))) p.push('"branch", when given, must be a branch name');
 	if (!Array.isArray(entry.games) || !entry.games.length) p.push('"games" must list at least one game folder');
 	for (const g of entry.games ?? []) {
 		if (typeof g !== "string" || !GAME_PATH.test(g) || g.split("/").includes("..")) p.push(`bad game path: ${g}`);
@@ -168,8 +178,17 @@ function main() {
 	for (const owner of existsSync(registry) ? readdirSync(registry).sort() : []) {
 		// Owners are folders; registry/trusted.txt and the like are not.
 		if (!NAME.test(owner) || !statSync(join(registry, owner)).isDirectory()) continue;
+		// Their card: required with a pin (contributorEntry says so).
+		let card = null;
+		if (existsSync(join(registry, owner, CARD))) {
+			try {
+				card = JSON.parse(readFileSync(join(registry, owner, CARD), "utf8"));
+			} catch (err) {
+				errors.push(`registry/${owner}/${CARD}: ${err.message}`);
+			}
+		}
 		for (const file of readdirSync(join(registry, owner)).sort()) {
-			if (!file.endsWith(".json")) continue;
+			if (!file.endsWith(".json") || file === CARD) continue;
 			const repo = file.slice(0, -".json".length);
 			const where = `registry/${owner}/${file}`;
 			let entry;
@@ -273,10 +292,9 @@ function main() {
 					manifests.push({ file: join(to, "game.json"), owner, repo: entry.repo });
 				}
 				writeFileSync(join(OUT, owner, repo, "pin.json"), JSON.stringify(entry, null, 2) + "\n");
-				// The owner's card for the Contributors page, from the same commit.
+				// The owner's card for the Contributors page, from the registry.
 				try {
-					const card = join(src, "contributor.json");
-					contributors.push(contributorEntry(owner, entry.repo, existsSync(card) ? JSON.parse(readFileSync(card, "utf8")) : null, entry.commit));
+					contributors.push(contributorEntry(owner, entry.repo, card, entry.commit, entry.branch));
 				} catch (err) {
 					errors.push(`${where}: ${err.message}`);
 				}

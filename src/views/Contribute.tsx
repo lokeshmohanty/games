@@ -15,7 +15,7 @@ const REPO_FILES = "https://github.com/lokeshmohanty/games/blob/main/";
 type Plan =
 	| { kind: "current"; repo: string; at: string }
 	| { kind: "update"; repo: string; url: string; from: string; to: string }
-	| { kind: "new"; repo: string; url: string; text: string; games: string[]; to: string };
+	| { kind: "new"; repo: string; url: string; text: string; games: string[]; to: string; card?: { url: string; text: string } };
 /** What the propose box shows: a line of text, or a plan. */
 type Out = { text: string } | { plan: Plan };
 
@@ -44,8 +44,7 @@ export default function Contribute() {
 		const mine = ++asked;
 		setOut({ text: "Asking GitHub…" });
 		try {
-			const clean = repo.value.trim().replace(/^https:\/\/github\.com\//, "").replace(/\.git$|\/$/g, "");
-			const plan: Plan = await A.propose.plan(clean, A.propose.pinnedOf(clean));
+			const plan: Plan = await A.propose.plan(repo.value, A.propose.pinnedOf(A.propose.parse(repo.value).repo));
 			if (alive && mine === asked) setOut({ plan });
 		} catch (err) {
 			if (alive && mine === asked) setOut({ text: (err as Error).message });
@@ -86,8 +85,21 @@ export default function Contribute() {
 					<pre>{p.to}</pre>
 				</>
 			);
+		const owner = p.repo.split("/")[0];
 		return (
 			<>
+				<Show when={p.card}>
+					{(card) => (
+						<>
+							<p class="muted">{`First, your card — registry/${owner}/main.json, from your GitHub profile (edit it there before committing):`}</p>
+							<pre>{card().text}</pre>
+							<a class="neon-btn neon-btn--accent" data-card href={card().url} target="_blank" rel="noopener">
+								1. OPEN YOUR CARD ↗
+							</a>
+							<p class="muted">Then your games, in a second pull request:</p>
+						</>
+					)}
+				</Show>
 				<p class="muted">{`registry/${p.repo}.json — ${p.games.length} game${p.games.length === 1 ? "" : "s"} at ${p.to.slice(0, 7)}:`}</p>
 				<pre>{p.text}</pre>
 				<a class="neon-btn neon-btn--accent" href={p.url} target="_blank" rel="noopener">
@@ -107,8 +119,8 @@ export default function Contribute() {
 				<section class="propose">
 					<h2>Propose your games</h2>
 					<p class="muted">
-						Your public repo, <code>owner/name</code>. This opens GitHub's page for the registry file, filled in — commit it there and GitHub
-						offers the pull request.
+						Your public repo, <code>owner/name</code> — or <code>owner/name@branch</code> for games that live on a branch. This opens GitHub's
+						page for the registry file, filled in — commit it there and GitHub offers the pull request.
 					</p>
 					<form class="propose-row" data-propose onSubmit={propose}>
 						<input

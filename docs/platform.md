@@ -311,6 +311,33 @@ One file per **repository** — a repo may hold several games:
 }
 ```
 
+**`"branch"` (optional, 2026-11-26).** Games that live on a branch rather
+than the default one — Lokesh, about locale-chess's `arcade-v2`: "I want it
+to go from this branch itself and not from the main branch". The pin is
+still a commit; the branch says which head `just propose`, the Add your game
+form and Check for updates follow (lib/propose.js `branchOf`, from the
+catalog's `CONTRIBUTORS[].branches`), and the submission check requires the
+commit to be on it. `owner/name@branch` (or a `…/tree/<branch>` address)
+names it for a new repo. A game at the repository's root is listed as `"."`.
+
+**Every entry names its contributor, in the registry** (Lokesh,
+2026-11-26: "ensure that every registry item is linked to a contributor";
+then "there is no need to maintain separate contributor.json, instead it can
+be inside registry/<contributor>/main.json"). Each owner folder holds their
+card, `registry/<owner>/main.json` (`CARD` in fetch-community.mjs), with a
+`"name"` (`validateContributor(…, { registered: true })`); `contributorEntry`
+throws for a pin without one, so the fetch and the submission check fail.
+A game repo's own `contributor.json` is no longer read (registry only).
+`main` is the one repo name the registry cannot take: check-submission says
+so for a pin-shaped main.json, and the workflow refuses a repo called main.
+The submission check also checks a changed card (owner rule as for pins); a
+pull request changing only cards is labelled `submission: card`. For an owner
+with no card, propose and the Add your game form offer it first (its own
+pull request: GitHub fills one new file per page), and `sdk/propose-pin.yml`
+writes it into the same pull request — both from the owner's GitHub profile
+(`cardFrom`). The arcade's own card is `registry/lokeshmohanty/main.json`
+(was the root `contributor.json`), read by build-catalog.mjs too.
+
 `just community` (`scripts/fetch-community.mjs`) unpacks exactly that commit
 — GitHub's tarball, or `git archive` from a clone at `../<repo>` that has the
 commit (`NEON_LOCAL_REPOS=owner/repo=path` names another) — and copies only
@@ -334,7 +361,23 @@ runs `community` first; the browser suites play those games through it.
 Lokesh (2026-11-13): the pull request is the contributor's to open — "add a
 button/command to open the create PR page (pre-filled)" — and "once merged,
 it should auto deploy" (deploy.yml runs on every push to main). No workflow
-opens or merges pins. `just propose owner/repo` (`scripts/propose.mjs`) and
+of the arcade's opens or merges pins.
+
+**The contributor's own workflow** (Lokesh, 2026-11-26: propose should
+happen by itself, from the contributor's side). `sdk/propose-pin.yml`,
+published at `…/games/sdk/propose-pin.yml`, goes in the contributor's repo:
+on a push to their games' branch it forks the arcade (once), resets the
+fork's `arcade-pin/<repo>` onto the arcade's main, writes
+`registry/<owner>/<repo>.json` there (the pin's games kept; a new repo gets
+every folder with a game.json; `"branch"` when not the default branch) and
+opens the pull request, or leaves the open one to follow the new push. Their
+token (`ARCADE_TOKEN`, a classic PAT with `public_repo`), plain shell, no
+third-party action. The pull request is still theirs, so the submission
+check, labels and the owner rule apply unchanged. **VERIFY:** a fine-grained
+token reportedly cannot open a pull request in another owner's repo (GitHub
+community discussion 106661; peter-evans/create-pull-request 1791), hence
+the classic token — not yet tried against GitHub itself; `just
+test-propose-pin` plays the API. `just propose owner/repo` (`scripts/propose.mjs`) and
 the browser twin `lib/propose.js` (the Add your game view's form,
 Contributors' "Check for updates") ask the GitHub API for the repo's head: a
 new repo gets GitHub's `/new/main?filename=registry/<owner>/<repo>.json&value=…`
@@ -349,8 +392,8 @@ contributor PRs out; a label added by a workflow could not trigger another
 run): read-only token, no secrets. `scripts/check-submission.mjs` judges it —
 only `registry/<owner>/<repo>.json` changes; the author's own owner folder
 unless their `author_association` is OWNER/MEMBER/COLLABORATOR; a valid
-entry; the commit exists (GitHub API) and an update is `ahead` of the old
-pin — then fetches and runs `validate-game` on every listed game, writing
+entry; the commit exists (GitHub API), an update is `ahead` of the old
+pin, and an entry with a `branch` has its commit on it — then fetches and runs `validate-game` on every listed game, writing
 `result.json` + `summary.md` as an artifact. `submission-report.yml`
 (`workflow_run`, write access, never checks out PR code) reads that artifact
 as data, confirms the PR's head is the judged commit, and sets labels

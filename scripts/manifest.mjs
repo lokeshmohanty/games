@@ -141,16 +141,20 @@ export function validateManifest(m) {
 }
 
 /**
- * Problems with a contributor.json (optional, at the root of a games repo):
- * how its owner appears on the Contributors page. Their GitHub login and
- * avatar are known already; this is the part they choose.
+ * Problems with a contributor's card, registry/<owner>/main.json (CARD in
+ * fetch-community.mjs): how its owner appears on the Contributors page.
+ * Their GitHub login and avatar are known already; this is the part they
+ * choose. `registered`: every owner folder has one, with a name.
  *
  *   { "name": "Ada", "bio": "Makes small strategy games.", "location": "Pune",
  *     "links": [{ "label": "Blog", "url": "https://…" }] }
  */
-export function validateContributor(c) {
+export function validateContributor(c, { registered = false } = {}) {
 	const p = [];
 	if (!c || typeof c !== "object" || Array.isArray(c)) return ["not a JSON object"];
+	// Every registered repo names its contributor (Lokesh, 2026-11-26: "ensure
+	// that every registry item is linked to a contributor").
+	if (registered && (typeof c.name !== "string" || !c.name.trim())) p.push('"name" is required');
 	const text = (k, max) => {
 		if (c[k] != null && (typeof c[k] !== "string" || c[k].length > max)) p.push(`"${k}" must be text of at most ${max} characters`);
 	};

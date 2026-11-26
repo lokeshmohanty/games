@@ -199,9 +199,14 @@ tooling, it copies the folder at the pinned commit.
 
 ## Your card on the Contributors page
 
-Optional: a `contributor.json` at the root of your repository says how you
-appear on the [Contributors](https://www.lokeshmohanty.in/games/?page=contributors) page — your GitHub avatar
-and login are shown anyway.
+Your card lives in the arcade's registry, beside your pins:
+`registry/<your-github-user>/main.json` — nothing to add to your own
+repository. It is required, with at least your `"name"`: it says who made the
+games and how you appear on the
+[Contributors](https://www.lokeshmohanty.in/games/?page=contributors) page, beside your GitHub avatar and
+login. Proposing your first repo (step 4) offers it filled in from your GitHub
+profile; edit it there before committing. (`main` is therefore the one repo
+name the registry cannot take.)
 
 ```json
 {
@@ -212,16 +217,17 @@ and login are shown anyway.
 }
 ```
 
-Name ≤ 40, bio ≤ 280, location ≤ 40 characters, up to 5 https links. It is
-read at the same pinned commit as your games, so it changes with your next
-pin bump.
+Name ≤ 40, bio ≤ 280, location ≤ 40 characters, up to 5 https links. To
+change it later, edit that file in a pull request of its own (labelled
+`submission: card`).
 
 ## 4. Open a pull request
 
 On the [Add your game](https://www.lokeshmohanty.in/games/?page=contribute) page, type your repository
 (`owner/name`) under **Propose your games**: it opens GitHub's page for your
 registry file, filled in with your latest commit and every folder holding a
-`game.json`. Commit it there and GitHub offers the pull request. (From a
+`game.json`. Commit it there and GitHub offers the pull request. Your first
+time, it opens your card (above) first, as a pull request of its own. (From a
 checkout: `just propose owner/name`.) The file it makes:
 
 ```json
@@ -233,15 +239,21 @@ checkout: `just propose owner/name`.) The file it makes:
 }
 ```
 
+Games on a branch other than your default one? Type `owner/name@branch`: the
+entry gets `"branch": "<branch>"`, its commit is that branch's latest, and
+later updates follow that branch. A `game.json` at the top of your repository
+is listed as `"."`.
+
 Your pull request is checked by itself (the **Check game submission**
 workflow, on every PR that touches `registry/`):
 
 - it changes only `registry/<you>/<repo>.json` — your own repos;
-- the entry is well formed and its commit is in your public repo;
+- the entry is well formed and its commit is in your public repo (and on
+  its `branch`, if it names one);
 - an update moves your pin forward (never back, never to another branch);
 - every listed game is fetched (and a web app built) at that commit and
   passes `validate-game` (manifest, 10 MB, no CSP violation,
-  your `contributor.json`, and a play with bots at phone size — for a web app,
+  your card, and a play with bots at phone size — for a web app,
   its server starting and answering; own colours are a warning).
 
 The result is posted as a comment and as labels — `game-submission`,
@@ -250,7 +262,18 @@ maintainers can filter submissions (`label:game-submission`). Push a fix and
 it is checked again. Once a maintainer merges it, the site deploys by itself
 and lists your games as `<your-github-user>/<id>`.
 
-**To update**, push to your repo, then press **Check for updates** on your
+**Proposing on every push** (optional). Copy
+[`propose-pin.yml`](https://www.lokeshmohanty.in/games/sdk/propose-pin.yml)
+into your repo as `.github/workflows/arcade-pin.yml`, set its `branches` to
+the branch your games live on, and add a repository secret `ARCADE_TOKEN`: a
+classic personal access token with the `public_repo` scope. Then every push
+to that branch opens — or moves along — your pull request here, from your
+fork, with the same file as above (`"branch"` included when it is not your
+default branch) and, the first time, your card from your GitHub profile. The setup steps are at the top of the file; all it does is
+in plain shell below them. It is still your pull request, and a maintainer
+still merges it.
+
+**To update** by hand, push to your repo, then press **Check for updates** on your
 card on the [Contributors](https://www.lokeshmohanty.in/games/?page=contributors) page (or use Propose your games
 again, or `just propose`). One tap copies your new commit and opens your
 pin's edit page: select the old commit in the `"commit"` line, paste, then

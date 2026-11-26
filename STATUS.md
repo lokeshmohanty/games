@@ -16,6 +16,24 @@ separate `TODO.md`.*
 
 ## Now (2026-11-18)
 
+**Branch `contributor-cards` (2026-11-26, local):** what PR #30 had — it was
+merged into `registry-branch`, not main — plus contributor cards in the
+registry. `sdk/propose-pin.yml`: the contributor's own workflow that
+opens/moves their registry PR on every push (Lokesh chose it over an arcade
+bot; labels keep their `submission: …` names, plus `submission: card`);
+tested against a fake gh only — **VERIFY** with a real token on a real repo.
+Every pin's owner has a card, `registry/<owner>/main.json`, with a `"name"`
+(registry only; a repo's contributor.json is no longer read; `main` is a
+reserved repo name). The arcade's own card moved there from the root
+`contributor.json`.
+
+**Locale (rajarshi99/locale-chess):** PR #29 (`"branch"`) is merged. Its
+`arcade-v2` holds game.json (`"sdk": 2`) + LICENSE; `7dba6ca` removes the
+interim contributor.json (local, Lokesh to push). PR #31 registers it; after
+`contributor-cards` lands it is rebased onto main with the pin at `7dba6ca`
+and `registry/rajarshi99/main.json` (Rajarshi Dasgupta, from
+rajarshi99.github.io).
+
 **Branch `top-tabs` (2026-11-26, PR open, not merged):** the nav row is
 My Games · All Games · Community (Lokesh: "keep them separate tabs"); the
 portal has no sub-tab row, Community keeps Collections · Contributors.
