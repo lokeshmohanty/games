@@ -713,11 +713,14 @@ try {
 					items: [...list.querySelectorAll(".site-menu-item")].map((i) => ({ text: i.textContent.trim(), href: i.getAttribute("href"), h: Math.round(i.getBoundingClientRect().height) })),
 					listBox: list.hidden ? null : { left: Math.round(box(".site-menu-list").left), right: Math.round(box(".site-menu-list").right) },
 					sideways: document.documentElement.scrollWidth > innerWidth,
+					// Links stay links: each inside a listitem, none a listitem itself.
+					roles: [...document.querySelectorAll("[data-nav] .site-tab, [data-nav] .site-subtab")].every((a) => !a.hasAttribute("role") && a.parentElement.getAttribute("role") === "listitem" && a.parentElement.parentElement.getAttribute("role") === "list"),
 				};
 			});
 		let nav = await read();
 		check(`${page}: tabs My Games · All Games · Community, no Leaderboards${tab ? `, on ${tab}` : ""}`, nav.tabs.join() === "My Games,All Games,Community" && nav.on === tab, nav);
 		check(`${page}: ${sub ? `${tab}'s tabs ${SUBS[tab].replace(",", " · ")}, on ${sub}, 44px tall` : "no sub-tabs"}`, sub ? nav.subs.join() === SUBS[tab] && nav.subOn === sub && nav.subH >= 44 : nav.subs.length === 0, nav);
+		check(`${page}: every tab a link inside a listitem`, nav.roles, nav);
 		check(`${page}: tabs and ☰ in one row, ☰ 44px at the right, closed`, nav.oneRow && nav.btn.w >= 44 && nav.btn.h >= 44 && nav.btn.right > 340 && !nav.open && nav.expanded === "false", nav);
 		await p.locator(".site-menu-btn").click();
 		nav = await read();
@@ -817,18 +820,31 @@ try {
 			const fp = await fc.newPage();
 			for (const [page, lit] of [
 				["index.html?page=games&tab=all", "All Games"],
+				["index.html?page=games&tab=mine", "My Games"],
 				["./?page=collections", "Community"],
 				["./?page=contributors", "Community"],
 			]) {
 				await fp.goto(site.url(page));
 				await fp.locator("[data-nav] .site-row").waitFor({ timeout: TIMEOUT });
+				await fp.evaluate(() => document.fonts.ready);
+				await fp.waitForTimeout(150); // lib/nav.js re-fits the strip on the webfont's resize
 				const bar = await fp.evaluate(() => {
 					const r = (n) => n.getBoundingClientRect();
 					const tabs = document.querySelector("[data-nav] .site-tabs");
 					const menu = document.querySelector("[data-nav] .site-menu-btn");
 					const subs = [...document.querySelectorAll("[data-nav] .site-subtab")].map(r);
 					const lit = document.querySelector("[data-nav] .site-tab.is-on");
+					const s = r(tabs);
+					const each = [...tabs.querySelectorAll(".site-tab")].map(r);
+					const fade = { start: tabs.classList.contains("fade-start"), end: tabs.classList.contains("fade-end") };
+					const FADE = 28; // lib/styles.css .site-tabs.fade-*
 					return {
+						// Every tab whole, or the side that clips one fades (the scrollbar is hidden).
+						whole: each.every((b) => b.left >= s.left - 0.5 && b.right <= s.right + 0.5),
+						hinted: each.every((b) => (b.left >= s.left - 0.5 || fade.start) && (b.right <= s.right + 0.5 || fade.end)),
+						fade,
+						// The lit tab out from under a fade.
+						litClear: !!lit && (!fade.start || r(lit).left >= s.left + FADE - 1) && (!fade.end || r(lit).right <= s.right - FADE + 1),
 						clear: r(tabs).right <= r(menu).left && r(menu).right <= innerWidth,
 						lit: lit?.textContent,
 						litInView: !!lit && r(lit).left >= r(tabs).left - 1 && r(lit).right <= r(tabs).right + 1,
@@ -839,6 +855,11 @@ try {
 					};
 				});
 				check(`Firefox, text at ${scale}%, ${w}x${h}, ${page}: tabs clear of ☰ (the lit ${lit} in view), sub-tabs apart and 44px, no sideways scroll`, bar.clear && bar.lit === lit && bar.litInView && bar.tabsH >= 43 && bar.subsApart && bar.subsInside && !(page.startsWith("index") && bar.sideways), bar);
+				// 130%: all three whole (they tighten: lib/styles.css), or a fade
+				// where one is cut; 200%: they cannot fit, so a fade shows, never
+				// over the lit tab.
+				if (scale === 130) check(`Firefox, text at 130%, ${w}x${h}, ${page}: every tab whole, or a fade on the side that cuts one`, bar.whole || (bar.hinted && bar.litClear), bar);
+				else check(`Firefox, text at ${scale}%, ${w}x${h}, ${page}: the strip fades where it hides a tab, the lit one clear of the fade`, (bar.fade.start || bar.fade.end) && bar.hinted && bar.litClear, bar);
 			}
 			if (scale === 200 && w === 354) {
 				// JOIN WITH A CODE in Firefox, its text at 200%: still 44px and
@@ -932,6 +953,7 @@ console.log("\nportal: My Games · All Games");
 					subs: document.querySelectorAll(".site-subtab, .site-subtabs").length,
 					bg: Object.fromEntries(tabs.map((t) => [t.dataset.tab, `${getComputedStyle(t).color} ${getComputedStyle(t).borderBottomColor}`])),
 					on: document.querySelector(".site-tab.is-on")?.dataset.tab ?? null,
+					current: document.querySelector('.site-tab[aria-current="page"]')?.dataset.tab ?? null,
 					h1: box(document.querySelector("h1")),
 				};
 			});
@@ -944,7 +966,7 @@ console.log("\nportal: My Games · All Games");
 		await pg.waitForFunction(() => !document.querySelector(".boot") && document.querySelector("[data-nav] .site-tab.is-on") && document.querySelector("main h1"), null, { timeout: TIMEOUT }).catch(() => {});
 		const drawn = await frame();
 		const other = want === "mine" ? "all" : "mine";
-		check(`first paint (${want === "mine" ? "a game played" : "a first visit"}): the static frame lights ${want === "mine" ? "My Games" : "All Games"}, as the app does`, first.boot && first.bg[want] === drawn.bg[want] && first.bg[other] === drawn.bg[other] && first.bg[want] !== first.bg[other] && drawn.on === want, { first, drawn });
+		check(`first paint (${want === "mine" ? "a game played" : "a first visit"}): the static frame lights ${want === "mine" ? "My Games" : "All Games"}, as the app does`, first.boot && first.bg[want] === drawn.bg[want] && first.bg[other] === drawn.bg[other] && first.bg[want] !== first.bg[other] && drawn.on === want && first.current === want && drawn.current === want, { first, drawn });
 		check("…the same tabs in the same places, no sub-tab row, and the title does not move", !drawn.boot && first.tabs === drawn.tabs && first.subs === 0 && drawn.subs === 0 && first.h1 === drawn.h1, { first, drawn });
 		await c.close();
 	}
@@ -1123,14 +1145,15 @@ console.log("\nportal: My Games · All Games");
 				}
 				const search = document.querySelector(".search:not([hidden]) input");
 				const strip = document.querySelector("[data-nav] .site-tabs");
-				const tabs = [...strip.children].map(r);
+				const tabs = [...strip.querySelectorAll(".site-tab")].map(r);
 				const menu = r(document.querySelector("[data-nav] .site-menu-btn"));
 				return {
 					vw: innerWidth,
 					// The three tabs and ☰ in one row: no tab scrolled out of
 					// sight, none over another or under ☰, the open one lit.
 					bar: {
-						tabs: [...strip.children].map((a) => a.textContent).join(),
+						tabs: [...strip.querySelectorAll(".site-tab")].map((a) => a.textContent).join(),
+						fade: strip.classList.contains("fade-start") || strip.classList.contains("fade-end"),
 						whole: strip.scrollWidth <= strip.clientWidth && tabs.every((b) => b.left >= 0 && b.right <= menu.left),
 						apart: tabs.every((b, i) => i === 0 || tabs[i - 1].right <= b.left + 0.5),
 						row: tabs.every((b) => Math.abs(b.top - tabs[0].top) < 1) && menu.top < tabs[0].bottom && menu.bottom > tabs[0].top,
@@ -1157,7 +1180,7 @@ console.log("\nportal: My Games · All Games");
 			});
 			const at = `${width}x${height} ${t === "mine" ? "My Games" : "All Games"}`;
 			check(`${at}: no sideways scroll`, !L.sideways);
-			if (width >= 354) check(`${at}: My Games · All Games · Community and ☰ in one row, every tab whole, ${t} lit, no sub-tab row`, L.bar.tabs === "My Games,All Games,Community" && L.bar.whole && L.bar.apart && L.bar.row && L.bar.lit === t && L.bar.current === t && L.bar.subs === 0, L.bar);
+			check(`${at}: My Games · All Games · Community and ☰ in one row, every tab whole (no fade), ${t} lit, no sub-tab row`, L.bar.tabs === "My Games,All Games,Community" && L.bar.whole && !L.bar.fade && L.bar.apart && L.bar.row && L.bar.lit === t && L.bar.current === t && L.bar.subs === 0, L.bar);
 			check(`${at}: every tap target 44px tall (START A PARTY, JOIN WITH A CODE, tabs, chips, PLAY SOMETHING…)`, L.targets.length >= 8 && L.targets.every((x) => x.h >= 44), L.targets.filter((x) => x.h < 44));
 			check(`${at}: every line on a card 12px or more`, L.text.length > 0 && L.text.every((x) => x.size >= 12), L.text.filter((x) => x.size < 12));
 			check(`${at}: …and the meta line still on one line`, L.metaLines <= 1, L.metaLines);

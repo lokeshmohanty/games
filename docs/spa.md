@@ -235,7 +235,12 @@ contribute, contributors; collections is new (no old page: the nav links
   2026-11-26), and a ☰ menu at the right holding Add your game, Theme, sign in
   or the profile, and the source on GitHub. Only Community has sub-tabs,
   Collections · Contributors, opening on Collections; that row sits under
-  the tab row, every sub-tab 44px tall, and the portal has none. The row's height is reserved
+  the tab row, every sub-tab 44px tall, and the portal has none. The three
+  tabs tighten on a narrow row or a large text size (lib/styles.css, a
+  container query in em) and stay whole down to 300px at 100% text; past
+  that the strip scrolls, a fade marking the side that hides a tab and the
+  lit tab centred (lib/nav.js `edges`, `reveal`). Each tab is a link in a
+  `role="listitem"` span, so it is still announced as a link. The row's height is reserved
   in CSS, and on the portal the static first frame draws it, so nothing
   jumps when it's drawn. This replaced a bar of buttons above the tabs that
   crowded a phone (2026-11-15).

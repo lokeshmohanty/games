@@ -1674,6 +1674,27 @@ canvas {
 .site-tabs::-webkit-scrollbar {
   display: none;
 }
+/* Each tab is a link inside its listitem (lib/nav.js tabRow): the item is
+   the flex child, the link keeps its box. */
+.site-tabs > [role="listitem"],
+.site-subtabs > [role="listitem"] {
+  display: flex;
+  flex: none;
+}
+/* Still wider than the column (a large text size): the side that hides a
+   tab fades out, since the scrollbar is hidden (lib/nav.js edges). */
+.site-tabs.fade-end {
+  -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 28px), transparent);
+  mask-image: linear-gradient(to right, #000 calc(100% - 28px), transparent);
+}
+.site-tabs.fade-start {
+  -webkit-mask-image: linear-gradient(to left, #000 calc(100% - 28px), transparent);
+  mask-image: linear-gradient(to left, #000 calc(100% - 28px), transparent);
+}
+.site-tabs.fade-start.fade-end {
+  -webkit-mask-image: linear-gradient(to right, transparent, #000 28px, #000 calc(100% - 28px), transparent);
+  mask-image: linear-gradient(to right, transparent, #000 28px, #000 calc(100% - 28px), transparent);
+}
 .site-tab,
 .site-subtab {
   min-height: 44px;
@@ -1839,10 +1860,30 @@ html[data-home="all"] .boot .site-tab[data-tab="all"] {
     padding: 0 9px;
   }
 }
-@media (max-width: 360px) {
+/* Narrower still, or the phone's text larger (Firefox for Android scales
+   it): tighter tabs, so all three stay whole. Measured in em of the row, so
+   a larger text size tightens them sooner (320px at 100%, 354 and 390 at
+   130%: test-portal). Past that the strip scrolls, with a fade (above). */
+.site-row {
+  container: site-row / inline-size;
+}
+@container site-row (max-width: 20em) {
   .site-tab {
-    padding: 0 6px;
+    padding: 0 5px;
+  }
+}
+@container site-row (max-width: 18.5em) {
+  .site-tabs {
+    gap: 0;
+  }
+  .site-tab {
+    padding: 0 3px;
     font-size: 0.85rem;
+  }
+}
+@container site-row (max-width: 16em) {
+  .site-tab {
+    font-size: 0.8rem;
   }
 }
 
