@@ -4,6 +4,7 @@
 
 import { readFileSync } from "node:fs";
 import { judge } from "./check-submission.mjs";
+import { contributorEntry } from "./catalog-lib.mjs";
 import { validateEntry } from "./fetch-community.mjs";
 import { validateManifest } from "./manifest.mjs";
 
@@ -78,6 +79,20 @@ for (const b of ["-x", "a..b", "a//b", "/a", "a/", "a.", "a b", "", 7]) {
 for (const b of ["arcade-v2", "feature/arcade", "v1.2"]) {
 	check(`"branch": ${JSON.stringify(b)} is accepted`, validateEntry({ ...entry("ada", "minis", A), branch: b }, "ada", "minis").length === 0);
 }
+
+console.log("\nsubmission: every registered repo names its contributor");
+const card = (data) => {
+	try {
+		return contributorEntry("ada", "https://github.com/ada/minis", data, A);
+	} catch (err) {
+		return err.message;
+	}
+};
+check("a contributor.json with a name makes the card", card({ name: "Ada" }).name === "Ada", card({ name: "Ada" }));
+check("no contributor.json: refused, saying so", String(card(null)).includes("no contributor.json"), card(null));
+check("…nor one without a name", String(card({ bio: "hi" })).includes('"name" is required'), card({ bio: "hi" }));
+check("…nor a blank name", String(card({ name: "  " })).includes('"name" is required'), card({ name: "  " }));
+check("the arcade's own card (no pin) may still go without one", contributorEntry("ada", "https://github.com/ada/minis", null).name === null);
 
 console.log("\nsubmission: kinds, for the labels");
 v = await world({ changed: [P], before: { [P]: entry("ada", "minis", A) }, after: {} });

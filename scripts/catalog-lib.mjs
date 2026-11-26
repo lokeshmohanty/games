@@ -94,12 +94,14 @@ export function catalogEntries(files, root) {
 }
 
 /**
- * A contributor's card from their repo's contributor.json (optional): the
- * login is the repo owner's, the rest is theirs to say. Throws when invalid.
+ * A contributor's card from their repo's contributor.json — required, with a
+ * name, for a registered repo (one with a `commit`): the login is the repo
+ * owner's, the rest is theirs to say. Throws when missing or invalid.
  */
 export function contributorEntry(login, repo, data, commit = null, branch = null) {
+	if (commit && !data) throw new Error(`no contributor.json at the top of ${repo} — every registered repo names its contributor (CONTRIBUTING.md, "Your card on the Contributors page")`);
 	if (data) {
-		const problems = validateContributor(data);
+		const problems = validateContributor(data, { registered: !!commit });
 		if (problems.length) throw new Error(`contributor.json for ${login}: ${problems.join("; ")}`);
 	}
 	return {

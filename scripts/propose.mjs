@@ -74,9 +74,10 @@ async function main() {
 		return;
 	}
 
+	const tree = await gh(`/repos/${repo}/git/trees/${head}?recursive=1`);
+	if (!tree.tree.some((t) => t.type === "blob" && t.path === "contributor.json")) throw new Error(`no contributor.json at the top of ${repo} at ${head.slice(0, 7)} — every registered repo names its contributor (CONTRIBUTING.md)`);
 	let games = named;
 	if (!games.length) {
-		const tree = await gh(`/repos/${repo}/git/trees/${head}?recursive=1`);
 		games = tree.tree
 			.filter((t) => t.type === "blob" && /(^|\/)game\.json$/.test(t.path))
 			.map((t) => t.path.replace(/\/?game\.json$/, "") || ".")
