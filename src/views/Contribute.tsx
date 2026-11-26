@@ -44,8 +44,7 @@ export default function Contribute() {
 		const mine = ++asked;
 		setOut({ text: "Asking GitHub…" });
 		try {
-			const clean = repo.value.trim().replace(/^https:\/\/github\.com\//, "").replace(/\.git$|\/$/g, "");
-			const plan: Plan = await A.propose.plan(clean, A.propose.pinnedOf(clean));
+			const plan: Plan = await A.propose.plan(repo.value, A.propose.pinnedOf(A.propose.parse(repo.value).repo));
 			if (alive && mine === asked) setOut({ plan });
 		} catch (err) {
 			if (alive && mine === asked) setOut({ text: (err as Error).message });
@@ -107,8 +106,8 @@ export default function Contribute() {
 				<section class="propose">
 					<h2>Propose your games</h2>
 					<p class="muted">
-						Your public repo, <code>owner/name</code>. This opens GitHub's page for the registry file, filled in — commit it there and GitHub
-						offers the pull request.
+						Your public repo, <code>owner/name</code> — or <code>owner/name@branch</code> for games that live on a branch. This opens GitHub's
+						page for the registry file, filled in — commit it there and GitHub offers the pull request.
 					</p>
 					<form class="propose-row" data-propose onSubmit={propose}>
 						<input

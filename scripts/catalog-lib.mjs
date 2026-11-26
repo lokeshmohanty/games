@@ -97,7 +97,7 @@ export function catalogEntries(files, root) {
  * A contributor's card from their repo's contributor.json (optional): the
  * login is the repo owner's, the rest is theirs to say. Throws when invalid.
  */
-export function contributorEntry(login, repo, data, commit = null) {
+export function contributorEntry(login, repo, data, commit = null, branch = null) {
 	if (data) {
 		const problems = validateContributor(data);
 		if (problems.length) throw new Error(`contributor.json for ${login}: ${problems.join("; ")}`);
@@ -107,6 +107,8 @@ export function contributorEntry(login, repo, data, commit = null) {
 		repos: [repo],
 		// The pinned commit of each listed repo, for "Propose update" (lib/propose.js).
 		pins: commit ? { [repo]: commit } : {},
+		// The branch a pin follows, when not the default (lib/propose.js branchOf).
+		...(branch ? { branches: { [repo]: branch } } : {}),
 		name: data?.name ?? null,
 		bio: data?.bio ?? null,
 		location: data?.location ?? null,

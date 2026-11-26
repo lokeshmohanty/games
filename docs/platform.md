@@ -311,6 +311,15 @@ One file per **repository** — a repo may hold several games:
 }
 ```
 
+**`"branch"` (optional, 2026-11-26).** Games that live on a branch rather
+than the default one — Lokesh, about locale-chess's `arcade-v2`: "I want it
+to go from this branch itself and not from the main branch". The pin is
+still a commit; the branch says which head `just propose`, the Add your game
+form and Check for updates follow (lib/propose.js `branchOf`, from the
+catalog's `CONTRIBUTORS[].branches`), and the submission check requires the
+commit to be on it. `owner/name@branch` (or a `…/tree/<branch>` address)
+names it for a new repo. A game at the repository's root is listed as `"."`.
+
 `just community` (`scripts/fetch-community.mjs`) unpacks exactly that commit
 — GitHub's tarball, or `git archive` from a clone at `../<repo>` that has the
 commit (`NEON_LOCAL_REPOS=owner/repo=path` names another) — and copies only
@@ -349,8 +358,8 @@ contributor PRs out; a label added by a workflow could not trigger another
 run): read-only token, no secrets. `scripts/check-submission.mjs` judges it —
 only `registry/<owner>/<repo>.json` changes; the author's own owner folder
 unless their `author_association` is OWNER/MEMBER/COLLABORATOR; a valid
-entry; the commit exists (GitHub API) and an update is `ahead` of the old
-pin — then fetches and runs `validate-game` on every listed game, writing
+entry; the commit exists (GitHub API), an update is `ahead` of the old
+pin, and an entry with a `branch` has its commit on it — then fetches and runs `validate-game` on every listed game, writing
 `result.json` + `summary.md` as an artifact. `submission-report.yml`
 (`workflow_run`, write access, never checks out PR code) reads that artifact
 as data, confirms the PR's head is the judged commit, and sets labels

@@ -5,7 +5,7 @@
 // workflow opens one — and once it is merged the site deploys itself
 // (deploy.yml on push). This only saves the typing:
 //
-//   node scripts/propose.mjs owner/repo [game-folder …]      (just propose …)
+//   node scripts/propose.mjs owner/repo[@branch] [game-folder …]   (just propose …)
 //
 //   not registered yet → GitHub's "new file" page for registry/<owner>/<repo>.json,
 //                        filled in (repo, the head commit, the game folders —
@@ -15,6 +15,9 @@
 //                        (GitHub cannot fill an edit page).
 //   registered, current → says so.
 //
+// "Head" is the default branch's, or the entry's "branch" when it names one;
+// `@branch` names it for a repo not registered yet.
+//
 // The site does the same in the browser: the Add your game form (./?page=contribute) and the
 // Contributors page's "Propose update" (lib/propose.js). Repos are public, so
 // the GitHub API needs no token (GITHUB_TOKEN raises the rate limit).
@@ -22,6 +25,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { BRANCH } from "./fetch-community.mjs";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const ARCADE = "lokeshmohanty/games";
@@ -36,8 +40,8 @@ async function gh(path) {
 }
 
 /** The pin file a repo would have, as GitHub shows it in the arcade. */
-export function pinText(repo, commit, games) {
-	return `${JSON.stringify({ repo: `https://github.com/${repo}`, commit, games }, null, 2).replace(/\[\n\s+([\s\S]*?)\n\s+\]/, (_, inner) => `[${inner.replace(/\s*\n\s*/g, " ")}]`)}\n`;
+export function pinText(repo, commit, games, branch = null) {
+	return `${JSON.stringify({ repo: `https://github.com/${repo}`, ...(branch ? { branch } : {}), commit, games }, null, 2).replace(/\[\n\s+([\s\S]*?)\n\s+\]/, (_, inner) => `[${inner.replace(/\s*\n\s*/g, " ")}]`)}\n`;
 }
 
 /** GitHub's prefilled "new file" page in the arcade repo. */
@@ -48,17 +52,19 @@ export function newFileUrl(repo, text) {
 export const editUrl = (repo) => `https://github.com/${ARCADE}/edit/main/registry/${repo}.json`;
 
 async function main() {
-	const [repo, ...named] = process.argv.slice(2);
-	if (!/^[A-Za-z0-9-]+\/[A-Za-z0-9_.-]+$/.test(repo ?? "")) {
-		console.error("usage: propose.mjs owner/repo [game-folder …]");
+	const [arg, ...named] = process.argv.slice(2);
+	let [repo, branch = null] = (arg ?? "").split("@");
+	if (!/^[A-Za-z0-9-]+\/[A-Za-z0-9_.-]+$/.test(repo) || (branch != null && !BRANCH.test(branch))) {
+		console.error("usage: propose.mjs owner/repo[@branch] [game-folder …]");
 		process.exit(2);
 	}
-	const head = (await gh(`/repos/${repo}/commits/HEAD`)).sha;
-	if (!SHA.test(head ?? "")) throw new Error("no head commit");
 	const pinned = join(ROOT, "registry", `${repo}.json`);
+	const entry = existsSync(pinned) ? JSON.parse(readFileSync(pinned, "utf8")) : null;
+	branch ??= entry?.branch ?? null;
+	const head = (await gh(`/repos/${repo}/commits/${branch ? encodeURIComponent(branch) : "HEAD"}`)).sha;
+	if (!SHA.test(head ?? "")) throw new Error("no head commit");
 
-	if (existsSync(pinned)) {
-		const entry = JSON.parse(readFileSync(pinned, "utf8"));
+	if (entry) {
 		if (entry.commit === head) return console.log(`${repo} is pinned at its head (${head.slice(0, 7)}): nothing to propose.`);
 		console.log(`${repo}: pinned ${entry.commit.slice(0, 7)}, head ${head.slice(0, 7)}`);
 		console.log(`compare: https://github.com/${repo}/compare/${entry.commit}...${head}`);
@@ -73,12 +79,11 @@ async function main() {
 		const tree = await gh(`/repos/${repo}/git/trees/${head}?recursive=1`);
 		games = tree.tree
 			.filter((t) => t.type === "blob" && /(^|\/)game\.json$/.test(t.path))
-			.map((t) => t.path.replace(/\/?game\.json$/, ""))
-			.filter(Boolean)
+			.map((t) => t.path.replace(/\/?game\.json$/, "") || ".")
 			.sort();
 		if (!games.length) throw new Error(`no game.json in ${repo} at ${head.slice(0, 7)} — see CONTRIBUTING.md`);
 	}
-	const text = pinText(repo, head, games);
+	const text = pinText(repo, head, games, branch);
 	console.log(`registry/${repo}.json:\n\n${text}`);
 	console.log(`open (filled in; "Commit changes…" then opens the pull request):\n${newFileUrl(repo, text)}`);
 }

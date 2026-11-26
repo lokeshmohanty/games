@@ -233,11 +233,17 @@ checkout: `just propose owner/name`.) The file it makes:
 }
 ```
 
+Games on a branch other than your default one? Type `owner/name@branch`: the
+entry gets `"branch": "<branch>"`, its commit is that branch's latest, and
+later updates follow that branch. A `game.json` at the top of your repository
+is listed as `"."`.
+
 Your pull request is checked by itself (the **Check game submission**
 workflow, on every PR that touches `registry/`):
 
 - it changes only `registry/<you>/<repo>.json` — your own repos;
-- the entry is well formed and its commit is in your public repo;
+- the entry is well formed and its commit is in your public repo (and on
+  its `branch`, if it names one);
 - an update moves your pin forward (never back, never to another branch);
 - every listed game is fetched (and a web app built) at that commit and
   passes `validate-game` (manifest, 10 MB, no CSP violation,
