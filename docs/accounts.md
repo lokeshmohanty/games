@@ -19,7 +19,7 @@ below).
 | Sign-in chooser, ADD FRIEND, INVITE, a pushed request's ACCEPT/DECLINE, "Players you just played", the shared friends list, feedback sheet | the page | `lib/account-ui.js` |
 | Profile view (head-to-head included) | the page | `./?page=profile` (`src/views/Profile.tsx` + `lib/profile.js`); the old `./?page=leaderboard` and `leaderboard.html` land there (`src/router.ts` legacyAddress); docs/spa.md |
 | The API | the room server (Cloudflare Worker) | `worker/api/*.js` |
-| Accounts, matches, friends, groups (and the old `ratings`, no longer written) | D1 database `arcade` | `worker/migrations/0001_accounts.sql` |
+| Accounts, matches, friends, groups | D1 database `arcade` | `worker/migrations/0001_accounts.sql` |
 | Head-to-head: each account's record against each other, from confirmed matches | the room server, read from D1 `match_players` | `worker/api/match.js` (`headToHead`, `rivalsOf`) |
 | The games the server knows, and their kinds | generated from the catalogs, bundled with the Worker | `worker/api/games.js` (`scripts/build-games-table.mjs`) |
 | Friends, invites, groups (contract), public profiles | the room server + D1 (friend codes, bans, waiting invites, mutes) | `worker/api/social.js`, `worker/api/people.js`, `worker/migrations/0005_social.sql` |
@@ -259,8 +259,8 @@ head-to-head only, no global boards".* Removed in branch `standings`:
   bookmark to the same place.
 - **Ratings**: pairwise Elo, provisional K, the end card's "Rating +12 →
   1534" (`ratingDeltas`, `sideDeltas`, `shownRating`). Nothing writes
-  `ratings` any more; `GET /api/me/matches` and public profiles no longer
-  carry `ratings` or `botWins`.
+  `ratings` any more; `GET /api/me/matches` and public profiles carry
+  `ratings` and `botWins` only as empty lists, for cached shells.
 - **Solo runs and wins against bots**: server-issued runs and seeds
   (`worker/api/runs.js`), Sudoku's server-side grid check
   (`worker/api/sudoku.js`), the per-game minimum times and daily caps
@@ -284,11 +284,11 @@ and achievements ("Records and achievements", 0007) — not boards; play
 counts; the party's own standings (lib/party.js), which never touched the
 server.
 
-**Tables not dropped.** `ratings`, `runs` and `bot_wins` stay in D1, no
-longer written (one additive migration, 0008, adds `match_players.team`:
-"Head-to-head"); the export still returns their rows, and deleting an
-account still deletes them. Dropping them is a later, explicit migration
-(STATUS.md).
+**Tables dropped.** `ratings`, `runs` and `bot_wins` were left in D1, no
+longer written, when the boards went (one additive migration, 0008, adds
+`match_players.team`: "Head-to-head"); migration 0009 (2026-11-26,
+"Migrations") drops them, and the export and account deletion no longer
+touch them.
 
 ## Head-to-head
 
@@ -308,8 +308,8 @@ knows (GAMES) count, in every total alike. No rating, no ranking of anybody.
 
 **Old cached shells.** A shell from before 2026-11-25 reads `ratings` and
 `botWins` on a profile and from `/api/me/matches`, and failed on undefined
-("Could not load"). Both answers carry them, empty (`[]`), until the
-table-drop migration (STATUS.md).
+("Could not load"). Both answers carry them, empty (`[]`): constants, with
+no table behind them since 0009.
 
 - `GET /api/u/<who>` signed in, not your own: `vs: { wins, losses, draws,
   games: { <game>: { wins, losses, draws } } }` — your record against them.
@@ -693,7 +693,7 @@ address per 5-minute window (IpGate `api`).
 |---|---|---|
 | `GET /auth/{github,google}/start?back=` → `…/callback` | anyone | sign in; back to `back#token=` |
 | `GET /auth/test?name=&uid=&back=` | tests only (`AUTH_TEST=1`, loopback host) | |
-| `GET/PATCH/DELETE /api/me`, `GET /api/me/export[?page=]`, `POST /api/me/signout` | signed in | profile, settings, delete, export (matches 2000 a page; `matchesNext`; also pending reports and starts, feedback posts, presence, and the old ranked layer's `ratings`, `winsAgainstBots`, `runs`) |
+| `GET/PATCH/DELETE /api/me`, `GET /api/me/export[?page=]`, `POST /api/me/signout` | signed in | profile, settings, delete, export (matches 2000 a page; `matchesNext`; also pending reports and starts, feedback posts, presence) |
 | `GET/PUT /api/me/favs` | signed in | favs: game ids, `contributor:<login>`, `collection:<owner>/<repo>` (2026-11-15; same table, no migration) |
 | `GET /api/me/matches` | signed in | `{ matches, rivals }`: your last 30 matches, and everyone you have a head-to-head record against ("Head-to-head") |
 | `POST /api/stats/played`, `GET /api/stats/summary` | anyone | counts |
@@ -731,10 +731,7 @@ or loopback; public reads are open.
 | Blocks, declines (7 days), mutes, group bans, waiting invites (10 minutes), when a request was last pushed | D1 `friends`, `mutes`, `group_bans`, `invites`, `request_pushes` | no; in the export (your own rows; never a block of someone else's on you; group bans of you and by you; when your requests were pushed); deleted with the account |
 | Devices getting party invites as notifications: the push service's endpoint, the browser's public key and auth secret, which VAPID key (a fingerprint), created, last refreshed; when a waiting invite last made a notification | D1 `push_subs` (0006), at most 5 an account; `invite_notices` (sender, recipient, code, when; per pair) | no; in the export as push service host and the two dates only (no endpoint, no keys); deleted on TURN OFF, sign-out, a 404/410 from the push service, and with the account |
 | Matches among signed-in people (who played, in what place) and the head-to-head read from them | D1 `matches`, `match_players` | recent matches on public profiles, unless hidden; a head-to-head only to the two people in it |
-| Old ratings (until 2026-11-25) | D1 `ratings`, no longer written | no longer shown; in the export (`ratings`); deleted with the account |
 | Reports not yet settled, "I am seated" starts, outcomes waiting to be read | D1 `reports` (15 min; starts 1 h after their last beat) | no; in the export (`reports`); deleted with the account |
-| Old solo runs and runs against bots (until 2026-11-25) | D1 `runs`, no longer written | no; in the export; deleted with the account |
-| Old wins against bots (until 2026-11-25) | D1 `bot_wins`, no longer written | no longer shown; in the export (`winsAgainstBots`); deleted with the account |
 | Records and achievements: per game, unlocked achievements and when, progress, records, the game's stats (played, won, per bot count, time); across games, games played, days in a row | D1 `records` (0007), one row per game, as the devices sent them, merged | to the player's friends only (profile, party); in the export (`records`); deleted with the account |
 | Play counts per game | D1 `plays` | yes (summary, snapshot) |
 | Feedback text | GitHub Discussions | yes, with the display name |
@@ -971,6 +968,23 @@ from this branch writes it on every match commit, so after the merge:
    "You 1–0 <name>" on the winner's card; each one's profile of the other
    shows the record.
 
+### 0009 (branch `drop-boards`, 2026-11-26)
+
+`worker/migrations/0009_drop_boards.sql` drops `ratings`, `runs` and
+`bot_wins` (and their indexes), dead since the boards went ("No boards").
+**Destructive, not applied.** The Worker from this branch neither reads nor
+deletes them; the Worker before it does, in the export and account
+deletion, so those two answer 500 from the migration until the deploy.
+After the merge, back to back:
+
+1. From `worker/`: `nix shell nixpkgs#wrangler -c wrangler d1 migrations apply arcade --remote`
+   (0007 and 0008 too, if still pending).
+2. From the root, at once: `just deploy-worker` (it refuses while a
+   migration is pending, so it cannot go first).
+3. Check: signed in, `GET /api/me/export` answers 200 without `ratings`,
+   `winsAgainstBots` or `runs`; a profile still carries `ratings: []` and
+   `botWins: []`.
+
 ## Testing
 
 - `just test-stats` — lib/stats.js in Node.
@@ -997,8 +1011,8 @@ from this branch writes it on every match commit, so after the merge:
   free-for-all places, teammates counting as neither, co-op never, the
   mirror from the other side, nothing on your own profile or signed out,
   `rivals` most recent first, capped at 50 with 120 opponents, the report's
-  per-game `vs`), the boards and runs answering 410, old `ratings` and
-  `bot_wins` rows served nowhere but the export, a game that once said
+  per-game `vs`), the boards and runs answering 410, the `ratings`, `runs`
+  and `bot_wins` tables gone (0009) and absent from the export, a game that once said
   `"leaderboard": false` counting, the snapshot writing only the summary and
   deleting old board files. Still: toAccounts with no server (guests'
   places, leavers' places, teams forfeits); the audit's collusion repro

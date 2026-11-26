@@ -509,11 +509,12 @@ try {
 		check("…and a match start for it is taken", (await call("POST", "/api/match/start", { token: ana, body: { game: "connect4", run: "nb2", match: 1 } })).status === 200);
 		const ttt = { game: "tic-tac-toe-js", run: "nb3", match: 1, kind: "duel", ranking: [["pa"], ["bot_1"]], roster: { pa: A } };
 		check("a win against bots is still not recorded", (await report(ana, ttt)).body.counted === false);
-		// The live D1 has old rows from the ranked layer: they stay, and are not served.
-		await w.sql(`INSERT INTO ratings (account, game, elo, games, wins, best) VALUES ('${A}', 'connect4', 1250, 7, 4, NULL); INSERT INTO bot_wins (account, game, wins, first, at) VALUES ('${A}', 'tic-tac-toe-js', 2, 1, 1);`);
+		// The old ranked layer's tables are dropped (migration 0009); the lists stay, empty.
+		const left = (await w.sql(`SELECT name FROM sqlite_master WHERE name IN ('ratings', 'runs', 'bot_wins')`))[0].map((r) => r.name);
+		check("the old ranked layer's tables are gone (0009)", left.length === 0, left);
 		const mm = await matchesOfTok(ana);
 		const pub = (await call("GET", `/api/u/${A}`)).body;
-		check("old ratings and wins against bots are served nowhere (the lists stay empty)", [mm.ratings, mm.botWins, pub.ratings, pub.botWins].every((x) => Array.isArray(x) && x.length === 0), { mm: Object.keys(mm), pub: Object.keys(pub) });
+		check("…and ratings and wins against bots stay empty lists, for cached shells", [mm.ratings, mm.botWins, pub.ratings, pub.botWins].every((x) => Array.isArray(x) && x.length === 0), { mm: Object.keys(mm), pub: Object.keys(pub) });
 		check("its play count still lands", (await call("POST", "/api/stats/played", { body: { game: "undercover" } })).body.counted === true);
 	}
 
@@ -1260,7 +1261,7 @@ try {
 		await report(ana, { game: "lokeshmohanty/battleship", run: "exp1", match: 1, kind: "duel", ranking: [["pa"], ["pc"]], roster: { pa: A, pc: C }, seats: 2 });
 		const ex = await call("GET", "/api/me/export", { token: ana });
 		check("export: the account, favourites, matches, friends", ex.body.account.id === A && ex.body.favourites.length === 2 && ex.body.matches.length >= 2 && ex.body.friends.length >= 1, Object.keys(ex.body));
-		check("…and what the old ranked layer kept (the connect4 row put in above)", ex.body.ratings?.some((x) => x.game === "connect4" && x.elo === 1250) && Array.isArray(ex.body.winsAgainstBots) && Array.isArray(ex.body.runs), { ratings: ex.body.ratings });
+		check("…and nothing of the dropped ranked layer", !("ratings" in ex.body) && !("winsAgainstBots" in ex.body) && !("runs" in ex.body), Object.keys(ex.body));
 		check("…reports not yet settled", ex.body.reports?.some((x) => x.state === "pending" && x.result?.game === "lokeshmohanty/battleship"), ex.body.reports);
 		check("…the feedback posts and the presence row", ex.body.feedbackPosts?.length === 5 && "presence" in ex.body, { posts: ex.body.feedbackPosts, presence: ex.body.presence });
 		check("…its matches in pages, this one the last", ex.body.matchesPage === 0 && ex.body.matchesNext === null, { page: ex.body.matchesPage, next: ex.body.matchesNext });

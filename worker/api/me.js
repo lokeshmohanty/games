@@ -6,9 +6,7 @@
 //   PATCH  /api/me             { name?, hidePublic?, appearOffline? }
 //   DELETE /api/me             every row of ours, at once; the session too
 //   GET    /api/me/export      all of it, as one JSON document: profile, sign-ins,
-//                              favourites, matches (paged), and what the old
-//                              ranked layer kept (ratings, wins against bots,
-//                              runs: no longer written, 2026-11-25), pending reports, friends,
+//                              favourites, matches (paged), pending reports, friends,
 //                              groups, sessions, feedback posts, presence,
 //                              devices getting invites as notifications (no keys),
 //                              records and achievements
@@ -112,10 +110,7 @@ export async function deleteMe(env, me) {
 		env.DB.prepare("DELETE FROM identities WHERE account = ?").bind(id),
 		env.DB.prepare("DELETE FROM favs WHERE account = ?").bind(id),
 		env.DB.prepare("DELETE FROM reports WHERE account = ?").bind(id),
-		env.DB.prepare("DELETE FROM runs WHERE account = ?").bind(id),
 		env.DB.prepare("DELETE FROM match_players WHERE account = ?").bind(id),
-		env.DB.prepare("DELETE FROM ratings WHERE account = ?").bind(id),
-		env.DB.prepare("DELETE FROM bot_wins WHERE account = ?").bind(id),
 		env.DB.prepare("DELETE FROM friends WHERE a = ? OR b = ?").bind(id, id),
 		env.DB.prepare("DELETE FROM presence WHERE account = ?").bind(id),
 		// A group we own passes to its longest-standing member; ours alone goes.
@@ -155,11 +150,6 @@ export async function exportMe(env, me, page = 0) {
 		// Which sign-ins, and whether a GitHub token is kept (never the token itself).
 		identities: (await q("SELECT provider, login, linked, token_enc IS NOT NULL AS githubTokenKept FROM identities WHERE account = ?", me.id)),
 		favourites: (await q("SELECT game FROM favs WHERE account = ?", me.id)).map((r) => r.game),
-		// The old ranked layer's rows (2026-11-25: no longer written or shown;
-		// the tables go in a later migration, STATUS.md) — still yours to see.
-		ratings: await q("SELECT game, elo, games, wins, best FROM ratings WHERE account = ?", me.id),
-		winsAgainstBots: await q("SELECT game, wins, first, at FROM bot_wins WHERE account = ?", me.id),
-		runs: await q("SELECT id, game, vs, seed, at, used, counted, daily FROM runs WHERE account = ? ORDER BY at DESC", me.id),
 		// Reports of ours not yet settled, the starts we said we were seated in,
 		// and outcomes not yet read back (worker/api/match.js; minutes to hours).
 		reports: (await q("SELECT match, digest, payload, at FROM reports WHERE account = ? ORDER BY at DESC", me.id)).map((r) => ({
