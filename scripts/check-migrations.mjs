@@ -19,7 +19,7 @@ if (/No migrations to apply/i.test(text)) {
 const pending = [...new Set(text.match(/\b\d{4}_[A-Za-z0-9_-]+\.sql\b/g) ?? [])];
 console.error(
 	pending.length
-		? `check-migrations: the remote D1 has not applied ${pending.join(", ")}.\nApply them first, from worker/: wrangler d1 migrations apply arcade --remote\n(docs/accounts.md "Migrations": migrate first, then deploy.)`
-		: `check-migrations: could not tell whether the remote D1 is migrated (wrangler said:\n${text.trim().split("\n").slice(-6).join("\n") || "(nothing)"})\nRun \`wrangler d1 migrations list arcade --remote\` from worker/ and apply what it lists.`,
+		? `check-migrations: the remote D1 has not applied ${pending.join(", ")}.\nApply them first, from worker/: nix shell nixpkgs#wrangler -c wrangler d1 migrations apply arcade --remote\n(docs/accounts.md "Migrations": migrate first, then deploy.)`
+		: `check-migrations: could not tell whether the remote D1 is migrated (wrangler said:\n${text.trim().split("\n").slice(-6).join("\n") || "(nothing)"})\nRun \`nix shell nixpkgs#wrangler -c wrangler d1 migrations list arcade --remote\` from worker/ and apply what it lists.`,
 );
 process.exit(1);

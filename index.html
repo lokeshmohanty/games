@@ -24,13 +24,13 @@
          not after it. 404 in a checkout without `just community`, harmlessly. -->
     <link rel="preload" href="community/catalog.js" as="script" vite-ignore />
     <script>
-      // The Games tab's two sub-tabs, My Games and All Games (docs/spa.md
-      // "The portal's sub-tabs"). The home screen opens on My Games once this
-      // device has a favourite or a recently played game, else on All Games.
+      // The portal's two tabs, My Games and All Games (docs/spa.md "The
+      // portal's tabs"). The home screen opens on My Games once this device
+      // has a favourite or a recently played game, else on All Games.
       // Decided here, before the first paint, from localStorage (synchronous),
-      // so the static first frame below already shows the right sub-tab; the
+      // so the static first frame below already lights the right tab; the
       // router (src/router.ts) asks the same function for every portal
-      // address that names no sub-tab. The view test mirrors src/router.ts's.
+      // address that names no tab. The view test mirrors src/router.ts's.
       (() => {
         const A = (window.NeonArcade = window.NeonArcade || {});
         const count = (key) => {
@@ -59,19 +59,16 @@
     <div id="app">
       <main class="view-portal boot">
         <!-- lib/nav.js's row as it will be drawn, so nothing moves when it is:
-             the tabs, the ☰ button's place, and the Games sub-tabs, the one
-             decided above lit (lib/styles.css). test-portal compares the two. -->
+             the tabs, the one decided above lit (lib/styles.css), and the ☰
+             button's place. test-portal compares the two. -->
         <nav class="site-nav" aria-label="Arcade">
           <div class="site-row">
             <div class="site-tabs" role="list">
-              <a class="site-tab is-on" role="listitem" href="./">Games</a>
-              <a class="site-tab" role="listitem" href="./?page=collections">Community</a>
+              <span role="listitem"><a class="site-tab" data-tab="mine" href="./?page=games&amp;tab=mine">My Games</a></span>
+              <span role="listitem"><a class="site-tab" data-tab="all" href="./?page=games&amp;tab=all">All Games</a></span>
+              <span role="listitem"><a class="site-tab" data-tab="community" href="./?page=collections">Community</a></span>
             </div>
             <div class="site-menu"><span class="site-menu-btn" aria-hidden="true"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 7h16M4 12h16M4 17h16" /></svg></span></div>
-          </div>
-          <div class="site-subtabs" role="list">
-            <a class="site-subtab" role="listitem" data-tab="mine" href="./?page=games&amp;tab=mine">My Games</a>
-            <a class="site-subtab" role="listitem" data-tab="all" href="./?page=games&amp;tab=all">All Games</a>
           </div>
         </nav>
         <h1 class="brand">
@@ -96,7 +93,10 @@
     </div>
     <script>
       // Another view (the head's test): no portal heading flashing first.
-      if (!document.documentElement.dataset.home) document.querySelector("#app .boot")?.remove();
+      // The portal: the lit tab named the current page, as lib/nav.js does.
+      const home = document.documentElement.dataset.home;
+      if (!home) document.querySelector("#app .boot")?.remove();
+      else document.querySelector(`#app .boot .site-tab[data-tab="${home}"]`)?.setAttribute("aria-current", "page");
     </script>
     <!-- The party: mounted once, kept across views (src/App.tsx). -->
     <div id="party-layer" hidden>

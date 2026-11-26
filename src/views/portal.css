@@ -442,7 +442,8 @@
   }
   /* The pitch is three lines of prose about reconnecting, and the heading
      says what START A PARTY says. On a phone the two buttons are the
-     banner (the room went to the sub-tabs' row, 2026-11-15). */
+     banner (its room went to the nav's sub-tab row on 2026-11-15; the
+     portal has had no sub-tab row since 2026-11-26). */
   :where(.view-portal) .party-banner > div {
     display: none;
   }

@@ -1637,11 +1637,12 @@ canvas {
   cursor: pointer;
 }
 
-/* lib/nav.js: one row, the tabs (Games · Community) and the
-   ☰ menu (Add your game, Theme, account, GitHub); the sub-tabs of Games
-   (My Games · All Games) or Community under it. The row's height is held
-   so the static first frame (index.html) does not jump when the nav is
-   drawn; on the portal that frame draws the same row itself. */
+/* lib/nav.js: one row, the tabs (My Games · All Games · Community) and
+   the ☰ menu (Add your game, Theme, account, GitHub); Community's sub-tabs
+   (Collections · Contributors) under it. The portal has no sub-tab row:
+   nothing is held for one. The row's height is held so the static first
+   frame (index.html) does not jump when the nav is drawn; on the portal
+   that frame draws the same row itself. */
 .site-nav {
   width: 100%;
   max-width: 1200px;
@@ -1673,6 +1674,27 @@ canvas {
 .site-tabs::-webkit-scrollbar {
   display: none;
 }
+/* Each tab is a link inside its listitem (lib/nav.js tabRow): the item is
+   the flex child, the link keeps its box. */
+.site-tabs > [role="listitem"],
+.site-subtabs > [role="listitem"] {
+  display: flex;
+  flex: none;
+}
+/* Still wider than the column (a large text size): the side that hides a
+   tab fades out, since the scrollbar is hidden (lib/nav.js edges). */
+.site-tabs.fade-end {
+  -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 28px), transparent);
+  mask-image: linear-gradient(to right, #000 calc(100% - 28px), transparent);
+}
+.site-tabs.fade-start {
+  -webkit-mask-image: linear-gradient(to left, #000 calc(100% - 28px), transparent);
+  mask-image: linear-gradient(to left, #000 calc(100% - 28px), transparent);
+}
+.site-tabs.fade-start.fade-end {
+  -webkit-mask-image: linear-gradient(to right, transparent, #000 28px, #000 calc(100% - 28px), transparent);
+  mask-image: linear-gradient(to right, transparent, #000 28px, #000 calc(100% - 28px), transparent);
+}
 .site-tab,
 .site-subtab {
   min-height: 44px;
@@ -1691,7 +1713,11 @@ canvas {
 .site-subtab:hover {
   color: var(--accent);
 }
-.site-tab.is-on {
+/* The static first frame (index.html) lights the tab its head script
+   chose, before lib/nav.js has run. */
+.site-tab.is-on,
+html[data-home="mine"] .boot .site-tab[data-tab="mine"],
+html[data-home="all"] .boot .site-tab[data-tab="all"] {
   color: var(--accent);
   border-bottom-color: var(--accent);
 }
@@ -1711,11 +1737,7 @@ canvas {
   margin: 0;
   font-size: 0.85rem;
 }
-/* The static first frame (index.html) lights the sub-tab its head script
-   chose, before lib/nav.js has run. */
-.site-subtab.is-on,
-html[data-home="mine"] .boot .site-subtab[data-tab="mine"],
-html[data-home="all"] .boot .site-subtab[data-tab="all"] {
+.site-subtab.is-on {
   color: var(--on-accent);
   background: var(--accent);
   border-color: var(--accent);
@@ -1751,7 +1773,7 @@ html[data-home="all"] .boot .site-subtab[data-tab="all"] {
   z-index: 40;
   display: flex;
   flex-direction: column;
-  min-width: 13rem;
+  min-width: min(13rem, calc(100vw - 32px));
   max-width: calc(100vw - 32px);
   padding: 6px;
   border: 1px solid var(--accent);
@@ -1838,10 +1860,30 @@ html[data-home="all"] .boot .site-subtab[data-tab="all"] {
     padding: 0 9px;
   }
 }
-@media (max-width: 360px) {
+/* Narrower still, or the phone's text larger (Firefox for Android scales
+   it): tighter tabs, so all three stay whole. Measured in em of the row, so
+   a larger text size tightens them sooner (320px at 100%, 354 and 390 at
+   130%: test-portal). Past that the strip scrolls, with a fade (above). */
+.site-row {
+  container: site-row / inline-size;
+}
+@container site-row (max-width: 20em) {
   .site-tab {
-    padding: 0 6px;
+    padding: 0 5px;
+  }
+}
+@container site-row (max-width: 18.5em) {
+  .site-tabs {
+    gap: 0;
+  }
+  .site-tab {
+    padding: 0 3px;
     font-size: 0.85rem;
+  }
+}
+@container site-row (max-width: 16em) {
+  .site-tab {
+    font-size: 0.8rem;
   }
 }
 

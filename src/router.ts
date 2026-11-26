@@ -4,8 +4,8 @@
 // (#i=, #c=, #a=; lib/net.js, lib/room-join.js). So views are named in the
 // query, on index.html itself:
 //
-//   ./                         the portal, on its default sub-tab (below)
-//   ./?page=games&tab=mine     the portal's sub-tabs: My Games | All Games
+//   ./                         the portal, on its default tab (below)
+//   ./?page=games&tab=mine     the portal's tabs: My Games | All Games
 //   ./?page=games&tab=all      (and its search, ?q=, on All Games)
 //   ./?page=profile            profile | contribute | contributors | collections
 //   ./?game=connect4 …         the party (its words: game, mode, fresh, dev,
@@ -18,11 +18,11 @@
 // taken to the profile, where head-to-head lives (legacyAddress), and
 // leaderboard.html is a static stub that sends a bookmark there too.
 //
-// A portal address that names no sub-tab (./, ./?q=…, an old bookmark) is
+// A portal address that names no tab (./, ./?q=…, an old bookmark) is
 // given one as it is entered (portalAddress): All Games for a search, else
 // NeonArcade.homeTab() — index.html's, the rule the first paint used. So the
-// address always says which sub-tab shows, starring a game never moves you,
-// and Back returns to the sub-tab you left.
+// address always says which tab shows, starring a game never moves you,
+// and Back returns to the tab you left.
 import { createMemo, createRoot, createSignal } from "solid-js";
 
 export type View = "portal" | "party" | "profile" | "contribute" | "contributors" | "collections";
@@ -55,12 +55,12 @@ export function legacyAddress(url: URL): URL {
 }
 
 export type PortalTab = "mine" | "all";
-/** The sub-tab a portal address names, or null when it names none. */
+/** The tab a portal address names, or null when it names none. */
 export function portalTab(url: URL): PortalTab | null {
 	const t = url.searchParams.get("tab");
 	return t === "mine" || t === "all" ? t : null;
 }
-/** `url` with its sub-tab named: the same URL when it has one or is not the portal. */
+/** `url` with its tab named: the same URL when it has one or is not the portal. */
 export function portalAddress(url: URL): URL {
 	url = legacyAddress(url);
 	if (viewOf(url) !== "portal" || (url.searchParams.get("page") === "games" && portalTab(url))) return url;
@@ -72,7 +72,7 @@ export function portalAddress(url: URL): URL {
 	out.search = `?${new URLSearchParams([["page", "games"], ["tab", tab], ...q])}`;
 	return out;
 }
-/** Name the sub-tab of the address now showing, in place (no new history entry). */
+/** Name the tab of the address now showing, in place (no new history entry). */
 const settle = () => {
 	const here = new URL(location.href);
 	const there = portalAddress(here);

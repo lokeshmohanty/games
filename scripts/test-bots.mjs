@@ -29,7 +29,7 @@ import { loadPlaywright } from "./playwright.mjs";
 const SITE = await serve(8734);
 const url = SITE.url;
 // The portal's address (LEAVE PARTY goes there): the shell with no query.
-// The portal: ./, or ./ with its sub-tab named (src/router.ts portalAddress).
+// The portal: ./, or ./ with its tab named (src/router.ts portalAddress).
 const PORTAL = (u) => u.pathname === "/" && /^(\?page=games&tab=(mine|all))?$/.test(u.search);
 const TIMEOUT = 30_000;
 

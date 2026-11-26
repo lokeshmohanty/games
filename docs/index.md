@@ -7,7 +7,7 @@ questions about this project from this folder alone.
 
 ## Contents
 
-- [The portal](#the-portal) — the home screen's sub-tabs (My Games · All Games), sections, PLAY SOMETHING, the phone layout and the search
+- [The portal](#the-portal) — the home screen's tabs (My Games · All Games), sections, PLAY SOMETHING, the phone layout and the search
 - [Connecting players](#connecting-players) — the serverless handshake, paid once per person; `scanQr`; connectivity (relaying, STUN, NAT classification, no TURN); who said it (signed party messages)
 - [Parties](#parties) — the persistent group, teams, switching games, host succession; [player colours](#player-colours) (the picker, first to pick keeps it, each game's handling); the party API (`mountParty`, the room controller, lib/lobby.js)
 - [Bots](#bots) — why there is no single-player section, and what a bot actually is
@@ -104,11 +104,12 @@ eyeballed, in `test-pwa.mjs` and `test-portal.mjs` "My Games · All Games"
 (390x844, Lokesh's phone at 354x696, and 320x640); what is in each section,
 in `test-portal.mjs`.
 
-**Two sub-tabs** (Lokesh, 2026-11-15: "All favourites land under My
-Games"). Under the tab row, Games has **My Games · All Games**, each an
+**Two tabs** (Lokesh, 2026-11-15: "All favourites land under My
+Games"; 2026-11-26: "keep them separate tabs"). The nav row is **My Games ·
+All Games** · Community, the first two each an
 address (`./?page=games&tab=mine` / `tab=all`); `./` opens on My Games once
 the device has a favourite or a recently played game, else on All Games,
-decided before the first paint ([spa.md](spa.md) "The portal's sub-tabs").
+decided before the first paint ([spa.md](spa.md) "The portal's tabs").
 Under the brand and the party banner:
 
 - **My Games** — Recently played (PLAY SOMETHING at its heading's right;
@@ -132,14 +133,14 @@ Under the brand and the party banner:
   genre with no game (More games, while every game has a category) or an
   unknown id is All Games, its address fixed. No search there.
 
-Changing sub-tab closes any card left open, so a row on the other sub-tab is
+Changing tab closes any card left open, so a row on the other tab is
 never held back as "in use" and is current when you return (review,
 2026-11-16).
 
 **The home screen is sections** (Lokesh, 2026-11-15: "show the favourites,
 then the top 3~5 games based on popularity, and then pre-defined
 categories"). Top to bottom (`lib/portal.js` `SECTIONS`, each with its
-sub-tab; an empty one is hidden):
+tab, My Games or All Games; an empty one is hidden):
 
 - **★ Favourites** (My Games) — the games starred, in the order starred,
   then the contributors and collections starred (`contributor:<login>`,
@@ -175,7 +176,8 @@ letter-spacing and narrowing the card's side margins to 4px); Recently
 played and the search were 80% wide on a phone, narrower than the cards,
 because their base rules came after the phone rules in portal.css. On a
 phone the party banner is its two buttons (the heading said what START A
-PARTY says), which paid for the sub-tab row.
+PARTY says), which paid for the sub-tab row (gone from the portal since
+2026-11-26, when My Games and All Games became top tabs).
 
 **The second Android pass (the same phone, Chrome and Firefox, 2026-11-15;
 fixed 2026-11-19, branch `phone-shell`)**, asserted with computed sizes
@@ -202,8 +204,12 @@ fixed 2026-11-19, branch `phone-shell`)**, asserted with computed sizes
   system font size as text zoom, px included): the in-game top buttons ran
   into ← Games and the portal's tabs ran under ☰. The game's top band is one
   row (`.top-band`) and ← Games becomes its arrow alone when its word does
-  not fit (the word clipped, not hidden, so the link is still named "Games"); the portal's tabs scroll sideways inside their column, the
-  sub-tabs wrap. Held at 130% and 200%, at both sizes (test-party,
+  not fit (the word clipped, not hidden, so the link is still named "Games"); the nav's
+  three tabs tighten (padding, then size, by a container query in em, so
+  a larger text tightens them sooner) and stay whole at 130% on 354 and
+  390 wide; past that they scroll sideways inside their column, with a
+  fade on the side that hides one and the lit tab centred (lib/nav.js);
+  Community's sub-tabs wrap. Held at 130% and 200%, at both sizes (test-party,
   test-portal, in Playwright's Firefox).
 - **The game's frame stayed light under a dark page** — in Chrome too.
   Paper following the system is the default, and `sdk/v2/runtime.js` wrote
